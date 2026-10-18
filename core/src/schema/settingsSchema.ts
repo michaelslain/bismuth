@@ -600,8 +600,18 @@ export const SETTINGS_SCHEMA: Schema = {
         },
         notifications: {
             type: 'boolean',
-            default: true,
-            doc: "Show a desktop notification when the daemon files an inbox page, and for crons marked `notify: true`. On macOS it shows Bismuth's name and icon once the installed app has launched; allow Bismuth in System Settings → Notifications. Off = the daemon posts no desktop notifications for this vault; the inbox and its in-app toast are unchanged.",
+            default: false,
+            doc: "Show a desktop notification when the daemon files an inbox page, and for crons marked `notify: true`. On macOS it shows Bismuth's name and icon once the installed app has launched; allow Bismuth in System Settings → Notifications. Off is the default: the daemon posts no desktop notifications for this vault; the inbox and its in-app toast are unchanged.",
+        },
+        saveSessions: {
+            type: 'boolean',
+            default: false,
+            doc: 'Save each finished agent session from a Bismuth terminal, and each in-app chat, as a memory note in this vault so the daemon can recall it later. On means the text of your conversations with agents is written into the vault. Off is the default: no session is saved.',
+        },
+        dream: {
+            type: 'boolean',
+            default: false,
+            doc: "The hourly cron that folds changed notes and saved sessions into memory. On means the daemon runs an agent over your changed notes every hour. Off is the default: the cron does not run and memory only changes when an agent calls the remember/forget tools.",
         },
         backend: {
             type: enumType(DAEMON_BACKEND_IDS),
@@ -628,13 +638,13 @@ export const SETTINGS_SCHEMA: Schema = {
         recall: object({
             enabled: {
                 type: 'boolean',
-                default: true,
-                doc: "Master switch for every AUTOMATIC memory injection into agent sessions — the prompt-time recall, mid-turn recall, session-start memory and subagent memory. Off = agents only see memory they ask for through the remember/recall/forget tools. Requires daemon.enabled (the 3rd brain is off without it). Cost when on: a small keyword lookup per prompt; the heavier cost is the mid-turn switch below.",
+                default: false,
+                doc: "Master switch for every AUTOMATIC memory injection into agent sessions — the prompt-time recall, mid-turn recall, session-start memory and subagent memory. Off is the default: agents only see memory they ask for through the remember/recall/forget tools. Requires daemon.enabled (the 3rd brain is off without it). Cost when on: a small keyword lookup per prompt; the heavier cost is the mid-turn switch below.",
             },
             midTurn: {
                 type: 'boolean',
-                default: true,
-                doc: 'Run one memory recall per agent tool batch (between tool calls, inside a long turn), not only when you send a prompt. Cost: one extra lookup for each batch of tool calls an agent makes, so a long agentic turn does that many extra recalls. Off = memory is recalled at the prompt only. Has no effect when recall.enabled is off.',
+                default: false,
+                doc: 'Run one memory recall per agent tool batch (between tool calls, inside a long turn), not only when you send a prompt. Cost: one extra lookup for each batch of tool calls an agent makes, so a long agentic turn does that many extra recalls. Off is the default: memory is recalled at the prompt only. Has no effect when recall.enabled is off.',
             },
         }),
     }),

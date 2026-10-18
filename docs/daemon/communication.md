@@ -1,6 +1,6 @@
 # Memory injection and device ownership
 
-When a vault's daemon is on, Bismuth puts the vault's memory in front of your AI agents without being asked, and saves their conversations back as raw notes for the `dream` cron to consolidate. A small plugin of Claude Code hooks does this in the app's terminal tabs, and the visual chat does it in-process. Every session opens with one orientation block, the brain, holding who you are, a map of the vault and an index of the memory. Separately, when several devices share one daemon, a single owner device runs its sessions.
+With the daemon on and `daemon.recall.enabled` set, Bismuth puts the vault's memory in front of your AI agents without being asked; with `daemon.saveSessions` set, it saves their conversations back as raw notes for the `dream` cron to consolidate. A small plugin of Claude Code hooks does this in the app's terminal tabs, and the visual chat does it in-process. Every session opens with one orientation block, the brain, holding who you are, a map of the vault and an index of the memory. Separately, when several devices share one daemon, a single owner device runs its sessions.
 
 Memory reaches an agent inside a `<bismuth-memory>` block, labeled as read-only background from the vault's own store and kept apart from the agent's built-in memory. This is the prompt-time block for "who is going on the April climbing trip":
 
@@ -116,8 +116,8 @@ These `.settings` keys control injection. They apply on the next call.
 
 | Key | Default | Effect |
 |---|---|---|
-| `daemon.recall.enabled` | `true` | Master switch for every automatic injection. Off, agents see only what they ask for with `recall` |
-| `daemon.recall.midTurn` | `true` | Also recall after each batch of tool calls. Off, memory is recalled at the prompt only |
+| `daemon.recall.enabled` | `false` | Master switch for every automatic injection. Off, agents see only what they ask for with `recall`. |
+| `daemon.recall.midTurn` | `false` | Also recall after each batch of tool calls. Off, memory is recalled at the prompt only |
 
 These keys need `daemon.enabled`. [The settings reference](../settings/reference.md#daemon) has the full text.
 

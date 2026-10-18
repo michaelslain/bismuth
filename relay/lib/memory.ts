@@ -3,6 +3,7 @@
 // daemon is enabled for this vault). So memory is recalled into prompts + collected from
 // transcripts strictly for vault-scoped sessions — never globally, the way the old
 // ~/.claude/settings.json hooks did.
+import { dirname, join } from 'node:path'
 import {
     writeAutoNote,
     buildAutoNoteBody,
@@ -18,6 +19,25 @@ import {
 // trivial/cron-noise drops) lives in @bismuth/memory's pure `transcript` module so it's
 // unit-tested and shared with core's visual-chat capture. This file just reads the JSONL
 // and writes the note.
+
+/**
+ * Whether the vault's `.settings` has `daemon.saveSessions: true`. The vault root is two levels
+ * above the memory dir (`<vault>/.daemon/memory`). Absent, malformed or unreadable reads as off.
+ * Read at call time, so a toggle applies to the next session end without restarting the terminal.
+ */
+export async function saveSessionsEnabled(dir: string): Promise<boolean> {
+    try {
+        const raw = await Bun.file(
+            join(dirname(dirname(dir)), '.settings'),
+        ).text()
+        const doc = Bun.YAML.parse(raw) as {
+            daemon?: { saveSessions?: unknown }
+        } | null
+        return doc?.daemon?.saveSessions === true
+    } catch {
+        return false
+    }
+}
 
 /**
  * Save a finished session's conversation — both the user's prompts and Claude's responses,

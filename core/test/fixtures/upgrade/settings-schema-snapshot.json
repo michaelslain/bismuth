@@ -2349,6 +2349,13 @@
     "max": null,
     "required": false
   },
+  "daemon.dream": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "daemon.email": {
     "type": {
       "kind": "object"
@@ -2395,7 +2402,7 @@
   },
   "daemon.notifications": {
     "type": "boolean",
-    "default": true,
+    "default": false,
     "min": null,
     "max": null,
     "required": false
@@ -2411,14 +2418,21 @@
   },
   "daemon.recall.enabled": {
     "type": "boolean",
-    "default": true,
+    "default": false,
     "min": null,
     "max": null,
     "required": false
   },
   "daemon.recall.midTurn": {
     "type": "boolean",
-    "default": true,
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.saveSessions": {
+    "type": "boolean",
+    "default": false,
     "min": null,
     "max": null,
     "required": false

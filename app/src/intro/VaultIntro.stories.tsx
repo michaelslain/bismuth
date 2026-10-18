@@ -18,6 +18,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import VaultIntro from './VaultIntro'
 import { SLIDES } from './introSlides'
+import { applyLevel } from './introPrivacy'
 
 const meta = {
     title: 'Intro/VaultIntro',
@@ -75,7 +76,36 @@ export const PickAgentSome: Story = {
 export const PowerUps: Story = { args: { startAt: 'powerups' } }
 
 /** Slide 8 (daemon power-up on) — the daemon face idling over the empty name field. */
-export const Name: Story = { args: { startAt: 'name' } }
+export const Name: Story = {
+    args: { startAt: 'name', initialPowerups: ['daemon', 'cli'] },
+}
+
+/** Slide 9 (daemon power-up on) — the privacy slider over the seven switches, all off. */
+export const Privacy: Story = {
+    args: { startAt: 'privacy', initialPowerups: ['daemon', 'cli'] },
+    play: async ({ canvasElement }) => {
+        const slider = await within(canvasElement).findByRole('slider')
+        slider.focus()
+        await userEvent.keyboard('{ArrowRight}')
+        await waitFor(() => expect(slider.getAttribute('aria-valuetext')).toBe('recall'))
+        await expect(canvasElement.textContent).toContain('// privacy')
+    },
+}
+
+/** The privacy slide with the `full` stop applied: every switch on, the slider at `full`. */
+export const PrivacyFull: Story = {
+    args: {
+        startAt: 'privacy',
+        initialPowerups: ['daemon', 'cli'],
+        initialPrivacy: applyLevel('full'),
+    },
+}
+
+/** The privacy slide in the short window: the art box scrolls, the footer stays put. */
+export const PrivacyShortWindow: Story = {
+    args: { startAt: 'privacy', initialPowerups: ['daemon', 'cli'] },
+    decorators: [Box({ height: '640px' })],
+}
 
 /** Slide 9 (cli + mcp on), as it opens: `new vault` picked, no path field. */
 export const Obsidian: Story = { args: { startAt: 'obsidian' } }
@@ -194,7 +224,7 @@ export const ThemePaperPicked: Story = {
     args: { startAt: 'theme', initialTheme: 'paper' },
 }
 
-/** Slide 7 with the cli + mcp power-up switched off, then daemon toggled from the keyboard. */
+/** Slide 7 with the cli + mcp power-up switched off, then daemon toggled on from the keyboard. */
 export const PowerUpOff: Story = {
     args: { startAt: 'powerups' },
     play: async ({ canvasElement }) => {
@@ -202,6 +232,7 @@ export const PowerUpOff: Story = {
         const cli = canvas.getByRole('switch', { name: /cli \+ mcp/i })
         const daemon = canvas.getByRole('switch', { name: /daemon/i })
         await expect(cli.getAttribute('aria-checked')).toBe('true')
+        await expect(daemon.getAttribute('aria-checked')).toBe('false')
         await userEvent.click(cli)
         await waitFor(() =>
             expect(cli.getAttribute('aria-checked')).toBe('false'),
@@ -209,7 +240,7 @@ export const PowerUpOff: Story = {
         daemon.focus()
         await userEvent.keyboard(' ')
         await waitFor(() =>
-            expect(daemon.getAttribute('aria-checked')).toBe('false'),
+            expect(daemon.getAttribute('aria-checked')).toBe('true'),
         )
     },
 }
@@ -232,7 +263,7 @@ export const BeginBusy: Story = {
  *  body as one group. Walks every slide (both power-ups on, so all of them show) with the real next button (stopping before the last,
  *  which enters the vault). */
 export const Geometry: Story = {
-    args: { startAt: 'welcome' },
+    args: { startAt: 'welcome', initialPowerups: ['daemon', 'cli'] },
     // A 900px stage, over the 44rem short-window step: the art height is the full 24 rows whatever
     // the browser viewport is (the step reads this box, not the viewport).
     decorators: [Box({ height: '900px' })],

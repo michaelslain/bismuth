@@ -9,6 +9,10 @@ import { tmpdir } from 'node:os'
 import {
     loadCronJobs,
     loadLastFired,
+    loadRunning,
+    fireFileChangeCron,
+    recoverInterruptedCrons,
+    type FileChangeCronJob,
     normalizeLastFired,
     shouldCatchUp,
     shouldFire,
@@ -24,6 +28,8 @@ import {
     lastReportLine,
     notifyNewPages,
     notificationsEnabled,
+    dreamEnabled,
+    cronSwitchedOff,
     announcesNewPages,
     listPageSlugs,
     type FailureCause,
@@ -1057,8 +1063,9 @@ test('notifyNewPages: one notification per NEW page, titled from frontmatter els
     try {
         const pagesDir = join(root, 'pages')
         mkdirSync(pagesDir)
+        writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: true\n')
         writeFileSync(join(pagesDir, 'old.md'), '---\ntitle: "Old"\n---\nx')
-        const pctx = { pagesDir, name: 'm' } as unknown as VaultContext
+        const pctx = { pagesDir, name: 'm', root } as unknown as VaultContext
         const before = await listPageSlugs(pagesDir)
         const calls: [string, string][] = []
         const send = (t: string, b: string) => void calls.push([t, b])
@@ -1083,6 +1090,7 @@ test('notifyNewPages: a page is announced once across concurrent runs; another c
     try {
         const pagesDir = join(root, 'pages')
         mkdirSync(pagesDir)
+        writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: true\n')
         const pctx = {
             pagesDir,
             name: 'm',
@@ -1107,14 +1115,114 @@ test('notifyNewPages: a page is announced once across concurrent runs; another c
     }
 })
 
-test('notificationsEnabled: on unless the vault sets daemon.notifications: false', async () => {
+test('notificationsEnabled: on only for an explicit daemon.notifications: true', async () => {
     const root = mkdtempSync(join(tmpdir(), 'bismuth-notify-'))
     try {
-        expect(await notificationsEnabled(root)).toBe(true)
-        writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: true\n')
-        expect(await notificationsEnabled(root)).toBe(true)
+        expect(await notificationsEnabled(root)).toBe(false) // no .settings file
+        writeFileSync(join(root, '.settings'), 'daemon:\n  other: 1\n')
+        expect(await notificationsEnabled(root)).toBe(false) // absent key
+        writeFileSync(join(root, '.settings'), 'daemon: [unclosed\n  : : {')
+        expect(await notificationsEnabled(root)).toBe(false) // malformed
         writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: false\n')
         expect(await notificationsEnabled(root)).toBe(false)
+        writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: true\n')
+        expect(await notificationsEnabled(root)).toBe(true)
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('dream switch: the dream cron runs only with daemon.dream: true; other crons are unaffected', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
+    try {
+        expect(await dreamEnabled(root)).toBe(false)
+        expect(await cronSwitchedOff(root, { name: 'dream', file: 'dream' })).toBe(true)
+        expect(await cronSwitchedOff(root, { name: 'other', file: 'other' })).toBe(false)
+        writeFileSync(join(root, '.settings'), 'daemon:\n  dream: true\n')
+        expect(await cronSwitchedOff(root, { name: 'dream', file: 'dream' })).toBe(false)
+        expect(await cronSwitchedOff(root, { name: 'other', file: 'other' })).toBe(false)
+        writeFileSync(join(root, '.settings'), 'daemon:\n  dream: false\n')
+        expect(await cronSwitchedOff(root, { name: 'dream', file: 'dream' })).toBe(true)
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+function dreamJob(over: Partial<FileChangeCronJob> = {}): FileChangeCronJob {
+    return {
+        name: 'dream',
+        file: 'dream',
+        prompt: 'dream',
+        enabled: true,
+        notify: false,
+        timeout: 5,
+        incremental: false,
+        checkpointDirs: ['vault'],
+        on: 'file-change',
+        watch: 'a.md',
+        catchup: false,
+        ...over,
+    } as FileChangeCronJob
+}
+
+function switchCtx(root: string): VaultContext {
+    return {
+        root,
+        name: 'm',
+        cronsDir,
+        runningFile: join(root, 'running.json'),
+        lastFiredFile: join(root, 'last-fired.json'),
+    } as unknown as VaultContext
+}
+
+test('dream switch: daemon.dream true switches the gate off for both the file and a renamed job', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
+    try {
+        writeFileSync(join(root, '.settings'), 'daemon:\n  dream: true\n')
+        const job = dreamJob()
+        expect(await cronSwitchedOff(root, job)).toBe(false)
+        expect(await cronSwitchedOff(root, { ...job, name: 'other' })).toBe(
+            false,
+        )
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('dream switch: a file named dream stays switched off whatever its frontmatter name says', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
+    try {
+        expect(
+            await cronSwitchedOff(root, { name: 'other', file: 'dream' }),
+        ).toBe(true)
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('dream switch: fireFileChangeCron with no daemon.dream records nothing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
+    try {
+        const c = switchCtx(root)
+        await fireFileChangeCron(c, dreamJob(), ['a.md'])
+        expect((await loadRunning(c)).dream).toBeUndefined()
+        expect((await loadLastFired(c)).dream).toBeUndefined()
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
+
+test('dream switch: recovery clears a stale running entry for a switched-off dream', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
+    try {
+        const c = switchCtx(root)
+        cronFile('dream', 'name: dream\nschedule: 0 * * * *')
+        writeFileSync(
+            c.runningFile,
+            JSON.stringify({ dream: { startedAt: new Date().toISOString() } }),
+        )
+        await recoverInterruptedCrons(c)
+        expect((await loadRunning(c)).dream).toBeUndefined()
     } finally {
         rmSync(root, { recursive: true, force: true })
     }

@@ -137,7 +137,9 @@ export interface Settings {
         enabled: boolean // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
         // the daemon's NAME lives in .daemon/identity.md frontmatter, not in settings
         inboxRetentionDays: number // days a resolved daemon-inbox page stays listed before GC
-        notifications: boolean // desktop notification per new inbox page + per notify:true cron run (off: none for this vault)
+        notifications: boolean // desktop notification per new inbox page + per notify:true cron run (off by default: none for this vault)
+        saveSessions: boolean // save each finished agent session (Bismuth terminal) and in-app chat as a memory note (off by default)
+        dream: boolean // hourly cron folding changed notes and saved sessions into memory (off by default)
         backend: string // which agent CLI runs this vault's brain: "claude" (default) | "codex" — a REQUEST; resolveDaemonBackend gates it on the vault's visibility settings
         inheritUserMcp: boolean // daemon sessions also get the machine's own user-scope MCP servers + plugins (off: bismuth only)
         email: {

@@ -39,3 +39,19 @@
   align-items: flex-end;
   justify-content: center;
 }
+
+/* The privacy slide's art: the picker needs a width (it is a size container and collapses to zero
+   without one), so this box gives it the art box's full width, at the art height, and rests it on the copy below
+   like the power-ups cards. At the short
+   window the rows still fit the 16-row box; it scrolls only as a fallback, and the footer never moves. */
+.privacy-room {
+  width: 100%;
+  height: var(--intro-art-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe flex-end;
+  padding-bottom: var(--sp-7);
+  overflow-y: auto;
+  overflow-x: hidden;
+}

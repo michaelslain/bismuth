@@ -11,6 +11,7 @@ export type SlideKey =
     | 'pickagent'
     | 'powerups'
     | 'name'
+    | 'privacy'
     | 'obsidian'
     | 'chat'
     | 'settings'
@@ -21,6 +22,7 @@ export type SlideExtra =
     | 'pickagent'
     | 'powerups'
     | 'name'
+    | 'privacy'
     | 'obsidian'
     | 'samples'
     | 'cta'
@@ -99,6 +101,14 @@ export const SLIDES: Slide[] = [
         title: 'Name your daemon',
         body: 'It answers to this name in chat. Rename it anytime in .daemon/identity.md.',
         extra: 'name',
+        requires: 'daemon',
+    },
+    {
+        key: 'privacy',
+        label: 'privacy',
+        title: 'Pick your privacy',
+        body: 'Everything starts off. Slide toward full to let your agents and the daemon do more, or flip each switch yourself. Change any of them later in .settings.',
+        extra: 'privacy',
         requires: 'daemon',
     },
     {
@@ -187,9 +197,10 @@ export function visibleSlides(
     return slides.filter(s => !s.requires || selected.includes(s.requires))
 }
 
-/** All on by default. Re-running their setup is idempotent, so it is safe to leave them checked
- *  even when already installed (CLI+MCP re-syncs on boot, daemon auto-updates on launch). */
-export const DEFAULT_POWERUPS: string[] = ['daemon', 'cli']
+/** Only cli + mcp is on by default: the daemon reads and writes memory in the background, so it
+ *  starts unchecked and the user opts in. Re-running a setup is idempotent, so leaving cli + mcp
+ *  checked when it is already installed is safe. */
+export const DEFAULT_POWERUPS: string[] = ['cli']
 
 /** Selected ids → command-palette ids in POWER_UPS order; an unknown id is dropped. */
 export function powerUpCommands(selected: string[]): string[] {

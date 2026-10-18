@@ -4,6 +4,7 @@ import {
     FIRST_RUN_CONVERT_KEY,
     FIRST_RUN_DAEMON_NAME_KEY,
     FIRST_RUN_POWERUPS_KEY,
+    FIRST_RUN_PRIVACY_KEY,
     THEME_VARS_KEY,
 } from '../storageKeys'
 import {
@@ -12,6 +13,7 @@ import {
     type EnterVaultDeps,
 } from './introEnterVault'
 import { introThemeVars } from './introTheme'
+import { DEFAULT_PRIVACY, applyLevel, privacyWrites } from './introPrivacy'
 
 const choice = { theme: 'paper' as const, icon: 'hopper-crystal', powerups: ['cli', 'daemon', 'x'], agent: 'free-agent' }
 
@@ -66,13 +68,14 @@ describe('enterVault', () => {
     const argsOf = (calls: { invoke: unknown[] }) =>
         (calls.invoke[0] as [string, Record<string, unknown>])[1]
 
-    it('prod + picked: hands the three keys to Rust, mirrors them to storage, opened', async () => {
+    it('prod + picked: hands the four keys to Rust, mirrors them to storage, opened', async () => {
         const { calls, deps } = rig()
         expect(await enterVault(choice, deps)).toBe('opened')
         const expected = {
             [FIRST_RUN_POWERUPS_KEY]: JSON.stringify(['daemon-setup', 'bismuth-install']),
             [FIRST_RUN_AGENT_KEY]: 'free-agent',
             [THEME_VARS_KEY]: JSON.stringify(introThemeVars('paper')),
+            [FIRST_RUN_PRIVACY_KEY]: JSON.stringify(privacyWrites(DEFAULT_PRIVACY)),
         }
         const args = argsOf(calls)
         expect(args.theme).toBe('paper')
@@ -86,7 +89,11 @@ describe('enterVault', () => {
     it('prod: clears name and conversion keys left by an earlier attempt', async () => {
         const { calls, deps } = rig()
         await enterVault(choice, deps)
-        expect(calls.removed).toEqual([FIRST_RUN_DAEMON_NAME_KEY, FIRST_RUN_CONVERT_KEY])
+        expect(calls.removed).toEqual([
+            FIRST_RUN_DAEMON_NAME_KEY,
+            FIRST_RUN_PRIVACY_KEY,
+            FIRST_RUN_CONVERT_KEY,
+        ])
     })
 
     it('prod: hands over a typed daemon name, and the Obsidian source for Rust to resolve', async () => {
@@ -100,6 +107,20 @@ describe('enterVault', () => {
         // Rust resolves the source and adds the conversion job; the app never writes it.
         expect(args.convertFrom).toBe('/v/Notes')
         expect(handoffOf(args)[FIRST_RUN_CONVERT_KEY]).toBeUndefined()
+    })
+
+    it('prod: hands over the privacy writes only with the daemon power-up on', async () => {
+        const privacy = applyLevel('assist')
+        const { calls, deps } = rig()
+        await enterVault({ ...choice, privacy }, deps)
+        const raw = handoffOf(argsOf(calls))[FIRST_RUN_PRIVACY_KEY]
+        expect(JSON.parse(raw)).toEqual(privacyWrites(privacy))
+        expect(JSON.parse(raw)).toHaveLength(7)
+        for (const powerups of [['cli'], []]) {
+            const r = rig()
+            await enterVault({ ...choice, powerups, privacy }, r.deps)
+            expect(handoffOf(argsOf(r.calls))[FIRST_RUN_PRIVACY_KEY]).toBeUndefined()
+        }
     })
 
     it('prod: the default or a blank name hands over no name key', async () => {
@@ -193,7 +214,12 @@ describe('enterVault', () => {
             },
         })
         expect(await enterVault(choice, deps)).toBe('opened')
-        expect(attempted).toEqual([FIRST_RUN_POWERUPS_KEY, FIRST_RUN_AGENT_KEY, THEME_VARS_KEY])
+        expect(attempted).toEqual([
+            FIRST_RUN_POWERUPS_KEY,
+            FIRST_RUN_AGENT_KEY,
+            THEME_VARS_KEY,
+            FIRST_RUN_PRIVACY_KEY,
+        ])
         expect(calls.invoke.length).toBe(1)
     })
 

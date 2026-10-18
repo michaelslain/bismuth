@@ -40,6 +40,7 @@ import {
     type DenyEntry,
 } from './visibility'
 import { readDaemonSessionIds } from './daemon'
+import { readSettings } from './settings'
 import {
     localUnreachableMessage,
     resolveLocalSpawn,
@@ -2661,7 +2662,8 @@ export function extractEditorContextPaths(text: string): string[] {
  * in-app twin of the relay SessionEnd hook, sharing the same pure transcript pipeline
  * (@bismuth/memory), so the dream cron consolidates visual chats too. Fire-and-forget,
  * latched by `captured`, gated on the daemon being enabled (memoryDir set) and the session
- * having done real work (>=1 completed turn). Never blocks or fails teardown.
+ * having done real work (>=1 completed turn) and on `daemon.saveSessions` being true in the vault's
+ * `.settings` (absent = off). Never blocks or fails teardown.
  *
  * Visibility gate: skips the WHOLE capture if any file referenced in the session's own
  * <editor-context> preambles is restricted from the daemon (isVisibleToDaemon false — i.e.
@@ -2671,15 +2673,27 @@ export function extractEditorContextPaths(text: string): string[] {
  * the load-bearing enforcement point for that tier, not a fast-follow. Coarse (whole-session, not
  * per-turn) by design: simpler and fails toward NOT capturing rather than partially leaking.
  */
-function captureToMemory(s: ChatSession): void {
-    if (s.private) return // a private conversation is never written to memory
-    if (!s.memoryDir || !s.sessionId || s.turnCount < 1 || s.captured) return
+export function captureToMemory(
+    s: Pick<
+        ChatSession,
+        'memoryDir' | 'sessionId' | 'turnCount' | 'captured' | 'cwd' | 'private'
+    >,
+    getMessages: typeof getSessionMessages = getSessionMessages,
+): Promise<void> {
+    if (s.private) return Promise.resolve() // a private conversation is never written to memory
+    if (!s.memoryDir || !s.sessionId || s.turnCount < 1 || s.captured)
+        return Promise.resolve()
     s.captured = true
     const sessionId = s.sessionId
     const { cwd, memoryDir } = s
-    void (async () => {
+    return (async () => {
         try {
-            const messages = await getSessionMessages(sessionId, { dir: cwd })
+            // `daemon.saveSessions` is read at this moment, so a toggle applies to the next chat end.
+            const saveSessions = (await readSettings(cwd))?.data?.daemon as
+                | { saveSessions?: unknown }
+                | undefined
+            if (saveSessions?.saveSessions !== true) return
+            const messages = await getMessages(sessionId, { dir: cwd })
             const entries = messages as TranscriptEntry[]
             // denyPathSet carries BOTH the vault-relative form (matches editor-context paths + a
             // relative tool file_path) AND the canonical-absolute form (matches the SDK's own absolute

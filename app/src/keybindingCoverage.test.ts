@@ -55,6 +55,10 @@ const ALLOWED_FILES: AllowEntry[] = [
         reason: 'ArrowDown/Enter/Space open the closed trigger (mirrors native <select>); once open, nav is delegated to ui/popover/createMenuNav.ts — the same list-navigation spatial contract as every other menu',
     },
     {
+        file: 'ui/stepSliderLogic.ts',
+        reason: "ArrowLeft/ArrowRight/Home/End step the StepSlider's stops — a slider's spatial contract (WAI-ARIA slider pattern), not a named command",
+    },
+    {
         file: 'ui/gallery/SymbolGallery.tsx',
         reason: 'grid arrow-key navigation + Enter-to-pick inside the symbol gallery — the spatial contract of a gallery grid',
     },

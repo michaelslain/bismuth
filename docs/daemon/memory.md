@@ -116,6 +116,17 @@ Add `visibility: hidden` or `visibility: chat-only` to a note's frontmatter. A r
 
 The check fails closed. The strictest `visibility` line in the frontmatter wins, a value the parser cannot read counts as `hidden`, and a file that opens a `---` fence and never closes it counts as `hidden`. A restricted memory note is a per-note setting; there is no folder cascade inside the memory folder. [Visibility](../vault/visibility.md) covers the vault-wide controls.
 
+## Save sessions
+
+`daemon.saveSessions` in `.settings` controls whether finished conversations are saved as memory. It is off by default. When it is `true`, each agent session that ends in a Bismuth terminal tab, and each in-app chat that ends, is written as an `auto-*` note holding your prompts and the replies. Sessions that are trivial or fired by a cron are skipped, and a chat that opened a file you restricted from the daemon is not saved. When it is `false` or absent, nothing is saved and no `auto-*` note appears.
+
+```yaml
+daemon:
+  saveSessions: true
+```
+
+The key is read when a session ends, so flipping it applies to the next session end without restarting a terminal tab or the app. Ending a session still removes it from the agents graph either way.
+
 ## How `dream` maintains the graph
 
 The seeded `dream` cron works the memory health report worst first, up to 12 items per run and again each hour while items remain, then folds your changed notes and the session transcripts that your terminal sessions and chats save as `auto-*` notes into a small set of canonical notes. It writes memory only through `remember` and `forget`, and files an inbox page only when something needs you. [Crons and processes](crons-and-processes.md#seeded-crons-and-files) describes the full run.
@@ -155,9 +166,9 @@ The memory folder is its own git repository, separate from the vault's. While th
 | `rank.ts` | BM25 ranking for injection |
 | `pack.ts`, `recall.ts` | Cut ranked notes into the bounded `<bismuth-memory>` block; `pack.ts` also holds `formatProfile` (the profile, cut at 1,500 characters on a line boundary) and the index order (hubs first, then in-links, recency, type) |
 | `health.ts` | `brainHealth` computes the health report items and `formatBrainHealth` renders them as a numbered list capped at 3,000 characters under a header carrying the item total; the daemon fills `{{brainReport}}` in a cron prompt with it (`daemon/src/daemon/brainReport.ts`) |
-| `transcript.ts` | Turn a finished conversation into an `auto-*` note |
+| `transcript.ts` | Turn a finished conversation into an `auto-*` note; `relay/lib/memory.ts` and `core/src/chat.ts` call it only when `daemon.saveSessions` is `true` |
 | `resultBudget.ts` | Order `recall` matches and split them into whole notes and pointers at the result budget |
 | `sessionHistory.ts` | Parse a Claude Code session log for `bismuth history`, and apply the same budget to its sessions |
 | `search.ts` | `searchMemory`, a ranked search that returns whole notes (up to 10) above the prompt-mode score floor |
 
-Source: `memory/src/{graph,query,rank,pack,recall,search,health,noteCache,transcript,resultBudget,sessionHistory}.ts`, `daemon/src/daemon/{brainReport,defaultCrons}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,backup}.ts`
+Source: `memory/src/{graph,query,rank,pack,recall,search,health,noteCache,transcript,resultBudget,sessionHistory}.ts`, `daemon/src/daemon/{brainReport,defaultCrons}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,backup,chat}.ts`, `relay/lib/memory.ts`

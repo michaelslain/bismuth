@@ -6,6 +6,7 @@ import {
     FIRST_RUN_CONVERT_KEY,
     FIRST_RUN_DAEMON_NAME_KEY,
     FIRST_RUN_POWERUPS_KEY,
+    FIRST_RUN_PRIVACY_KEY,
 } from '../storageKeys'
 
 type FreeAgentStatusCb = NonNullable<
@@ -67,8 +68,40 @@ export function runFirstRunHandoff(deps: FirstRunHandoffDeps): void {
     const delayMs = deps.delayMs ?? 2500
     const agentReady = handoffAgent(deps, delayMs)
     const mcpReady = handoffPowerUps(deps, delayMs)
+    handoffPrivacy(deps)
     handoffDaemonName(deps, delayMs)
     handoffConvert(deps, delayMs, Promise.all([agentReady, mcpReady]))
+}
+
+// The privacy slide's switches: `{path, value}[]` JSON, written to .settings one at a time after the
+// daemon.enabled write above. Malformed JSON or a malformed entry writes nothing.
+function handoffPrivacy(deps: FirstRunHandoffDeps): void {
+    const { api, storage, pushToast } = deps
+    const raw = storage.getItem(FIRST_RUN_PRIVACY_KEY)
+    if (raw === null) return
+    storage.removeItem(FIRST_RUN_PRIVACY_KEY)
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(raw)
+    } catch {
+        return
+    }
+    if (!Array.isArray(parsed)) return
+    const writes = parsed.filter(
+        (w): w is { path: string[]; value: boolean } =>
+            Array.isArray(w?.path) &&
+            w.path.length > 0 &&
+            w.path.every((k: unknown) => typeof k === 'string') &&
+            typeof w.value === 'boolean',
+    )
+    void writes
+        .reduce(
+            (chain, w) => chain.then(() => api.setSetting(w.path, w.value)),
+            Promise.resolve<unknown>(undefined),
+        )
+        .catch(e =>
+            pushToast(`couldn't save your privacy choices: ${(e as Error).message}`),
+        )
 }
 
 // The name typed on the intro's "Name your daemon" slide. The route creates identity.md when the

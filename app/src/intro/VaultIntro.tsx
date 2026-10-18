@@ -45,6 +45,8 @@ import IntroFooter from './IntroFooter'
 import IntroHero from './IntroHero'
 import IntroWindow from './IntroWindow'
 import PowerUpList from './PowerUpList'
+import PrivacyPicker from './PrivacyPicker'
+import { DEFAULT_PRIVACY, type PrivacyValues } from './introPrivacy'
 import DaemonNameField from './DaemonNameField'
 import ObsidianSourceField, { type VaultStart } from './ObsidianSourceField'
 import SettingsSamples from './SettingsSamples'
@@ -99,6 +101,8 @@ export type VaultIntroProps = {
     /** Seeds the new vault / from obsidian choice (default: `from obsidian` when a source is
      *  seeded, else `new vault`). Lets a story show `from obsidian` with nothing picked. */
     initialVaultStart?: VaultStart
+    /** Seeds the privacy switches (real first run: DEFAULT_PRIVACY, everything off). */
+    initialPrivacy?: PrivacyValues
 }
 
 /** Ask the Tauri shell which agent CLIs are installed (the intro has no backend to ask). Outside
@@ -150,6 +154,9 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     const slides = createMemo(() => visibleSlides(powerups()))
     const [index, setIndex] = createSignal(
         startIndex(slides(), props.startAt),
+    )
+    const [privacy, setPrivacy] = createSignal<PrivacyValues>(
+        props.initialPrivacy ?? DEFAULT_PRIVACY,
     )
     const [daemonName, setDaemonName] = createSignal('')
     const [obsidianSource, setObsidianSource] = createSignal(
@@ -214,6 +221,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                     agent: agent(),
                     daemonName: daemonName(),
                     obsidianSource: convertSource(),
+                    privacy: privacy(),
                 },
                 setEnterError,
             )
@@ -291,6 +299,14 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                         onInput={setDaemonName}
                                         onSubmit={() => move('next')}
                                     />
+                                </Show>
+                                <Show when={s.extra === 'privacy'}>
+                                    <div class={styles['privacy-room']}>
+                                        <PrivacyPicker
+                                            values={privacy()}
+                                            onChange={setPrivacy}
+                                        />
+                                    </div>
                                 </Show>
                                 <Show when={s.extra === 'obsidian'}>
                                     <ObsidianSourceField

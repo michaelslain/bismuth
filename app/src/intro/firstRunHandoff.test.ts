@@ -10,6 +10,7 @@ import {
     FIRST_RUN_CONVERT_KEY,
     FIRST_RUN_DAEMON_NAME_KEY,
     FIRST_RUN_POWERUPS_KEY,
+    FIRST_RUN_PRIVACY_KEY,
 } from '../storageKeys'
 
 const fakeStorage = (init: Record<string, string> = {}) => {
@@ -210,6 +211,39 @@ describe('runFirstRunHandoff', () => {
         await settle()
         expect(r.drafts).toEqual([])
         expect(r.storage.has(FIRST_RUN_CONVERT_KEY)).toBe(false)
+    })
+})
+
+describe('runFirstRunHandoff privacy', () => {
+    const writes = [
+        { path: ['daemon', 'recall', 'enabled'], value: true },
+        { path: ['daemon', 'dream'], value: false },
+    ]
+    test('writes each entry once after daemon.enabled and removes the key', async () => {
+        const r = run({
+            [FIRST_RUN_POWERUPS_KEY]: JSON.stringify(['daemon-setup']),
+            [FIRST_RUN_PRIVACY_KEY]: JSON.stringify(writes),
+        })
+        await settle()
+        expect(r.storage.has(FIRST_RUN_PRIVACY_KEY)).toBe(false)
+        expect(r.settings).toEqual([
+            [['daemon', 'enabled'], true],
+            [writes[0].path, true],
+            [writes[1].path, false],
+        ])
+    })
+    test('malformed json writes nothing and still removes the key', async () => {
+        for (const bad of ['{nope', '{"a":1}', '[{"path":"x","value":true}]']) {
+            const r = run({ [FIRST_RUN_PRIVACY_KEY]: bad })
+            await settle()
+            expect(r.storage.has(FIRST_RUN_PRIVACY_KEY)).toBe(false)
+            expect(r.settings).toEqual([])
+        }
+    })
+    test('an absent key writes nothing', async () => {
+        const r = run({})
+        await settle()
+        expect(r.settings).toEqual([])
     })
 })
 

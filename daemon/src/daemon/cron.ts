@@ -1171,17 +1171,43 @@ export async function pageNoticeTitle(
     }
 }
 
-/** settings.daemon.notifications, read at send time so a toggle reaches the very next notice.
- *  Absent, malformed or unreadable reads as on, the schema default. */
-export async function notificationsEnabled(root: string): Promise<boolean> {
+/** One `daemon.<key>` switch, read straight from the vault's `.settings` at call time so a toggle
+ *  reaches the very next use. Only an explicit `true` is on: absent, malformed or unreadable is off. */
+async function daemonSwitchOn(
+    root: string,
+    key: 'notifications' | 'dream',
+): Promise<boolean> {
     try {
         const doc = (await readVaultSettingsDoc(root)) as {
-            daemon?: { notifications?: unknown }
+            daemon?: Record<string, unknown>
         } | null
-        return doc?.daemon?.notifications !== false
+        return doc?.daemon?.[key] === true
     } catch {
-        return true
+        return false
     }
+}
+
+/** settings.daemon.notifications, read at send time so a toggle reaches the very next notice. */
+export async function notificationsEnabled(root: string): Promise<boolean> {
+    return daemonSwitchOn(root, 'notifications')
+}
+
+/** settings.daemon.dream, read at each fire. The seeded `dream` cron runs only while it is `true`. */
+export async function dreamEnabled(root: string): Promise<boolean> {
+    return daemonSwitchOn(root, 'dream')
+}
+
+/** True when a vault-level switch holds this cron off. Only the seeded `dream` cron has one; its own
+ *  `enabled:` frontmatter still applies on top. */
+export async function cronSwitchedOff(
+    root: string,
+    job: { name: string; file: string },
+): Promise<boolean> {
+    // Matched by file too: renaming `name:` in dream.md must not bypass the switch.
+    return (
+        (job.file === 'dream' || job.name === 'dream') &&
+        !(await dreamEnabled(root))
+    )
 }
 
 /** {@link notify}, unless this vault turned desktop notifications off. */
@@ -1255,6 +1281,7 @@ async function fireJob(
     opts: { reason: FireReason; changedPaths?: string[] },
 ): Promise<void> {
     const tag = `[cron:${ctx.name}] "${job.name}"`
+    if (await cronSwitchedOff(ctx.root, job)) return
     const triggerContext = opts.changedPaths?.join(', ')
     let promptOverride: string | undefined
     let checkpoint: IncrementalRunPlan | undefined
@@ -1576,11 +1603,16 @@ export async function recoverInterruptedCrons(
 
     for (const name of names) {
         const job = jobMap.get(name)
-        if (job && job.enabled && !runningJobs.has(jobKey(ctx, job.file))) {
+        if (
+            job &&
+            job.enabled &&
+            !(await cronSwitchedOff(ctx.root, job)) &&
+            !runningJobs.has(jobKey(ctx, job.file))
+        ) {
             // Await fireJob to ensure .running.json + in-memory state are set before continuing
             await fireJob(ctx, job, lastFired, { reason: 'recovery' })
         } else {
-            // Job no longer exists or is disabled — clean up stale entry
+            // Job no longer exists, is disabled or switched off — clean up stale entry
             await markDone(ctx, name)
         }
     }

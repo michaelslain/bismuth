@@ -286,11 +286,13 @@ When `enabled` is off the daemon is dormant: its state stays on disk and the `.d
 |---|---|---|---|---|
 | `enabled` | boolean | `false` | | Master switch for this vault's daemon. The first-run intro sets it. |
 | `inboxRetentionDays` | number | `7` | 1 to 90 | Days a resolved inbox page (sent, discarded or failed) stays listed. |
-| `notifications` | boolean | `true` | | A desktop notification per new inbox page and per `notify: true` cron run. On macOS it shows Bismuth's name and icon. |
+| `notifications` | boolean | `false` | | A desktop notification per new inbox page and per `notify: true` cron run. On macOS it shows Bismuth's name and icon. |
+| `saveSessions` | boolean | `false` | | Save each finished agent session from a Bismuth terminal, and each in-app chat, as a memory note. Needs `daemon.enabled`. |
+| `dream` | boolean | `false` | | The hourly cron that folds changed notes and saved sessions into memory. Needs `daemon.enabled`. |
 | `backend` | enum | `claude` | `claude`, `codex` | Agent CLI that runs the daemon's brain. |
 | `inheritUserMcp` | boolean | `false` | | Let daemon sessions use the MCP servers and plugins of your own `claude` CLI. |
-| `recall.enabled` | boolean | `true` | | Master switch for automatic memory injection into agent sessions. Needs `daemon.enabled`. |
-| `recall.midTurn` | boolean | `true` | | Also recall memory once per tool batch inside a long turn. |
+| `recall.enabled` | boolean | `false` | | Master switch for automatic memory injection into agent sessions. Needs `daemon.enabled`. |
+| `recall.midTurn` | boolean | `false` | | Also recall memory once per tool batch inside a long turn. |
 | `email.enabled` | boolean | `false` | | Mail this vault's new inbox pages to you; a reply naming a button presses it. Needs `daemon.enabled` and `~/.bismuth/email.json`. |
 | `email.address` | string | `''` | | Fresh mail from you to this address becomes a request page. Empty: only replies are read. |
 

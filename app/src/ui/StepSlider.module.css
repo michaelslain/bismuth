@@ -1,0 +1,15 @@
+/* StepSlider: one centred line on a fixed pitch. Each .stop is a column (marker over label) of
+   equal width, so markers sit evenly whatever the labels say. .track is the line drawn from the
+   previous marker to this one, inside this stop; .reached fills it in accent up to the selection.
+   The trailing .custom slot (no track into it) is always laid out and lights up when no stop matches,
+   so nothing moves when the state turns custom. */
+.slider { display: grid; grid-auto-flow: column; grid-auto-columns: var(--stop-w); justify-content: center; --stop-w: calc(15 * var(--cell-w)); position: relative; width: max-content; max-width: 100%; user-select: none; touch-action: none; cursor: pointer; }
+.slider:focus { outline: none; }
+.slider:focus-visible .name[data-on] { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 0.25em; }
+.stop { position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }
+.marker { line-height: 1; }
+.name { line-height: var(--lh-tight); white-space: nowrap; }
+.name[data-on] { font-weight: var(--fw-medium); }
+.track { position: absolute; top: 0.5em; left: calc(-50% + var(--sp-5)); right: calc(50% + var(--sp-5)); height: 0; border-top: 1px solid var(--faint); }
+.reached { border-top-color: var(--accent); }
+.custom { margin-left: var(--sp-7); cursor: default; }

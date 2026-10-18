@@ -191,6 +191,7 @@ test('the index rebuilds only when a note changes, with no re-read otherwise', a
 
 test('POST /memory/recall: malformed body 400, valid body 200 JSON', async () => {
     const { vault, memory } = await makeSampleVault()
+    writeFileSync(join(vault, '.settings'), 'daemon:\n  recall:\n    enabled: true\n')
     const server = createServer({ vault, memory, port: 0 })
     const post = (body: unknown) =>
         fetch(`http://localhost:${server.port}/memory/recall`, {
@@ -754,4 +755,20 @@ test('readRecallSettingsSync: semantic follows embeddings.enabled, not daemon.re
     expect(read('embeddings:\n  enabled: true\n')).toBe(true)
     expect(read('embeddings:\n  enabled: false\n')).toBe(false)
     expect(read('daemon:\n  recall:\n    semantic: true\n')).toBe(false)
+})
+
+test('readRecallSettingsSync: enabled and midTurn default off, an explicit true reads true', () => {
+    const vault = tempDir('recall-defaults-')
+    mkdirSync(vault, { recursive: true })
+    const read = (body?: string) => {
+        if (body !== undefined) writeFileSync(join(vault, '.settings'), body)
+        const { enabled, midTurn } = readRecallSettingsSync(vault)
+        return { enabled, midTurn }
+    }
+    const off = { enabled: false, midTurn: false }
+    expect(read()).toEqual(off)
+    expect(read('daemon:\n  enabled: true\n')).toEqual(off)
+    expect(read('daemon: [unclosed\n  recall: {{')).toEqual(off)
+    expect(read('daemon:\n  recall:\n    enabled: true\n')).toEqual({ enabled: true, midTurn: false })
+    expect(read('daemon:\n  recall:\n    enabled: true\n    midTurn: true\n')).toEqual({ enabled: true, midTurn: true })
 })

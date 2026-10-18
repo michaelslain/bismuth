@@ -137,8 +137,8 @@ const LEDGER_IDLE_MS = 6 * 60 * 60 * 1000
 const TRANSCRIPT_TAIL_BYTES = 256 * 1024
 
 export const RECALL_SETTINGS_DEFAULTS: RecallSettings = {
-    enabled: true,
-    midTurn: true,
+    enabled: false,
+    midTurn: false,
     semantic: false,
 }
 

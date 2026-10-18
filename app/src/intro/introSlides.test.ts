@@ -13,7 +13,7 @@ import {
 } from './introSlides'
 
 describe('SLIDES', () => {
-    it('has the twelve slides in order', () => {
+    it('has the thirteen slides in order', () => {
         expect(SLIDES.map(s => s.key)).toEqual([
             'welcome',
             'theme',
@@ -23,6 +23,7 @@ describe('SLIDES', () => {
             'pickagent',
             'powerups',
             'name',
+            'privacy',
             'obsidian',
             'chat',
             'settings',
@@ -46,6 +47,8 @@ describe('SLIDES', () => {
         expect(by.powerups.extra).toBe('powerups')
         expect(by.begin.extra).toBe('cta')
         expect(by.name.extra).toBe('name')
+        expect(by.privacy.extra).toBe('privacy')
+        expect(by.privacy.requires).toBe('daemon')
         expect(by.obsidian.extra).toBe('obsidian')
         expect(by.chat.hero).toBe('agents')
         expect(by.settings.extra).toBe('samples')
@@ -93,6 +96,11 @@ describe('SLIDES', () => {
                 'It answers to this name in chat. Rename it anytime in .daemon/identity.md.',
             ],
             [
+                'privacy',
+                'Pick your privacy',
+                'Everything starts off. Slide toward full to let your agents and the daemon do more, or flip each switch yourself. Change any of them later in .settings.',
+            ],
+            [
                 'obsidian',
                 'Coming from Obsidian?',
                 'Pick your Obsidian vault and Bismuth opens a converted copy beside it. Chat does the conversion through the Bismuth MCP and never touches the original.',
@@ -124,6 +132,7 @@ describe('SLIDES', () => {
             'agent',
             'power-ups',
             'name',
+            'privacy',
             'obsidian',
             'chat',
             'settings',
@@ -140,6 +149,7 @@ describe('SLIDES', () => {
             'Pick an agent',
             'Optional power-ups',
             'Name your daemon',
+            'Pick your privacy',
             'Coming from Obsidian?',
             'Ask chat anything',
             'Settings are a file',
@@ -177,8 +187,8 @@ describe('slideBody', () => {
 })
 
 describe('power-ups', () => {
-    it('defaults to both on', () => {
-        expect(DEFAULT_POWERUPS).toEqual(['daemon', 'cli'])
+    it('defaults to cli + mcp on only', () => {
+        expect(DEFAULT_POWERUPS).toEqual(['cli'])
         expect(POWER_UPS.map(p => p.id)).toEqual(['daemon', 'cli'])
         expect(POWER_UPS.map(p => p.name)).toEqual(['daemon', 'cli + mcp'])
     })
@@ -203,6 +213,12 @@ describe('visibleSlides', () => {
     it('drops the name slide without the daemon', () => {
         expect(keys(['cli'])).not.toContain('name')
         expect(keys(['cli'])).toContain('obsidian')
+    })
+    it('places privacy right after name, and drops it without the daemon', () => {
+        const k = keys(['daemon', 'cli'])
+        expect(k[k.indexOf('name') + 1]).toBe('privacy')
+        expect(keys(['cli'])).not.toContain('privacy')
+        expect(keys(['daemon'])).toContain('privacy')
     })
     it('drops the obsidian and chat slides without cli + mcp', () => {
         const k = keys(['daemon'])

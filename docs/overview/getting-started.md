@@ -10,11 +10,12 @@ The first launch shows a short intro, then asks you to pick a folder. That folde
 
 1. Page through the intro with the Right and Left arrow keys. Press Escape to jump to the last slide.
 2. On the theme slide, pick a palette. The choice is saved to the new vault and changeable later.
-3. On the power-ups slide, leave the `daemon` and `cli + mcp` boxes checked or clear them. Both can be set up later from the command palette. The slides after it depend on this choice: the daemon's name slide shows only with `daemon` checked, and the Obsidian and chat slides only with `cli + mcp` checked.
+3. On the power-ups slide, `cli + mcp` starts checked and `daemon` unchecked; check or clear either. Both can be set up later from the command palette. The slides after it depend on this choice: the daemon's name and privacy slides show only with `daemon` checked, and the Obsidian and chat slides only with `cli + mcp` checked.
 4. On the name slide, type a name for the daemon, or leave it blank to keep `daemon`.
-5. On the Obsidian slide, keep **new vault** to start fresh, or pick **from obsidian** to bring an Obsidian vault and type or browse to it. The line under the field names the converted vault, a new folder beside the original called `<name>-bismuth`.
-6. On the last slide, click **enter your vault**, or **convert and open** when **from obsidian** is picked. Then there is no folder dialog: the app opens `<name>-bismuth`, and a chat tab converts the Obsidian vault into it through the Bismuth MCP. The original is never changed. With **from obsidian** picked and no vault set, **convert and open** stays disabled until you set one or switch back to **new vault**.
-7. With **new vault**, **enter your vault** opens the folder dialog. In it, pick an empty folder, create one, or choose an existing folder of markdown notes, and confirm.
+5. On the privacy slide, every switch starts off: no memory is added to agent prompts, no session is saved, and the daemon does nothing on its own. Move the slider toward `full`, or flip single switches, to let agents and the daemon do more. The choices are written to the new vault's `.settings`, where each one can be changed later.
+6. On the Obsidian slide, keep **new vault** to start fresh, or pick **from obsidian** to bring an Obsidian vault and type or browse to it. The line under the field names the converted vault, a new folder beside the original called `<name>-bismuth`.
+7. On the last slide, click **enter your vault**, or **convert and open** when **from obsidian** is picked. Then there is no folder dialog: the app opens `<name>-bismuth`, and a chat tab converts the Obsidian vault into it through the Bismuth MCP. The original is never changed. With **from obsidian** picked and no vault set, **convert and open** stays disabled until you set one or switch back to **new vault**.
+8. With **new vault**, **enter your vault** opens the folder dialog. In it, pick an empty folder, create one, or choose an existing folder of markdown notes, and confirm.
 
 The app relaunches into the vault and opens a graph tab. For an empty folder the graph is empty. The intro appears once per machine; later launches reopen your last vault.
 
