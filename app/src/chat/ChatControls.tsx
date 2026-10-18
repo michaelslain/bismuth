@@ -152,7 +152,7 @@ const Actions: Component<{
             {/* The daemon page's hand-off: its conversation moves to its own chat tab. Icon only
                 (`[↗]`, named by its tooltip) — a secondary action beside the two worded ones. Only a
                 host that passes `onOpenInChat` gets it, and only once there is a conversation to
-                move; disabled while a turn streams, whose tail the move would cut off. */}
+                move. A turn in flight moves with it and keeps streaming in the new tab. */}
             <Show when={props.openInChat}>
                 {open => (
                     <Text
@@ -165,7 +165,6 @@ const Actions: Component<{
                             icon="ExternalLink"
                             label="open in chat"
                             data-testid="chat-open-in-chat"
-                            disabled={open().disabled}
                             onClick={open().onClick}
                         />
                     </Text>
@@ -206,7 +205,8 @@ const Actions: Component<{
                         props.session.setPrivate(on)
                         // Confirms the click: what happens to this conversation when it ends. Each
                         // click replaces the last one's toast, so quick flips never stack.
-                        if (privateToast !== undefined) dismissToast(privateToast)
+                        if (privateToast !== undefined)
+                            dismissToast(privateToast)
                         privateToast = pushToast(
                             on
                                 ? 'Private: this conversation is erased when it ends'
@@ -227,7 +227,7 @@ const Actions: Component<{
 }
 
 /** The the `[↗]` open-in-chat icon action's state, built from the live session. */
-type OpenInChat = { onClick: () => void; disabled: boolean }
+type OpenInChat = { onClick: () => void }
 
 export type ChatControlsProps = {
     session: ChatSession | undefined
@@ -303,14 +303,8 @@ function buildDisabledSession(chatId?: string): ChatControlsView {
 const ChatControls: Component<ChatControlsProps> = props => {
     const openInChat = (s: ChatSession): OpenInChat | undefined => {
         const onClick = props.onOpenInChat
-        if (!onClick || s.transcript.length === 0) return undefined
-        return {
-            onClick,
-            disabled: !canHandOff({
-                items: s.transcript.length,
-                streaming: s.streaming(),
-            }),
-        }
+        if (!onClick || !canHandOff(s.transcript.length)) return undefined
+        return { onClick }
     }
     return (
         <div

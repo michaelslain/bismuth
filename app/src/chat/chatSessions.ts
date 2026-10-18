@@ -8,6 +8,7 @@
 import { createEffect, createRoot, createSignal, untrack } from 'solid-js'
 import { createChatSession, type ChatSession } from './chatSession'
 import { applyChatDrop, type ChatDropAction } from './chatDrop'
+import { initialBackendChatId } from './chatHandoff'
 
 // Drops that landed on a chat surface before its session existed (the daemon page's chat is armed by
 // the drop itself, and its session is created a tick later). Spent the moment that session appears.
@@ -39,8 +40,15 @@ export function retainChatSessions(chatIds: readonly string[]): void {
         }
         for (const id of wanted) {
             if (entries.has(id)) continue
+            const backendChatId = initialBackendChatId(
+                id,
+                new Set(
+                    [...entries.values()].map(e => e.session.backendChatId()),
+                ),
+                () => crypto.randomUUID(),
+            )
             const entry = createRoot(disposeRoot => ({
-                session: createChatSession(id),
+                session: createChatSession(id, { backendChatId }),
                 disposeRoot,
             }))
             entries.set(id, entry)
@@ -54,6 +62,23 @@ export function retainChatSessions(chatIds: readonly string[]): void {
         }
         if (changed)
             setLive(new Map([...entries].map(([id, e]) => [id, e.session])))
+    })
+}
+
+/** Move chat `from`'s LIVE session to chat id `to` (the daemon page's hand-off): the session keeps
+ *  its socket, so a turn in flight keeps streaming and `chatSession(to)` returns it. Returns false
+ *  (and changes nothing) when `from` has no live session or `to` already has one. Call it in the same
+ *  `batch` that adds `to`'s tab and drops `from` from the retained set, so the retaining effect
+ *  sees both at once and neither disposes the moved session nor spawns a new one for `from`. */
+export function moveChatSession(from: string, to: string): boolean {
+    return untrack(() => {
+        const entry = entries.get(from)
+        if (!entry || from === to || entries.has(to)) return false
+        entries.delete(from)
+        entries.set(to, entry)
+        entry.session.moveTo(to)
+        setLive(new Map([...entries].map(([id, e]) => [id, e.session])))
+        return true
     })
 }
 

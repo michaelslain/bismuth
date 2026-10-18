@@ -168,6 +168,8 @@ export function makeStubChatSession(
 
     const session: StubChatSession = {
         chatId: init.chatId ?? 'stub-chat',
+        backendChatId: () => init.chatId ?? 'stub-chat',
+        moveTo: to => log('moveTo')(to),
         transcript: init.transcript ?? [],
         draft,
         setDraft: value => {

@@ -1,5 +1,9 @@
 import { test, expect, beforeEach } from 'bun:test'
-import { canHandOff, handOffConversation } from './chatHandoff'
+import {
+    canHandOff,
+    initialBackendChatId,
+    moveConversationPrefs,
+} from './chatHandoff'
 import { recallChatSession, rememberChatSession } from './chatSessionStore'
 import { readProviderChoice, type StorageLike } from './chatSessionPrefs'
 import { modelStorageKeys } from './chatProvider'
@@ -22,16 +26,15 @@ beforeEach(() => {
     ;(globalThis as any).localStorage = storage
 })
 
-test('canHandOff needs a conversation and no turn in flight', () => {
-    expect(canHandOff({ items: 0, streaming: false })).toBe(false)
-    expect(canHandOff({ items: 3, streaming: true })).toBe(false)
-    expect(canHandOff({ items: 3, streaming: false })).toBe(true)
+test('canHandOff needs a conversation; a turn in flight moves with it', () => {
+    expect(canHandOff(0)).toBe(false)
+    expect(canHandOff(3)).toBe(true)
 })
 
 test('moves the session id, provider and model onto the new chat and forgets the old one', () => {
     rememberChatSession('daemon', 'sess-1')
     storage.setItem(modelStorageKeys('claude', 'daemon').perChat, 'opus')
-    expect(handOffConversation('daemon', 'tab-1', 'claude', storage)).toBe(true)
+    moveConversationPrefs('daemon', 'tab-1', 'claude', 'sess-1', storage)
     expect(recallChatSession('tab-1')).toBe('sess-1')
     expect(recallChatSession('daemon')).toBeNull()
     expect(readProviderChoice(storage, 'tab-1')).toBe('claude')
@@ -41,19 +44,34 @@ test('moves the session id, provider and model onto the new chat and forgets the
 })
 
 test('the model key follows the provider namespace', () => {
-    rememberChatSession('daemon', 'sess-2')
     storage.setItem(modelStorageKeys('opencode', 'daemon').perChat, 'gpt')
-    handOffConversation('daemon', 'tab-2', 'opencode', storage)
+    moveConversationPrefs('daemon', 'tab-2', 'opencode', 'sess-2', storage)
     expect(storage.getItem(modelStorageKeys('opencode', 'tab-2').perChat)).toBe(
         'gpt',
     )
     expect(readProviderChoice(storage, 'tab-2')).toBe('opencode')
 })
 
-test('no remembered session: nothing changes', () => {
-    expect(handOffConversation('daemon', 'tab-3', 'claude', storage)).toBe(
-        false,
-    )
+test('a first turn still streaming has no session id yet: the provider still moves', () => {
+    moveConversationPrefs('daemon', 'tab-3', 'claude', null, storage)
     expect(recallChatSession('tab-3')).toBeNull()
-    expect(readProviderChoice(storage, 'tab-3')).toBeNull()
+    expect(readProviderChoice(storage, 'tab-3')).toBe('claude')
+})
+
+test('a private conversation passes no session id, so none is remembered under the new chat', () => {
+    rememberChatSession('daemon', 'sess-old')
+    moveConversationPrefs('daemon', 'tab-4', 'claude', null, storage)
+    expect(recallChatSession('tab-4')).toBeNull()
+    expect(recallChatSession('daemon')).toBeNull()
+})
+
+test('a new session binds to its own chat id unless a moved session still holds it', () => {
+    const mint = () => 'fresh'
+    expect(initialBackendChatId('daemon', new Set(), mint)).toBe('daemon')
+    expect(initialBackendChatId('daemon', new Set(['tab-9']), mint)).toBe(
+        'daemon',
+    )
+    expect(initialBackendChatId('daemon', new Set(['daemon']), mint)).toBe(
+        'fresh',
+    )
 })

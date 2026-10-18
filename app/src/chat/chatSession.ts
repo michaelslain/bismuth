@@ -51,20 +51,21 @@ import {
 } from './chatContext'
 import { buildEditorContextText } from './chatEditorContext'
 import { chatPersonaName } from '../daemon/daemonIdentityLogic'
-import { publishChatTitle } from './chatTitles'
+import { chatTitle, publishChatTitle } from './chatTitles'
 import {
     rememberChatSession,
     recallChatSession,
     forgetChatSession,
 } from './chatSessionStore'
-import { publishChatOrigin } from './chatOrigin'
+import { chatOrigin, publishChatOrigin } from './chatOrigin'
 import {
     publishChatBusy,
     publishChatComposing,
     publishChatSpeaking,
     clearChatActivity,
 } from './chatActivity'
-import { setChatColor, resolveChatColorArg } from './chatColors'
+import { chatColor, setChatColor, resolveChatColorArg } from './chatColors'
+import { moveConversationPrefs } from './chatHandoff'
 import {
     parseChatSlashCommand,
     CLIENT_SLASH_COMMANDS,
@@ -175,7 +176,15 @@ export type ChatHistoryState = {
 }
 
 export type ChatSession = {
+    /** The chat id this session is retained under — the tab's id. Changes only on `moveTo`. */
     readonly chatId: string
+    /** The backend chat id the socket is bound to (seeded from `chatId`; New and a provider switch
+     *  swap it). A hand-off keeps it, so the server's session — and a turn in flight — carry on. */
+    backendChatId: Accessor<string>
+    /** Re-key this live session to chat id `to` (the daemon page's hand-off, chatHandoff.ts): the
+     *  socket, a streaming turn, queued turns, transcript and draft stay as they are; the per-chat
+     *  state keyed by the old id (title, origin, colour, activity, stored prefs) moves to `to`. */
+    moveTo: (to: string) => void
     readonly transcript: readonly TurnItem[]
     draft: Accessor<string>
     setDraft: (value: string) => void
@@ -295,7 +304,12 @@ type QueuedTurn = {
  * the conversation this chat id last remembered, else opening a fresh one — so anything that fakes
  * the socket (stories) must be installed BEFORE this runs.
  */
-export function createChatSession(chatId: string): ChatSession {
+export function createChatSession(
+    initialChatId: string,
+    opts: { backendChatId?: string } = {},
+): ChatSession {
+    // `let`: every closure below reads the CURRENT id, so `moveTo` re-keys them all at once.
+    let chatId = initialChatId
     const storage = browserStorage()
     const [transcript, setTranscript] = createStore<TurnItem[]>([])
     const [draft, setDraft] = createSignal('')
@@ -374,7 +388,9 @@ export function createChatSession(chatId: string): ChatSession {
     const [queuedTurns, setQueuedTurns] = createSignal<QueuedTurn[]>([])
     // The backend chat id the WS is bound to. Seeded from the tab's id but swapped by New / provider
     // switch, so a reconnect resumes the right backend session without touching the tab.
-    const [activeChatId, setActiveChatId] = createSignal(chatId)
+    const [activeChatId, setActiveChatId] = createSignal(
+        opts.backendChatId ?? chatId,
+    )
 
     // Busy/composing signals for any surface animating on this chat's liveness (the daemon face).
     createEffect(() => publishChatBusy(chatId, streaming()))
@@ -548,7 +564,8 @@ export function createChatSession(chatId: string): ChatSession {
                     if (providerCan(provider(), 'effort') && effort())
                         sendJson({ type: 'set_effort', effort: effort() })
                     // Toggled before the backend session existed: tell it now.
-                    if (isPrivate()) sendJson({ type: 'set_private', private: true })
+                    if (isPrivate())
+                        sendJson({ type: 'set_private', private: true })
                     const wasResume = resumedSession
                     resumedSession = false // consumed — later manifests reconcile instead
                     const modelDecision = resolveInitialModel(
@@ -1480,6 +1497,34 @@ export function createChatSession(chatId: string): ChatSession {
     }
     if (getOwner()) onCleanup(dispose)
 
+    const moveTo = (to: string) => {
+        const from = chatId
+        if (to === from) return
+        const title = chatTitle(from)
+        const origin = chatOrigin(from)
+        const color = chatColor(from)
+        clearChatActivity(from)
+        publishChatTitle(from, '')
+        publishChatOrigin(from, null)
+        if (color) setChatColor(from, null)
+        clearChatReferences(from)
+        moveConversationPrefs(
+            from,
+            to,
+            provider(),
+            isPrivate() ? null : lastSessionId,
+            storage,
+        )
+        chatId = to
+        setProviderChoice(provider())
+        if (title) publishChatTitle(to, title)
+        if (origin) publishChatOrigin(to, origin)
+        if (color) setChatColor(to, color)
+        publishChatBusy(to, streaming())
+        publishChatComposing(to, draft().trim().length > 0)
+        publishChatSpeaking(to, isSpeaking(transcript, streaming()))
+    }
+
     // Resume the conversation this chat id last remembered (a reopened tab comes back on the SAME
     // conversation); a brand-new chat takes the plain eager open.
     const start = () => {
@@ -1506,7 +1551,11 @@ export function createChatSession(chatId: string): ChatSession {
     )
 
     return {
-        chatId,
+        get chatId() {
+            return chatId
+        },
+        backendChatId: activeChatId,
+        moveTo,
         transcript,
         draft,
         setDraft,

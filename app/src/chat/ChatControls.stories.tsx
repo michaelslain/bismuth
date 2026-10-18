@@ -386,7 +386,8 @@ export const Narrow260OpenInChat: Story = overflowProof(260, true)
 /** `[↗]` open in chat — the daemon page's hand-off (only a host that passes `onOpenInChat` gets
  *  it). Three rows at one width: nothing said yet (absent, so the resting row is unchanged), a
  *  conversation (enabled, an icon-only bracket heading the actions cluster on history's line), and a
- *  turn still streaming (shown but disabled — the move would cut the reply off). */
+ *  turn still streaming (enabled too — the live session moves, so the reply keeps streaming in the
+ *  new tab). */
 export const OpenInChat: Story = {
     render: () => {
         const base = {
@@ -440,7 +441,7 @@ export const OpenInChat: Story = {
         await expect(open('at-rest')).toBeNull()
         const live = open('conversing')!
         await expect(live.disabled).toBe(false)
-        await expect(open('streaming')!.disabled).toBe(true)
+        await expect(open('streaming')!.disabled).toBe(false)
         // On its neighbours' line: one shared row top and one height.
         const history = canvasElement.querySelector<HTMLElement>(
             '.conversing [data-testid="chat-history"]',

@@ -1551,8 +1551,9 @@ export default function App() {
         })
     }
     // `[ open in chat ]`: a chat continues in its own tab — the quick-ask popover's (same id) and the
-    // daemon page's (a new id its conversation was handed to, chat/chatHandoff.ts). The tab is added
-    // before the popover lets go of the id, so the retained set never loses it (no reconnect).
+    // daemon page's (a new id its live session was moved to, chatSessions.ts `moveChatSession`).
+    // The tab is added before the popover lets go of the id, so the retained set never loses it
+    // (no reconnect).
     const openChatInTab = (chatId: string) => {
         const tab = makeTab(CHAT_PREFIX + chatId)
         batch(() => {
