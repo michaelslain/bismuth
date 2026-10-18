@@ -84,6 +84,44 @@ export const Conversation: Story = {
     },
 }
 
+/** Select a phrase mid-bubble: the floating `[reply]` sits over the line of prose above it, so its
+ *  own opaque surface is what keeps the label legible against the text behind. */
+export const SelectionReply: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '520px', display: 'flex' }}>
+            <ChatTranscript
+                items={CONVERSATION_ITEMS}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError={null}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const item = canvas.getByText(/queued messages could double-send/)
+        const textNode = [...item.childNodes].find(
+            n => n.nodeType === 3 && n.textContent?.includes('queued'),
+        ) as Text
+        const start = textNode.data.indexOf('queued messages')
+        const range = document.createRange()
+        range.setStart(textNode, start)
+        range.setEnd(textNode, start + 'queued messages'.length)
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        sel?.addRange(range)
+        await fireEvent.mouseUp(item)
+        const reply = await canvas.findByRole('button', { name: 'reply' })
+        // The surface behind the label is opaque, not the transparent bracket register.
+        const surface = reply.closest('[data-popover]')
+        await expect(surface).not.toBeNull()
+        const bg = getComputedStyle(surface as Element).backgroundColor
+        await expect(bg).not.toBe('rgba(0, 0, 0, 0)')
+        await expect(bg).not.toBe('transparent')
+    },
+}
+
 /** Every face in the canvas, and every label reading `name`, top to bottom. */
 function facesAndLabels(canvasElement: HTMLElement, name: string) {
     const faces = [

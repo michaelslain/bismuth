@@ -70,11 +70,13 @@
     transform: translateX(-50%);
 }
 
-/* Floating "Reply" button anchored to a text selection inside a message bubble — `[reply]`, a
-   TextButton now. Fixed to the viewport (positioned from the selection's client rect), nudged
-   above it. PLACEMENT ONLY, same reasoning as `.chat-jump-bottom` above. */
+/* Floating "Reply" anchored to a text selection inside a message bubble — a `[reply]` TextButton
+   on a Popover surface, which supplies the opaque fill, hairline and lift so the label never reads
+   against the prose behind it. Fixed to the viewport (positioned from the selection's client rect),
+   nudged above it. This class is placement plus the panel inset Popover leaves to its caller. */
 .chat-sel-reply {
     position: fixed;
     transform: translate(-50%, calc(-100% - 8px));
     z-index: 60;
+    padding: 0 var(--sp-3);
 }

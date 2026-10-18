@@ -21,6 +21,7 @@ import { openNote } from '../ui/openNote'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextButton } from '../ui/TextButton'
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
+import Popover from '../ui/Popover'
 import { copyChatText } from './copyChatText'
 import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
@@ -271,21 +272,26 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                 </IconTextButton>
             </Show>
             {/* Floating "Reply" on an active text selection inside a bubble. onMouseDown +
-                preventDefault keeps the selection alive so onReply quotes it before it collapses. */}
+                preventDefault keeps the selection alive so onReply quotes it before it collapses.
+                The Popover is its surface: the bracket register paints no fill, and this floats
+                over the prose above the selection. */}
             <Show when={selReply()}>
                 {s => (
-                    <TextButton
+                    <Popover
                         class={styles['chat-sel-reply']}
                         style={{ left: `${s().x}px`, top: `${s().y}px` }}
-                        onMouseDown={e => {
-                            e.preventDefault()
-                            props.onReply(s().text)
-                            window.getSelection()?.removeAllRanges()
-                            setSelReply(null)
-                        }}
                     >
-                        reply
-                    </TextButton>
+                        <TextButton
+                            onMouseDown={e => {
+                                e.preventDefault()
+                                props.onReply(s().text)
+                                window.getSelection()?.removeAllRanges()
+                                setSelReply(null)
+                            }}
+                        >
+                            reply
+                        </TextButton>
+                    </Popover>
                 )}
             </Show>
             <Show when={menu()}>
