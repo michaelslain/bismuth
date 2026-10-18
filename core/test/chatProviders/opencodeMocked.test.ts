@@ -92,6 +92,15 @@ const OPENCODE_SERVE_PATTERN = 'opencode serve --port 0 --hostname 127.0.0.1'
 
 /** PIDs of any already-running shared opencode server, matched by the exact argv above. Best
  *  effort: `pgrep` missing/erroring yields [] rather than throwing. */
+function opencodeDelegatesToService(): boolean {
+    try {
+        const r = Bun.spawnSync(['opencode', '--version'])
+        return /\bv2\./.test(r.stdout.toString())
+    } catch {
+        return false
+    }
+}
+
 function opencodeServePids(): string[] {
     try {
         const r = Bun.spawnSync(['pgrep', '-f', OPENCODE_SERVE_PATTERN])
@@ -387,7 +396,10 @@ describeOrSkip(
             // benign no-op, whether caused by `pidsBefore` wrongly swallowing this file's own server or
             // `isChildOfThisProcess` incorrectly rejecting a legitimate target. This assertion is what
             // makes a loop that silently selects nothing fail loudly instead of reporting a false green.
-            if (anyChatOpened) expect(killedCount).toBeGreaterThanOrEqual(1)
+            // opencode v2's `serve` hands off to a detached `serve --service` daemon that exits on its own,
+            // so no child of this process outlives the spawn and there is nothing to select.
+            if (anyChatOpened && !opencodeDelegatesToService())
+                expect(killedCount).toBeGreaterThanOrEqual(1)
         })
 
         afterEach(async () => {
@@ -447,7 +459,8 @@ describeOrSkip(
             const resultFrame = frames[resultIdx]
             if (resultFrame.type === 'result') {
                 expect(resultFrame.isError).toBe(false)
-                expect(resultFrame.costUsd).toBe(0) // the mock's fixture reports zero cost
+                // the mock's fixture reports zero cost; opencode v2 omits a zero cost, which maps to null
+                expect([0, null]).toContain(resultFrame.costUsd)
             }
         }, 60_000)
 
