@@ -955,6 +955,226 @@ export const TableMatchesChat: Story = {
     },
 }
 
+const LONG_CELL_TABLE = [
+    '| kind | value | note |',
+    '| --- | --- | --- |',
+    '| bare url | https://example.com/a/very/long/path/that/keeps/going/without/any/spaces/index.html?query=parameters&and=more | wraps |',
+    '| link | [a link whose label is a long unbroken run averyveryverylonglabelwithoutspaces](https://example.com/x) | wraps |',
+    '| word | Pneumonoultramicroscopicsilicovolcanoconiosisandthensomemoreletters | wraps |',
+    '| code | `averyveryverylongidentifierwithoutanyjointsatallsoitcannotbreak` | wraps |',
+    '| wikilink | [[A note with an extraordinarily long title that wraps]] | wraps |',
+    '| joined list | Combo Prize [alpha+beta+gamma+delta+epsilon+zeta+theta] | wraps |',
+].join('\n')
+
+/** Long unbroken content in a narrow note: a bare URL, a long link label, one long word, a code
+ *  token with no joints and a long wikilink. Every cell's content stays inside its own
+ *  `|` edges, wrapping inside the cell instead of running across the border into the next column. */
+export const LongCellContent: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Long Cells.md': LONG_CELL_TABLE } }),
+        )
+        return (
+            <div style={{ display: 'flex', gap: '32px', height: STORY_H }}>
+                <div style={{ width: '420px' }} data-testid="note">
+                    <Editor
+                        path="Long Cells.md"
+                        initialText={LONG_CELL_TABLE}
+                        onSaved={noop}
+                        noteNames={() => NOTE_NAMES}
+                        memoryNames={() => MEMORY_NAMES}
+                        tagNames={() => TAG_NAMES}
+                    />
+                </div>
+                <div style={{ width: '420px' }} data-testid="chat">
+                    <ChatTextBubble text={LONG_CELL_TABLE} role="assistant" />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        for (const id of ['note', 'chat']) {
+            const side = canvasElement.querySelector(
+                `[data-testid="${id}"]`,
+            ) as HTMLElement
+            // typed (and so given its long-run breaks) once every cell carries its edges
+            const cells = await waitFor(() => {
+                const all = Array.from(
+                    side.querySelectorAll<HTMLElement>('th, td'),
+                )
+                if (
+                    !all.length ||
+                    all.some(c => !c.querySelector('[data-edges]'))
+                )
+                    throw new Error(`${id} table not typed yet`)
+                return all
+            })
+            const table = side.querySelector('table')!
+            // the table fits its frame, so no row runs out past the right edge
+            await expect(
+                table.getBoundingClientRect().width,
+            ).toBeLessThanOrEqual(side.getBoundingClientRect().width + 1)
+            // and every line of text ends inside its own cell's padding
+            for (const cell of cells) {
+                const box = cell.getBoundingClientRect()
+                const inner =
+                    box.right - parseFloat(getComputedStyle(cell).paddingRight)
+                const walk = document.createTreeWalker(
+                    cell,
+                    NodeFilter.SHOW_TEXT,
+                )
+                for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                    if (n.parentElement?.closest('[data-table-edges], .katex'))
+                        continue
+                    const range = document.createRange()
+                    range.selectNodeContents(n)
+                    for (const r of range.getClientRects())
+                        await expect(r.right).toBeLessThanOrEqual(inner + 1)
+                }
+            }
+        }
+    },
+}
+
+const NARROW_PANE_TABLE = [
+    '| # | item | rarity | tickets | marginal value |',
+    '| --- | --- | --- | --- | --- |',
+    '| 1 | Combo Prize [alpha+beta+gamma+delta+epsilon+zeta+theta] | Legendary | 2 | +1.78 |',
+    '| 2 | Diesel Locomotive | MildlyRare | 3 | +1.36 |',
+    '| 3 | Fortune Teller | Uncommon | 1 | +0.57 |',
+].join('\n')
+
+/** A five-column table in a pane too narrow for it even in whole words. With `∞` off it breaks
+ *  inside words as a last resort and fits the note; with `∞` on every cell is one line and the table
+ *  scrolls sideways. The story ends with `∞` off. */
+export const NarrowPaneTable: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Narrow Pane.md': NARROW_PANE_TABLE } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '300px' }} data-testid="note">
+                <Editor
+                    path="Narrow Pane.md"
+                    initialText={NARROW_PANE_TABLE}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const table = await waitFor(() => {
+            const t = canvasElement.querySelector<HTMLTableElement>(
+                'table.cm-table-rendered',
+            )
+            if (!t?.querySelector('[data-edges]'))
+                throw new Error('table not typed yet')
+            return t
+        })
+        const frame = table.closest('.cm-table-scroll') as HTMLElement
+        const infinity = canvasElement.querySelector(
+            '.cm-table-tool',
+        ) as HTMLElement
+        const toggle = () =>
+            infinity.dispatchEvent(
+                new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+            )
+        const fits = () =>
+            waitFor(async () => {
+                await expect(table.hasAttribute('data-squeezed')).toBe(true)
+                await expect(frame.scrollWidth).toBeLessThanOrEqual(
+                    frame.clientWidth + 1,
+                )
+            })
+        // ∞ off: the table squeezes to fit the note, no sideways scroll
+        await fits()
+        // ∞ on: one line per cell, scrolled sideways, not squeezed
+        toggle()
+        await waitFor(async () => {
+            await expect(table.hasAttribute('data-squeezed')).toBe(false)
+            await expect(frame.scrollWidth).toBeGreaterThan(frame.clientWidth)
+        })
+        // ∞ off again: back to fitting
+        toggle()
+        await fits()
+    },
+}
+
+/** The long-cell table extended with `∞` after a person dragged its columns (the saved widths and
+ *  `∞` are seeded the way the widget stores them). Dragged widths stay put in `∞` mode, so each cell
+ *  wraps inside its own column instead of painting its one line across the next. */
+export const ExtendedResizedTable: Story = {
+    render: () => {
+        const header = ['kind', 'value', 'note']
+        try {
+            localStorage.setItem(
+                'bismuth:table-size:Extended Resized.md',
+                JSON.stringify({
+                    [JSON.stringify(header)]: {
+                        cols: [80, 200, 60],
+                        rows: [],
+                        infinity: true,
+                        merges: [],
+                    },
+                }),
+            )
+        } catch {
+            // no storage: the story shows the plain table
+        }
+        setTransport(
+            fakeTransport({
+                files: { 'Extended Resized.md': LONG_CELL_TABLE },
+            }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '420px' }} data-testid="note">
+                <Editor
+                    path="Extended Resized.md"
+                    initialText={LONG_CELL_TABLE}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cells = await waitFor(() => {
+            const all = Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('th, td'),
+            )
+            if (!all.length || all.some(c => !c.querySelector('[data-edges]')))
+                throw new Error('table not typed yet')
+            return all
+        })
+        const table = cells[0].closest('table')!
+        await expect(
+            canvasElement
+                .querySelector('.cm-table-tool')!
+                .getAttribute('aria-pressed'),
+        ).toBe('true')
+        await expect(table.style.tableLayout).toBe('fixed')
+        // every line of text ends inside its own cell's padding
+        for (const cell of cells) {
+            const inner =
+                cell.getBoundingClientRect().right -
+                parseFloat(getComputedStyle(cell).paddingRight)
+            const walk = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT)
+            for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                if (n.parentElement?.closest('[data-table-edges]')) continue
+                const range = document.createRange()
+                range.selectNodeContents(n)
+                for (const r of range.getClientRects())
+                    await expect(r.right).toBeLessThanOrEqual(inner + 1)
+            }
+        }
+    },
+}
+
 const REVEAL_TEXT = `# Reveal Marks
 
 A paragraph with **bold text**, a #demo-tag, and \`inline code\`.

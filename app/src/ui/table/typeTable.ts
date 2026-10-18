@@ -8,11 +8,15 @@
 //     real content (a one-word column takes its word's width, the prose column takes the wrapping);
 //   - every code token in a cell gets `<wbr>`s at its joints (codeBreaks.ts), so one long path cannot
 //     set its column's minimum width to the whole path;
+//   - every run of text too long to keep whole (longRuns.ts: a bare URL, a long link label or word)
+//     is wrapped in `bismuth-long-run`, which may break anywhere, so it wraps at its cell's edge
+//     instead of widening its column past the table's frame;
 //   - every visible cell hosts its own AsciiCellEdges (DESIGN.md's Typed Grid Rule), with the edges
 //     it owns decided by tableEdges.ts from its place and span in the grid.
 import { render } from 'solid-js/web'
 import AsciiCellEdges from '../ascii/AsciiCellEdges'
 import { codeBreaks } from './codeBreaks'
+import { longRuns } from './longRuns'
 import { cellEdges } from './tableEdges'
 
 export type TypedTable = {
@@ -39,6 +43,43 @@ export function breakCode(root: Element) {
             })
             node.replaceWith(frag)
         }
+    }
+}
+
+/** Wrap every run under `root` too long to keep whole in a `bismuth-long-run` span. Math lays out its
+ *  own glyphs, the typed edges are not text, and an in-cell editor owns its DOM, so all three are
+ *  left alone. A note's whole table sits inside the note editor's own `contenteditable`, so only an
+ *  editor inside `root` counts. */
+export function breakLongRuns(root: Element) {
+    const skip = (node: Node) => {
+        const el = node.parentElement
+        if (!el) return true
+        if (el.closest('.bismuth-long-run, .katex, [data-table-edges]'))
+            return true
+        const editor = el.closest('[contenteditable="true"]')
+        return !!editor && root.contains(editor)
+    }
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: node =>
+            skip(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    })
+    const texts: Text[] = []
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) texts.push(n as Text)
+    for (const node of texts) {
+        const pieces = longRuns(node.textContent ?? '')
+        if (!pieces.some(p => p.long)) continue
+        const frag = document.createDocumentFragment()
+        for (const piece of pieces) {
+            if (!piece.long) {
+                frag.appendChild(document.createTextNode(piece.text))
+                continue
+            }
+            const run = document.createElement('span')
+            run.className = 'bismuth-long-run'
+            run.textContent = piece.text
+            frag.appendChild(run)
+        }
+        node.replaceWith(frag)
     }
 }
 
@@ -91,6 +132,7 @@ function placeCells(table: HTMLTableElement) {
 export function typeTable(table: HTMLTableElement): TypedTable {
     table.classList.add('bismuth-table')
     breakCode(table)
+    breakLongRuns(table)
     const mounts = new Map<Element, HTMLElement>()
     const disposers: (() => void)[] = []
     const { placed, rows, cols, headerRows } = placeCells(table)
@@ -130,6 +172,7 @@ export function typeTable(table: HTMLTableElement): TypedTable {
             const mount = mounts.get(cell)
             if (mount && mount.parentNode !== cell) cell.appendChild(mount)
             breakCode(cell)
+            breakLongRuns(cell)
         },
         dispose() {
             disposers.forEach(d => d())

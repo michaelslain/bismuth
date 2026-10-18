@@ -71,6 +71,7 @@ import {
     cmDocToCellSource,
 } from './cellBlockRender'
 import { minimalChange } from './normalizeFrontmatter'
+import { watchFitTable } from '../ui/table/fitTable'
 import { watchScrollFade } from '../ui/table/scrollFade'
 import { api } from '../api'
 import { parseWikilink, resolveNotePath, wikilinkOpenPath } from './wikilink'
@@ -122,6 +123,7 @@ type WrapWithTyping = HTMLElement & {
     _retype?: () => void
     _untype?: () => void
     _unfade?: () => void
+    _unfit?: () => void
 }
 
 // Visual column widths / row heights have no representation in GFM markdown, so they are
@@ -2103,6 +2105,13 @@ export class TableWidget extends WidgetType {
         // every scroll so they track the visible column borders instead of drifting off (#70a).
         scroll.addEventListener('scroll', () => layout())
         ;(root as WrapWithTyping)._unfade = watchScrollFade(scroll)
+        // Wrap to fit the note rather than spill past it, unless ∞ or dragged widths ask to scroll.
+        ;(root as WrapWithTyping)._unfit = watchFitTable(
+            scroll,
+            table,
+            view.contentDOM,
+            () => !infinity && table.style.tableLayout !== 'fixed',
+        )
         if (typeof ResizeObserver !== 'undefined') {
             const ro = new ResizeObserver(() => layout())
             ro.observe(table)
@@ -2169,6 +2178,7 @@ export class TableWidget extends WidgetType {
         )?._tableRO?.disconnect()
         ;(wrap as WrapWithTyping | null)?._untype?.()
         ;(wrap as WrapWithTyping | null)?._unfade?.()
+        ;(wrap as WrapWithTyping | null)?._unfit?.()
         // Destroy any live nested cell editor so a commit-rebuild (or view teardown) leaks no EditorView.
         for (const cell of Array.from(
             dom.querySelectorAll<HTMLElement>('[data-cell]'),

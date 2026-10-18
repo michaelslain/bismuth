@@ -6,6 +6,7 @@
 // chat's own is the frame: a table whose narrowest layout is still wider than the transcript scrolls
 // sideways inside it, never widening the transcript.
 import { onCleanup, onMount, type Component } from 'solid-js'
+import { watchFitTable } from '../ui/table/fitTable'
 import { watchScrollFade } from '../ui/table/scrollFade'
 import { typeTable } from '../ui/table/typeTable'
 import styles from './ChatTable.module.css'
@@ -22,6 +23,9 @@ const ChatTable: Component<ChatTableProps> = props => {
         const typed = typeTable(props.table)
         onCleanup(() => typed.dispose())
         onCleanup(watchScrollFade(frame))
+        onCleanup(
+            watchFitTable(frame, props.table, frame.parentElement ?? frame),
+        )
     })
     return (
         <div

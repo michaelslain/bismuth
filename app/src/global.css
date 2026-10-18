@@ -865,6 +865,12 @@ body { background: var(--bg); color: var(--fg); }
      so there a word too long for its column does break.
    - inline code wraps at its <wbr>s, where prose code is one unbreakable token; in a cell that token
      would make the whole path its column's minimum width.
+   - a run too long to keep whole (a bare URL, a long link label or word; ui/table/longRuns.ts) sits
+     in `bismuth-long-run`, which breaks anywhere, so it wraps at its cell's edge instead of setting
+     its column wider than the table's frame and running every row out past the edges.
+   - a table still wider than its frame with whole words is `data-squeezed` (ui/table/fitTable.ts)
+     and breaks inside words as a last resort, so it always wraps to fit; only a note table extended
+     with `∞` or with dragged column widths scrolls sideways.
    Each cell is the `position: relative` host of its edge overlay, which overhangs it by half a
    corner tile on every side; the table's container leaves that much room. Content sits about 1ch
    in from a `|`. */
@@ -890,6 +896,15 @@ body { background: var(--bg); color: var(--fg); }
 }
 .bismuth-table th {
   font-weight: var(--fw-bold);
+}
+.bismuth-table .bismuth-long-run {
+  overflow-wrap: anywhere;
+}
+/* A table still wider than its frame with whole words (many columns in a narrow pane) breaks inside
+   words too, so it wraps to fit instead of running out past the frame (ui/table/fitTable.ts). */
+.bismuth-table[data-squeezed] th,
+.bismuth-table[data-squeezed] td {
+  overflow-wrap: anywhere;
 }
 /* A table's sideways scroller (the note widget's and chat's frame) fades the side that hides more
    table (ui/table/scrollFade.ts sets the marks), so a cut-off column reads as "scroll", not as a

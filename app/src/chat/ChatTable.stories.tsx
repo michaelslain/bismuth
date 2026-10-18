@@ -32,11 +32,11 @@ const summaryTable = [
 ].join('\n')
 
 const wideTable = [
-    '| step | command | result | took | notes |',
-    '| --- | --- | --- | --- | --- |',
-    '| typecheck | `bun run typecheck` | pass | 41s | all seven workspaces |',
-    '| tests | `bun test core/test/vault.test.ts` | pass | 3s | one file |',
-    '| visual | `bun run visual --base http://localhost:6201` | 2 flags | 1m12s | both are the known calendar flake |',
+    '| step | command | result | took | workspace | machine | notes |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    '| typecheck | `bun run typecheck` | pass | 41s | everything | laptop | all seven workspaces |',
+    '| tests | `bun test core/test/vault.test.ts` | pass | 3s | core | laptop | one file |',
+    '| visual | `bun run visual --base http://localhost:6201` | 2 flags | 1m12s | app | desktop | both are the known calendar flake |',
 ].join('\n')
 
 const Column = (props: { width: number; md: string; id: string }) => {
@@ -50,10 +50,10 @@ const Column = (props: { width: number; md: string; id: string }) => {
 }
 
 /** A table as an agent writes one — a code-path column, a prose column, a one-word column — in the
- *  360px transcript and at 600px, plus a five-column table that cannot fit 360px at all. Columns
+ *  360px transcript and at 600px, plus a seven-column table that cannot fit 360px in whole words. Columns
  *  size to their content: a one-word column takes its word's width and never wraps, no word splits
  *  mid-letter, a path wraps at its `/` and `.` joints, the prose column absorbs the wrapping, and a
- *  table whose narrowest layout is still too wide scrolls inside its own frame. */
+ *  table too wide even in whole words breaks inside words to fit its frame instead of spilling out. */
 export const AutoSizedColumns: Story = {
     args: { table: document.createElement('table') },
     render: () => (
@@ -78,7 +78,8 @@ export const AutoSizedColumns: Story = {
             // every cell types its own edges
             for (const cell of Array.from(host.querySelectorAll('th, td')))
                 await expect(cell.querySelector('[data-edges]')).not.toBeNull()
-            // a one-word cell stays on one line: no mid-word split
+            // a table that fits in whole words never splits one: a one-word cell stays on one line
+            if (id === 'overflow') continue
             for (const td of Array.from(host.querySelectorAll('td'))) {
                 if (
                     td.querySelector('code') ||
@@ -98,8 +99,20 @@ export const AutoSizedColumns: Story = {
         const overflow = canvasElement.querySelector(
             '[data-testid="overflow"] [data-chat-table]',
         ) as HTMLElement
-        await expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth)
-        // it scrolls sideways only: a vertical wheel over it passes to the transcript, which
+        // too wide in whole words, it squeezes to fit rather than spill past the frame
+        await expect(
+            overflow.querySelector('table')!.hasAttribute('data-squeezed'),
+        ).toBe(true)
+        await expect(overflow.scrollWidth).toBeLessThanOrEqual(
+            overflow.clientWidth + 1,
+        )
+        for (const id of ['narrow', 'wide'])
+            await expect(
+                canvasElement
+                    .querySelector(`[data-testid="${id}"] table`)!
+                    .hasAttribute('data-squeezed'),
+            ).toBe(false)
+        // the frame scrolls sideways only: a vertical wheel over it passes to the transcript, which
         // global.css's app-wide `overscroll-behavior: none` would otherwise stop at the frame
         await expect(getComputedStyle(overflow).overflowY).toBe('hidden')
         await expect(getComputedStyle(overflow).overscrollBehaviorY).toBe(

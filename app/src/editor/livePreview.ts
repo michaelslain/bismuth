@@ -2172,6 +2172,12 @@ export const livePreview = [
             'table-layout': 'auto',
         },
         '.cm-table-infinity .cm-td': { 'white-space': 'nowrap' },
+        // Once a person drags a column to a width, the column keeps that width in ∞ mode too, and a
+        // one-line cell would paint straight across its neighbours: there the cells wrap inside the
+        // dragged widths (global.css breaks an over-long word in a fixed column).
+        '.cm-table-infinity .cm-table-rendered[data-fixed-columns] .cm-td': {
+            'white-space': 'normal',
+        },
         '.cm-table-infinity .cm-td[data-editing="1"]': {
             'white-space': 'pre-wrap',
         },
