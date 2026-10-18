@@ -44,3 +44,39 @@ describe('chat capture gates on daemon.saveSessions', () => {
         expect(await finishChat('daemon:\n  saveSessions: true\n')).toHaveLength(1)
     })
 })
+
+describe('chat capture gates on chat visibility', () => {
+    const save = 'daemon:\n  saveSessions: true\n'
+    test('a visible chat writes one note', async () => {
+        expect(
+            await finishChat(`${save}chatVisibility:\n  default: all\n`),
+        ).toHaveLength(1)
+    })
+    test('a chat-only default writes no note', async () => {
+        expect(
+            await finishChat(`${save}chatVisibility:\n  default: chat-only\n`),
+        ).toEqual([])
+    })
+    test('a hidden default writes no note', async () => {
+        expect(
+            await finishChat(`${save}chatVisibility:\n  default: hidden\n`),
+        ).toEqual([])
+    })
+    test('the chat own level hides it under a visible default', async () => {
+        expect(
+            await finishChat(
+                `${save}chatVisibility:\n  default: all\n  abcdef123456: chat-only\n`,
+            ),
+        ).toEqual([])
+    })
+    test('the chat own all beats a restricting default', async () => {
+        expect(
+            await finishChat(
+                `${save}chatVisibility:\n  default: hidden\n  abcdef123456: all\n`,
+            ),
+        ).toHaveLength(1)
+    })
+    test('an unreadable chatVisibility fails closed', async () => {
+        expect(await finishChat(`${save}chatVisibility: bogus\n`)).toEqual([])
+    })
+})

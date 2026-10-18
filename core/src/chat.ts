@@ -2682,6 +2682,9 @@ export function extractEditorContextPaths(text: string): string[] {
  * having done real work (>=1 completed turn) and on `daemon.saveSessions` being true in the vault's
  * `.settings` (absent = off). Never blocks or fails teardown.
  *
+ * Chat-visibility gate: skips the capture when the chat's own `chatVisibility` level, else the
+ * `default`, hides it from the daemon (`chat-only` or `hidden`), or when `chatVisibility` is unreadable.
+ *
  * Visibility gate: skips the WHOLE capture if any file referenced in the session's own
  * <editor-context> preambles is restricted from the daemon (isVisibleToDaemon false — i.e.
  * "chat-only" OR "hidden"). Hidden files never reach this preamble in the first place
