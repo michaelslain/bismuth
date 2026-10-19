@@ -102,6 +102,22 @@ const NOTE_BODY = [
     '- second item',
 ].join('\n')
 
+const TABLE_PATH = 'projects/release.md'
+const TABLE_BODY = [
+    '# Release',
+    '',
+    '| step | owner | days |',
+    '| :-- | --- | --: |',
+    '| write the notes | docs | 2 |',
+    '| cut the build | release | 14 |',
+    '',
+    '> [!note] Sign-off',
+    '> | who | when |',
+    '> | --- | --: |',
+    '> | design | monday |',
+    '> | qa | friday |',
+].join('\n')
+
 const PAGED_PATH = 'projects/handout.md'
 const PAGED_BODY = [
     '# Handout',
@@ -197,6 +213,44 @@ export const NoteHtmlDark: Story = {
         expect(
             canvas.getByText(whole('writes roadmap.html → Downloads')),
         ).toBeInTheDocument()
+    },
+}
+
+/** A note's tables in an HTML export — one in the body and one inside a callout — are the typed
+ *  table the app shows: each cell carries its `+ - | =` overlay, painted as its glyph sprite in a
+ *  `border-image` (ui/table/exportTables.ts) by rules carried into the document's head, and a `--:`
+ *  column sits right. */
+export const NoteTableHtml: Story = {
+    render: () => {
+        fresh({ format: 'html' })
+        setTransport(fakeTransport({ files: { [TABLE_PATH]: TABLE_BODY } }))
+        return (
+            <Pane>
+                <ExportView path={TABLE_PATH} htmlToPdf={twoPagePdf} />
+            </Pane>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(
+                frameDoc(canvasElement)?.querySelectorAll('table.bismuth-table')
+                    .length,
+            ).toBe(2),
+        )
+        const doc = frameDoc(canvasElement)!
+        const win = doc.defaultView!
+        for (const cell of Array.from(doc.querySelectorAll('th, td'))) {
+            const overlay = cell.querySelector('[data-edges]') as HTMLElement
+            expect(overlay).not.toBeNull()
+            expect(
+                win
+                    .getComputedStyle(overlay)
+                    .getPropertyValue('border-image-source'),
+            ).toContain('url(')
+        }
+        const days = doc.querySelector('table tbody td:last-child')!
+        expect(win.getComputedStyle(days).textAlign).toBe('right')
+        expect(doc.querySelector('.callout table.bismuth-table')).not.toBeNull()
     },
 }
 

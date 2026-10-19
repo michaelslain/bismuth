@@ -2,10 +2,10 @@
 // One turn's prose, rendered through the SAME note markdown pipeline (renderNoteBody) every note
 // uses, so a message reads exactly like a note — shared by ChatUserTurn's bubble and
 // ChatAssistantTurn's text parts.
-import { createEffect, onCleanup, Show, type Component } from 'solid-js'
+import { Show, type Component } from 'solid-js'
 import { renderNoteBody } from '../bases/markdown'
 import ChatCopyButton from './ChatCopyButton'
-import { typeBubbleTables } from './typeBubbleTables'
+import { createTypedTables } from '../ui/table/typeTables'
 import styles from './ChatTextBubble.module.css'
 
 export type ChatTextBubbleProps = {
@@ -36,11 +36,10 @@ const ChatTextBubble: Component<ChatTextBubbleProps> = props => {
     // Tables are a typed grid (DESIGN.md's Typed Grid Rule), not drawn borders: once the markdown
     // string has landed, mount the edges onto its cells. Declared AFTER `bubble` so it re-runs after
     // the `innerHTML` binding when `text` changes, and tears its roots down before the next pass.
-    createEffect(() => {
-        void props.text
-        const dispose = typeBubbleTables(el)
-        onCleanup(dispose)
-    })
+    createTypedTables(
+        () => el,
+        () => props.text,
+    )
     return (
         <Show when={props.text.trim()}>
             <div

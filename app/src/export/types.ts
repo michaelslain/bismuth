@@ -223,4 +223,12 @@ export interface ExportDeps {
     // KaTeX was embedded. Optional so a caller that genuinely wants the viewer's own fonts can
     // omit it. Takes the document's prose font stack, so only the serif it names is embedded.
     docFontCss?: (proseStack: string) => Promise<string>
+    // Types a rendered note's markdown tables as the app's own table (ui/table/exportTables.ts):
+    // returns the body with every table typed, plus the CSS that paints the grid in a standalone
+    // document. Optional because it mounts the app's Solid table component, which needs a DOM — a
+    // headless caller (the cli) omits it and keeps htmlTemplate.ts's bordered tables.
+    typeTables?: (
+        html: string,
+        palette: ThemePalette,
+    ) => Promise<{ html: string; css: string }>
 }

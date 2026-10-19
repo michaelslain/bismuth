@@ -80,7 +80,12 @@ async function bodyHtml(
                 deps,
                 palette.scheme,
             )
-            return { html: renderMarkdown(ink.text), css: ink.css, prose: true }
+            const typed = await typedTables(
+                renderMarkdown(ink.text),
+                deps,
+                palette,
+            )
+            return { html: typed.html, css: ink.css + typed.css, prose: true }
         }
         // Render frontmatter as its own styled block (2px accent left border, design/
         // ascii-extended PORTING.md §3d) instead of letting the raw `---\nkey: val\n---`
@@ -88,13 +93,26 @@ async function bodyHtml(
         // its own and would render it as a stray <hr> + paragraph text.
         const { data, body } = parseFrontmatter(text)
         const ink = await inkifyMarkdown(body, deps, palette.scheme)
+        const typed = await typedTables(renderMarkdown(ink.text), deps, palette)
         return {
-            html: frontmatterBlockHtml(data) + renderMarkdown(ink.text),
-            css: ink.css,
+            html: frontmatterBlockHtml(data) + typed.html,
+            css: ink.css + typed.css,
             prose: true,
         }
     }
     throw new Error(`No HTML body for ${kind || 'this file'}`)
+}
+
+// A note's markdown tables become the typed Bismuth table the app shows (the `+ - | =` grid, the
+// shared cell rules, column alignment), with the CSS that paints them for the document's head. The
+// typing mounts the app's own table component, so it is a dep the app supplies; a headless caller
+// (the cli) leaves it out and its tables keep the bordered fallback in htmlTemplate.ts.
+async function typedTables(
+    html: string,
+    deps: ExportDeps,
+    palette: ThemePalette,
+): Promise<{ html: string; css: string }> {
+    return deps.typeTables ? deps.typeTables(html, palette) : { html, css: '' }
 }
 
 // Render a file's HTML body, guaranteeing math is actually rendered (not blank). The
@@ -168,15 +186,18 @@ async function wrapBody(
 async function renderSectionHtml(
     section: string,
     deps: ExportDeps,
-    theme: ExportTheme,
+    palette: ThemePalette,
 ): Promise<{ html: string; css: string }> {
     // Ink first, for the same reason bodyHtml does it: a ```draw fence in a page-broken note
     // is still ink, and a section rendered without this step exports its drawings as base64.
-    const ink = await inkifyMarkdown(section, deps, theme)
-    const html = renderMarkdown(ink.text)
-    if (!UNRENDERED_MATH.test(html)) return { html, css: ink.css }
-    await whenMathReady()
-    return { html: renderMarkdown(ink.text), css: ink.css }
+    const ink = await inkifyMarkdown(section, deps, palette.scheme)
+    let html = renderMarkdown(ink.text)
+    if (UNRENDERED_MATH.test(html)) {
+        await whenMathReady()
+        html = renderMarkdown(ink.text)
+    }
+    const typed = await typedTables(html, deps, palette)
+    return { html: typed.html, css: ink.css + typed.css }
 }
 
 // The md/csv preview shows the file's own lines: one row per line, never wrapped (the base
@@ -315,9 +336,9 @@ export async function renderPreview(
         const htmls: string[] = []
         let inkCss = ''
         for (const s of sections) {
-            const r = await renderSectionHtml(s, deps, palette.scheme)
+            const r = await renderSectionHtml(s, deps, palette)
             htmls.push(r.html)
-            if (r.css) inkCss = r.css
+            if (r.css && !inkCss.includes(r.css)) inkCss += r.css
         }
         return {
             previewHtml: await wrapBody(
@@ -485,7 +506,7 @@ export async function renderExport(
                         const section = await renderSectionHtml(
                             sections[i],
                             deps,
-                            palette.scheme,
+                            palette,
                         )
                         const doc = await wrapBody(
                             section.html,

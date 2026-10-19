@@ -4,6 +4,7 @@ import { SegmentedToggle } from '../ui/SegmentedToggle'
 import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import { renderMarkdown } from './markdown'
+import { createTypedTables } from '../ui/table/typeTables'
 import { SEPARATORS, type ParsedCard } from './cardsEdit'
 import { plural } from '../plural'
 import styles from './BulkCardsEditor.module.css'
@@ -116,6 +117,12 @@ const BulkCardsEditor: Component<BulkCardsEditorProps> = props => (
                                         >
                                             <div
                                                 class={styles['cards-pf']}
+                                                ref={el =>
+                                                    createTypedTables(
+                                                        () => el,
+                                                        () => c.front,
+                                                    )
+                                                }
                                                 innerHTML={renderMarkdown(c.front)}
                                             />
                                         </Show>
@@ -135,6 +142,12 @@ const BulkCardsEditor: Component<BulkCardsEditorProps> = props => (
                                         >
                                             <div
                                                 class={styles['cards-pb']}
+                                                ref={el =>
+                                                    createTypedTables(
+                                                        () => el,
+                                                        () => c.back,
+                                                    )
+                                                }
                                                 innerHTML={renderMarkdown(c.back)}
                                             />
                                         </Show>

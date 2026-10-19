@@ -798,3 +798,49 @@ describe('proseFacesFor embeds only the serif the prose stack names', () => {
         ).toEqual(['Monaspace Xenon'])
     })
 })
+
+describe('typed tables', () => {
+    const TABLE_NOTE =
+        '> [!note] Plan\n> | a | b |\n> | --- | --: |\n> | 1 | 2 |\n'
+    // stands in for the app's typer: marks each table and contributes a head rule
+    const typeTables: ExportDeps['typeTables'] = async (html, palette) => ({
+        html: html.replace(/<table>/g, '<table class="bismuth-table">'),
+        css: `.typed-probe{color:${palette.scheme}}`,
+    })
+
+    test('a note table, a callout table included, goes through the typer and its css reaches the head', async () => {
+        const r = await renderExport(
+            'a/note.md',
+            'html',
+            deps({ read: async () => TABLE_NOTE, typeTables }),
+        )
+        const text = enc.decode(r.bytes)
+        expect(text).toContain('<table class="bismuth-table">')
+        expect(text).toMatch(/<style>[^<]*\.typed-probe\{/)
+    })
+
+    test('a page-broken note keeps the typed css when the last page has no table', async () => {
+        const r = await renderPreview(
+            'a/note.md',
+            'html',
+            deps({
+                read: async () =>
+                    `${TABLE_NOTE}\n<!-- pagebreak -->\n\nprose only\n`,
+                typeTables,
+            }),
+        )
+        expect(r.previewHtml).toContain('.typed-probe{')
+        expect(r.previewHtml).toContain('<table class="bismuth-table">')
+    })
+
+    test('with no typer (the cli) a table keeps the bordered fallback', async () => {
+        const r = await renderExport(
+            'a/note.md',
+            'html',
+            deps({ read: async () => TABLE_NOTE }),
+        )
+        const text = enc.decode(r.bytes)
+        expect(text).toContain('<table>')
+        expect(text).toContain('table:not(.bismuth-table) th')
+    })
+})

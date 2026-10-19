@@ -329,10 +329,12 @@ describe('a blank line in the note renders as blank space (task 2 fix)', () => {
     })
 
     test('a table carries the same bottom margin as a paragraph, not just a top border rule', () => {
-        const rule = /table \{[^}]*\}/.exec(
-            wrapHtmlDocument('<p>x</p>', 'n', { ...p, proseLeading: 1.5 }, '', 12, false, true),
-        )?.[0] ?? ''
+        const doc = wrapHtmlDocument('<p>x</p>', 'n', { ...p, proseLeading: 1.5 }, '', 12, false, true)
+        const rule = /table:not\(\.bismuth-table\) \{[^}]*\}/.exec(doc)?.[0] ?? ''
         expect(rule).toContain('margin: 0 0 24px')
+        // a typed table adds its glyphs' half-tile overhang to the same rule
+        const typed = /table\.bismuth-table \{[^}]*\}/.exec(doc)?.[0] ?? ''
+        expect(typed).toContain('/ 2 + 24px)')
     })
 
     test('list items keep zero margin — blank-line spacing is a paragraph concern, not a list one', () => {

@@ -2220,7 +2220,7 @@ export const livePreview = [
         '.cm-table-wrap.cm-table-compact': { '--cm-td-lh': '1.3' },
         // The scroll box that holds the <table>: a table whose narrowest layout is wider than the note
         // scrolls sideways here instead of spilling under the `+` edge bars — the frame a chat
-        // message gives the same table (chat/ChatTable.module.css). INFINITY mode (below) widens
+        // message gives the same table (ui/table/MarkdownTable.module.css). INFINITY mode (below) widens
         // the table to one line per cell and scrolls it the same way. Its padding is the typed grid's
         // overhang (each cell's `+ - | =` sits half a corner tile outside the cell), so the edges
         // stay inside the box it clips to.

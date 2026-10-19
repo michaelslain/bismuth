@@ -1,11 +1,15 @@
 // app/src/ui/table/typeTable.ts — makes a rendered markdown `<table>` the one Bismuth table, wherever
-// it was built: a chat message's HTML string (chat/ChatTable.tsx) or a note's editable table widget
-// (editor/tableWidget.ts). Neither can hold a Solid component tree around its cells — the chat's
-// cells come from an HTML string, the editor's are rewritten on every focus and blur — so the table
-// is adopted after it exists:
+// it was built: a note's editable table widget (editor/tableWidget.ts), or an HTML string of rendered
+// markdown — a chat message, a card face, a transclusion (MarkdownTable.tsx) or an html/pdf export
+// (exportTables.ts). None of them can hold a Solid component tree around its cells — an HTML
+// string's cells exist before any component does, the editor's are rewritten on every focus and
+// blur — so the table is adopted after it exists:
 //   - `bismuth-table` on the `<table>` picks up global.css's table section: cell padding, top
 //     alignment, and wrapping only between whole words, so auto layout sizes every column from its
 //     real content (a one-word column takes its word's width, the prose column takes the wrapping);
+//   - a `:--` / `--:` column keeps its alignment (alignCells.ts): marked carries it as an `align`
+//     attribute, which the shared cell rule outranks, so it is set inline instead, as the note's
+//     table widget does. Left and right only — a centered column renders left (tableWidget.ts, #53);
 //   - every code token in a cell gets `<wbr>`s at its joints (codeBreaks.ts), so one long path cannot
 //     set its column's minimum width to the whole path;
 //   - every run of text too long to keep whole (longRuns.ts: a bare URL, a long link label or word)
@@ -15,6 +19,7 @@
 //     it owns decided by tableEdges.ts from its place and span in the grid.
 import { render } from 'solid-js/web'
 import AsciiCellEdges from '../ascii/AsciiCellEdges'
+import { alignCells } from './alignCells'
 import { codeBreaks } from './codeBreaks'
 import { longRuns } from './longRuns'
 import { cellEdges } from './tableEdges'
@@ -131,6 +136,7 @@ function placeCells(table: HTMLTableElement) {
 /** Type `table` as a Bismuth table. Call again (after `dispose`) when its shape or merges change. */
 export function typeTable(table: HTMLTableElement): TypedTable {
     table.classList.add('bismuth-table')
+    alignCells(table)
     breakCode(table)
     breakLongRuns(table)
     const mounts = new Map<Element, HTMLElement>()

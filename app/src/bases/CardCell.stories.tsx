@@ -40,6 +40,24 @@ export const Back: Story = {
         expect(canvasElement.querySelector('[data-cell="back"]')).not.toBeNull(),
 }
 
+/** A face holding a callout with a table: the table is the typed Bismuth table a note shows (the
+ *  `+ - | =` grid on every cell), squeezed to the card's width, and its `--:` column sits right. */
+export const CalloutTable: Story = {
+    args: {
+        field: 'back',
+        value: '> [!tip] Rates\n> | currency | rate |\n> | --- | --: |\n> | euro | 1.08 |\n> | yen | 0.0067 |',
+        placeholder: 'back…',
+    },
+    play: async ({ canvasElement }) => {
+        const table = canvasElement.querySelector('.callout table') as HTMLElement
+        expect(table.classList.contains('bismuth-table')).toBe(true)
+        for (const cell of Array.from(table.querySelectorAll('th, td')))
+            expect(cell.querySelector('[data-edges]')).not.toBeNull()
+        const rate = table.querySelector('tbody td:last-child') as HTMLElement
+        expect(getComputedStyle(rate).textAlign).toBe('right')
+    },
+}
+
 /** Empty: the placeholder shows in the overlay. */
 export const Empty: Story = {
     args: { field: 'front', value: '', placeholder: 'front…' },

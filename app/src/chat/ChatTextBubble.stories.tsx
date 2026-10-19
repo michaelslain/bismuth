@@ -239,7 +239,7 @@ export const TypedTable: Story = {
     },
 }
 
-/** A table as an agent writes one, in the 360px transcript: ChatTable sizes the columns — a path
+/** A table as an agent writes one, in the 360px transcript: MarkdownTable sizes the columns — a path
  *  wraps at its `/` and `.` joints, the prose column takes the wrapping, `done` stays one word. */
 export const NarrowTable: Story = {
     render: () => (

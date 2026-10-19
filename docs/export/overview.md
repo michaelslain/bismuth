@@ -1,6 +1,6 @@
 # Export
 
-Export turns a note, base, spreadsheet or drawing into a file you can share: Markdown, HTML, PNG, PDF, or CSV for a base. It works from the app's export pane and from the `bismuth export` command, and both produce the same result. This page is for anyone who exports, and for engineers who add a format or change how pages are cut.
+Export turns a note, base, spreadsheet or drawing into a file you can share: Markdown, HTML, PNG, PDF, or CSV for a base. It works from the app's export pane and from the `bismuth export` command, and both produce the same result except for a note's tables ([tables](#export-a-notes-tables)). This page is for anyone who exports, and for engineers who add a format or change how pages are cut.
 
 ```bash
 bismuth export Essay.md --format pdf --out essay.pdf
@@ -81,6 +81,12 @@ A line containing only `<!-- pagebreak -->` marks a page boundary. Insert one fr
 
 A marker inside a code fence or inline code stays literal. A section left blank by a marker at the very start or end, or two markers in a row, is dropped. For a page-broken PNG export the pane's bar reads `N pages // N files` and its last line names the first and last file (`writes note-1.png … note-3.png`), and its HTML preview draws one labelled `page N of M` sheet per section. The PDF preview is the real PDF.
 
+## Export a note's tables
+
+A note's markdown tables, a table inside a callout among them, export from the app as the same typed table the app shows: a `+ - | =` grid (a doubled `=` under the header), columns sized to their content, and a `:--` or `--:` column aligned left or right. A centered column (`:-:`) prints left-aligned, as it shows in the editor. The grid prints in `html`, `pdf` and `png`, in the grid ink of the chosen theme. An exported table does not squeeze to the page width: a table too wide in whole words runs past the right margin.
+
+The `bismuth export` command prints the same tables with plain 1px borders, because the typed grid is drawn by the app's own table component.
+
 ## Export a note with its ink
 
 A note's ` ```draw ` fences export as pictures in `html`, `pdf` and `png`. An attached fence is laid over the block it annotates, and a standalone fence (` ```draw block `) sits in the flow with its own height. Without this step the ink would export as a block of base64 text. Attached ink scales with the page's column width sideways but not vertically, so a pen nib can look slightly oval in a column narrower than the editor's; its position on the words is exact. See [note ink](../editor/ink.md#export-a-note-with-its-ink).
@@ -122,7 +128,7 @@ The pane (`ExportView.tsx`) and the command (`cli/src/commands/export.ts`) call 
 - `renderPreview(path, format, deps, theme, opts)` computes only what the pane shows. It never produces export bytes, so flipping options is instant.
 - `renderExport(path, format, deps, theme, opts)` returns `{ bytes, mime, filename }`, plus `files` when a note splits into several PNGs.
 
-`ExportDeps` carries `read`, `resolveRows`, `htmlToPdf`, `htmlToPng`, `drawingToPng`, `katexCss` and `docFontCss`. The pane resolves the format list with `formatsFor()` and `formatsForOptions()` in `formats.ts`, and defaults the format with `defaultFormat()` in `formats.ts` and the mode with `defaultModeForView()` in `options.ts`. The pane's `writes …` line and `renderExport` both name output files through `exportFilenames()` in `formats.ts`, so the line never promises a name the export does not write.
+`ExportDeps` carries `read`, `resolveRows`, `htmlToPdf`, `htmlToPng`, `drawingToPng`, `katexCss`, `docFontCss` and `typeTables`. The pane resolves the format list with `formatsFor()` and `formatsForOptions()` in `formats.ts`, and defaults the format with `defaultFormat()` in `formats.ts` and the mode with `defaultModeForView()` in `options.ts`. The pane's `writes …` line and `renderExport` both name output files through `exportFilenames()` in `formats.ts`, so the line never promises a name the export does not write.
 
 ### Add a format or a file kind
 
@@ -130,11 +136,17 @@ A new file kind needs a row in the extension matrix in `formats.ts` (`formatsFor
 
 ### Building the document
 
-`bodyHtml` picks the body by file kind. A sheet goes through `snapshotToHtmlTable` (`sheetHtml.ts`). A base goes through `baseViewHtml` for `visual` or `tableToHtml(baseToTable(...))` for `data`; `viewHtml.ts` and `calendarHtml.ts` are pure string builders that return `{ body, css }`. Any other `md` goes through `renderMarkdown` after `inkifyMarkdown` (`inkHtml.ts`) rewrites its draw fences into pictures.
+`bodyHtml` picks the body by file kind. A sheet goes through `snapshotToHtmlTable` (`sheetHtml.ts`). A base goes through `baseViewHtml` for `visual` or `tableToHtml(baseToTable(...))` for `data`; `viewHtml.ts` and `calendarHtml.ts` are pure string builders that return `{ body, css }`. Any other `md` goes through `renderMarkdown` after `inkifyMarkdown` (`inkHtml.ts`) rewrites its draw fences into pictures, then through `deps.typeTables` when the caller supplies it.
 
 `renderedBody` re-renders after `whenMathReady()` when the first pass leaves an unrendered KaTeX placeholder. `wrapBody` produces a standalone document: it inlines the document fonts unconditionally, KaTeX CSS (fonts as `data:` URIs) only when the body contains rendered math, and any view-specific CSS. The `.html` download and the rasteriser iframe cannot reach the app's stylesheets, so everything is inlined.
 
 Stripping frontmatter uses `stripFrontmatter` (`bases/cardBodySplit.ts`). It slices between a leading `---` fence and the next one without parsing YAML, and never touches a `---` that is not on the first line. Left in place, `marked` would read the closing fence as a setext heading underline.
+
+### Typed tables
+
+The pane's `typeTables` dep is `typeExportTables` (`app/src/ui/table/exportTables.ts`). It types every table in the body with `typeTable`, the call a note's table widget and a chat message make, in a detached element, then serializes the body. The CSS it returns is the app's own `.bismuth-table` rules and `AsciiCellEdges` rules, read back from `document.styleSheets`, plus the custom properties they name, resolved to literals on `:root`. A `light` export passes `palette.border` as the grid ink; a `dark` one keeps the app's `--border-soft`.
+
+The app paints a cell's glyphs as a `-webkit-mask-box-image` over its ink. WebKit's PDF output paints that mask as a solid block with the glyphs cut out, which hides the cell's text, so the document overrides it: each overlay paints its glyph sprite, pre-tinted in the ink on a canvas, as a nine-slice `border-image` with the same slices, widths and `round` repeat. `html2canvas` paints no `border-image` either, so `htmlToCanvas` calls `bakeTableEdges` before the snapshot: it draws each overlay's nine-slice into an image of the overlay's box, sets it as the overlay's background, and moves the overlay out of its `display: contents` mount, whose children `html2canvas` skips. `htmlTemplate.ts` keeps its bordered table rules for every table without `bismuth-table`: a sheet, a base's data table, a CLI export.
 
 ### Page breaks and PNG sections
 
@@ -200,4 +212,4 @@ A drawing rasterises through `deps.drawingToPng`. The app uses `drawingRaster.ts
 
 `inkifyMarkdown()` in `inkHtml.ts` scans a note for draw fences and rasterises each one to a transparent PNG through `deps.drawingToPng` with a `box` argument, whose width is `INK_LOGICAL_W` (680). It then rewrites the markdown before rendering. An attached fence wraps the annotated block in a `position: relative` container with the picture absolutely positioned at `width: 100%; height: <its own px>`, which maps x onto the column and keeps y unscaled. A standalone fence is a block image at `width: 100%; height: auto`. A fence with nothing above it to decorate becomes a zero-height overlay. A note with no ink is unchanged.
 
-Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/pageBreaks.ts`, `app/src/export/pageGeometry.ts`, `app/src/export/cssColor.ts`, `app/src/export/resolvePalette.ts`, `app/src/export/exportTheme.ts`, `app/src/export/baseView.ts`, `app/src/export/baseTable.ts`, `app/src/export/rowsHtml.ts`, `app/src/export/mdTable.ts`, `app/src/export/sheetHtml.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/pdfPrint.ts`, `app/src/export/printCss.ts`, `app/src/export/htmlTemplate.ts`, `app/src/export/inkHtml.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/export/docFontCss.ts`, `app/src/export/fontFaceCss.ts`, `app/src-tauri/src/print_pdf.rs`, `app/src/bases/cardBodySplit.ts`, `app/src/tabIds.ts`, `cli/src/commands/export.ts`, `cli/src/docFontCss.ts`, `cli/src/katexCss.ts`, `core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`
+Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/ui/table/exportTables.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/pageBreaks.ts`, `app/src/export/pageGeometry.ts`, `app/src/export/cssColor.ts`, `app/src/export/resolvePalette.ts`, `app/src/export/exportTheme.ts`, `app/src/export/baseView.ts`, `app/src/export/baseTable.ts`, `app/src/export/rowsHtml.ts`, `app/src/export/mdTable.ts`, `app/src/export/sheetHtml.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/pdfPrint.ts`, `app/src/export/printCss.ts`, `app/src/export/htmlTemplate.ts`, `app/src/export/inkHtml.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/export/docFontCss.ts`, `app/src/export/fontFaceCss.ts`, `app/src-tauri/src/print_pdf.rs`, `app/src/bases/cardBodySplit.ts`, `app/src/tabIds.ts`, `cli/src/commands/export.ts`, `cli/src/docFontCss.ts`, `cli/src/katexCss.ts`, `core/src/render/htmlRaster.ts`, `core/src/render/chromeSession.ts`

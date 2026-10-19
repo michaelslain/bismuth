@@ -291,9 +291,14 @@ ${headingRules}
   /* A page break: invisible on screen (height:0), a forced new page when printed. The in-app PDF
      rasterizer slices pages at this element explicitly (htmlToPdf.ts). */
   .bismuth-page-break { break-after: page; page-break-after: always; height: 0; }
-  table { border-collapse: collapse; width: 100%; margin: 0 0 ${rule}px; }
-  th, td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; line-height: ${rule}px; }
-  th { background: ${p.head}; }
+  /* A note's markdown table arrives typed (exporters.ts typedTables): the app's own .bismuth-table
+     and typed-grid rules ride in the head. These bordered rules are for every other table — a
+     sheet, a base's data, a cli export with no DOM to type in. */
+  table:not(.bismuth-table) { border-collapse: collapse; width: 100%; margin: 0 0 ${rule}px; }
+  table:not(.bismuth-table) th, table:not(.bismuth-table) td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; line-height: ${rule}px; }
+  table:not(.bismuth-table) th { background: ${p.head}; }
+  /* A typed cell's glyphs overhang it by half a corner tile, so the table leaves that much room. */
+  table.bismuth-table { margin: calc(var(--ascii-tile-h, 1.5em) / 2) calc(var(--ascii-corner-w, 1ch) / 2) calc(var(--ascii-tile-h, 1.5em) / 2 + ${rule}px); }
   img { max-width: 100%; }
   /* Inline KaTeX math must push the line box open instead of painting over the line below it.
      The inlined KaTeX stylesheet (katexCss.ts, injected via extraHead) leaves .katex at its

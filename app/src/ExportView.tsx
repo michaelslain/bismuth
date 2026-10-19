@@ -144,6 +144,13 @@ const BASE_DEPS: Omit<ExportDeps, 'htmlToPdf'> = {
     // the app's node_modules faces.
     docFontCss: async proseStack =>
         (await import('./export/docFontCss')).docFontInlineCss(proseStack),
+    // A "light" export is print paper under a dark app, so its grid takes the paper's own border
+    // ink; a "dark" one mirrors the app chrome and keeps the app's grid ink.
+    typeTables: async (html, palette) =>
+        (await import('./ui/table/exportTables')).typeExportTables(
+            html,
+            palette.scheme === 'light' ? palette.border : undefined,
+        ),
 }
 
 export function ExportView(props: {

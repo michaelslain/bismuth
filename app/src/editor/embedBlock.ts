@@ -25,6 +25,7 @@ import { renderMarkdown } from '../bases/markdown'
 import { stripFrontmatter } from '../bases/cardBodySplit'
 import { MONO_FONT } from './livePreview'
 import { mountSolid, disposeSolid } from './solidWidget'
+import { typeTables } from '../ui/table/typeTables'
 import PdfEmbed from './PdfEmbed'
 import {
     type EmbedKind,
@@ -300,6 +301,9 @@ class EmbedWidget extends WidgetType {
                     return
                 }
                 bodyEl.innerHTML = renderMarkdown(stripFrontmatter(text)) // trusted vault content
+                // its tables are the typed Bismuth table; destroy() disposes them like a Solid face
+                ;(wrap as HTMLElement & { __dispose?: () => void }).__dispose =
+                    typeTables(bodyEl)
             })
             .catch(() => this.fail(wrap, `failed to load: ${target}`))
     }
@@ -310,7 +314,8 @@ class EmbedWidget extends WidgetType {
         wrap.textContent = `⚠ ${msg}`
     }
 
-    /** Dispose a mounted Solid face (the PDF embed); a no-op for every plain-DOM kind. */
+    /** Dispose a mounted Solid face (the PDF embed, a transcluded note's tables); a no-op for every
+     *  other plain-DOM kind. */
     destroy(dom: HTMLElement): void {
         disposeSolid(dom)
     }

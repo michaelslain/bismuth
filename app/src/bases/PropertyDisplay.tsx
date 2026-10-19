@@ -3,6 +3,7 @@ import { resolveProperty } from '../../../core/src/bases/query'
 import { propertyType } from '../../../core/src/bases/properties'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { renderInline, renderMarkdown } from './markdown'
+import { createTypedTables } from '../ui/table/typeTables'
 import { formatNumberDisplay } from './numberFormat'
 import { multiselectValues } from './propertyEdit'
 import { formatDateValue, isEmptyValue } from './valueDisplay'
@@ -102,6 +103,7 @@ const PropertyDisplay: Component<PropertyDisplayProps> = props => {
                     register="prose"
                     size="inherit"
                     class={styles.markdown}
+                    ref={el => createTypedTables(() => el, () => src)}
                     innerHTML={renderMarkdown(src)}
                 />
             )

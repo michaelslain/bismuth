@@ -9,6 +9,7 @@ import {
     type JSX,
 } from 'solid-js'
 import PlainButton from '../ui/PlainButton'
+import { createTypedTables } from '../ui/table/typeTables'
 import styles from './FlipCard.module.css'
 
 // The flip's `card-flip` animation is `none` under reduced motion (FlipCard.module.css), so no
@@ -86,6 +87,12 @@ const FlipCard: Component<FlipCardProps> = props => {
                     >
                         <div
                             class={styles['card-md']}
+                            ref={el =>
+                                createTypedTables(
+                                    () => el,
+                                    () => props.promptHtml,
+                                )
+                            }
                             innerHTML={props.promptHtml}
                         />
                     </div>
@@ -96,11 +103,23 @@ const FlipCard: Component<FlipCardProps> = props => {
                     >
                         <div
                             class={styles['qcaption']}
+                            ref={el =>
+                                createTypedTables(
+                                    () => el,
+                                    () => props.promptHtml,
+                                )
+                            }
                             innerHTML={props.promptHtml}
                         />
                         <div class={styles['fcdiv']} />
                         <div
                             class={`${styles['card-md']} ${styles['abody']}`}
+                            ref={el =>
+                                createTypedTables(
+                                    () => el,
+                                    () => props.answerHtml,
+                                )
+                            }
                             innerHTML={props.answerHtml}
                         />
                     </div>

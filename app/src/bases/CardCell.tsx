@@ -2,6 +2,7 @@ import { createSignal, Show, type Component } from 'solid-js'
 import { TextInput } from '../ui/TextInput'
 import { isConfirmKey } from '../ui/widgetKeys'
 import { renderMarkdown } from './markdown'
+import { createTypedTables } from '../ui/table/typeTables'
 import cardCellPlaceholder from './cardCellPlaceholder'
 import styles from './CardCell.module.css'
 
@@ -35,6 +36,7 @@ const CardCell: Component<CardCellProps> = props => {
             <Show when={!props.draft}>
                 <div
                     class={styles['cell-md']}
+                    ref={el => createTypedTables(() => el, val)}
                     innerHTML={
                         // trim: renderMarkdown ends every block with "\n", which `.cell-md`'s
                         // pre-wrap would paint as an extra blank line under the card text.

@@ -24,6 +24,7 @@ import html2canvas from 'html2canvas'
 import { sanitizeDocColorsForRaster, normalizeCssColor } from './cssColor'
 import { RULE_PX } from './htmlTemplate'
 import { PDF_BODY_OVERRIDE } from './printCss'
+import { bakeTableEdges } from '../ui/table/exportTables'
 import {
     PAGE_W_PX,
     CONTENT_W_PX,
@@ -246,6 +247,9 @@ async function htmlToCanvas(
         // indivisible element. Same canvas-px space as `breaks` above. `bands` are the painted-
         // blank gate's forbidden formula extents (renderLetterPages passes both into pageSlices).
         const { stops, bands } = measureCutStops(doc, scale)
+        // A typed table's `+ - | =` grid is a CSS mask, which html2canvas cannot paint (it would fill
+        // each cell's overlay box solid): bake every overlay to an image of its glyphs first.
+        await bakeTableEdges(doc, scale)
         const canvas = await html2canvas(doc.body, {
             scale,
             backgroundColor: bg,
