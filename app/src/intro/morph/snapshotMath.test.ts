@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
     LUMA_RAMP,
+    NO_CLIP,
+    insideClip,
+    intersectClip,
     layoutText,
     lumaToChar,
     nearestGlyphColor,
@@ -165,5 +168,35 @@ describe('pseudoContentText', () => {
         expect(pseudoContentText('""')).toBe('')
         expect(pseudoContentText('counter(item)')).toBe('')
         expect(pseudoContentText('"\\e900"')).toBe('')
+    })
+})
+
+describe('clip regions', () => {
+    // A scroller 100px tall at y 200: rows scrolled below its bottom edge are off screen.
+    const scroller = { l: 0, r: 600, t: 200, b: 300 }
+
+    test('no clip shows everything', () => {
+        expect(insideClip({ l: -1e6, r: -1e6 + 7, t: 1e6, b: 1e6 + 18 }, NO_CLIP)).toBe(true)
+    })
+    test('a glyph inside the scroller shows; one scrolled past its bottom or top does not', () => {
+        expect(insideClip({ l: 10, r: 17, t: 210, b: 228 }, scroller)).toBe(true)
+        expect(insideClip({ l: 10, r: 17, t: 310, b: 328 }, scroller)).toBe(false)
+        expect(insideClip({ l: 10, r: 17, t: 170, b: 188 }, scroller)).toBe(false)
+    })
+    test('a row cut by the edge shows only while its centre is inside', () => {
+        expect(insideClip({ l: 10, r: 17, t: 285, b: 303 }, scroller)).toBe(true)
+        expect(insideClip({ l: 10, r: 17, t: 295, b: 313 }, scroller)).toBe(false)
+    })
+    test('nested clips intersect; an axis nothing clips stays open', () => {
+        const vertical = { l: -Infinity, r: Infinity, t: 250, b: 400 }
+        const both = intersectClip(intersectClip(NO_CLIP, scroller), vertical)
+        expect(both).toEqual({ l: 0, r: 600, t: 250, b: 300 })
+        expect(intersectClip(NO_CLIP, vertical)).toEqual(vertical)
+        expect(insideClip({ l: 10, r: 17, t: 220, b: 238 }, both)).toBe(false)
+    })
+    test('disjoint clips leave nothing inside', () => {
+        const below = intersectClip(scroller, { l: 0, r: 600, t: 400, b: 500 })
+        expect(insideClip({ l: 10, r: 17, t: 250, b: 268 }, below)).toBe(false)
+        expect(insideClip({ l: 10, r: 17, t: 450, b: 468 }, below)).toBe(false)
     })
 })

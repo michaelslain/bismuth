@@ -17,6 +17,10 @@ export type IntroWindowProps = {
     backdrop?: JSX.Element
     /** Hold the art box at its full height (the body's art budget) instead of its content's. */
     artFill?: boolean
+    /** Size the art box to its content even past the art budget, shrinking only to leave the copy its
+     *  room: for art that must show whole (the privacy picker). The art caps itself at the box's
+     *  height (`max-height: 100%`) and scrolls only when the window is too short for it. */
+    artFit?: boolean
     /** IntroFooter. */
     footer: JSX.Element
     /** The strip's [skip] ("Skip intro"). */
@@ -46,7 +50,10 @@ const IntroWindow: Component<IntroWindowProps> = props => {
             <div class={styles['body']}>
                 <div
                     class={styles['art']}
-                    classList={{ [styles['art--fill']]: !!props.artFill }}
+                    classList={{
+                        [styles['art--fill']]: !!props.artFill,
+                        [styles['art--fit']]: !!props.artFit,
+                    }}
                     data-intro-slot="art"
                 >
                     <div class={styles['backdrop']} data-intro-slot="backdrop">

@@ -242,3 +242,28 @@ export function pseudoContentText(content: string): string {
     // icon fonts paint private-use code points, which are not text
     return out.replace(/[\uE000-\uF8FF]/g, '')
 }
+
+/** The region a box's content shows in, in px: the client box of a clipping ancestor, or the
+ *  intersection of several. An axis nothing clips stays at ±Infinity. */
+export type ClipBox = { l: number; r: number; t: number; b: number }
+
+/** No clip: everything shows. */
+export const NO_CLIP: ClipBox = { l: -Infinity, r: Infinity, t: -Infinity, b: Infinity }
+
+/** The overlap of two clip regions; an empty overlap keeps r <= l or b <= t, which clips everything. */
+export function intersectClip(a: ClipBox, b: ClipBox): ClipBox {
+    return {
+        l: Math.max(a.l, b.l),
+        r: Math.min(a.r, b.r),
+        t: Math.max(a.t, b.t),
+        b: Math.min(a.b, b.b),
+    }
+}
+
+/** Whether a glyph box paints inside a clip region: its centre lies within it. A row a scroller has
+ *  scrolled out of view (or cut through its middle) is left out of the snapshot, like it is on screen. */
+export function insideClip(box: { l: number; r: number; t: number; b: number }, clip: ClipBox): boolean {
+    const cx = (box.l + box.r) / 2
+    const cy = (box.t + box.b) / 2
+    return cx >= clip.l && cx <= clip.r && cy >= clip.t && cy <= clip.b
+}

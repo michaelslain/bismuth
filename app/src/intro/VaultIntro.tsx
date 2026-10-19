@@ -433,6 +433,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
             <IntroWindow
                 onClose={() => move('skip')}
                 artFill={!!graphStage()}
+                artFit={slide().extra === 'privacy'}
                 backdrop={
                     // ONE graph for the palette and three-brains slides: the condition stays true
                     // across that step, so the instance persists and just changes stage.

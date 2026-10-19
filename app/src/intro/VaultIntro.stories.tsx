@@ -263,8 +263,7 @@ export const BeginBusy: Story = {
  *  which enters the vault). */
 export const Geometry: Story = {
     args: { startAt: 'welcome', initialPowerups: ['daemon', 'cli'], morph: false },
-    // A 900px stage, over the 44rem short-window step: the art height is the full 24 rows whatever
-    // the browser viewport is (the step reads this box, not the viewport).
+    // A 900px stage: the window fills it, whatever the browser viewport is.
     decorators: [Box({ height: '900px' })],
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -291,8 +290,34 @@ export const Geometry: Story = {
                 // No empty art box over the art: the box is its content's height (the graph slides
                 // hold it at the full art budget for the cloud).
                 spare: art.height - content.height,
+                // The art shows whole: nothing inside the art box scrolls (a scroller there clips
+                // rows the slide means to show).
+                scrolled: [...slot('art').querySelectorAll('*')].filter(
+                    el =>
+                        /auto|scroll/.test(getComputedStyle(el).overflowY) &&
+                        el.scrollHeight > el.clientHeight + 1,
+                ).length,
+                // No empty band at the art's top: the topmost text or canvas sits on the box's top
+                // edge, not a band of padding below it.
+                band: inkTop(slot('art').lastElementChild!) - art.top,
             }
         }
+        const inkTop = (el: Element) => {
+            let top = Infinity
+            for (const n of el.querySelectorAll('*')) {
+                const ink =
+                    n.tagName === 'CANVAS' ||
+                    [...n.childNodes].some(
+                        c => c.nodeType === Node.TEXT_NODE && !!c.textContent?.trim(),
+                    )
+                const r = n.getBoundingClientRect()
+                if (ink && r.width > 0 && r.height > 0) top = Math.min(top, r.top)
+            }
+            return top
+        }
+        const rowH = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
+        )
         // The headline's words without the typing cursor (an aria-hidden `_` that rides the title
         // while it types). The full title is in the DOM from the first frame.
         const words = () => {
@@ -305,8 +330,11 @@ export const Geometry: Story = {
             await expect(m.footerTop, `slide ${i + 1} footerTop`).toBeCloseTo(first.footerTop, 0)
             await expect(m.bodyH, `slide ${i + 1} bodyH`).toBeCloseTo(first.bodyH, 0)
             await expect(Math.abs(m.skew), `slide ${i + 1} centred`).toBeLessThan(2)
-            if (SLIDES[i].key !== 'theme' && SLIDES[i].key !== 'graph')
+            await expect(m.scrolled, `slide ${i + 1} art scrolls`).toBe(0)
+            if (SLIDES[i].key !== 'theme' && SLIDES[i].key !== 'graph') {
                 await expect(Math.abs(m.spare), `slide ${i + 1} art box spare`).toBeLessThan(1)
+                await expect(m.band, `slide ${i + 1} art top band`).toBeLessThan(rowH)
+            }
         }
         await waitFor(() => expect(words()).toBe(SLIDES[0].title))
         const first = measure()

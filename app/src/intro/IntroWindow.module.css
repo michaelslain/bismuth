@@ -58,6 +58,14 @@
 .art--fill {
   height: var(--intro-art-h);
 }
+/* Art that must show whole (the privacy picker) is its content's height even past the art budget,
+   and gives way only to the copy: the box shrinks to what the body has left over the copy and the gap,
+   and the art scrolls inside it (max-height: 100%) only when even that is short. */
+.art--fit {
+  flex-shrink: 1;
+  min-height: 0;
+  max-height: none;
+}
 /* Behind the art, filling the art box; IntroGraph's stage spills out of it. */
 .backdrop {
   position: absolute;

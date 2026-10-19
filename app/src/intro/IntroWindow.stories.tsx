@@ -1,7 +1,8 @@
 // Visual spec for <IntroWindow>: the borderless frame the intro slides sit in. The decorator stands in
 // for VaultIntro's root (a --sp-7 gutter, the window filling the rest). `ShortWindow` proves the footer
-// stays on screen at 640px tall, `TallWindow` that a full-height art box grows with the height. Both
-// prove the art and the copy are one group centred in the body.
+// stays on screen at 640px tall, `TallWindow` that a full-height art box grows with the height, and
+// `ArtFit` / `ArtFitShortWindow` that a fitted art box takes its art's height and gives way only to the
+// copy. All of them prove the art and the copy are one group centred in the body.
 import type { JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
@@ -124,6 +125,47 @@ export const TallWindow: Story = {
         await expect(artH).toBeGreaterThan(15 * rowH)
         const contentH = body.height - liftOf(canvasElement)
         await expect(Math.abs(artH - Math.floor((0.44 * contentH) / rowH) * rowH)).toBeLessThan(1)
+    },
+}
+
+/** Art 18 rows tall, past the 15-row art budget, capped at its box and scrolling inside it (the
+ *  privacy picker's shape). */
+const tallArt = (
+    <div style={{ 'max-height': '100%', 'overflow-y': 'auto' }}>
+        <div style={{ height: 'calc(18 * var(--row-h))' }}>
+            <Text size="ui">art // 18 rows, shown whole</Text>
+        </div>
+    </div>
+)
+
+/** `artFit` at the default 800px stage: the art box is the art's full 18 rows, past the art budget, and
+ *  centres with the copy. */
+export const ArtFit: Story = {
+    args: { ...args, art: tallArt, artFit: true },
+    decorators: [Stage('800px')],
+    play: async ({ canvasElement }) => {
+        await expectCentred(canvasElement)
+        const rowH = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
+        )
+        const art = slot(canvasElement, 'art').getBoundingClientRect()
+        await expect(Math.abs(art.height - 18 * rowH)).toBeLessThan(1)
+    },
+}
+
+/** `artFit` at a 480px stage, too short for the art and the copy: the art box gives way to the copy,
+ *  the group still fills the body without spilling, and the art scrolls inside its box. */
+export const ArtFitShortWindow: Story = {
+    args: { ...args, art: tallArt, artFit: true },
+    decorators: [Stage('480px')],
+    play: async ({ canvasElement }) => {
+        await expectCentred(canvasElement)
+        const art = slot(canvasElement, 'art')
+        const scroller = art.lastElementChild!.firstElementChild as HTMLElement
+        await expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
+        await expect(scroller.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+            art.getBoundingClientRect().bottom + 1,
+        )
     },
 }
 

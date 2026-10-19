@@ -6,10 +6,14 @@ import { drawnGlyphs } from '../../ui/ascii/glyphCanvas'
 import { GLYPH_COLOR_VARS, GLYPH_COLORS, type GlyphColor } from '../../ui/ascii/glyphScene'
 import type { MorphCell, MorphGrid } from './morphGrid'
 import {
+    insideClip,
+    intersectClip,
     layoutText,
     lumaToChar,
     nearestGlyphColor,
+    NO_CLIP,
     pseudoContentText,
+    type ClipBox,
     type TextAlign,
     type TextGlyph,
 } from './snapshotMath'
@@ -100,6 +104,37 @@ function makeVisibility(root: HTMLElement) {
     return visible
 }
 
+/** The region an element's content shows in: the client boxes of it and every ancestor up to root
+ *  whose overflow clips (a scroller such as the privacy slide's art box), intersected. */
+function makeClip(root: HTMLElement) {
+    const cache = new Map<Element, ClipBox>()
+    const clipOf = (el: Element | null): ClipBox => {
+        if (!el) return NO_CLIP
+        const hit = cache.get(el)
+        if (hit) return hit
+        let clip = el !== root && el.parentElement ? clipOf(el.parentElement) : NO_CLIP
+        const cs = getComputedStyle(el)
+        // overflow does not apply to an inline box (whose clientWidth reads 0) or a display: contents one
+        const boxed = cs.display !== 'inline' && cs.display !== 'contents'
+        const cx = boxed && cs.overflowX !== 'visible'
+        const cy = boxed && cs.overflowY !== 'visible'
+        if (cx || cy) {
+            const r = el.getBoundingClientRect()
+            const l = r.left + el.clientLeft
+            const t = r.top + el.clientTop
+            clip = intersectClip(clip, {
+                l: cx ? l : -Infinity,
+                r: cx ? l + el.clientWidth : Infinity,
+                t: cy ? t : -Infinity,
+                b: cy ? t + el.clientHeight : Infinity,
+            })
+        }
+        cache.set(el, clip)
+        return clip
+    }
+    return clipOf
+}
+
 /** Every visible text char, every canvas, every horizontal rule -> a sparse MorphGrid. Given a
  *  `scope` selector, only what sits inside an element matching it is read: the parts of the slide
  *  that fade under the overlay, so chrome that stays on screen is never painted twice. */
@@ -119,6 +154,8 @@ export function snapshotSlide(root: HTMLElement, m: SnapshotMetrics, scope?: str
         return hit
     }
     const visible = (el: Element): boolean => shown(el) && inScope(el)
+    // What a scrolling ancestor has scrolled out of view is not on screen, so it is not snapshot.
+    const clipOf = makeClip(root)
     const colorOf = new Map<Element, GlyphColor>()
     const tokenFor = (el: Element): GlyphColor => {
         let c = colorOf.get(el)
@@ -138,6 +175,7 @@ export function snapshotSlide(root: HTMLElement, m: SnapshotMetrics, scope?: str
         if (!visible(canvas)) continue
         const r = canvas.getBoundingClientRect()
         if (r.width < 1 || r.height < 1 || canvas.width < 1 || canvas.height < 1) continue
+        const clip = clipOf(canvas.parentElement)
         // Glyph art: its own glyphs on their own footprint, so the morph lands on exactly what the
         // real art draws (the same characters at the same size), not a luminance read of it.
         const art = drawnGlyphs(canvas)
@@ -151,6 +189,7 @@ export function snapshotSlide(root: HTMLElement, m: SnapshotMetrics, scope?: str
                     const left = r.left + art.left + fc * aw
                     const cy = r.top + art.top + fr * ah + ah / 2
                     if (left + aw > r.right + 0.5 || cy > r.bottom) continue
+                    if (!insideClip({ l: left, r: left + aw, t: cy - ah / 2, b: cy + ah / 2 }, clip)) continue
                     const col = Math.floor((left + aw / 2 - originX) / cellW)
                     const row = Math.floor((cy - originY) / cellH)
                     if (!inGrid(col, row)) continue
@@ -182,6 +221,9 @@ export function snapshotSlide(root: HTMLElement, m: SnapshotMetrics, scope?: str
         for (let row = r0; row < r1; row++) {
             for (let col = c0; col < c1; col++) {
                 if (!inGrid(col, row)) continue
+                const cellX = originX + (col + 0.5) * cellW
+                const cellY = originY + (row + 0.5) * cellH
+                if (!insideClip({ l: cellX, r: cellX, t: cellY, b: cellY }, clip)) continue
                 const x0 = Math.max(0, Math.floor((originX + col * cellW - r.left) * sx))
                 const x1 = Math.min(canvas.width, Math.ceil((originX + (col + 1) * cellW - r.left) * sx))
                 const y0 = Math.max(0, Math.floor((originY + row * cellH - r.top) * sy))
@@ -225,13 +267,15 @@ export function snapshotSlide(root: HTMLElement, m: SnapshotMetrics, scope?: str
                 edges.push([r.bottom - parseFloat(cs.borderBottomWidth) / 2, cs.borderBottomColor, 'bottom'])
         }
         if (edges.length === 0 || !visible(el)) continue
+        const clip = clipOf(el.parentElement)
         for (const [y, css, _kind] of edges) {
             const rgba = parseRgba(css)
             if (!rgba || rgba[3] === 0) continue
+            if (y < clip.t || y > clip.b) continue
             const row = Math.floor((y - originY) / cellH)
             const color = nearestGlyphColor([rgba[0], rgba[1], rgba[2]], palette)
-            const c0 = Math.floor((r.left - originX) / cellW)
-            const c1 = Math.ceil((r.right - originX) / cellW)
+            const c0 = Math.floor((Math.max(r.left, clip.l) - originX) / cellW)
+            const c1 = Math.ceil((Math.min(r.right, clip.r) - originX) / cellW)
             for (let col = c0; col < c1; col++) {
                 if (inGrid(col, row)) under.set(row * cols + col, { col, row, ch: '─', color })
             }
@@ -262,11 +306,13 @@ export function snapshotSlide(root: HTMLElement, m: SnapshotMetrics, scope?: str
         if (tag === 'SCRIPT' || tag === 'STYLE') continue
         const color = tokenFor(parent)
         const align = alignOf(parent)
+        const clip = clipOf(parent)
         for (let i = 0; i < s.length; i++) {
             range.setStart(node, i)
             range.setEnd(node, i + 1)
             const r = range.getBoundingClientRect()
             if (r.width <= 0 || r.height <= 0) continue
+            if (!insideClip({ l: r.left, r: r.right, t: r.top, b: r.bottom }, clip)) continue
             glyphs.push({ ch: /\s/.test(s[i]) ? ' ' : s[i], l: r.left, r: r.right, t: r.top, b: r.bottom, color, align })
             owner.push(parent)
         }
@@ -295,11 +341,13 @@ export function snapshotSlide(root: HTMLElement, m: SnapshotMetrics, scope?: str
             const t = first ? first.t : box.top
             const b = first ? first.b : box.bottom
             const k = str.length
+            const clip = clipOf(el)
             for (let i = 0; i < k; i++) {
                 const l =
                     which === '::before'
                         ? (first ? first.l : box.left + k * w) - (k - i) * w
                         : (last ? last.r : box.right - k * w) + i * w
+                if (!insideClip({ l, r: l + w, t, b }, clip)) continue
                 glyphs.push({ ch: str[i], l, r: l + w, t, b, color, align: alignOf(el) })
             }
         }
