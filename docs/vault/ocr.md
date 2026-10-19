@@ -23,11 +23,17 @@ bismuth ocr "readings/week 8 reading 2.pdf" --math --vault ~/vault --pretty
 | Engine | Needed for | Install |
 |---|---|---|
 | `ocrmypdf` (with `tesseract`) | the PDF text layer, and plain image OCR | `brew install ocrmypdf` |
-| `marker_single` (Marker) | `--math` transcriptions | `uv tool install marker-pdf` |
+| `marker_single` (Marker) | `--math` transcriptions | `uv tool install 'marker-pdf>=2,<3'` |
 | `llama-server` (llama.cpp) | Marker's models | `brew install llama.cpp` |
 | `pdftotext` (optional) | the word counts in the result | `brew install poppler` |
 
 The first `--math` run downloads Marker's models from Hugging Face, which takes several minutes; later runs start in seconds. The command finds the engines on `PATH` and also in `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`, so an agent or daemon session with a short `PATH` still reaches them.
+
+Marker 2 is the release line that runs its models on `llama-server`, and the `>=2,<3` constraint keeps `uv tool upgrade` on it. A failed Marker run reports Python's last exception line and the repair command; run it to reinstall Marker within that line:
+
+```bash
+uv tool install --reinstall 'marker-pdf>=2,<3'
+```
 
 ## Make a scanned PDF's text selectable
 

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { makeVault } from './helpers'
+import { makeVault, tempDir } from './helpers'
 import {
     cancelPdfMarkdownJob,
     checkPdfMarkdown,
@@ -8,7 +8,18 @@ import {
     startPdfMarkdownJob,
     type PdfMarkdownOptions,
 } from '../src/pdfMarkdown'
-import { runTool, sourcedNote, tidyMarkdown } from '../src/marker'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import {
+    INSTALL_HINTS,
+    MARKER_REPAIR,
+    MARKER_SHIM,
+    markerFailure,
+    markerShimEnv,
+    runTool,
+    sourcedNote,
+    tidyMarkdown,
+} from '../src/marker'
 
 describe('pdf → markdown', () => {
     test('the note sits beside the PDF with the extension swapped', () => {
@@ -155,5 +166,46 @@ describe('pdf → markdown', () => {
         const helper = Number(r.stderr.trim())
         expect(helper).toBeGreaterThan(0)
         expect(() => process.kill(helper, 0)).toThrow()
+    })
+
+    test('a failed Marker run names its exception and the repair command, not a traceback', () => {
+        const traceback = [
+            'Traceback (most recent call last):',
+            '  File "/x/marker/providers/pdf.py", line 383, in check_page',
+            '    img_bbox = PolygonBox.from_bbox(img_obj.get_pos())',
+            "AttributeError: 'PdfImage' object has no attribute 'get_pos'",
+        ].join('\n')
+        expect(markerFailure(1, traceback)).toBe(
+            `marker's install is broken (AttributeError: 'PdfImage' object has no attribute 'get_pos') — repair it: ${MARKER_REPAIR}`,
+        )
+        expect(markerFailure(1, 'loading\nRuntimeError: llama-server did not start\n')).toBe(
+            `marker failed (RuntimeError: llama-server did not start) — if it keeps failing, reinstall it: ${MARKER_REPAIR}`,
+        )
+        expect(markerFailure(137, '')).toContain('marker failed (exit code 137)')
+    })
+
+    test('installs and repairs stay on the marker-pdf 2.x line', () => {
+        expect(INSTALL_HINTS.marker_single).toBe("uv tool install 'marker-pdf>=2,<3'")
+        expect(MARKER_REPAIR).toBe("uv tool install --reinstall 'marker-pdf>=2,<3'")
+    })
+
+    test('the shim aliases get_pos onto a pypdfium2 that only has get_bounds', async () => {
+        const dir = tempDir('bismuth-shim-')
+        // A stand-in pypdfium2 with the 5.x API; the real one is in Marker's own venv.
+        mkdirSync(join(dir, 'fake', 'pypdfium2'), { recursive: true })
+        writeFileSync(
+            join(dir, 'fake', 'pypdfium2', '__init__.py'),
+            'class PdfObject:\n    def get_bounds(self):\n        return (1, 2, 3, 4)\n',
+        )
+        const env = markerShimEnv(join(dir, 'shim'), { PYTHONPATH: join(dir, 'fake') })
+        expect(env.PYTHONPATH).toBe(`${join(dir, 'shim')}:${join(dir, 'fake')}`)
+        expect(readFileSync(join(dir, 'shim', 'sitecustomize.py'), 'utf8')).toBe(MARKER_SHIM)
+        const r = await runTool(
+            'python3',
+            ['-c', 'import pypdfium2; print(pypdfium2.PdfObject().get_pos())'],
+            undefined,
+            env,
+        )
+        expect(r.stdout.trim()).toBe('(1, 2, 3, 4)')
     })
 })

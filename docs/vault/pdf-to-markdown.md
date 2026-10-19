@@ -62,6 +62,12 @@ Every option applies to the CLI command and the MCP tool.
 
 Without `--replace`, an existing note is refused with `EEXIST` and left as it is, so a note you edited is never overwritten. A path that is not a PDF is refused with `not a PDF`, and a missing file with `no such file`.
 
+## When a conversion fails
+
+A failed conversion reports one line: the error Marker raised and the command that reinstalls it, such as `couldn't convert scan.pdf: marker's install is broken (ImportError: …) — repair it: uv tool install --reinstall 'marker-pdf>=2,<3'`. No note is written. Run the command, then convert again. [OCR](ocr.md#install-the-ocr-engines) owns the install.
+
+PDFs whose pages hold both text and images convert like any other.
+
 ## Convert as an agent
 
 An agent calls the `pdf_to_markdown` MCP tool with `path` and the arguments in the options table. It is its own tool rather than a `bismuth_cli` call because a long PDF takes minutes and `bismuth_cli` gives up after 30 seconds; `pdf_to_markdown` waits up to 30 minutes. It is path-scoped under the vault's visibility settings: a hidden PDF is refused like any other read. See [visibility](visibility.md).
@@ -71,6 +77,8 @@ To give a scanned PDF a selectable text layer instead, which does change the PDF
 ## How it works
 
 `core/src/pdfMarkdown.ts` holds the conversion: `pdfMarkdownPath` names the note, `checkPdfMarkdown` refuses what cannot convert, and `convertPdfToMarkdown` runs Marker and writes the note. Marker itself, engine lookup on a short `PATH`, page parsing and `tidyMarkdown` live in `core/src/marker.ts`, shared with `bismuth ocr`; `sourcedNote` adds the `source` frontmatter.
+
+marker-pdf 2.0.0 reads an image's box with `PdfObject.get_pos`, a method the pypdfium2 5 it pins names `get_bounds`, and it reaches that call on any page with text and an image, because `markerArgs` passes `--strip_existing_ocr`. `markerTranscribe` therefore runs Marker with `markerShimEnv`, which puts a `sitecustomize.py` holding `MARKER_SHIM` first on `PYTHONPATH`; the shim adds `get_pos` as an alias of `get_bounds` only when `get_pos` is missing. `markerFailure` turns a non-zero exit into the one-line message, with `MARKER_REPAIR` as the command.
 
 The CLI command is `pdf md` in `cli/src/commands/pdf.ts`. The MCP tool is `pdf_to_markdown` in `mcp/src/server.ts`, which runs the command through `pdfToMarkdownCliArgs` with `OCR_TIMEOUT_MS`. `pdf` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
 

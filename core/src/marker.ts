@@ -8,7 +8,15 @@
 // It lives in core rather than cli because the core server runs it too, and core must not import
 // the cli. Nothing here imports Bun: `runTool` reaches the `Bun` global only when called, which no
 // mobile code path does.
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
@@ -150,7 +158,7 @@ export function findTool(
 export const INSTALL_HINTS: Record<string, string> = {
     ocrmypdf: 'brew install ocrmypdf',
     tesseract: 'brew install tesseract',
-    marker_single: 'uv tool install marker-pdf',
+    marker_single: "uv tool install 'marker-pdf>=2,<3'",
     'llama-server': 'brew install llama.cpp',
 }
 
@@ -205,9 +213,10 @@ export async function runTool(
     bin: string,
     argv: string[],
     stop?: AbortSignal,
+    env: Record<string, string> = {},
 ): Promise<ToolRun> {
     const proc = Bun.spawn([bin, ...argv], {
-        env: { ...process.env, PATH: toolPath() },
+        env: { ...process.env, PATH: toolPath(), ...env },
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: 'pipe',
@@ -245,6 +254,47 @@ export function stderrTail(stderr: string, lines = 6): string {
         .join('\n')
 }
 
+/** Reinstalls Marker within the 2.x line, the one that runs on llama-server. */
+export const MARKER_REPAIR = "uv tool install --reinstall 'marker-pdf>=2,<3'"
+
+/** Loaded as `sitecustomize` by every Python process Marker runs. marker-pdf 2.0.0 reads an
+ *  image's box with `PdfObject.get_pos`, which the pypdfium2 5 it pins renamed `get_bounds`, so a
+ *  page holding text and an image crashed the run. The alias is added only where it is missing. */
+export const MARKER_SHIM = `try:
+    import pypdfium2
+    if not hasattr(pypdfium2.PdfObject, "get_pos") and hasattr(pypdfium2.PdfObject, "get_bounds"):
+        pypdfium2.PdfObject.get_pos = pypdfium2.PdfObject.get_bounds
+except Exception:
+    pass
+`
+
+/** Write the shim into `dir` and return the env that puts it first on Python's path. */
+export function markerShimEnv(
+    dir: string,
+    env: Record<string, string | undefined> = process.env,
+): Record<string, string> {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'sitecustomize.py'), MARKER_SHIM)
+    return { PYTHONPATH: [dir, env.PYTHONPATH].filter(Boolean).join(delimiter) }
+}
+
+/** The one-line reason a failed Marker run reports: Python's final exception line (or stderr's
+ *  last line), then the command that repairs the install. A traceback tail tells a person nothing
+ *  they can act on. */
+export function markerFailure(code: number, stderr: string): string {
+    const lines = stderr
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean)
+    const exception = [...lines]
+        .reverse()
+        .find(l => /^[A-Za-z_][\w.]*(Error|Exception):/.test(l))
+    const reason = exception ?? lines.at(-1) ?? `exit code ${code}`
+    return /^(AttributeError|ImportError|ModuleNotFoundError):/.test(reason)
+        ? `marker's install is broken (${reason}) — repair it: ${MARKER_REPAIR}`
+        : `marker failed (${reason}) — if it keeps failing, reinstall it: ${MARKER_REPAIR}`
+}
+
 /** Marker writes `<outDir>/<stem>/<stem>.md`; take the one markdown file it produced. */
 function findMarkdown(outDir: string): string | null {
     for (const sub of readdirSync(outDir)) {
@@ -269,13 +319,16 @@ export async function markerTranscribe(
     requireTool('llama-server', verb)
     const outDir = mkdtempSync(join(tmpdir(), 'bismuth-marker-'))
     try {
-        const r = await runTool(bin, markerArgs(abs, outDir, opts), signal)
+        const env = markerShimEnv(join(outDir, '.shim'))
+        const r = await runTool(bin, markerArgs(abs, outDir, opts), signal, env)
         if (signal?.aborted) throw createError('CANCELLED', `${verb} cancelled`)
-        const md = findMarkdown(outDir)
-        if (r.code !== 0 || !md)
+        const md = r.code === 0 ? findMarkdown(outDir) : null
+        if (!md)
             throw createError(
                 'INTERNAL_ERROR',
-                `marker exited ${r.code}:\n${stderrTail(r.stderr)}`,
+                r.code === 0
+                    ? 'marker wrote no markdown'
+                    : markerFailure(r.code, r.stderr),
                 500,
             )
         return await readFile(md, 'utf8')
