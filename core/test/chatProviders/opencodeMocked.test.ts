@@ -64,6 +64,7 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test'
 import { rm } from 'node:fs/promises'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
+import { parseOpencodeMajor } from '../../src/chatProviders/opencode/opencodeCli'
 import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
@@ -90,20 +91,26 @@ if (!HAS_OPENCODE) {
  *  to identify opencode processes in general. */
 const OPENCODE_SERVE_PATTERN = 'opencode serve --port 0 --hostname 127.0.0.1'
 
-/** PIDs of any already-running shared opencode server, matched by the exact argv above. Best
- *  effort: `pgrep` missing/erroring yields [] rather than throwing. */
-function opencodeDelegatesToService(): boolean {
+/** Every opencode server process of any kind: the v1 shared `serve --port 0`, a v2 run's private
+ *  `serve --stdio`, and the v2 per-user background `serve --service` a call without `--standalone`
+ *  starts (detached, PPID 1). afterAll requires that none this file started outlives it. */
+const ANY_OPENCODE_SERVE_PATTERN = 'opencode.*serve'
+
+/** The installed opencode's major version (the production parse, opencodeCli.ts). */
+function installedOpencodeMajor(): number | null {
     try {
         const r = Bun.spawnSync(['opencode', '--version'])
-        return /\bv2\./.test(r.stdout.toString())
+        return parseOpencodeMajor(r.stdout.toString())
     } catch {
-        return false
+        return null
     }
 }
 
-function opencodeServePids(): string[] {
+/** PIDs of any already-running shared opencode server, matched by `pattern` (the exact v1 argv
+ *  above by default). Best effort: `pgrep` missing/erroring yields [] rather than throwing. */
+function opencodeServePids(pattern = OPENCODE_SERVE_PATTERN): string[] {
     try {
-        const r = Bun.spawnSync(['pgrep', '-f', OPENCODE_SERVE_PATTERN])
+        const r = Bun.spawnSync(['pgrep', '-f', pattern])
         if (r.exitCode !== 0) return []
         return r.stdout
             .toString()
@@ -112,6 +119,19 @@ function opencodeServePids(): string[] {
             .filter(Boolean)
     } catch {
         return []
+    }
+}
+
+/** True iff `pid`'s environment (`ps eww`, readable for the user's own processes on macOS and
+ *  Linux) names any of `dirs`. Best effort: a `ps` hiccup yields false. */
+function carriesAnyDir(pid: string, dirs: readonly string[]): boolean {
+    try {
+        const r = Bun.spawnSync(['ps', 'eww', '-o', 'command=', '-p', pid])
+        if (r.exitCode !== 0) return false
+        const env = r.stdout.toString()
+        return dirs.some(d => env.includes(d))
+    } catch {
+        return false
     }
 }
 
@@ -272,6 +292,9 @@ describeOrSkip(
         // the snapshot inside setup(), every run leaked one `opencode serve` (PPID 1).
         const pidsBefore = new Set<string>()
         for (const pid of opencodeServePids()) pidsBefore.add(pid)
+        const anyServeBefore = new Set(
+            opencodeServePids(ANY_OPENCODE_SERVE_PATTERN),
+        )
 
         async function newTempDir(
             prefix = 'bismuth-opencode-mocked-',
@@ -379,6 +402,24 @@ describeOrSkip(
                 if (dead) killedCount++
                 else survivors.push(pid)
             }
+            // No opencode server of ANY kind this file started may outlive it, including a v2
+            // `serve --service` daemon (PPID 1, so the child-of-this-process guard above never sees
+            // it). Every v2 call carries `--standalone`, whose private server exits with the call; a
+            // call without it leaves the daemon behind. A server is this file's when its env names one
+            // of this file's XDG dirs, so a server the user starts meanwhile is never counted or
+            // killed. Checked BEFORE the dirs go: a daemon whose state dir is deleted exits by itself,
+            // which would hide the leak. Polled briefly: a private server exits a moment after its
+            // client. Any leaked server is killed here, and asserted on below.
+            let leaked: string[] = []
+            for (let i = 0; i < 15; i++) {
+                leaked = opencodeServePids(ANY_OPENCODE_SERVE_PATTERN).filter(
+                    pid =>
+                        !anyServeBefore.has(pid) && carriesAnyDir(pid, xdgDirs),
+                )
+                if (!leaked.length) break
+                await new Promise(r => setTimeout(r, 200))
+            }
+            for (const pid of leaked) await killAndConfirmDead(Number(pid))
             // Cleaned up LAST, after the shared server (if this file's tests started it) has been signaled
             // to die above — see xdgDirs' own comment for why these can't be removed any earlier.
             for (const dir of xdgDirs.splice(0)) {
@@ -396,11 +437,14 @@ describeOrSkip(
             // benign no-op, whether caused by `pidsBefore` wrongly swallowing this file's own server or
             // `isChildOfThisProcess` incorrectly rejecting a legitimate target. This assertion is what
             // makes a loop that silently selects nothing fail loudly instead of reporting a false green.
-            // opencode v2's `serve` hands off to a detached `serve --service` daemon that exits on its own,
-            // so no child of this process outlives the spawn and there is nothing to select.
-            if (anyChatOpened && !opencodeDelegatesToService())
+            // opencode 2 never starts the shared server (its API is not the one the SDK drives), so there
+            // is a server to select only on v1.
+            const major = installedOpencodeMajor()
+            if (anyChatOpened && (major === null || major < 2))
                 expect(killedCount).toBeGreaterThanOrEqual(1)
-        })
+            expect(leaked).toEqual([])
+            // Room for the leak poll plus SIGTERM/SIGKILL confirmation, past bun's 5s hook default.
+        }, 30_000)
 
         afterEach(async () => {
             for (const id of chatIds.splice(0))
@@ -459,9 +503,46 @@ describeOrSkip(
             const resultFrame = frames[resultIdx]
             if (resultFrame.type === 'result') {
                 expect(resultFrame.isError).toBe(false)
-                // the mock's fixture reports zero cost; opencode v2 omits a zero cost, which maps to null
-                expect([0, null]).toContain(resultFrame.costUsd)
+                // the mock's fixture costs nothing, and a free turn reports no cost (opencodeTurnCost)
+                expect(resultFrame.costUsd).toBeNull()
             }
+        }, 60_000)
+
+        test('a multi-word prompt reaches the model exactly as typed', async () => {
+            // opencode 2's `run` shell-quotes a whitespace-bearing message argument, so the model would
+            // read `"say hello to me"` with literal quotes; the driver sends it on stdin there. The
+            // mock's request journal shows what the model actually received.
+            await setup()
+
+            const cwd = await newTempDir()
+            const chatId = 'opencode-mocked-words-' + Date.now()
+            chatIds.push(chatId)
+            anyChatOpened = true
+            const { sink, waitFor } = makeChatFrameCollector()
+            CHAT_BACKENDS.opencode.openSession({ chatId, cwd, sink })
+            await waitFor(f => f.type === 'models')
+            CHAT_BACKENDS.opencode.setModel(chatId, 'mock/mock')
+
+            const text = 'say hello to me, "quoted" and\nsplit'
+            CHAT_BACKENDS.opencode.sendMessage({ chatId, cwd, sink, text })
+            await waitFor(f => f.type === 'done')
+
+            const journal = (await fetch(`${mock!.url}/__aimock/journal`).then(
+                r => r.json(),
+            )) as {
+                body?: { messages?: { role?: string; content?: unknown }[] }
+            }[]
+            const userTexts = journal.flatMap(e =>
+                (e.body?.messages ?? [])
+                    .filter(m => m.role === 'user')
+                    .map(m =>
+                        typeof m.content === 'string'
+                            ? m.content
+                            : JSON.stringify(m.content),
+                    ),
+            )
+            expect(userTexts.some(t => t.endsWith(text))).toBe(true)
+            expect(userTexts.some(t => t.includes(`"${text}"`))).toBe(false)
         }, 60_000)
 
         test("sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done", async () => {

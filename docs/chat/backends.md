@@ -38,6 +38,7 @@ Each cell below is the catalog's claim about that CLI.
 | `codex-acp` | ACP | yes | none | no | per-session | MCP tools | no |
 
 The Chat column is how the backend streams: `delta` is token by token, `part` is whole message parts, and `ACP` backends stream deltas through the shared ACP driver. The Local column is the `localModel` capability.
+opencode's `delta` holds for opencode 1; opencode 2 streams whole parts ([which opencode versions work](providers.md#which-opencode-versions-work)).
 
 Three notes on the table:
 

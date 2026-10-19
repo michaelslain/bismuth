@@ -27,6 +27,8 @@ The background [daemon](../daemon/overview.md) still needs Claude Code or Codex,
 
 The routes answer `409 { error: "opencode-missing" }` when the `opencode` binary is absent or its server will not start. The manager shows that message in place of the lists; the terminal footer still works.
 
+opencode 2 gets the same `409`, because its server is not one Bismuth's opencode client drives. The message says so and points to `opencode auth login`, which connects a provider from a terminal.
+
 ## How do I disconnect a provider?
 
 The manager has no disconnect button. Disconnecting, custom providers, and any provider that needs several prompts go through `opencode auth login` and `opencode auth logout` in a terminal; the manager's footer opens a terminal tab or copies the command.

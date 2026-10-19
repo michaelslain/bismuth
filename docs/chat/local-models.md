@@ -75,6 +75,7 @@ The agents' system prompts and tool schemas alone take a large share of a small 
 `localSpawnFor` maps a backend id and the `localModel` settings to the env vars and argv above. `resolveLocalSpawn` wraps it: it reads `GET <url>/v1/models` first, and an empty answer ends the turn with the error code `local-model-unreachable` instead of starting the CLI.
 Claude Code calls it when a chat opens, Codex at the start of every turn, and opencode and Goose when they spawn.
 
-For opencode, a change to the local config replaces the shared `opencode serve` process: immediately when no opencode turn is running, otherwise once the running turn settles.
+For opencode 1, a change to the local config replaces the shared `opencode serve` process: immediately when no opencode turn is running, otherwise once the running turn settles.
+opencode 2 has no shared server; every turn starts its own private one with the config current at that moment.
 
 Source: `core/src/agentBackends/localModel.ts`, `core/src/agentBackends/localModelProbe.ts`, `core/src/agentBackends/catalog.ts` (`localModel` capability), `core/src/schema/settingsSchema.ts`

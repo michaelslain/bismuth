@@ -2,6 +2,7 @@ import { sessionHistoryFrames } from '../chatProviders'
 import { resolveBackendId } from '../agentBackends/catalog'
 import {
     opencodeClient,
+    opencodeUnavailableMessage,
     refreshOpencodeFrames,
 } from '../chatProviders/opencode/opencode'
 import {
@@ -44,7 +45,8 @@ export default function agentsRoutes(
     }
     /** Shared shell of the four /opencode/* provider-connect routes. Owner-only (a connect writes a
      *  credential into the user's opencode store), then the shared opencode server's client — 409
-     *  `opencode-missing` when opencode is not installed or its server will not start — then `run`.
+     *  `opencode-missing` when opencode is not installed, its server will not start, or it is
+     *  opencode 2 (no server the SDK drives; the message says which) — then `run`.
      *  An OpencodeBadRequest (bad body, or opencode refused it) is a 400 `bad-request` whose message
      *  never carries the key. `connected` re-emits the models/auth frames to every live opencode
      *  session once `run` succeeded. */
@@ -65,8 +67,7 @@ export default function agentsRoutes(
             return Response.json(
                 {
                     error: 'opencode-missing',
-                    message:
-                        'opencode is not installed, or its server did not start. Install opencode (opencode.ai) to manage providers.',
+                    message: await opencodeUnavailableMessage(),
                 },
                 { status: 409 },
             )

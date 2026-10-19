@@ -67,6 +67,11 @@ import {
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import { titleFromPrompt } from '../titleFromPrompt'
 import {
+    opencodeCliArgs,
+    opencodeMajor,
+    usesBackgroundService,
+} from './opencodeCli'
+import {
     ensureOpencodeServer,
     registerOpencodeServerListener,
     type OpencodeServerHandle,
@@ -100,6 +105,7 @@ import {
     newOpencodeTurnState,
     opencodeErrorMessage,
     opencodePermissionResponse,
+    opencodeTurnCost,
     parseOpencodeAuthList,
     parseOpencodeDebugConfigCommands,
     parseOpencodeModels,
@@ -235,13 +241,17 @@ export async function resolveOpencodeLocal(
 }
 
 /** One opencode CLI invocation → stdout text (stderr ignored). Every RUN-mode open-time discovery
- *  (`models`, `debug config`) and the auth pill (`auth list`, BOTH modes) goes through here. */
+ *  (`models`, `debug config`) and the auth pill (`auth list`, BOTH modes) goes through here. The
+ *  argv is rewritten for the installed major (opencodeCli.ts); a call with no v2 equivalent yields
+ *  '' without spawning. */
 async function runCliText(
     bin: string,
     cwd: string,
     args: string[],
 ): Promise<string> {
-    const proc = Bun.spawn([bin, ...args], {
+    const argv = opencodeCliArgs(await opencodeMajor(bin), args)
+    if (!argv) return ''
+    const proc = Bun.spawn([bin, ...argv], {
         cwd,
         stdout: 'pipe',
         stderr: 'ignore',
@@ -306,6 +316,12 @@ function ensureOpenInfo(
                     )
             } catch {
                 modelsCache = []
+            }
+            // opencode 2's `run` has no command invocation (a `/name` reaches the model as text),
+            // so it offers no commands at all rather than ones that cannot run.
+            if (usesBackgroundService(await opencodeMajor(bin))) {
+                commandsCache = []
+                return
             }
             try {
                 commandsCache = withOpencodeBuiltinCommands(
@@ -392,6 +408,15 @@ export async function opencodeClient(): Promise<OpencodeClient | null> {
     if (!bin) return null
     const server = await ensureOpencodeServer(bin).catch(() => null)
     return server?.client ?? null
+}
+
+/** Why `opencodeClient` has no client, worded for the provider manager, which shows it in place
+ *  of its lists. opencode 2 has a binary but no server the SDK drives (opencodeCli.ts). */
+export async function opencodeUnavailableMessage(): Promise<string> {
+    const bin = whichBinary('opencode')
+    if (bin && usesBackgroundService(await opencodeMajor(bin)))
+        return 'Bismuth connects providers through the opencode 1 server, which opencode 2 does not have. Connect a provider in a terminal with `opencode auth login`.'
+    return 'opencode is not installed, or its server did not start. Install opencode (opencode.ai) to manage providers.'
 }
 
 /** After a provider connect: refetch the model list once and re-emit `models` + `auth` to every live
@@ -706,7 +731,7 @@ async function runTurnServer(
                         }),
                     })
             }
-            costUsd = res.data?.info?.cost ?? null
+            costUsd = opencodeTurnCost(res.data?.info?.cost)
             finalParts = res.data?.parts ?? null
         } else {
             const parts = buildOpencodePromptParts(text, images)
@@ -740,7 +765,7 @@ async function runTurnServer(
                         }),
                     })
             }
-            costUsd = res.data?.info?.cost ?? null
+            costUsd = opencodeTurnCost(res.data?.info?.cost)
             finalParts = res.data?.parts ?? null
         }
     } catch (e) {
@@ -870,8 +895,11 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
             ? pickZenFreeModel(zenFreeModelIds(modelsCache ?? []), s.turnCount)
             : s.model
     s.turnCount += 1
-    const args = [
-        s.bin,
+    const major = await opencodeMajor(s.bin)
+    // opencode 2 shell-quotes a message argument that contains whitespace before sending it, so the
+    // model would read `"fix the bug"` with literal quotes; stdin reaches it verbatim.
+    const viaStdin = usesBackgroundService(major) && !slash
+    const cliArgs = opencodeCliArgs(major, [
         'run',
         '--format',
         'json',
@@ -883,8 +911,17 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
         ...(model ? ['-m', model] : []),
         ...(slash
             ? ['--command', slash.command, ...(slash.args ? [slash.args] : [])]
-            : [text]),
-    ]
+            : viaStdin
+              ? []
+              : [text]),
+    ])
+    if (!cliArgs)
+        return refuseTurn(
+            s,
+            'This opencode version cannot run a command from a chat turn.',
+            'error',
+        )
+    const args = [s.bin, ...cliArgs]
     // Wrapped only when `profilePath` is non-null (something restricted AND the OS wrapper is
     // available — see above); an unrestricted vault's argv is byte-identical to before this gate
     // existed, never paying sandbox-exec's overhead.
@@ -893,6 +930,7 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
     try {
         proc = Bun.spawn(wrappedArgs, {
             cwd: s.cwd,
+            stdin: viaStdin ? new Blob([text]) : 'ignore',
             stdout: 'pipe',
             stderr: 'pipe',
             env: opencodeSpawnEnv(s.cwd, s.localEnv),
@@ -1153,7 +1191,12 @@ export async function sessionHistoryFrames(
         }
     }
     try {
-        const proc = Bun.spawn([bin, 'export', sessionId], {
+        const argv = opencodeCliArgs(await opencodeMajor(bin), [
+            'export',
+            sessionId,
+        ])
+        if (!argv) return []
+        const proc = Bun.spawn([bin, ...argv], {
             cwd,
             stdout: 'pipe',
             stderr: 'ignore',
@@ -1303,9 +1346,9 @@ export async function erasePrivateSession(
     const id = s.sessionId
     if (!id) return
     if (s.mode === 'server') {
-        const server = await (deps.server ?? (() => ensureOpencodeServer(s.bin)))().catch(
-            () => null,
-        )
+        const server = await (
+            deps.server ?? (() => ensureOpencodeServer(s.bin))
+        )().catch(() => null)
         if (server) {
             try {
                 await server.client.session.delete({
@@ -1318,7 +1361,11 @@ export async function erasePrivateSession(
             }
         }
     }
-    await (deps.cli ?? runCliText)(s.bin, s.cwd, ['session', 'delete', id]).catch(() => {})
+    await (deps.cli ?? runCliText)(s.bin, s.cwd, [
+        'session',
+        'delete',
+        id,
+    ]).catch(() => {})
 }
 
 export function scheduleClose(chatId: string, ms: number): void {

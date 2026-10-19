@@ -11,6 +11,7 @@ import {
     newOpencodeTurnState,
     opencodeErrorMessage,
     opencodePermissionResponse,
+    opencodeTurnCost,
     OPENCODE_BUILTIN_COMMANDS,
     parseOpencodeAuthList,
     parseOpencodeDebugConfigCommands,
@@ -356,6 +357,71 @@ describe('translateOpencodeExport', () => {
     })
 })
 
+describe('translateOpencodeExport (opencode 2 shape)', () => {
+    // `opencode session export` from opencode 2.0.32, captured live against the mock LLM.
+    const exportDoc = {
+        info: { id: SID, title: 'Run probe', cost: 0 },
+        messages: [
+            { id: 'm1', type: 'user', text: 'run probe', files: [] },
+            {
+                id: 'm2',
+                type: 'assistant',
+                content: [
+                    { type: 'reasoning', text: 'checking' },
+                    {
+                        type: 'tool',
+                        id: 'call_probe1',
+                        name: 'shell',
+                        executed: false,
+                        state: {
+                            status: 'completed',
+                            input: { command: 'echo probe-out' },
+                            content: [{ type: 'text', text: 'probe-out\n' }],
+                        },
+                    },
+                ],
+            },
+            {
+                id: 'm3',
+                type: 'assistant',
+                content: [{ type: 'text', text: 'Done probing.' }],
+            },
+            { id: 'm4', type: 'idle', outcome: 'succeeded' },
+        ],
+    }
+
+    test('replays user prose, thinking, tool chips + results, and prose in order', () => {
+        const { title, frames } = translateOpencodeExport(exportDoc)
+        expect(title).toBe('Run probe')
+        expect(frames).toEqual([
+            { type: 'user-message', text: 'run probe' },
+            { type: 'thinking', text: 'checking' },
+            {
+                type: 'tool-use',
+                id: 'call_probe1',
+                name: 'shell',
+                input: { command: 'echo probe-out' },
+            },
+            {
+                type: 'tool-result',
+                id: 'call_probe1',
+                content: 'probe-out\n',
+                isError: false,
+            },
+            { type: 'assistant-text', text: 'Done probing.' },
+        ])
+    })
+})
+
+describe('opencodeTurnCost', () => {
+    test('a positive cost is kept; zero, absent and non-numbers are null', () => {
+        expect(opencodeTurnCost(0.012)).toBe(0.012)
+        expect(opencodeTurnCost(0)).toBeNull()
+        expect(opencodeTurnCost(undefined)).toBeNull()
+        expect(opencodeTurnCost('0.1')).toBeNull()
+    })
+})
+
 describe('parseOpencodeModels', () => {
     test('keeps provider/model lines, drops banner noise + duplicates, preserves order', () => {
         const out = parseOpencodeModels(
@@ -478,9 +544,7 @@ describe('titleFromPrompt', () => {
             ),
         ).toBe('hello world')
         expect(titleFromPrompt('x'.repeat(100)).length).toBe(48)
-        expect(titleFromPrompt('x'.repeat(100)).endsWith('…')).toBe(
-            true,
-        )
+        expect(titleFromPrompt('x'.repeat(100)).endsWith('…')).toBe(true)
         expect(titleFromPrompt('   ')).toBe('')
     })
 })

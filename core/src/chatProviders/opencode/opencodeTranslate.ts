@@ -183,8 +183,8 @@ export function translateOpencodeEvent(
             // chip; a later event for the same callID then resolves it.
             return toolPartFrames(part, state.toolsStarted, state.toolsFinished)
         case 'step_finish': {
-            const cost = typeof part.cost === 'number' ? part.cost : 0
-            if (cost > 0) state.costUsd = (state.costUsd ?? 0) + cost
+            const cost = opencodeTurnCost(part.cost)
+            if (cost !== null) state.costUsd = (state.costUsd ?? 0) + cost
             return frames
         }
         case 'error': {
@@ -235,13 +235,73 @@ export function translateOpencodeSessionMessages(
     return framesFromOpencodeMessages(messages)
 }
 
+/** A turn's cost for the `result` frame: a positive number, else null. opencode 2 omits a zero
+ *  cost where opencode 1 reports 0, so a free turn maps to null on both and the footer shows no
+ *  cost for it either way. Pure. */
+export function opencodeTurnCost(cost: unknown): number | null {
+    return typeof cost === 'number' && cost > 0 ? cost : null
+}
+
+/** One `opencode session export` message from opencode 2 (`{type:'user', text}` /
+ *  `{type:'assistant', content:[…]}`, tool entries `{type:'tool', id, name, state:{status, input,
+ *  content:[{type:'text', text}]}}`) rewritten to the v1 `{info:{role}, parts}` shape the loop below
+ *  reads. A v1 message, or anything unrecognised, passes through untouched. Pure. */
+function v1MessageShape(raw: unknown): unknown {
+    if (!raw || typeof raw !== 'object') return raw
+    const m = raw as Record<string, unknown>
+    if ('info' in m || 'parts' in m) return raw
+    if (m.type === 'user')
+        return {
+            info: { role: 'user' },
+            parts: [
+                {
+                    type: 'text',
+                    text: typeof m.text === 'string' ? m.text : '',
+                },
+            ],
+        }
+    if (m.type !== 'assistant' || !Array.isArray(m.content)) return raw
+    const parts = m.content.map(c => {
+        const p = (c && typeof c === 'object' ? c : {}) as Record<
+            string,
+            unknown
+        >
+        if (p.type !== 'tool') return p
+        const st = (
+            p.state && typeof p.state === 'object' ? p.state : {}
+        ) as Record<string, unknown>
+        const text = Array.isArray(st.content)
+            ? st.content
+                  .map(x =>
+                      x && typeof (x as { text?: unknown }).text === 'string'
+                          ? (x as { text: string }).text
+                          : '',
+                  )
+                  .join('')
+            : undefined
+        return {
+            type: 'tool',
+            callID: p.id,
+            tool: p.name,
+            state: {
+                status: st.status,
+                input: st.input,
+                output: text,
+                ...(st.error !== undefined ? { error: st.error } : {}),
+            },
+        }
+    })
+    return { info: { role: 'assistant' }, parts }
+}
+
 /** Shared per-message loop backing translateOpencodeExport + translateOpencodeSessionMessages: user
  *  prose becomes user-message bubbles (editor-context preamble stripped), assistant text/reasoning/
  *  tool parts replay in order. Tolerant of a malformed/missing messages array (yields []). */
 function framesFromOpencodeMessages(messages: unknown): ChatFrame[] {
     const out: ChatFrame[] = []
     if (!Array.isArray(messages)) return out
-    for (const msg of messages) {
+    for (const raw of messages) {
+        const msg = v1MessageShape(raw)
         if (!msg || typeof msg !== 'object') continue
         const m = msg as { info?: { role?: unknown }; parts?: unknown }
         const role = m.info?.role

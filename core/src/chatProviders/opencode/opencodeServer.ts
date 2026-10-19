@@ -54,6 +54,7 @@
 import { homedir } from 'node:os'
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk'
 import { claudeSpawnEnv } from '../../claudeWhich'
+import { opencodeMajor, usesBackgroundService } from './opencodeCli'
 
 /** What a server spawn needs from the local-model seam: the env (`OPENCODE_CONFIG_CONTENT`) — a
  *  `ResolvedLocal` from agentBackends/localModelProbe.ts satisfies it. */
@@ -328,6 +329,10 @@ function startServer(
         local,
     )
     const attempt = (async () => {
+        // opencode 2's `serve` speaks an API @opencode-ai/sdk 1.x cannot drive (opencodeCli.ts), so
+        // it is never spawned there: null sends every session to the per-turn `run` path at once,
+        // instead of after a banner timeout.
+        if (usesBackgroundService(await opencodeMajor(bin))) return null
         const handle = await spawnAndWaitForBanner(bin, env)
         if (!handle) return null
         live = handle

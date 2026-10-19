@@ -211,8 +211,9 @@ describe('resolveOpencodeLocal (session open)', () => {
     })
 })
 
-// The shared server's lifecycle against a fake `opencode` that prints the listening banner, records
-// the OPENCODE_CONFIG_CONTENT it was spawned with, and sleeps.
+// The shared server's lifecycle against a fake v1 `opencode` (it answers `--version` with 1.18.4)
+// that prints the listening banner, records the OPENCODE_CONFIG_CONTENT it was spawned with, and
+// sleeps.
 describe('ensureOpencodeServer replaces the server when the local config changes', () => {
     const dir = tempDir('opencode-fake-bin-')
     const bin = join(dir, 'opencode')
@@ -220,7 +221,7 @@ describe('ensureOpencodeServer replaces the server when the local config changes
     const pidLog = join(dir, 'pids.log')
     writeFileSync(
         bin,
-        `#!/bin/sh\necho "$OPENCODE_CONFIG_CONTENT" >> "${log}"\necho $$ >> "${pidLog}"\necho "opencode server listening on http://127.0.0.1:1"\nexec sleep 60\n`,
+        `#!/bin/sh\n[ "$1" = --version ] && echo 1.18.4 && exit 0\necho "$OPENCODE_CONFIG_CONTENT" >> "${log}"\necho $$ >> "${pidLog}"\necho "opencode server listening on http://127.0.0.1:1"\nexec sleep 60\n`,
     )
     chmodSync(bin, 0o755)
     // one line per spawn (blank = spawned with no config)

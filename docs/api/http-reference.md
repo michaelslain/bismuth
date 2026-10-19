@@ -491,7 +491,7 @@ All four share these errors, as JSON:
 | Status | Body | When |
 |---|---|---|
 | 403 | `{error: "forbidden"}` | The request is not from the owner. |
-| 409 | `{error: "opencode-missing", message}` | The opencode binary is absent or its server did not start. |
+| 409 | `{error: "opencode-missing", message}` | The opencode binary is absent, its server did not start, or it is opencode 2, which has no server these routes drive. |
 | 400 | `{error: "bad-request", message}` | A malformed body, or opencode refused it. `message` never contains the key. |
 
 ### Free agent (`/agents/free`)
