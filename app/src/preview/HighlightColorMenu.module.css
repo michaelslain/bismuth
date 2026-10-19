@@ -1,0 +1,15 @@
+/* app/src/preview/HighlightColorMenu.module.css — the PDF highlighter's colour menu
+   (preview/HighlightColorMenu.tsx ONLY). */
+
+/* The wrapper only catches mousedown; ui/ContextMenu positions itself fixed at the cursor. */
+.menu {
+    display: contents;
+}
+
+/* A small flat square before each colour's name, a dot's size rather than a picker swatch's. The
+   hairline ring keeps the pale yellow visible on a light menu. */
+.swatch {
+    width: var(--sp-3);
+    height: var(--sp-3);
+    border: var(--rule);
+}

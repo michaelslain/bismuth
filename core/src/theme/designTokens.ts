@@ -1010,8 +1010,8 @@ export const NOT_TOKENS: readonly { group: string; where: string; reason: string
     },
     {
         group: 'PDF page constants',
-        where: 'core/src/theme/tokens.ts (PDF_PAGE_PAPER, PDF_PAGE_RULE, PDF_HIGHLIGHT_YELLOW)',
-        reason: 'a PDF page is white paper and a highlight is highlighter yellow in every theme; the margin and highlight fill must match that fixed page, not a theme surface',
+        where: 'core/src/theme/tokens.ts (PDF_PAGE_PAPER, PDF_PAGE_RULE, PDF_HIGHLIGHT_YELLOW, PDF_HIGHLIGHT_COLORS)',
+        reason: 'a PDF page is white paper and a highlight is a highlighter ink in every theme; the margin and highlight fill must match that fixed page, not a theme surface',
     },
     {
         group: 'Font metrics',

@@ -33,8 +33,9 @@ function makeHighlightId(): string {
  *  A selection that overlaps (or abuts, on the same line) an existing highlight of the same
  *  colour extends that highlight instead of stacking a second translucent mark over it: every
  *  touched highlight and the new rects become one highlight, keeping the first touched one's id
- *  and its place in the list, with the rects re-merged per line and the texts joined. Pure:
- *  `doc` is never mutated. */
+ *  and its place in the list, with the rects re-merged per line and the texts joined. A highlight
+ *  of another colour loses the part the selection covers (`recolorUnder`), so highlighting over
+ *  it in a new colour changes that part's colour. Pure: `doc` is never mutated. */
 export function addHighlight(
     doc: DrawingDoc,
     page: number,
@@ -44,10 +45,11 @@ export function addHighlight(
     if (rects.length === 0) return doc
     const base = ensurePages(doc, page + 1)
     const pages = base.pages.slice()
-    const existing = pages[page]?.highlights ?? []
     const c = opts?.c ?? 'hl'
+    const existing = recolorUnder(pages[page]?.highlights ?? [], rects, c)
     const touched = existing.filter(
-        h => h.c === c && h.rects.some(a => rects.some(b => rectsTouch(a, b))),
+        h =>
+            sameColor(h.c, c) && h.rects.some(a => rects.some(b => rectsTouch(a, b))),
     )
     if (touched.length === 0) {
         const highlight: Highlight = {
@@ -87,6 +89,49 @@ export function addHighlight(
     pages[page] = { ...pages[page], highlights }
     return { ...base, pages }
 }
+
+/** Highlights of ANOTHER colour lose the part `rects` covers, so a selection highlighted in a new
+ *  colour replaces the colour under it instead of stacking two translucent marks into a muddy
+ *  third. Each covered line rect is cut to what lies left and right of the new rects on that line;
+ *  a highlight cut down to nothing is dropped, and one that was cut drops its text, which no longer
+ *  matches its rects. Untouched highlights come back as the same objects. */
+function recolorUnder(
+    existing: Highlight[],
+    rects: HighlightRect[],
+    c: string,
+): Highlight[] {
+    return existing.flatMap(h => {
+        if (sameColor(h.c, c)) return [h]
+        let cut = false
+        const kept = h.rects.flatMap(r => {
+            let pieces = [r]
+            for (const n of rects) {
+                pieces = pieces.flatMap(p => {
+                    if (!rectsTouch(p, n, 0) || n.x + n.w <= p.x || n.x >= p.x + p.w) return [p]
+                    cut = true
+                    return [
+                        { ...p, w: n.x - p.x },
+                        { ...p, x: n.x + n.w, w: p.x + p.w - (n.x + n.w) },
+                    ].filter(q => q.w > MIN_PIECE_W)
+                })
+            }
+            return pieces
+        })
+        if (!cut) return [h]
+        if (kept.length === 0) return []
+        const { text: _text, ...rest } = h
+        return [{ ...rest, rects: kept }]
+    })
+}
+
+/** 'hl' and the yellow it resolves to are one colour; hex case never matters. */
+function sameColor(a: string, b: string): boolean {
+    return resolveHighlightColor(a).toLowerCase() === resolveHighlightColor(b).toLowerCase()
+}
+
+/** A sliver narrower than this (logical units) left beside a recoloured selection is dropped
+ *  rather than kept as a hairline of the old colour. */
+const MIN_PIECE_W = 2
 
 /** True when `a` and `b` sit on the same text line (their vertical bands overlap by at least
  *  half the shorter one) and meet horizontally — overlapping, or with a gap of at most

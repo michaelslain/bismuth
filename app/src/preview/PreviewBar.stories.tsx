@@ -53,6 +53,7 @@ function Harness(props: HarnessProps): JSX.Element {
     const [panel, setPanel] = createSignal(props.panel ?? false)
     const [converting, setConverting] = createSignal(props.converting ?? false)
     const [dark, setDark] = createSignal(props.dark ?? false)
+    const [hlColor, setHlColor] = createSignal('hl')
     return (
         <div style={{ width: `${props.width}px` }} data-testid="bar-frame">
             <PreviewBar
@@ -70,6 +71,11 @@ function Harness(props: HarnessProps): JSX.Element {
                 onToggleDraw={() => setDraw(v => !v)}
                 highlightArmed={armed}
                 onHighlight={() => setArmed(v => !v)}
+                highlightColor={hlColor}
+                onHighlightColor={c => {
+                    setHlColor(c)
+                    setArmed(true)
+                }}
                 scratchOn={scratch}
                 onToggleScratch={() => setScratch(v => !v)}
                 darkOn={dark}
@@ -154,6 +160,56 @@ export const Pdf: Story = {
         await fireEvent.click(bookmarks)
         await waitFor(() => expect(probeBar(bar).selectedCount).toBe(0))
         await expect(probeBar(bar).frames).toBe(0)
+    },
+}
+
+const menuOf = () => document.querySelector<HTMLElement>('.bismuth-popover')
+
+/** Right-clicking HIGHLIGHT opens its colour menu at the cursor: five named rows, each with a small
+ *  swatch, the current colour marked. The bar itself gains nothing, so its rhythm and its
+ *  nothing-selected-at-rest rule are untouched. A pick closes the menu, arms highlight and the
+ *  button's tooltip names the new colour (in PreviewView a pick with text selected highlights it
+ *  at once instead). */
+export const PdfHighlightColorMenu: Story = {
+    render: () => <Harness width={1000} kind="pdf" />,
+    play: async ({ canvasElement }) => {
+        const bar = barOf(canvasElement)
+        expectCalm(bar, 4, 2)
+        const hl = within(bar).getByLabelText('Highlight text')
+        await expect(hl.getAttribute('data-tooltip')).toContain('yellow')
+        const r = hl.getBoundingClientRect()
+        await fireEvent.contextMenu(hl, { clientX: r.left + 4, clientY: r.bottom })
+        const menu = await waitFor(() => {
+            const el = menuOf()
+            if (!el) throw new Error('menu not open')
+            return el
+        })
+        const rows = Array.from(menu.querySelectorAll<HTMLElement>('.bismuth-popover-row'))
+        await expect(rows).toHaveLength(5)
+        await expect(rows[0]!.textContent).toContain('yellow')
+        await expect(rows[0]!.textContent).toContain('current')
+        const sw = rows[2]!.querySelector('.bismuth-popover-prefix > *') as HTMLElement
+        await expect(getComputedStyle(sw).backgroundColor).toBe('rgb(116, 192, 252)')
+        await expect(Math.round(sw.getBoundingClientRect().width)).toBe(6)
+        await fireEvent.click(rows[2]!)
+        await waitFor(() => expect(menuOf()).toBeNull())
+        await expect(hl.getAttribute('aria-pressed')).toBe('true')
+        await expect(hl.getAttribute('data-tooltip')).toContain('blue')
+    },
+}
+
+/** The colour menu left open, for looking at. */
+export const PdfHighlightColorMenuOpen: Story = {
+    render: () => (
+        <div style={{ height: '200px' }}>
+            <Harness width={1000} kind="pdf" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const hl = within(barOf(canvasElement)).getByLabelText('Highlight text')
+        const r = hl.getBoundingClientRect()
+        await fireEvent.contextMenu(hl, { clientX: r.left + 4, clientY: r.bottom })
+        await waitFor(() => expect(menuOf()).not.toBeNull())
     },
 }
 

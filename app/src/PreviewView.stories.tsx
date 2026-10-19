@@ -69,6 +69,7 @@ import styles from './PreviewView.module.css'
 import pdfPagesStyles from './preview/PdfPages.module.css'
 import PdfPages from './preview/PdfPages'
 import { rectsToPages } from './preview/selectionRects'
+import { setHighlightColor } from './preview/highlightColor'
 import {
     barItems,
     median,
@@ -1938,6 +1939,78 @@ export const PdfHighlightOneShot: Story = {
         ) as HTMLElement
         await expect(toggleDrawKey(root)).toBe(false)
         await waitFor(() => expect(pressedOf(drawBtn)).toBe('true'))
+    },
+}
+
+/** Highlight COLOURS, through PreviewView's own wiring: with text selected, right-clicking
+ *  HIGHLIGHT opens its colour menu and picking green highlights the selection green at once
+ *  (painted green, stored as green); highlight keeps green, so the next HIGHLIGHT press on another
+ *  line is green too; re-highlighting the first line in pink replaces its green. */
+export const PdfHighlightColors: Story = {
+    render: () => {
+        setHighlightColor('hl')
+        return PdfHighlightOneShot.render!({} as never, {} as never)
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(
+            () => {
+                const spans = canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-pdf-page="0"] span',
+                )
+                expect(spans.length).toBeGreaterThanOrEqual(2)
+                expect(spans[1]!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const hlBtn = canvas.getByLabelText('Highlight text') as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+        const rects = () =>
+            Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('[data-testid="highlight-rect"]'),
+            )
+        const [first, second] = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('[data-pdf-page="0"] span'),
+        ) as [HTMLElement, HTMLElement]
+        const green = 'rgb(140, 233, 154)'
+        const pick = async (name: string) => {
+            const r = hlBtn.getBoundingClientRect()
+            await fireEvent.contextMenu(hlBtn, { clientX: r.left + 4, clientY: r.bottom })
+            const row = await waitFor(() => {
+                const el = Array.from(
+                    document.querySelectorAll<HTMLElement>('.bismuth-popover-row'),
+                ).find(x => x.textContent?.includes(name))
+                if (!el) throw new Error(`no ${name} row`)
+                return el
+            })
+            await fireEvent.mouseDown(row)
+            await fireEvent.click(row)
+        }
+
+        selectSpan(first)
+        await pick('green')
+        await waitFor(() => expect(rects().length).toBe(1))
+        await expect(getComputedStyle(rects()[0]!).backgroundColor).toBe(green)
+        await expect(pressedOf(hlBtn)).toBe('false')
+        await waitFor(
+            () => expect(sidecarPuts.at(-1)?.pages[0]?.highlights?.[0]?.c).toBe('#8CE99A'),
+            { timeout: 3000 },
+        )
+        await expect(hlBtn.getAttribute('data-tooltip')).toContain('green')
+
+        selectSpan(second)
+        await fireEvent.click(hlBtn)
+        await waitFor(() => expect(rects().length).toBe(2))
+        for (const r of rects()) await expect(getComputedStyle(r).backgroundColor).toBe(green)
+
+        // Re-highlighting the first line in pink replaces its green rather than stacking on it.
+        selectSpan(first)
+        await pick('pink')
+        await waitFor(() =>
+            expect(rects().map(r => getComputedStyle(r).backgroundColor).sort()).toEqual(
+                [green, 'rgb(247, 131, 172)'].sort(),
+            ),
+        )
     },
 }
 

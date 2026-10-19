@@ -51,6 +51,8 @@ export type HighlightLayerProps = {
     /** The highlight button is armed: gates the pointerup listener on `contentEl`. Painting
      *  itself is unconditional. */
     armed: () => boolean
+    /** The colour a new highlight stores (a PDF_HIGHLIGHT_COLORS `c`). Absent = 'hl', yellow. */
+    color?: () => string
     /** Called after a highlight is created or removed while armed — PreviewView disarms on it. */
     onHighlighted: () => void
     /** Handed once at setup: `highlightSelection` highlights the current in-PDF selection, clears
@@ -160,7 +162,10 @@ function HighlightLayer(props: HighlightLayerProps) {
         props.store.edit(d => {
             let next = d
             for (const [page, rects] of byPage) {
-                next = addHighlight(next, page, mergeLineRects(rects), { text })
+                next = addHighlight(next, page, mergeLineRects(rects), {
+                    c: props.color?.() ?? 'hl',
+                    text,
+                })
             }
             return next
         })

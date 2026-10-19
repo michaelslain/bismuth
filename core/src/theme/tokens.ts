@@ -134,6 +134,18 @@ export const PDF_PAGE_RULE = '#E4E4E4'
  *  highlighter mark, not a tag colour. */
 export const PDF_HIGHLIGHT_YELLOW = '#FFE14D'
 
+/** The PDF highlighter's colours, in the order the bar shows them. Bright highlighter inks like
+ *  PDF_HIGHLIGHT_YELLOW, not the muted CATEGORY_SWATCHES. `c` is what a new highlight stores:
+ *  yellow stays the 'hl' sentinel (so it extends highlights read back from the file as yellow),
+ *  every other colour is its hex. */
+export const PDF_HIGHLIGHT_COLORS: readonly { c: string; name: string; hex: string }[] = [
+    { c: 'hl', name: 'yellow', hex: PDF_HIGHLIGHT_YELLOW },
+    { c: '#8CE99A', name: 'green', hex: '#8CE99A' },
+    { c: '#74C0FC', name: 'blue', hex: '#74C0FC' },
+    { c: '#F783AC', name: 'pink', hex: '#F783AC' },
+    { c: '#FFA94D', name: 'orange', hex: '#FFA94D' },
+]
+
 /** The six category swatch hexes in canonical token order (teal, blue, violet, green,
  *  gold, rose). The single source for the "accent ramp" literal. */
 export const ACCENT_RAMP: readonly string[] = [

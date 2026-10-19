@@ -26,7 +26,7 @@
 // command still set it), the page readout at 2 (500px). FIT, the mode
 // toggles and BOOKMARKS never drop — they are the only way into what they open. There is no second
 // row.
-import { type JSX, Show } from 'solid-js'
+import { createSignal, type JSX, Show } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
 import IconButton from '../ui/IconButton'
@@ -35,6 +35,8 @@ import Label from '../ui/Label'
 import Text from '../ui/Text'
 import PageReadout from './PageReadout'
 import PdfZoom from './PdfZoom'
+import HighlightColorMenu from './HighlightColorMenu'
+import { PDF_HIGHLIGHT_COLORS } from '../../../core/src/theme/tokens'
 import styles from './PreviewBar.module.css'
 
 export type PreviewBarProps = {
@@ -57,6 +59,10 @@ export type PreviewBarProps = {
     highlightArmed?: () => boolean
     /** wired with onMouseDown preventDefault inside PreviewBar */
     onHighlight?: () => void
+    /** pdf highlighter colour (a PDF_HIGHLIGHT_COLORS `c`); right-clicking HIGHLIGHT opens a menu
+     *  of them, and a pick picks it, then presses highlight unless already armed */
+    highlightColor?: () => string
+    onHighlightColor?: (c: string) => void
     scratchOn?: () => boolean
     onToggleScratch?: () => void
     /** pdf dark mode, remembered per file in its sidecar (`appearance.pdfDarkMode` is the
@@ -84,6 +90,11 @@ export type PreviewBarProps = {
 export default function PreviewBar(props: PreviewBarProps): JSX.Element {
     const pdf = () => props.kind() === 'pdf'
     const inkable = () => props.kind() === 'image' || pdf()
+    /** The highlight button's right-click menu of colours, at the cursor; null = closed. */
+    const [colorMenu, setColorMenu] = createSignal<{ x: number; y: number } | null>(null)
+    const colorName = () =>
+        PDF_HIGHLIGHT_COLORS.find(h => h.c === (props.highlightColor?.() ?? 'hl'))?.name ??
+        'yellow'
 
     return (
         <ViewBar
@@ -167,8 +178,8 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 label="Highlight text"
                                 title={
                                     props.highlightArmed?.()
-                                        ? 'Select text to highlight it (click to cancel)'
-                                        : 'Highlight the selected text'
+                                        ? `Select text to highlight it ${colorName()} (click to cancel, right-click for colours)`
+                                        : `Highlight the selected text ${colorName()} (right-click for colours)`
                                 }
                                 variant={
                                     props.highlightArmed?.()
@@ -180,7 +191,23 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 // press highlights THAT selection.
                                 onMouseDown={e => e.preventDefault()}
                                 onClick={() => props.onHighlight?.()}
+                                onContextMenu={(e: MouseEvent) => {
+                                    e.preventDefault()
+                                    if (props.annotReady())
+                                        setColorMenu({ x: e.clientX, y: e.clientY })
+                                }}
                             />
+                            <Show when={colorMenu()}>
+                                {m => (
+                                    <HighlightColorMenu
+                                        x={m().x}
+                                        y={m().y}
+                                        value={props.highlightColor?.() ?? 'hl'}
+                                        onPick={c => props.onHighlightColor?.(c)}
+                                        onClose={() => setColorMenu(null)}
+                                    />
+                                )}
+                            </Show>
                         </Show>
                         <IconButton
                             icon="Pencil"

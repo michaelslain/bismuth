@@ -55,6 +55,7 @@ import { api, apiBase } from './api'
 import type { NoteCandidate } from './editor/wikilink'
 import { previewKind, type PreviewKind } from './preview/previewKind'
 import { buildAssetUrl } from './preview/assetUrl'
+import { highlightColor, setHighlightColor } from './preview/highlightColor'
 import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
 import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
@@ -344,6 +345,12 @@ export function PreviewView(props: {
         if (drawMode()) exitDraw()
         if (highlighter?.highlightSelection()) return
         setHighlightArmed(true)
+    }
+    /** A colour swatch picks the highlighter's colour, then presses highlight — unless it is
+     *  already armed, where it only switches the colour the waiting highlight will take. */
+    const pickHighlightColor = (c: string) => {
+        setHighlightColor(c)
+        if (!highlightArmed()) pressHighlight()
     }
 
     // --- Annotation store (image + pdf) ------------------------------------------------------
@@ -962,6 +969,8 @@ export function PreviewView(props: {
                 onToggleDraw={toggleDraw}
                 highlightArmed={highlightArmed}
                 onHighlight={pressHighlight}
+                highlightColor={highlightColor}
+                onHighlightColor={pickHighlightColor}
                 scratchOn={() => marginRatio() > 0}
                 onToggleScratch={toggleMargin}
                 darkOn={pdfDark}
@@ -1158,6 +1167,7 @@ export function PreviewView(props: {
                                         store={store()!}
                                         pages={pdfPages}
                                         armed={highlightArmed}
+                                        color={highlightColor}
                                         onHighlighted={() => setHighlightArmed(false)}
                                         controller={c => (highlighter = c)}
                                         contentEl={pdfScrollEl}

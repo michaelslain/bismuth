@@ -13,7 +13,7 @@ import {
     rgbToHex,
     type PdfPageGeom,
 } from '../../src/drawing/pdfHighlights'
-import { PDF_HIGHLIGHT_YELLOW } from '../../src/theme/tokens'
+import { PDF_HIGHLIGHT_COLORS, PDF_HIGHLIGHT_YELLOW } from '../../src/theme/tokens'
 
 const fx = (n: string) =>
     new Uint8Array(readFileSync(join(import.meta.dir, 'fixtures', n)))
@@ -78,6 +78,25 @@ describe('ids and colours', () => {
         })
         const r = await readPdfHighlights(out)
         expect(r.pages[0][0].id).toBe(pdfHighlightId(0, quads, 'hl'))
+    })
+    test('every highlighter colour is written into the PDF and read back as itself', async () => {
+        const out = await applyPdfHighlightEdits(await blank(), {
+            add: PDF_HIGHLIGHT_COLORS.map((h, i) => ({
+                page: 0,
+                highlight: { id: h.name, c: h.c, rects: [{ x: 100, y: 100 + i * 40, w: 200, h: 20 }] },
+            })),
+            remove: [],
+        })
+        const r = await readPdfHighlights(out)
+        expect(r.pages[0].map(h => h.c).sort()).toEqual(
+            PDF_HIGHLIGHT_COLORS.map(h => h.hex.toLowerCase()).sort(),
+        )
+    })
+    test('the palette starts on the default yellow and holds distinct colours', () => {
+        expect(PDF_HIGHLIGHT_COLORS[0]).toEqual({ c: 'hl', name: 'yellow', hex: PDF_HIGHLIGHT_YELLOW })
+        expect(new Set(PDF_HIGHLIGHT_COLORS.map(h => h.hex.toLowerCase())).size).toBe(
+            PDF_HIGHLIGHT_COLORS.length,
+        )
     })
     test('hex and rgb helpers', () => {
         expect(rgbToHex(hexToRgb01('#ff8000'), 1)).toBe('#ff8000')

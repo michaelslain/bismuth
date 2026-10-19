@@ -417,7 +417,7 @@ These are deliberate. Each is either product identity, algorithm tuning or data,
 | Chat tab colour swatches | `app/src/chat/chatColors.ts` | per-chat identity colours chosen by the person, stored as data |
 | Univer sheet theme variables | `app/src/global.css (--univer-* on .bismuth-sheet, not :root)` | Univer's own --univer-* vars are scoped to the sheet and already derived from tokens (--accent and friends) in CSS, so a token edit reaches the sheet without a token of their own |
 | Graph hub-label pill colours | `app/src/GraphView.tsx (labelTextColor, labelBgColor)` | the translucent rgba pill behind graph hub labels is chosen per light or dark theme as a legibility pair over the graph canvas, not a themed colour; label text on light themes does follow --fg |
-| PDF page constants | `core/src/theme/tokens.ts (PDF_PAGE_PAPER, PDF_PAGE_RULE, PDF_HIGHLIGHT_YELLOW)` | a PDF page is white paper and a highlight is highlighter yellow in every theme; the margin and highlight fill must match that fixed page, not a theme surface |
+| PDF page constants | `core/src/theme/tokens.ts (PDF_PAGE_PAPER, PDF_PAGE_RULE, PDF_HIGHLIGHT_YELLOW, PDF_HIGHLIGHT_COLORS)` | a PDF page is white paper and a highlight is a highlighter ink in every theme; the margin and highlight fill must match that fixed page, not a theme surface |
 | Font metrics | `app/src/global.css (--cell-w, --cell-w-dense, --cell-h-dense)` | they must equal the font's own advance width and line box, so they follow the font and are never a free choice |
 | Layout preferences | `.settings (appearance.sidebarWidth, sidebarGraphHeight, tabRailWidth; ui.* widths; calendar.* sizes)` | per-person layout already owned by .settings; a theme setting a drag width would fight the drag |
 

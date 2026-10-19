@@ -182,6 +182,41 @@ describe('addHighlight extends an overlapping highlight', () => {
     })
 })
 
+describe('addHighlight over another colour', () => {
+    const line = (x: number, w: number, y = 100) => ({ x, y, w, h: 12 })
+    test('replaces the colour under the selection and keeps the rest of the line', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 300)], { id: 'y', text: 'whole line' })
+        const out = addHighlight(doc, 0, [line(100, 50)], { id: 'g', c: '#8CE99A' })
+        const [y, g] = out.pages[0]!.highlights!
+        expect(y!.id).toBe('y')
+        expect(y!.rects.map(r => [r.x, r.w])).toEqual([
+            [10, 90],
+            [150, 160],
+        ])
+        expect(y!.text).toBeUndefined()
+        expect(g).toMatchObject({ id: 'g', c: '#8CE99A' })
+    })
+
+    test('a highlight covered completely is replaced, not stacked under', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 100)], { id: 'y' })
+        const out = addHighlight(doc, 0, [line(5, 110)], { id: 'g', c: '#8CE99A' })
+        expect(out.pages[0]!.highlights!.map(h => h.id)).toEqual(['g'])
+    })
+
+    test('yellow written as its hex is the same colour as the default and extends instead', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 100)], { id: 'y', c: '#FFE14D' })
+        const out = addHighlight(doc, 0, [line(50, 100)])
+        expect(out.pages[0]!.highlights).toHaveLength(1)
+        expect(out.pages[0]!.highlights![0]!.rects).toEqual([line(10, 140)])
+    })
+
+    test('another line of another colour is left alone, same object', () => {
+        const doc = addHighlight(emptyDoc(), 0, [line(10, 100)], { id: 'y' })
+        const out = addHighlight(doc, 0, [line(10, 100, 114)], { c: '#8CE99A' })
+        expect(out.pages[0]!.highlights![0]).toBe(doc.pages[0]!.highlights![0])
+    })
+})
+
 describe('removeHighlight', () => {
     function docWith(highlights: { id: string }[]): DrawingDoc {
         let doc = emptyDoc()
@@ -245,7 +280,7 @@ describe('highlightAt', () => {
             [{ x: 0, y: 0, w: 100, h: 100 }],
             { id: 'under' },
         )
-        // A different colour, so it stacks instead of extending 'under'.
+        // A different colour, so it cuts its square out of 'under' instead of extending it.
         doc = addHighlight(doc, 0, [{ x: 20, y: 20, w: 40, h: 40 }], {
             id: 'over',
             c: '#123456',
