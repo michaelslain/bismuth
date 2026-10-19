@@ -20,26 +20,27 @@ export const AGENTS: readonly string[] = [
     'goose',
 ]
 
-// The art box is 126 x 18 cells (IntroWindow): a scene of exactly that size draws at scale 1, on
-// whole-pixel cells, which is what keeps the glyph edges as crisp as the file tree's text.
-const COLS = 126
-const ROWS = 18
-/** Rows of blank above the diagram (13 rows used of 18). */
-const TOP = 3
+// The scene is cut to its content, 59 x 10 cells, so IntroHero can draw it larger than the cell size
+// (`--intro-glyph-scale`) whenever the window holds it, on cells snapped to whole device pixels,
+// which is what keeps the glyph edges as crisp as the file tree's text.
+const COLS = 59
+const ROWS = 10
+/** The names' row: the diagram starts on the scene's first row. */
+const TOP = 0
 const REVEAL_MS = 1200
-const NAME_ROW = TOP + 1
-const LINE_TOP = TOP + 2
-const LINE_BOTTOM = TOP + 9
+const NAME_ROW = TOP
+const LINE_TOP = TOP + 1
+const LINE_BOTTOM = TOP + 6
 const LINE_STEPS = LINE_BOTTOM - LINE_TOP
-const MCP_ROW = TOP + 10
+const MCP_ROW = TOP + 7
 const MCP = '[ mcp ]'
-const VAULT_ROW = TOP + 13
+const VAULT_ROW = TOP + 9
 const VAULT = '( vault )'
 const PACKET_STEP_MS = 120
 const PACKET_PERIOD_MS = 2400
 const PACKET_PHASE_MS = 400
-/** Cells a packet visits: the converging lines (rows 2-9), then the stem (rows 11-12). */
-const PACKET_ROWS = [2, 3, 4, 5, 6, 7, 8, 9, 11, 12].map(r => TOP + r)
+/** Cells a packet visits: the converging lines (rows 1-6), then the stem (row 8). */
+const PACKET_ROWS = [1, 2, 3, 4, 5, 6, 8].map(r => TOP + r)
 
 const centred = (width: number) => Math.floor((COLS - width) / 2)
 
@@ -137,7 +138,6 @@ export const agentsScene: GlyphScene = {
         if (t < REVEAL_MS) return
         putText(out, centred(MCP.length), MCP_ROW, MCP, 'accent')
         putChar(out, MCP_COL, MCP_ROW + 1, '|', 'faint')
-        putChar(out, MCP_COL, MCP_ROW + 2, '|', 'faint')
         putText(out, centred(VAULT.length), VAULT_ROW, VAULT, 'fg')
         drawPackets(out, t - REVEAL_MS)
     },

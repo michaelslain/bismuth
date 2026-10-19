@@ -614,8 +614,8 @@
   /* Field noise opacity (bismuth-design/ascii/design-system/tokens/ascii.css): the noise
      layer under a GraphField's rasterized edges. Only consumer is ui/ascii/GraphField.module.css. */
   --field-noise-op: .45;
-  /* the largest scale the first-run intro's glyph art is fitted to, before GlyphCanvas snaps its cell onto whole device pixels */
-  --intro-glyph-scale: 1.3333;
+  /* the largest scale the first-run intro's glyph art is fitted to: a whole number, so the art draws on whole-pixel cells */
+  --intro-glyph-scale: 1;
 
   /* The character grid's cell metrics for the ASCII primitives (Glyph.tsx et al). A shared
      primitive (Glyph.tsx, consumed well outside the graph) depending on a single feature's

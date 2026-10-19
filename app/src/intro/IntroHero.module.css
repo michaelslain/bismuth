@@ -1,5 +1,11 @@
-/* app/src/intro/IntroHero.module.css — the hero centres its art. The glyph diagrams take the
-   window's full art height (`--intro-art-h`, IntroWindow); the wordmark slides take their content's.
+/* app/src/intro/IntroHero.module.css — the hero centres its art horizontally. A glyph diagram's box
+   is exactly its scene's height at one of two scales: `--intro-glyph-scale` times its rows
+   (`--hero-rows`, set by IntroHero from the scene) when the art budget (IntroWindow's `--intro-art-h`,
+   tall) and the window (wide, `cqw` of IntroWindow's body) hold the scene at that scale, else once.
+   The canvas fills that box, so GlyphCanvas fits the scene at exactly one of the two, and the art
+   box takes the hero's height, right over the copy. In a budget shorter than one scene it takes the
+   budget and GlyphCanvas shrinks the cells to fit. Outside IntroWindow (stories) the budget is the
+   nearest size container's height. The wordmark slides take their content's height.
    `--glyph-scale-cap` is the one hook ui/ascii's GlyphCanvas reads to cap how far a host's art may
    grow; this is the only host that sets it, from the `--intro-glyph-scale` token, so every other
    GlyphArt stays at the primitive's own MAX_SCALE. (The token stays a `:root` token, not a value
@@ -14,5 +20,17 @@
 }
 
 .intro-hero--tall {
-  height: var(--intro-art-h);
+  /* IntroHero always sets --hero-rows and --hero-cols inline; the fallbacks (no cap) take the box. */
+  --hero-h1: calc(var(--hero-rows, 999) * var(--cell-h));
+  --hero-hn: calc(var(--intro-glyph-scale) * var(--hero-h1));
+  --hero-wn: calc(var(--intro-glyph-scale) * var(--hero-cols, 999) * var(--cell-w));
+  /* A step, not a ramp: each round() is 0 below its step and a whole multiple of it from there, so
+     --hero-fit-n is --hero-hn when the box holds the token scale on both axes and 0 otherwise. The width test is
+     carried into height units by rounding its non-zero value UP to a --hero-hn step. */
+  --hero-fit-n: min(
+    var(--hero-hn),
+    round(down, var(--intro-art-h, 100cqh), var(--hero-hn)),
+    round(up, min(var(--hero-wn), round(down, 100cqw, var(--hero-wn))), var(--hero-hn))
+  );
+  height: min(var(--intro-art-h, 100cqh), max(var(--hero-h1), var(--hero-fit-n)));
 }

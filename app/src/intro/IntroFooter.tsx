@@ -28,7 +28,7 @@ const IntroFooter: Component<IntroFooterProps> = props => {
     const isLast = () => props.index >= props.count - 1
     return (
         <Band
-            rule="top"
+            rule="none"
             class={`${styles['footer']} ${props.className ?? ''}`}
         >
             <Text size="ui" tone="muted">

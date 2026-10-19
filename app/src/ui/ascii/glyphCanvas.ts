@@ -32,6 +32,24 @@ import {
 
 type SpacedContext = CanvasRenderingContext2D & { letterSpacing?: string }
 
+/** What a GlyphCanvas last drew: the frame, where its cell (0, 0) sits in the canvas box (CSS px), and
+ *  the cell size. A reader that wants the glyphs rather than the pixels (the intro's morph snapshot)
+ *  takes them from here; the frame is reused by the next draw, so read it synchronously. */
+export type DrawnGlyphs = {
+    frame: GlyphFrame
+    left: number
+    top: number
+    cellW: number
+    cellH: number
+}
+
+const drawn = new WeakMap<HTMLCanvasElement, DrawnGlyphs>()
+
+/** The glyphs a GlyphCanvas last drew on `canvas`, or undefined for any other canvas. */
+export function drawnGlyphs(canvas: HTMLCanvasElement): DrawnGlyphs | undefined {
+    return drawn.get(canvas)
+}
+
 export default class GlyphCanvas {
     private host: HTMLElement | null = null
     private canvas: HTMLCanvasElement | null = null
@@ -353,6 +371,15 @@ export default class GlyphCanvas {
         ctx.textBaseline = 'middle'
         ctx.textAlign = 'left'
         const fit = fitScene(this.cols, this.rows, buf.cols, buf.rows)
+        if (this.canvas) {
+            drawn.set(this.canvas, {
+                frame: buf,
+                left: fit.col * this.cellW,
+                top: fit.row * this.cellH,
+                cellW: this.cellW,
+                cellH: this.cellH,
+            })
+        }
         for (let row = 0; row < buf.rows; row++) {
             const boxRow = fit.row + row
             if (boxRow < 0 || boxRow >= this.rows) continue

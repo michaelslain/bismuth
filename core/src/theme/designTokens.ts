@@ -202,7 +202,7 @@ const EFFECT: TokenDef[] = [
     effect('hud-fps-ok', 'color', '#d29922', 'FPS meter: borderline frame rate. Theme-independent.'),
     effect('hud-fps-bad', 'color', '#f85149', 'FPS meter: slow frame rate. Theme-independent.'),
     effect('field-noise-op', 'number', '.45', 'Opacity of the graph field texture.'),
-    effect('intro-glyph-scale', 'number', '1.3333', "Largest scale the first-run intro's glyph art is drawn at. A 24-row art box over an 18-row scene is exactly 4/3; GlyphCanvas caps its fit here, then snaps down onto whole device pixels."),
+    effect('intro-glyph-scale', 'number', '1', "Largest scale the first-run intro's glyph art is drawn at. A glyph scene draws at the token's scale when the window holds it, else at 1. GlyphCanvas caps its fit here, then snaps down onto whole device pixels."),
     effect('z-local', 'number', '1', 'Stacking inside one component: a handle over its sibling.'),
     effect('z-overlay', 'number', '20', 'Pane overlays: the chat panel, the switcher, drop cues.'),
     effect('z-shell', 'number', '100', 'Shell chrome over the panes: the tab rail and the sidebar edge.'),

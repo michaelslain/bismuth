@@ -28,6 +28,7 @@
 import '../global.css'
 import {
     Show,
+    batch,
     createEffect,
     createMemo,
     createSignal,
@@ -44,6 +45,7 @@ import IntroGraph, { type IntroGraphStage } from './IntroGraph'
 import IntroFooter from './IntroFooter'
 import IntroHero from './IntroHero'
 import IntroWindow from './IntroWindow'
+import MorphOverlay from './MorphOverlay'
 import PowerUpList from './PowerUpList'
 import PrivacyPicker from './PrivacyPicker'
 import { DEFAULT_PRIVACY, type PrivacyValues } from './introPrivacy'
@@ -76,6 +78,20 @@ import {
 } from './introSlides'
 import { applyIntroTheme, snapshotRootTheme } from './introTheme'
 import { BIG_GRAPH } from './vaultIntroGraph'
+import {
+    MORPH_IDLE,
+    frameToGrid,
+    morphOnMove,
+    morphProgress,
+    type MorphState,
+} from './introMorph'
+import { agentsScene } from './glyphScenes/agents'
+import { daemonScene } from './glyphScenes/daemon'
+import { createFrame } from '../ui/ascii/glyphScene'
+import { MORPH_MS, writeMorphFrame, type MorphGlyph } from './morph/morphFrame'
+import type { MorphGrid } from './morph/morphGrid'
+import { planMorph, type MorphPlan } from './morph/morphPlan'
+import { readMetrics, snapshotSlide } from './morph/snapshotSlide'
 import styles from './VaultIntro.module.css'
 
 export type VaultIntroProps = {
@@ -103,7 +119,37 @@ export type VaultIntroProps = {
     initialVaultStart?: VaultStart
     /** Seeds the privacy switches (real first run: DEFAULT_PRIVACY, everything off). */
     initialPrivacy?: PrivacyValues
+    /** Whether a slide move runs the morph (default true). False cuts instantly (stories whose
+     *  play function steps slides and asserts text). A number freezes the morph at that progress
+     *  once its incoming slide is measured: the deterministic seam for a mid-flight still. */
+    morph?: boolean | number
 }
+
+/** How long the real slide takes to fade in under the overlay, and where in the morph it starts:
+ *  just after the last char lands (morphFrame's last landing is at 0.78), so the slide resolves under
+ *  a settled overlay that is still painting its final frame. */
+const FADE_MS = 450
+const FADE_AT = 0.8
+
+/** What the morph carries: the slide body (backdrop, art and text slots) and the footer's
+ *  `n/12 // name` readout, which change per slide. The wordmark, [skip] and the footer's buttons are
+ *  the same on every slide and stay on screen at full opacity, so the snapshot leaves them out and
+ *  the overlay never paints them twice. VaultIntro.module.css fades exactly this selector. */
+const MORPH_SCOPE =
+    "[data-intro-slot='backdrop'], [data-intro-slot='art'], [data-intro-slot='text'], [data-intro-slot='footer'] > * > :not(:has(button))"
+
+const prefersReducedMotion = (): boolean =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** Where a glyph hero's reveal ends, so a morph-arrived slide shows its finished frame. */
+const revealMsOf = (hero: string): number =>
+    hero === 'daemon'
+        ? daemonScene.revealMs
+        : hero === 'agents'
+          ? agentsScene.revealMs
+          : 0
 
 /** Ask the Tauri shell which agent CLIs are installed (the intro has no backend to ask). Outside
  *  the desktop app, or if the call throws, nothing is detected: only the free agent is offered. */
@@ -231,9 +277,137 @@ const VaultIntro: Component<VaultIntroProps> = props => {
         }
     }
 
+    // ---- the morph ------------------------------------------------------------------------------
+    // A move snapshots the outgoing slide synchronously, switches the slide (laid out at opacity 0
+    // under the overlay), snapshots it on the next frame, then flies the overlay from one grid to
+    // the other and fades the real slide in beneath it. A press mid-flight retargets from the
+    // characters on screen. One slide tree throughout.
+    let root!: HTMLDivElement
+    const [morphing, setMorphing] = createSignal<'off' | 'run' | 'fade'>('off')
+    const [plan, setPlan] = createSignal<MorphPlan>()
+    const [progress, setProgress] = createSignal(0)
+    const [seed, setSeed] = createSignal(1)
+    // The slide on screen was reached by a morph: its copy does not type and its glyph hero starts
+    // from its finished frame.
+    const [arrived, setArrived] = createSignal(false)
+    const [heroT, setHeroT] = createSignal(0)
+    let state: MorphState = MORPH_IDLE
+    let shownP = 0
+    let token = 0
+    let raf = 0
+    let fadeTimer: ReturnType<typeof setTimeout> | undefined
+    let heroTimer: ReturnType<typeof setInterval> | undefined
+    let moves = 0
+
+    const stopTimers = () => {
+        token++
+        cancelAnimationFrame(raf)
+        clearTimeout(fadeTimer)
+        clearInterval(heroTimer)
+        heroTimer = undefined
+    }
+    onCleanup(stopTimers)
+
+    const finish = () => {
+        setMorphing('off')
+        setPlan(undefined)
+        state = MORPH_IDLE
+        // The hero goes live from its finished frame (a pinned time that advances at ambient pace).
+        const t0 = performance.now()
+        heroTimer = setInterval(() => setHeroT(performance.now() - t0), 83)
+    }
+
+    const fly = (my: number, from: MorphGrid, frozen: number | undefined) => {
+        const to = snapshotSlide(root, readMetrics(root), MORPH_SCOPE)
+        if (my !== token) return
+        setPlan(planMorph(from, to, seed()))
+        if (frozen !== undefined) {
+            shownP = frozen
+            setProgress(frozen)
+            return
+        }
+        state =
+            state.phase === 'running'
+                ? { ...state, startedAt: performance.now() }
+                : state
+        const tick = (now: number) => {
+            if (my !== token) return
+            const p = morphProgress(state, now)
+            shownP = p
+            setProgress(p)
+            if (p >= FADE_AT && morphing() === 'run') setMorphing('fade')
+            if (p >= 1) {
+                fadeTimer = setTimeout(
+                    finish,
+                    Math.max(0, FADE_MS - (1 - FADE_AT) * MORPH_MS),
+                )
+            } else raf = requestAnimationFrame(tick)
+        }
+        tick(performance.now())
+    }
+
+    /** Switch to slide `to`, with the morph when it applies. */
+    const goTo = (to: number) => {
+        const from = index()
+        const frozen = typeof props.morph === 'number' ? props.morph : undefined
+        const now = performance.now()
+        const next =
+            props.morph === false || !root
+                ? MORPH_IDLE
+                : morphOnMove(
+                      state,
+                      from,
+                      to,
+                      now,
+                      // A frozen still is not motion: it shows under reduced motion too.
+                      frozen === undefined && prefersReducedMotion(),
+                  )
+        if (next.phase === 'idle') {
+            stopTimers()
+            batch(() => {
+                setIndex(to)
+                setMorphing('off')
+                setPlan(undefined)
+                setArrived(false)
+                setHeroT(0)
+            })
+            state = MORPH_IDLE
+            return
+        }
+        // What is on screen now: the live slide, or the overlay's current frame when retargeting.
+        const current = plan()
+        let fromGrid: MorphGrid
+        if (state.phase === 'running' && current) {
+            const f = createFrame(current.cols, current.rows)
+            const fitted: MorphGlyph[] = []
+            writeMorphFrame(current, shownP, seed(), f, fitted)
+            const onGrid = frameToGrid(f)
+            // the text in flight keeps its footprint, so the new flight starts where it is drawn
+            const text = fitted.map(({ col, row, ch, color, x, y, scale }) => ({ col, row, ch, color, x, y, scale }))
+            fromGrid = { ...onGrid, cells: [...onGrid.cells, ...text] }
+        } else {
+            fromGrid = snapshotSlide(root, readMetrics(root), MORPH_SCOPE)
+        }
+        stopTimers()
+        state = next
+        moves++
+        const my = token
+        batch(() => {
+            setSeed(frozen !== undefined ? 1 : moves)
+            setIndex(to)
+            setArrived(true)
+            setHeroT(0)
+            setProgress(0)
+            setPlan(planMorph(fromGrid, fromGrid, seed()))
+            setMorphing('run')
+        })
+        // The incoming slide is laid out (at opacity 0) by the next frame.
+        raf = requestAnimationFrame(() => fly(my, fromGrid, frozen))
+    }
+
     const move = (m: PagerMove, target?: number) => {
         const next = step(index(), slides().length, m, target)
-        setIndex(next.index)
+        if (next.index !== index()) goTo(next.index)
         if (next.enter) void enter()
     }
 
@@ -251,9 +425,14 @@ const VaultIntro: Component<VaultIntroProps> = props => {
     onCleanup(() => window.removeEventListener('keydown', onKey))
 
     return (
-        <div class={styles['vi-root']}>
+        <div
+            ref={root}
+            class={styles['vi-root']}
+            data-morphing={morphing() === 'off' ? undefined : morphing()}
+        >
             <IntroWindow
                 onClose={() => move('skip')}
+                artFill={!!graphStage()}
                 backdrop={
                     // ONE graph for the palette and three-brains slides: the condition stays true
                     // across that step, so the instance persists and just changes stage.
@@ -273,7 +452,17 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                         {s => (
                             <>
                                 <Show when={s.hero}>
-                                    {hero => <IntroHero hero={hero()} />}
+                                    {hero => (
+                                        <IntroHero
+                                            hero={hero()}
+                                            at={
+                                                arrived()
+                                                    ? revealMsOf(hero()) +
+                                                      heroT()
+                                                    : undefined
+                                            }
+                                        />
+                                    )}
                                 </Show>
                                 <Show when={graphStage()}>
                                     <div class={styles['graph-room']}>
@@ -344,6 +533,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                     <Show when={slide()} keyed>
                         {s => (
                             <IntroCopy
+                                type={!arrived()}
                                 title={s.title}
                                 body={
                                     s.extra !== 'cta'
@@ -371,6 +561,15 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                     />
                 }
             />
+            <Show when={plan()}>
+                {p => (
+                    <MorphOverlay
+                        plan={p()}
+                        progress={progress()}
+                        seed={seed()}
+                    />
+                )}
+            </Show>
         </div>
     )
 }

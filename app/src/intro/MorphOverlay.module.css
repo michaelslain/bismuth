@@ -1,0 +1,10 @@
+/* The morph overlay: one transparent canvas over the takeover, painted on the cell grid the
+   snapshots measured. It never takes a pointer event. */
+.morph-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}

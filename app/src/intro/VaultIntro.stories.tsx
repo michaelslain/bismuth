@@ -6,10 +6,9 @@
 // `layout: 'fullscreen'` is required: .vi-root is `position: fixed; inset: 0`, so a padded or
 // centered canvas would clip it rather than show the takeover at its real size. The two sizing
 // stories (`ShortWindow`, `Narrow`) wrap it in a transformed box, which becomes the containing block
-// of that fixed root. The short-window step that drops the art box to 16 rows is a CONTAINER query on
-// that root (`@container (max-height: 44rem)`), so ShortWindow's 640px box really renders it. A
-// container query measures the root's CONTENT box (its `--sp-7` padding comes off both ends), which
-// is why `DefaultWindow`'s 800px app window must keep the full 24 rows.
+// of that fixed root. The window fills the root's content box (the root pads itself by `--sp-7`) and
+// the art box takes the height left over, so `ShortWindow` and `DefaultWindow` check that the frame
+// fills the takeover and the footer stays on screen.
 //
 // Reduced motion (the glyph scenes and the typed-in copy switch to their resting frame under
 // `prefers-reduced-motion`) cannot be emulated from inside a story, so it has no story.
@@ -129,6 +128,7 @@ export const ObsidianBackToNew: Story = {
     args: {
         startAt: 'obsidian',
         initialObsidianSource: '/Users/ada/Documents/Notes',
+        morph: false,
     },
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
@@ -204,7 +204,7 @@ export const Settings: Story = { args: { startAt: 'settings' } }
 /** Power-ups both cleared: the name, obsidian and chat slides drop out, so next from power-ups
  *  lands on settings and the footer counts nine slides. */
 export const PowerUpsNoneSkips: Story = {
-    args: { startAt: 'powerups', initialPowerups: [] },
+    args: { startAt: 'powerups', initialPowerups: [], morph: false },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('7/9 // power-ups')).toBeTruthy()
@@ -259,11 +259,10 @@ export const BeginBusy: Story = {
     },
 }
 
-/** The window is the same size on every slide, and each slide's art and copy sit centred in the
- *  body as one group. Walks every slide (both power-ups on, so all of them show) with the real next button (stopping before the last,
+/** The window is the same size on every slide, and every slide's art and copy sit as one group at its optical centre, with no empty art box over the art. Walks every slide (both power-ups on, so all of them show) with the real next button (stopping before the last,
  *  which enters the vault). */
 export const Geometry: Story = {
-    args: { startAt: 'welcome', initialPowerups: ['daemon', 'cli'] },
+    args: { startAt: 'welcome', initialPowerups: ['daemon', 'cli'], morph: false },
     // A 900px stage, over the 44rem short-window step: the art height is the full 24 rows whatever
     // the browser viewport is (the step reads this box, not the viewport).
     decorators: [Box({ height: '900px' })],
@@ -277,12 +276,21 @@ export const Geometry: Story = {
         const measure = () => {
             const body = slot('art').parentElement!.getBoundingClientRect()
             const art = slot('art').getBoundingClientRect()
+            const content = slot('art').lastElementChild!.getBoundingClientRect()
             const text = slot('text').getBoundingClientRect()
             return {
                 footerTop: slot('footer').getBoundingClientRect().top,
                 bodyH: body.height,
-                // Above-the-art minus below-the-copy: 0 when the group is centred.
-                skew: art.top - body.top - (body.bottom - text.bottom),
+                // The art and the copy are one group centred in the body above its bottom padding
+                // (the lift to the optical centre).
+                skew:
+                    (art.top - body.top) -
+                    (body.bottom -
+                        parseFloat(getComputedStyle(slot('art').parentElement!).paddingBottom) -
+                        text.bottom),
+                // No empty art box over the art: the box is its content's height (the graph slides
+                // hold it at the full art budget for the cloud).
+                spare: art.height - content.height,
             }
         }
         // The headline's words without the typing cursor (an aria-hidden `_` that rides the title
@@ -292,16 +300,21 @@ export const Geometry: Story = {
             copy.querySelectorAll('[data-cursor]').forEach(c => c.remove())
             return copy.textContent
         }
-        await waitFor(() => expect(words()).toBe(SLIDES[0].title))
-        const first = measure()
-        await expect(first.skew).toBeCloseTo(0, 0)
-        for (let i = 1; i < SLIDES.length; i++) {
-            await userEvent.click(canvas.getByRole('button', { name: /next/ }))
-            await waitFor(() => expect(words()).toBe(SLIDES[i].title))
+        const check = async (i: number, first: ReturnType<typeof measure>) => {
             const m = measure()
             await expect(m.footerTop, `slide ${i + 1} footerTop`).toBeCloseTo(first.footerTop, 0)
             await expect(m.bodyH, `slide ${i + 1} bodyH`).toBeCloseTo(first.bodyH, 0)
-            await expect(Math.abs(m.skew), `slide ${i + 1} skew`).toBeLessThan(2)
+            await expect(Math.abs(m.skew), `slide ${i + 1} centred`).toBeLessThan(2)
+            if (SLIDES[i].key !== 'theme' && SLIDES[i].key !== 'graph')
+                await expect(Math.abs(m.spare), `slide ${i + 1} art box spare`).toBeLessThan(1)
+        }
+        await waitFor(() => expect(words()).toBe(SLIDES[0].title))
+        const first = measure()
+        await check(0, first)
+        for (let i = 1; i < SLIDES.length; i++) {
+            await userEvent.click(canvas.getByRole('button', { name: /next/ }))
+            await waitFor(() => expect(words()).toBe(SLIDES[i].title))
+            await check(i, first)
         }
     },
 }
@@ -334,51 +347,52 @@ export const DaemonRiso: Story = {
     args: { startAt: 'daemon', initialTheme: 'riso' },
 }
 
-/** A 640px-tall stage: the glyph art is the 16-row step and the footer stays on screen. */
+/** The window fills the takeover's content box: the strip's top is one `--sp-7` gutter under the top
+ *  edge and the footer's bottom one gutter over the bottom edge, with no empty band beyond it. */
+const expectFilled = async (canvasElement: HTMLElement) => {
+    const gutter = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--sp-7'),
+    )
+    const root = canvasElement.getBoundingClientRect()
+    const win = canvasElement
+        .querySelector('[data-intro-window]')!
+        .getBoundingClientRect()
+    await expect(win.top - root.top).toBeCloseTo(gutter, 0)
+    await expect(root.bottom - win.bottom).toBeCloseTo(gutter, 0)
+}
+
+/** A 640px-tall stage: the frame fills it and the footer stays on screen. */
 export const ShortWindow: Story = {
     args: { startAt: 'agents' },
     decorators: [Box({ height: '640px' })],
     play: async ({ canvasElement }) => {
-        const rowH = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue(
-                '--row-h',
-            ),
-        )
         const slot = (name: string) =>
             canvasElement.querySelector(
                 `[data-intro-slot="${name}"]`,
             ) as HTMLElement
-        await waitFor(() =>
-            expect(slot('art').getBoundingClientRect().height).toBeCloseTo(
-                16 * rowH,
-                0,
-            ),
-        )
+        await waitFor(() => expectFilled(canvasElement))
         await expect(
             slot('footer').getBoundingClientRect().bottom,
         ).toBeLessThanOrEqual(canvasElement.getBoundingClientRect().bottom)
     },
 }
 
-/** The app's DEFAULT 1200x800 window: the glyph art keeps the full 24 rows. The short-window step is a
- *  container query, which reads the root's CONTENT box (800px minus two `--sp-7` paddings = 752px),
- *  so a threshold written in viewport terms (47rem = 752px, inclusive) fires exactly here. Geometry
- *  (900px) and ShortWindow (640px) sit either side of that boundary and cannot see it. */
+/** The app's DEFAULT 1200x800 window: the frame fills the takeover minus the gutter, and the daemon
+ *  scene draws at `--intro-glyph-scale`, so the art box is exactly that many times its 10 rows. */
 export const DefaultWindow: Story = {
     args: { startAt: 'daemon' },
     decorators: [Box({ height: '800px' })],
     play: async ({ canvasElement }) => {
-        const rowH = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue(
-                '--row-h',
-            ),
-        )
+        await waitFor(() => expectFilled(canvasElement))
+        const rootCs = getComputedStyle(document.documentElement)
+        const cellH = parseFloat(rootCs.getPropertyValue('--cell-h'))
+        const scale = parseFloat(rootCs.getPropertyValue('--intro-glyph-scale'))
         const art = canvasElement.querySelector(
             '[data-intro-slot="art"]',
         ) as HTMLElement
-        await waitFor(() =>
-            expect(art.getBoundingClientRect().height).toBeCloseTo(24 * rowH, 0),
-        )
+        await expect(
+            Math.abs(art.getBoundingClientRect().height - scale * 10 * cellH),
+        ).toBeLessThan(1)
     },
 }
 
@@ -387,4 +401,53 @@ export const DefaultWindow: Story = {
 export const Narrow: Story = {
     args: { startAt: 'agents' },
     decorators: [Box({ width: '860px' })],
+}
+
+const overlayOf = (el: HTMLElement) =>
+    el.querySelector('canvas[data-morph-overlay]') as HTMLCanvasElement | null
+
+/** Fraction of the overlay's pixels that carry ink. */
+const overlayInk = (c: HTMLCanvasElement): number => {
+    const data = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data
+    let n = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n++
+    return n / (c.width * c.height)
+}
+
+/** Opens on welcome; pressing [next] runs the real morph into the theme slide: the overlay flies the
+ *  welcome characters onto the theme slide's cells for about a second, then the slide fades in. */
+export const MorphLive: Story = {
+    args: { startAt: 'welcome' },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByRole('button', { name: /next/ }))
+        await waitFor(() => expect(overlayOf(canvasElement)).toBeTruthy())
+        await waitFor(() => expect(overlayOf(canvasElement)).toBeNull(), {
+            timeout: 4000,
+        })
+        await expect(canvasElement.querySelector('h1')!.textContent).toContain(
+            SLIDES[1].title,
+        )
+    },
+}
+
+/** The welcome -> theme morph frozen at p = 0.5 (`morph={0.5}` holds it there once the incoming
+ *  slide is measured): a cloud of characters mid-flight in token colours. The slide body is hidden
+ *  under it; the wordmark, [skip] and [back] [next] stay on screen. */
+export const MorphMidFrame: Story = {
+    args: { startAt: 'welcome', morph: 0.5 },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByRole('button', { name: /next/ }))
+        await waitFor(() => {
+            const o = overlayOf(canvasElement)
+            expect(o).toBeTruthy()
+            expect(overlayInk(o!)).toBeGreaterThan(0.002)
+        })
+        const opacity = (el: Element) => getComputedStyle(el).opacity
+        const slot = (name: string) => canvasElement.querySelector(`[data-intro-slot="${name}"]`)!
+        await expect(opacity(slot('text'))).toBe('0')
+        await expect(opacity(canvasElement.querySelector('[data-intro-window]')!)).toBe('1')
+        await expect(opacity(c.getByRole('button', { name: /skip/i }))).toBe('1')
+    },
 }

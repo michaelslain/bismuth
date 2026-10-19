@@ -1,5 +1,7 @@
-// Visual spec for <IntroWindow>: the framed window the intro slides sit in. The decorator stands in
-// for VaultIntro's centring parent. `short-window` proves the footer stays on screen at 640px tall.
+// Visual spec for <IntroWindow>: the borderless frame the intro slides sit in. The decorator stands in
+// for VaultIntro's root (a --sp-7 gutter, the window filling the rest). `ShortWindow` proves the footer
+// stays on screen at 640px tall, `TallWindow` that a full-height art box grows with the height. Both
+// prove the art and the copy are one group centred in the body.
 import type { JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
@@ -21,14 +23,13 @@ const Stage = (height: string) => (Story: () => JSX.Element) => (
     <div
         style={{
             height,
-            display: 'flex',
-            'align-items': 'center',
-            'justify-content': 'center',
+            display: 'grid',
+            'grid-template-rows': 'minmax(0, 1fr)',
+            'justify-items': 'center',
+            'align-items': 'stretch',
+            padding: 'var(--sp-7)',
             background: 'var(--bg)',
             'box-sizing': 'border-box',
-            // The size container IntroWindow's short-window step reads (VaultIntro's root is the
-            // real one); sizing this box forces the 16-row state.
-            'container-type': 'size',
         }}
     >
         <Story />
@@ -66,50 +67,67 @@ export const EmptyArt: Story = {
     decorators: [Stage('100vh')],
 }
 
-/** The body's height: two --sp-7 paddings, the art height (`--intro-art-h`) and nine copy rows. */
-const bodyRows = (canvasElement: HTMLElement) => {
-    const rowH = parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
-    )
-    const body = canvasElement.querySelector('[data-intro-slot="art"]')!.parentElement!
-    const pad = parseFloat(getComputedStyle(body).paddingTop)
-    return (body.getBoundingClientRect().height - 2 * pad) / rowH - 9
+const slot = (el: HTMLElement, name: string) =>
+    el.querySelector(`[data-intro-slot="${name}"]`)! as HTMLElement
+
+/** The frame has no border and no rules, and it carries the `data-intro-window` hook. */
+const expectBorderless = async (canvasElement: HTMLElement) => {
+    const win = canvasElement.querySelector('[data-intro-window]')! as HTMLElement
+    await expect(parseFloat(getComputedStyle(win).borderTopWidth)).toBe(0)
+    await expect(parseFloat(getComputedStyle(slot(canvasElement, 'footer').firstElementChild!).borderTopWidth)).toBe(0)
 }
 
-/** The art and the copy centre as one group: the gap above the art matches the gap below the copy. */
+/** The bottom padding that lifts the body's group to its optical centre. */
+const liftOf = (canvasElement: HTMLElement) =>
+    parseFloat(getComputedStyle(slot(canvasElement, 'art').parentElement!).paddingBottom)
+
+/** The art and the copy are one group centred in the body above its lift (the slack above the art
+ *  equals the slack below the copy, less the bottom padding), so it sits a little above the middle. */
 const expectCentred = async (canvasElement: HTMLElement) => {
-    const body = canvasElement.querySelector('[data-intro-slot="art"]')!.parentElement!
-    const box = body.getBoundingClientRect()
-    const art = canvasElement.querySelector('[data-intro-slot="art"]')!.getBoundingClientRect()
-    const text = canvasElement.querySelector('[data-intro-slot="text"]')!.getBoundingClientRect()
-    await expect(Math.abs(art.top - box.top - (box.bottom - text.bottom))).toBeLessThan(2)
+    const body = slot(canvasElement, 'art').parentElement!.getBoundingClientRect()
+    const art = slot(canvasElement, 'art').getBoundingClientRect()
+    const text = slot(canvasElement, 'text').getBoundingClientRect()
+    const lift = liftOf(canvasElement)
+    await expect(lift).toBeGreaterThan(0)
+    await expect(Math.abs((art.top - body.top) - (body.bottom - lift - text.bottom))).toBeLessThan(2)
+    await expect(art.top).toBeGreaterThanOrEqual(body.top - 1)
+    await expect(text.bottom).toBeLessThanOrEqual(body.bottom + 1)
 }
 
-/** A 640px-tall container: the art height drops to 16 rows and the footer stays inside the window. */
+/** A 640px-tall container: the footer stays inside the window. */
 export const ShortWindow: Story = {
     args,
     decorators: [Stage('640px')],
     play: async ({ canvasElement }) => {
-        await expect(bodyRows(canvasElement)).toBeCloseTo(16, 0)
-        const footer = canvasElement.querySelector('[data-intro-slot="footer"]')!
-        await expect(footer.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-            canvasElement.getBoundingClientRect().bottom,
-        )
+        await expectBorderless(canvasElement)
+        await expectCentred(canvasElement)
+        await expect(
+            slot(canvasElement, 'footer').getBoundingClientRect().bottom,
+        ).toBeLessThanOrEqual(canvasElement.getBoundingClientRect().bottom)
     },
 }
 
-/** A tall container (900px, over the 44rem step): the full 24-row art height, with the art and
- *  the copy centred in the body as one group. */
+/** A tall container (900px) with `artFill`: the art box takes the body's art budget, 44% of the body
+ *  (above its lift) rounded down to whole rows (over the 15-row floor at this height), and still centres with the
+ *  copy. */
 export const TallWindow: Story = {
-    args,
+    args: { ...args, artFill: true },
     decorators: [Stage('900px')],
     play: async ({ canvasElement }) => {
-        await expect(bodyRows(canvasElement)).toBeCloseTo(24, 0)
+        await expectBorderless(canvasElement)
         await expectCentred(canvasElement)
+        const rowH = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--row-h'),
+        )
+        const body = slot(canvasElement, 'art').parentElement!.getBoundingClientRect()
+        const artH = slot(canvasElement, 'art').getBoundingClientRect().height
+        await expect(artH).toBeGreaterThan(15 * rowH)
+        const contentH = body.height - liftOf(canvasElement)
+        await expect(Math.abs(artH - Math.floor((0.44 * contentH) / rowH) * rowH)).toBeLessThan(1)
     },
 }
 
-/** The backdrop slot fills the whole body behind the art and the copy (the palette slide's graph). */
+/** The backdrop slot fills the art box behind the art (the palette slide's graph). */
 export const WithBackdrop: Story = {
     args: {
         ...args,
@@ -118,6 +136,7 @@ export const WithBackdrop: Story = {
                 {'. '.repeat(2000)}
             </Text>
         ),
+        artFill: true,
     },
     decorators: [Stage('100vh')],
 }

@@ -27,12 +27,13 @@ export const DAEMON_LOG: readonly { verb: string; result: string }[] = [
     { verb: 're-link notes', result: '7 edges' },
 ]
 
-// The art box is 126 x 18 cells (IntroWindow): a scene of exactly that size draws at scale 1, on
-// whole-pixel cells, which is what keeps the glyph edges as crisp as the file tree's text.
-const COLS = 126
-const ROWS = 18
-/** Rows of blank above the content (15 rows used of 18). */
-const TOP = 1
+// The scene is cut to its content, 46 x 10 cells, so IntroHero can draw it larger than the cell size
+// (`--intro-glyph-scale`) whenever the window holds it, on cells snapped to whole device pixels,
+// which is what keeps the glyph edges as crisp as the file tree's text.
+const COLS = 46
+const ROWS = 10
+/** The prompt's row: the content starts on the scene's first row. */
+const TOP = 0
 const REVEAL_MS = 1200
 const PROMPT = '> bismuth daemon status'
 // the widest bracketed expression: 14 cells, the every-15-minutes one
@@ -46,8 +47,8 @@ const LOG_WIDTH = 5 + 2 + VERB_WIDTH + 2 + 3 + RESULT_WIDTH
 const CONTENT_WIDTH = Math.max(PROMPT.length, CRON_WIDTH, LOG_WIDTH)
 // centre the widest row the scene can draw in the hero, so the block sits mid-box
 const LEFT = Math.floor((COLS - CONTENT_WIDTH) / 2)
-const LOG_TOP = TOP + 7
-const LOG_LINES = 9
+const LOG_TOP = TOP + 6
+const LOG_LINES = 4
 /** Bar 0 starts partly filled and advances one cell per step; every wrap (11 steps) the log gains a line. */
 const BAR_STEP_MS = 300
 const BAR_WRAP_MS = BAR_STEP_MS * (BAR_CELLS + 1)
@@ -67,7 +68,7 @@ function drawPrompt(f: GlyphFrame, t: number): void {
         PROMPT.length * clamp01(t / (REVEAL_MS * 0.4)),
     )
     for (let k = 0; k < shown; k++)
-        putChar(f, LEFT + k, TOP + 1, PROMPT[k], k === 0 ? 'accent' : 'fg')
+        putChar(f, LEFT + k, TOP, PROMPT[k], k === 0 ? 'accent' : 'fg')
 }
 
 function drawCron(f: GlyphFrame, row: number, i: number, fill: number): void {
@@ -121,7 +122,7 @@ export const daemonScene: GlyphScene = {
         ]
         for (let i = 0; i < DAEMON_CRONS.length; i++)
             if (t >= REVEAL_MS * (0.5 + 0.1 * i))
-                drawCron(out, TOP + 3 + i, i, fills[i])
+                drawCron(out, TOP + 2 + i, i, fills[i])
 
         // How many log lines exist: the full block bursts in over the last 30% of the reveal
         // (like `tail -f` catching up), then one more per bar wrap.
@@ -129,7 +130,7 @@ export const daemonScene: GlyphScene = {
         for (let k = 0; k < LOG_LINES; k++)
             if (t >= REVEAL_MS * (0.7 + (0.3 * k) / LOG_LINES)) count = k + 1
         if (t >= REVEAL_MS) count = LOG_LINES + Math.floor(a / BAR_WRAP_MS)
-        // Lines fill down from the top slot, then scroll once the 9 slots are full.
+        // Lines fill down from the top slot, then scroll once the 4 slots are full.
         const first = Math.max(0, count - LOG_LINES)
         for (let n = first; n < count; n++)
             drawLogLine(out, LOG_TOP + (n - first), n)

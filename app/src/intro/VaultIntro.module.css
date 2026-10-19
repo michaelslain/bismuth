@@ -2,7 +2,7 @@
    Themed through the app's CSS vars (--bg/--fg/--accent/…), which the theme picker rewrites on
    :root, so the whole surface re-themes live. Everything the takeover draws lives with the
    component that draws it (IntroWindow, IntroFooter, IntroGraph, IntroHero, IntroCopy,
-   ThemePicker, PowerUpList); this file owns only the full-window ground that centres the window. */
+   ThemePicker, PowerUpList); this file owns only the full-window ground the window fills. */
 
 .vi-root {
   position: fixed;
@@ -11,12 +11,11 @@
      first run, so it doesn't need to sit above everything. */
   z-index: var(--z-shell);
   display: grid;
-  place-items: center;
+  grid-template-rows: minmax(0, 1fr);
+  justify-items: center;
+  align-items: stretch;
   padding: var(--sp-7);
   overflow: hidden;
-  /* The size container for IntroWindow's short-window step (`@container (max-height: 44rem)`): the
-     step reads THIS box's content (the viewport minus the two --sp-7 paddings above), so a story that sizes the takeover (or a parent
-     that squeezes it) really gets the 16-row art. */
   container-type: size;
   background: var(--bg);
   color: var(--fg);
@@ -30,11 +29,11 @@
 }
 
 /* The palette and three-brains slides' art is the backdrop graph, so the art slot holds this: the
-   room the graph's stage (IntroGraph) is drawn over, at the window's full art height. The palette
+   room the graph's stage (IntroGraph) is drawn over, at the art box's full height. The palette
    slide's theme names sit at its foot, under the cloud. */
 .graph-room {
   width: 100%;
-  height: var(--intro-art-h);
+  height: 100%;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -54,4 +53,31 @@
   padding-bottom: var(--sp-7);
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* The morph: while the overlay flies, the slide body is laid out but invisible (the snapshot reads
+   its layout, not its opacity); as the overlay's last chars land it fades in under it while the overlay blurs out. Only what changes per
+   slide fades: the backdrop, art and text slots and the footer's readout (VaultIntro.tsx's
+   MORPH_SCOPE, the same selector). The wordmark, [skip] and [back] [next] stay at full opacity. */
+.vi-root[data-morphing='run'] :is([data-intro-slot='backdrop'], [data-intro-slot='art'], [data-intro-slot='text'], [data-intro-slot='footer'] > * > :not(:has(button))) {
+  opacity: 0;
+}
+.vi-root[data-morphing='fade'] :is([data-intro-slot='backdrop'], [data-intro-slot='art'], [data-intro-slot='text'], [data-intro-slot='footer'] > * > :not(:has(button))) {
+  opacity: 1;
+  transition: opacity 450ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+/* The overlay softens as it goes, so its monospace letters read as the real face coming into focus
+   rather than a second copy of the words. */
+.vi-root[data-morphing='fade'] [data-morph-overlay] {
+  opacity: 0;
+  filter: blur(1.5px);
+  transition:
+    opacity 450ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    filter 450ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vi-root[data-morphing='fade'] :is([data-intro-slot='backdrop'], [data-intro-slot='art'], [data-intro-slot='text'], [data-intro-slot='footer'] > * > :not(:has(button))),
+  .vi-root[data-morphing='fade'] [data-morph-overlay] {
+    transition: none;
+  }
 }

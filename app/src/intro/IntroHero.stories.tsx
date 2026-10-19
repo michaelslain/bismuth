@@ -1,5 +1,5 @@
-// The per-slide hero of the first-run intro, one story per kind. The wrapper is IntroWindow's art
-// box (126 cells x 18 rows) on the window ground. Glyph scenes are drawn at a pinned time well past
+// The per-slide hero of the first-run intro, one story per kind. The wrapper stands in for
+// IntroWindow's art box (126 cells x 20 rows, a size container, so a glyph scene draws at `--intro-glyph-scale`). Glyph scenes are drawn at a pinned time well past
 // their reveal so the frame is the resting one; canvas proof is pixels (inked fraction).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
@@ -17,7 +17,10 @@ const meta = {
             <div
                 style={{
                     width: 'calc(126 * var(--cell-w))',
-                    height: 'calc(18 * var(--row-h))',
+                    height: 'calc(20 * var(--row-h))',
+                    'container-type': 'size',
+                    display: 'flex',
+                    'align-items': 'flex-end',
                     background: 'var(--editor)',
                 }}
             >

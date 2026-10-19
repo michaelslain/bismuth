@@ -193,19 +193,19 @@ const inkWidth = (canvas: HTMLCanvasElement): number => {
     return hi < lo ? 0 : hi - lo + 1
 }
 
-/** The widest the 9-character word can ink when the cell is capped at the intro's 4/3: the snapped
+/** The widest the 9-character word can ink when the cell is capped at 1: the snapped
  *  cell is 8px (dpr 1) or 8.5px (dpr 2) wide, never more, so 9 cells is the ceiling. */
 const CAPPED_INK_CSS_PX = 9 * 8.5
 
-/** A host that sets `--glyph-scale-cap` (here, as IntroHero does, from the real `--intro-glyph-scale`
- *  token) caps the art at that scale however big the box: 1200x600 would fit it at 2. The word's ink
+/** A host that sets `--glyph-scale-cap` (here pinned to a literal 1, where IntroHero passes its token
+ *  value) caps the art at that scale however big the box: 1200x600 would fit it at 2. The word's ink
  *  stays within nine capped cells. */
 export const LargeBoxIsCapped: Story = {
     render: () => (
         <Box
             w={1200}
             h={600}
-            vars={{ '--glyph-scale-cap': 'var(--intro-glyph-scale)' }}
+            vars={{ '--glyph-scale-cap': '1' }}
         >
             <GlyphArt
                 scene={WORD_ONLY}

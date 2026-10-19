@@ -211,7 +211,7 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | `sheet/` | Univer workbook snapshot and sync, code-split | `univerSheet.ts` |
 | `export/` | Export formats, HTML and PDF pipelines | `exporters.ts` |
 | `palette/` | The command palette and the Cmd+O switcher | `SwitcherBar.tsx` |
-| `intro/` | The first-run vault intro | `VaultIntro.tsx` |
+| `intro/` | The first-run vault intro; `intro/morph/` holds the pure slide-to-slide ASCII morph (snapshot, pairing, frames) | `VaultIntro.tsx` |
 | `icons/` | The icon registry and picker | `Icon.tsx` |
 | `dnd/` | Drag-and-drop geometry and payloads | `viewDrag.ts` |
 | `mobile/` | The in-process backend wiring for iPad and iOS | `bootMobile.ts` |

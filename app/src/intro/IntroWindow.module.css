@@ -1,30 +1,16 @@
-/* The intro's framed window. The body is one fixed height on every slide (so the window never
-   changes size), and each slide's art and copy centre in it as one group. `--intro-art-h` is the
-   height the tall art (the graph, the glyph diagrams) takes. The window does not position itself:
-   its parent centres it. */
+/* The intro's borderless frame: it floats on the takeover's --bg and fills the takeover's content box
+   (the takeover pads itself by --sp-7), capped at 220 cells wide. The strip sits at the top and the
+   footer at the bottom. Between them, the body centres one group vertically: the art over the copy,
+   each as tall as its content, so a slide's group sits at the window's optical centre (a little
+   above the middle) whatever its art.
+   No border, no rules, no second ground. */
 .intro-window {
-  --intro-art-h: calc(24 * var(--row-h));
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: min(calc(180 * var(--cell-w)), 100% - 2 * var(--sp-7));
-  max-height: 100%;
-  background: var(--editor);
-  border: 1px solid var(--border);
-  border-radius: 0;
-}
-/* Short windows: the art box drops to 16 rows so the footer stays on screen. The full window is
-   ~716px tall, and a container query measures the nearest size container's CONTENT box: VaultIntro's
-   root pads its box by --sp-7 (24px) on each side, so 44rem = 704px of content is 752px of window,
-   and below that there is no slack. `max-height` is inclusive, so the threshold sits a hair UNDER
-   the app's default 1200x800 window (content box 752px = 47rem) and that window keeps the full 24
-   rows; writing it as 47rem, in viewport terms, dropped the default window to 16. A CONTAINER
-   query, not a viewport one: it reads the nearest size container (VaultIntro's root, or a story's
-   stage), so the 16-row state can be rendered by sizing that box. */
-@container (max-height: 44rem) {
-  .intro-window {
-    --intro-art-h: calc(16 * var(--row-h));
-  }
+  width: min(calc(220 * var(--cell-w)), 100%);
+  height: 100%;
+  min-height: 0;
 }
 .strip {
   flex: 0 0 auto;
@@ -38,34 +24,54 @@
   flex: 1;
 }
 .body {
-  position: relative;
-  flex: 0 1 auto;
-  height: calc(2 * var(--sp-7) + var(--intro-art-h) + 9 * var(--row-h));
+  /* The tallest the art may be, a whole number of rows: 44% of the body, but never less than 15 rows, and never more than the body has
+     left over nine rows of copy and the gap. The body is a size container and the value is a token
+     string, so `cqh` resolves against the body's height wherever a descendant reads it (the art box,
+     IntroHero, IntroGraph's stage). */
+  --intro-art-h: round(
+    down,
+    min(100cqh - 9 * var(--row-h) - var(--sp-6), max(15 * var(--row-h), 44cqh)),
+    var(--row-h)
+  );
+  container-type: size;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--sp-6);
-  padding: var(--sp-7);
+  /* Optical centre: the group sits a little above the middle (half this padding), since art and a
+     graph cloud read heavier at the top and a group centred exactly reads low. */
+  padding-bottom: calc(6 * var(--row-h));
 }
-/* Behind everything in the body; the art box and the copy stack above it. */
+.art {
+  position: relative;
+  flex: 0 0 auto;
+  max-height: var(--intro-art-h);
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+/* A slide whose art is the backdrop (the graph slides) holds the art box at its full height: the
+   graph's room. The graph spills past the box's top and bottom, behind the copy. */
+.art--fill {
+  height: var(--intro-art-h);
+}
+/* Behind the art, filling the art box; IntroGraph's stage spills out of it. */
 .backdrop {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
 }
-.art {
+.art-content {
   position: relative;
   z-index: 1;
-  flex: 0 1 auto;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
   width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
 .text {
   position: relative;
