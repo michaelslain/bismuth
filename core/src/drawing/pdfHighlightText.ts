@@ -8,7 +8,8 @@
 // is placed in the same logical space, and a character belongs to a highlight when its centre sits
 // inside one of its rects. That is the rule PDFKit uses for page.selection(for:), so a Bismuth
 // highlight, a Preview highlight and `bismuth highlights` agree on the words.
-import { createCanvas } from '@napi-rs/canvas'
+/// <reference path="../pdfjs-worker.d.ts" />
+import { createCanvas, DOMMatrix, Path2D } from '@napi-rs/canvas'
 import type { Highlight } from './model'
 import { highlightPlainText } from './pageHighlights'
 import { fitImage } from './pageInk'
@@ -141,6 +142,34 @@ async function pageLines(
 
 type Char = { ch: string; x: number; y: number }
 
+/** pdf.js under Node reaches two modules by paths a `bun build --compile` binary cannot resolve:
+ *  `@napi-rs/canvas` through a runtime `createRequire` (for `DOMMatrix`/`Path2D`) and its fake
+ *  worker through a computed `./pdf.worker.mjs` import. The installed CLI then fails to open every
+ *  PDF. Both are reached here by literal specifiers the bundler embeds, and handed to pdf.js
+ *  through the globals it checks first. */
+async function preparePdfjsGlobals(): Promise<void> {
+    const g = globalThis as Record<string, unknown>
+    g.DOMMatrix ??= DOMMatrix
+    g.Path2D ??= Path2D
+    g.pdfjsWorker ??= await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
+}
+
+/** pdf.js, loaded with its one load-time warning muted: the failed `@napi-rs/canvas` require that
+ *  `preparePdfjsGlobals` has already made harmless. */
+async function loadPdfjs() {
+    await preparePdfjsGlobals()
+    const warn = console.warn
+    console.warn = (...args: unknown[]) => {
+        if (!String(args[0]).includes('Cannot load "@napi-rs/canvas"'))
+            warn(...args)
+    }
+    try {
+        return await import('pdfjs-dist/legacy/build/pdf.mjs')
+    } finally {
+        console.warn = warn
+    }
+}
+
 function textUnder(
     h: Highlight,
     { chars, items }: { chars: Char[][]; items: TextItem[] },
@@ -187,7 +216,7 @@ export async function pdfHighlightTexts(
     const empty = () => pages.map(hs => hs.map(() => null))
     let task: { destroy(): Promise<void> } | null = null
     try {
-        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+        const pdfjs = await loadPdfjs()
         const loading = pdfjs.getDocument({
             data: new Uint8Array(bytes),
             useWorkerFetch: false,

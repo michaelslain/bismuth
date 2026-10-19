@@ -1,7 +1,8 @@
 import { test as bunTest, expect } from 'bun:test'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { makeVault } from '../../core/test/helpers'
+import { makeVault, tempDir } from '../../core/test/helpers'
+import { shouldRunSlowTests } from '../../core/test/slowGate'
 
 // Spawns the real CLI, as the owner and as the daemon's agent shell.
 const test = (name: string, fn: Parameters<typeof bunTest>[1]) => bunTest(name, fn, 30_000)
@@ -150,4 +151,28 @@ test('an agent is refused migrating a hidden PDF', async () => {
     const r = await run(['highlights', 'migrate', 'papers/secret.pdf'], vault, true)
     expect(r.code).not.toBe(0)
     expect(readFileSync(join(vault, 'papers/secret.pdf.draw'), 'utf8')).toContain('piecemeal')
+})
+
+// The installed `bismuth` is a `bun build --compile` binary (app/scripts/build-bismuth-tools.ts),
+// where pdf.js cannot reach the modules it requires at runtime; `bun run` hides that.
+const slow = shouldRunSlowTests(process.env) ? test : bunTest.skip
+slow('the compiled CLI reads the text under a PDF highlight', async () => {
+    const out = join(tempDir('bismuth-compiled-'), 'bismuth')
+    const build = Bun.spawnSync(['bun', 'build', '--compile', CLI, '--outfile', out], {
+        cwd: join(import.meta.dir, '..', '..'),
+        stdout: 'pipe',
+        stderr: 'pipe',
+    })
+    expect(build.exitCode).toBe(0)
+    const proc = Bun.spawn([out, 'highlights', 'p/a.pdf', '--json', '--vault', pdfVault()], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+    })
+    const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+    ])
+    expect(JSON.parse(stdout).highlights[0].text).toBe('Hello highlighted w')
+    expect(stderr).not.toContain('@napi-rs/canvas')
 })
