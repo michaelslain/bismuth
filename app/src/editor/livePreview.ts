@@ -29,7 +29,8 @@ import { openTaskStatusMenu } from '../taskStatusMenu'
 import { LIST_STEP } from './listLayout'
 import { CodeHeader } from './CodeHeader'
 import { groupTableBlocks } from './tableModel'
-import { TableWidget } from './tableWidget'
+import { TableWidget, loadTypeTable } from './tableWidget'
+import { watchFitTable } from '../ui/table/fitTable'
 import {
     activeTableField,
     notePathFacet,
@@ -142,11 +143,6 @@ const fieldMark = Decoration.mark({ class: 'cm-task-field' })
 // brightens for editing when the caret is on that line.
 const blockTopRule = Decoration.line({ class: 'cm-block-top' })
 const blockBottomRule = Decoration.line({ class: 'cm-block-bottom' })
-// A code fence's own rows also carry `cm-code-fence`, which points the block fill at --code-bg.
-const codeTopRule = Decoration.line({ class: 'cm-block-top cm-code-fence' })
-const codeBottomRule = Decoration.line({
-    class: 'cm-block-bottom cm-code-fence',
-})
 // The fence text itself (frontmatter `---`, a code block's closing ```) renders ALWAYS VISIBLE in
 // very dim mono — never `display:none`-hidden. Two reasons: (1) the original #10 ask, pixel-matched
 // by the user's reference: the em dashes are faintly visible INSIDE the container at its top and
@@ -700,7 +696,7 @@ function buildDecorations(
                 const isClose = line.number === codeBlock.close
                 if (isOpen) {
                     // Opening fence: top grey band always; header widget when rendered, raw ``` when revealed.
-                    deco.push(codeTopRule.range(line.from))
+                    deco.push(blockTopRule.range(line.from))
                     if (!revealed && line.to > line.from) {
                         deco.push(
                             Decoration.replace({
@@ -716,7 +712,7 @@ function buildDecorations(
                     // (`fenceMark`) — "same with code blocks" in the #10 ask, and hiding it would collapse
                     // the line and erase the container's bottom rounded corners (see the fenceMark comment).
                     // In edit mode (revealed) it renders unmarked at full mono contrast.
-                    deco.push(codeBottomRule.range(line.from))
+                    deco.push(blockBottomRule.range(line.from))
                     if (!revealed && line.to > line.from)
                         deco.push(fenceMark.range(line.from, line.to))
                 } else {
@@ -1298,6 +1294,50 @@ const activeCalloutField = StateField.define<readonly number[]>({
     },
 })
 
+type CalloutWrap = HTMLElement & { _untype?: () => void }
+
+// A table in a callout's body is the one Bismuth table (ui/table/typeTable.ts: the typed `+ - | =`
+// grid and the shared cell rules), the same table a note's own table widget and a chat message show.
+// Each sits in a `.cm-callout-table` frame that leaves room for the edges' overhang and squeezes the
+// table to fit the callout (ui/table/fitTable.ts). The typer mounts Solid roots, so it loads lazily
+// (tableWidget.ts's loadTypeTable); until then the table has `bismuth-table`'s cell rules, untyped.
+// Returns the disposer the widget's destroy() runs.
+function typeCalloutTables(wrap: HTMLElement): () => void {
+    const tables = Array.from(wrap.querySelectorAll('table'))
+    if (!tables.length) return () => {}
+    let disposed = false
+    const disposers: (() => void)[] = []
+    for (const table of tables) {
+        table.classList.add('bismuth-table')
+        // marked carries a `:--`/`--:` column's alignment as an `align` attribute, which the shared
+        // cell rule's `text-align` outranks; the note's table widget sets it inline, and so does
+        // this. Only left/right, as there: a centered column renders left.
+        for (const cell of Array.from(table.querySelectorAll('th, td'))) {
+            const a = cell.getAttribute('align')
+            if (a === 'left' || a === 'right')
+                (cell as HTMLElement).style.textAlign = a
+        }
+        const frame = document.createElement('div')
+        frame.className = 'cm-callout-table'
+        table.replaceWith(frame)
+        frame.appendChild(table)
+        disposers.push(watchFitTable(frame, table, wrap))
+    }
+    void loadTypeTable()
+        .then(m => {
+            if (disposed) return
+            for (const table of tables) {
+                const typed = m.typeTable(table)
+                disposers.push(() => typed.dispose())
+            }
+        })
+        .catch(() => {})
+    return () => {
+        disposed = true
+        for (const d of disposers) d()
+    }
+}
+
 // The block widget shown in place of a (non-active) callout's raw blockquote source.
 class CalloutWidget extends WidgetType {
     constructor(
@@ -1337,7 +1377,12 @@ class CalloutWidget extends WidgetType {
         wrap.innerHTML = sanitizeHtml(
             renderCalloutHtml(this.header, bodyHtml, titleHtml),
         )
+        ;(wrap as CalloutWrap)._untype = typeCalloutTables(wrap)
         return wrap
+    }
+
+    destroy(dom: HTMLElement): void {
+        ;(dom as CalloutWrap)._untype?.()
     }
 
     // THE dblclick EXEMPTION IS LOAD-BEARING — do not simplify this back to `return true`.
@@ -1417,15 +1462,15 @@ const calloutDomHandlers = EditorView.domEventHandlers({
 // shared palette (callout.ts) so it matches the export + in-app rendered surfaces.
 const calloutThemeSpec: Record<string, Record<string, string>> = {
     '.cm-callout-wrap': { display: 'block', margin: '0.3em 0' },
-    // The .asc-callout register (bismuth-design/ascii patterns.css): flat --surface-1, a 2px accent LEFT
-    // EDGE (--accent-edge), square corners — no full border, no darker fill. The 4px literal that
-    // used to sit here was the one rounded card in the editor: every other callout surface in the
-    // app (global.css's rendered-note callout) is --r-0.
+    // A callout is a block like a code block, so it takes the same --code-bg fill (a step under
+    // --surface-1, toward the note pane), with a 2px accent LEFT EDGE and square corners (--r-0, as
+    // global.css's rendered-note callout). The darker fill keeps a body table's typed edges, which
+    // are tuned against the note pane, readable.
     '.cm-callout-wrap .callout': {
         margin: '0.4em 0',
         'border-left': '2px solid var(--accent)',
         'border-radius': 'var(--r-0)',
-        background: 'var(--surface-1)',
+        background: 'var(--code-bg)',
         padding: '0.5em 0.8em',
     },
     '.cm-callout-wrap .callout-title': {
@@ -1440,9 +1485,31 @@ const calloutThemeSpec: Record<string, Record<string, string>> = {
         flex: '0 0 auto',
     },
     '.cm-callout-wrap .callout-icon svg': { width: '1.1em', height: '1.1em' },
-    '.cm-callout-wrap .callout-content': { 'margin-top': '0.4em' },
+    // `white-space: normal`, not the `break-spaces` CodeMirror's line hands down: marked puts a `\n`
+    // after every block, and under `break-spaces` each one renders as an empty line between blocks
+    // and under the last. A hard break is a <br> (marked's `breaks`) and code is a <pre>, so neither
+    // needs the inherited value.
+    '.cm-callout-wrap .callout-content': {
+        'margin-top': '0.4em',
+        'white-space': 'normal',
+    },
     '.cm-callout-wrap .callout-content > :first-child': { 'margin-top': '0' },
     '.cm-callout-wrap .callout-content > :last-child': { 'margin-bottom': '0' },
+    // A body table's frame (typeCalloutTables): the padding is the typed edges' half-tile overhang,
+    // as chat's ChatTable frame leaves it, so no `+ - | =` is clipped by the scroller.
+    // The edges take --faint (AsciiCellEdges' --ascii-edge hooks): --border-soft is tuned against the
+    // note pane and measures about 1.2:1 on the callout fill, too faint to read as a grid. The
+    // header's `=` rule sits a step brighter still.
+    '.cm-callout-wrap .cm-callout-table': {
+        '--ascii-edge': 'var(--faint)',
+        '--ascii-edge-firm': 'color-mix(in srgb, var(--faint) 65%, var(--fg))',
+        'max-width': '100%',
+        'overflow-x': 'auto',
+        'overflow-y': 'hidden',
+        margin: '0.4em 0',
+        padding:
+            'calc(var(--ascii-tile-h, 1.5em) / 2) calc(var(--ascii-corner-w, 1ch) / 2)',
+    },
     '.cm-callout-wrap details.callout > summary': {
         cursor: 'pointer',
         'list-style': 'none',
@@ -1850,17 +1917,12 @@ export const livePreview = [
         '.cm-codeblock': {
             'font-family': 'var(--ui-font-stack)',
         },
-        // Code rows fill with --code-bg; frontmatter rows keep the --surface-1 default below.
-        '.cm-codeblock, .cm-code-fence': {
-            '--block-fill': 'var(--code-bg)',
-        },
         // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
         // (codeLineNumbers.ts), shared with the ```query source view. Positioned relative to the
         // line's own padding box (`left: -2.7em`), so the `.cm-block-mid` padding below doesn't shift
         // it — padding is inside the box it's measured from.
         //
-        // ASCII redesign register (bismuth-design/ascii .asc-frontmatter / .asc-callout): a flat --surface-1
-        // block with no left edge, no rounding, no darker "fence band" —
+        // A flat --code-bg block (the fill code, frontmatter and callouts share) with no left edge, no rounding, no darker "fence band" —
         // every non-fence line of a frontmatter panel / fenced code block (shared chrome, see the
         // `blockTopRule` comment near the top of the file) gets this uniform treatment.
         '.cm-block-mid': {
@@ -1926,7 +1988,7 @@ export const livePreview = [
             position: 'absolute',
             inset: '0',
             'z-index': '-10',
-            background: 'var(--block-fill, var(--surface-1))',
+            background: 'var(--code-bg)',
             'pointer-events': 'none',
         },
         // The always-visible fence text inside the band (frontmatter `---`, code closing ```): very

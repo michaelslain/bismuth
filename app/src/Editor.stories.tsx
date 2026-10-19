@@ -575,6 +575,55 @@ export const Callout: Story = {
     },
 }
 
+const CALLOUT_TABLE_TEXT = `Before the callout.
+
+> [!tip] Shortcuts
+> | key | action | where |
+> | :-- | :-- | --: |
+> | \`mod+k\` | open the palette | everywhere |
+> | \`mod+e\` | toggle **live preview** | editor |
+>
+> Every key rebinds in \`.settings\`.
+
+After the callout.
+`
+
+/** A markdown table inside a callout renders as the one Bismuth table — typed \`+ - | =\` grid,
+ *  the same cells a note's own table and a chat message show — not as a bare browser table. */
+export const CalloutTable: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'CalloutTable.md': CALLOUT_TABLE_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="CalloutTable.md"
+                    initialText={CALLOUT_TABLE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        // The typer loads lazily, so the edges land a beat after the widget.
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector(
+                    '.cm-callout-wrap table.bismuth-table [data-table-edges]',
+                ),
+            ).not.toBeNull(),
+        )
+        const table = canvasElement.querySelector(
+            '.cm-callout-wrap table.bismuth-table',
+        )!
+        await expect(table.querySelectorAll('td').length).toBe(6)
+    },
+}
+
 const CALLOUT_SELECTION_TEXT =
     'Before the callout.\n\n> [!note] Heads up\n> the body of the callout\n\nAfter the callout.\n'
 

@@ -109,7 +109,7 @@ function loadCellEditor(): Promise<CellEditorModule> {
 type TypeTableModule = typeof import('../ui/table/typeTable')
 let typeTableModule: TypeTableModule | null = null
 let typeTablePromise: Promise<TypeTableModule> | null = null
-function loadTypeTable(): Promise<TypeTableModule> {
+export function loadTypeTable(): Promise<TypeTableModule> {
     if (typeTableModule) return Promise.resolve(typeTableModule)
     if (!typeTablePromise)
         typeTablePromise = import('../ui/table/typeTable').then(m => {

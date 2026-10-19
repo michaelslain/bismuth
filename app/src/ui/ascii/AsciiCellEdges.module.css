@@ -42,7 +42,8 @@
     left: calc(var(--ascii-corner-w, 1ch) / -2);
     right: calc(var(--ascii-corner-w, 1ch) / -2);
     pointer-events: none;
-    background-color: var(--border-soft);
+    /* --ascii-edge / --ascii-edge-firm: an ancestor on a lighter fill (a callout) raises the edges */
+    background-color: var(--ascii-edge, var(--border-soft));
     -webkit-mask-box-image-source: linear-gradient(transparent, transparent);
     -webkit-mask-box-image-slice: var(--ascii-slice-y, 1) var(--ascii-slice-x, 1);
     -webkit-mask-box-image-width: var(--ascii-tile-h, var(--cell-h)) var(--ascii-corner-w, 1ch);
@@ -51,7 +52,7 @@
 }
 
 .firm {
-    background-color: var(--border);
+    background-color: var(--ascii-edge-firm, var(--border));
 }
 
 /* `backdrop`: an opaque --bg RING over the glyph overhang (the half tile outside the host on every

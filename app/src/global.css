@@ -945,7 +945,8 @@ body { background: var(--bg); color: var(--fg); }
      (editor/callout.ts, the SINGLE source). */
   border-left: 2px solid var(--callout-color, var(--accent));
   border-radius: var(--r-0);
-  background: var(--surface-1);
+  /* the code-block fill, as the editor's callout widget */
+  background: var(--code-bg);
   padding: 0.55em 0.85em;
 }
 .callout-title {
