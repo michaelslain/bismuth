@@ -83,6 +83,12 @@ export const CodeFence: Story = {
             lines
         await expect(lines).toBe(3)
         await expect(Math.abs(fencePitch - prosePitch)).toBeLessThan(0.5)
+        // It scrolls sideways only and never takes a vertical wheel from the transcript: under
+        // global.css's app-wide `overscroll-behavior: none`, a box whose `overflow-y` computes to
+        // `auto` stops the wheel there. A synthetic WheelEvent scrolls nothing, so the two
+        // properties that hand it up are the check.
+        await expect(cs.overflowY).toBe('hidden')
+        await expect(cs.overscrollBehaviorY).toBe('auto')
     },
 }
 
@@ -115,8 +121,10 @@ export const LongInlineCode: Story = {
         await expect(long.getBoundingClientRect().width).toBeLessThanOrEqual(
             column.getBoundingClientRect().width,
         )
-        // ...it scrolls inside itself instead
+        // ...it scrolls inside itself instead, sideways only, never stopping the transcript's wheel
         await expect(long.scrollWidth).toBeGreaterThan(long.clientWidth)
+        await expect(getComputedStyle(long).overflowY).toBe('hidden')
+        await expect(getComputedStyle(long).overscrollBehaviorY).toBe('auto')
         // and the short span the `nowrap` exists for is still one unbroken box
         await expect(canvas.getByText('--since').getClientRects().length).toBe(
             1,

@@ -140,6 +140,11 @@
     display: inline-flex;
     max-width: 100%;
     overflow-x: auto;
+    /* Sideways only. `overflow-x: auto` alone computes `overflow-y` to `auto`, and global.css's
+       app-wide `overscroll-behavior: none` then stops a vertical wheel here instead of handing it to
+       the transcript — the chat would not scroll while the pointer sat over code. */
+    overflow-y: hidden;
+    overscroll-behavior-y: auto;
 }
 .chat-bubble pre {
     margin: 0.55em 0;
@@ -147,7 +152,11 @@
     background: var(--code-bg);
     border: var(--rule-soft);
     border-radius: var(--r-0);
+    /* sideways only, for the same reason as inline code above: a fence never scrolls vertically and
+       never stops the wheel on its way to the transcript */
     overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-y: auto;
 }
 .chat-bubble pre code {
     background: none;

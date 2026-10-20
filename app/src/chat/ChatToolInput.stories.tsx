@@ -105,5 +105,7 @@ export const Capped: Story = {
         const body = canvasElement.querySelector('pre') as HTMLElement
         await expect(body.getBoundingClientRect().height).toBeLessThanOrEqual(96)
         await expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
+        // the cap scrolls the block, and the wheel carries on into the transcript at its ends
+        await expect(getComputedStyle(body).overscrollBehaviorY).toBe('auto')
     },
 }

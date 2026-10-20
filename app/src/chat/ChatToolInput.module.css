@@ -15,6 +15,10 @@
 .chat-tool-input .chat-tool-input-body {
     font-size: var(--fs-ui);
     overflow: auto;
+    /* The cap scrolls the block, but global.css's app-wide `overscroll-behavior: none` would also
+       stop the wheel at it — at its ends, and over a short block that has nothing to scroll — so the
+       transcript would not scroll under the pointer. `auto` hands the rest of the wheel on. */
+    overscroll-behavior-y: auto;
     line-height: var(--lh-ui);
 }
 .chat-tool-input-body.muted {

@@ -74,6 +74,30 @@ export const Revealed: Story = {
     },
 }
 
+/** A code fence on the answer: it scrolls sideways only, so a vertical wheel over it scrolls the
+ *  card body instead of stopping at the fence (global.css's app-wide `overscroll-behavior: none`
+ *  stops it at any box whose `overflow-y` computes to `auto`). */
+export const CodeAnswer: Story = {
+    args: {
+        revealed: true,
+        onReveal: () => {},
+        promptHtml: '<p>pair a rename in the watcher</p>',
+        answerHtml:
+            '<pre><code>const pair = pending.get(inode)\nif (pair) emit({ kind: "rename", from: pair, to: path, at: Date.now(), source: "watcher" })</code></pre>',
+    },
+    render: args => (
+        <Stage>
+            <FlipCard {...args} />
+        </Stage>
+    ),
+    play: async ({ canvasElement }) => {
+        const pre = canvasElement.querySelector('[data-face="back"] pre') as HTMLElement
+        await expect(pre).not.toBeNull()
+        await expect(getComputedStyle(pre).overflowY).toBe('hidden')
+        await expect(getComputedStyle(pre).overscrollBehaviorY).toBe('auto')
+    },
+}
+
 /** With the pinned actions: outside the reveal button, so a click on one never flips the card. */
 export const WithActions: Story = {
     args: { revealed: false, onReveal: () => {}, promptHtml: PROMPT, answerHtml: ANSWER },

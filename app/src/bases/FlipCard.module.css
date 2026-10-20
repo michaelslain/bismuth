@@ -134,5 +134,7 @@
 .card-md a { color: var(--accent); }
 .card-md img { max-width: 100%; max-height: var(--flip-img-max); object-fit: contain; border-radius: var(--r-0); }
 .card-md code { font-family: var(--ui-font-stack); font-size: var(--code-font-size); background: color-mix(in srgb, var(--fg) 11%, transparent); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-0); }
-.card-md pre { text-align: left; font-family: var(--ui-font-stack); font-size: var(--code-font-size); background: var(--code-bg); padding: var(--sp-5); border-radius: var(--r-0); overflow-x: auto; }
+.card-md pre { text-align: left; font-family: var(--ui-font-stack); font-size: var(--code-font-size); background: var(--code-bg); padding: var(--sp-5); border-radius: var(--r-0); overflow-x: auto; overflow-y: hidden; overscroll-behavior-y: auto; }
+/* ↑ sideways only: `overflow-x: auto` alone computes `overflow-y` to `auto`, and global.css's app-wide
+   `overscroll-behavior: none` would stop a vertical wheel at the fence instead of the card body. */
 .card-md pre code { background: none; padding: 0; }
