@@ -3015,6 +3015,7 @@ test('GET /tasks/migration reports what the boot-time migration converted', asyn
 // dates), the deny list only decides who is told about it.
 test('GET /tasks/migration hides a deny-listed note from a non-owner', async () => {
     const { vault, memory } = await makeSampleVault()
+    const prevRunDir = process.env.BISMUTH_RUN_DIR
     process.env.BISMUTH_RUN_DIR = tempDir('bismuth-migrate-run-')
     await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01\n')
     await Bun.write(
@@ -3060,7 +3061,9 @@ test('GET /tasks/migration hides a deny-listed note from a non-owner', async () 
         expect(await readNote(vault, 'secret.md')).toContain('[due 2026-02-30]')
     } finally {
         server.stop(true)
-        delete process.env.BISMUTH_RUN_DIR
+        // Restored, not deleted: every later core in this file must stay off ~/.bismuth/run.
+        if (prevRunDir === undefined) delete process.env.BISMUTH_RUN_DIR
+        else process.env.BISMUTH_RUN_DIR = prevRunDir
     }
 }, 20000) // until()'s own timeout (10000) must fire before Bun's per-test one does
 

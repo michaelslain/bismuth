@@ -24,13 +24,17 @@ import {
 const DEAD_PID = 2147483646
 
 let dir: string
+// Restored, not deleted: the preload's private registry must outlive this file (core/test/setup.ts).
+let savedRunDir: string | undefined
 beforeEach(() => {
+    savedRunDir = process.env.BISMUTH_RUN_DIR
     dir = tempDir('bismuth-run-')
     process.env.BISMUTH_RUN_DIR = dir
 })
 afterEach(() => {
     rmSync(dir, { recursive: true, force: true })
-    delete process.env.BISMUTH_RUN_DIR
+    if (savedRunDir === undefined) delete process.env.BISMUTH_RUN_DIR
+    else process.env.BISMUTH_RUN_DIR = savedRunDir
 })
 
 // readRunRecords now filters dead pids (see the liveness-filter tests below), so every test of the

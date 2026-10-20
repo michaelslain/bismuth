@@ -216,6 +216,7 @@ Allocate every temporary directory with `tempDir(prefix)` from `core/test/tempDi
 Use `registerTempDir(dir)` for a directory a subsystem creates itself.
 
 The preload also points `BISMUTH_LAYOUT_CACHE_DIR` at a temp directory, so the suite never writes to the real layout cache under `~/.bismuth`.
+It points `BISMUTH_RUN_DIR` at a fresh temp directory (one per file under `--parallel`), so a core a test boots never registers in the real `~/.bismuth/run`, and a CLI a test spawns never sees another worker's cores.
 
 ## What do the upgrade tests protect?
 
