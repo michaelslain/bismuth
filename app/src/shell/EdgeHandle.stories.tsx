@@ -70,7 +70,7 @@ function SidebarDemo(props: { hidden?: boolean }) {
                     panel="sidebar"
                     edge="left"
                     open={visible()}
-                    combo="Alt+S"
+                    keybinding="toggle-sidebar"
                     resizable={visible()}
                     reveal={!visible()}
                     onResizeStart={() => (start = width())}
@@ -94,7 +94,7 @@ function RailDemo() {
                     panel="tab rail"
                     edge="right"
                     open={pinned()}
-                    combo="Alt+Shift+S"
+                    keybinding="toggle-tab-rail"
                     onResizeStart={() => (start = width())}
                     onResize={dx => setWidth(dragWidth('tabRailWidth', start, dx, -1))}
                     onActivate={() => setPinned(v => !v)}
@@ -122,7 +122,7 @@ function SidebarRightDemo(props: { hidden?: boolean }) {
                     panel="sidebar"
                     edge="right"
                     open={visible()}
-                    combo="Alt+S"
+                    keybinding="toggle-sidebar"
                     resizable={visible()}
                     reveal={!visible()}
                     onResizeStart={() => (start = width())}
@@ -157,7 +157,7 @@ function RailLeftDemo() {
                     panel="tab rail"
                     edge="left"
                     open={pinned()}
-                    combo="Alt+Shift+S"
+                    keybinding="toggle-tab-rail"
                     onResizeStart={() => (start = width())}
                     onResize={dx => setWidth(dragWidth('tabRailWidth', start, dx, 1))}
                     onActivate={() => setPinned(v => !v)}
@@ -199,7 +199,7 @@ function GutterControlDemo() {
                         panel="sidebar"
                         edge="left"
                         open={visible()}
-                        combo="Alt+S"
+                        keybinding="toggle-sidebar"
                         resizable={visible()}
                         reveal={!visible()}
                         onActivate={() => setVisible(v => !v)}
@@ -219,7 +219,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const focusEdge = async (canvasElement: HTMLElement, minWidth = 0) => {
+const focusEdge = async (
+    canvasElement: HTMLElement,
+    keybinding: string,
+    minWidth = 0,
+) => {
     const edge = canvasElement.querySelector<HTMLElement>('[data-edge-handle]')
     await expect(edge).not.toBeNull()
     await expect(edge!.getBoundingClientRect().width).toBeGreaterThanOrEqual(minWidth)
@@ -232,29 +236,32 @@ const focusEdge = async (canvasElement: HTMLElement, minWidth = 0) => {
         tick()
     })
     await expect(getComputedStyle(hint).visibility).toBe('visible')
+    // The chevron's hover name carries the toggle's keybinding (TooltipHost renders it as Kbd).
+    const button = hint.querySelector<HTMLElement>('button')!
+    await expect(button.getAttribute('data-tooltip-keybinding')).toBe(keybinding)
 }
 
 /** The sidebar's line at rest: no highlight, no hint — the panel's own 1px border is the line. */
 export const Sidebar: Story = { render: () => <SidebarDemo /> }
 
 /** Hovered (posed by focus): the line lights in --accent and a `‹` chevron springs out at its
- *  vertical centre, over the editor — click it to hide the sidebar (tooltip: `hide sidebar (⌥S)`). */
+ *  vertical centre, over the editor — click it to hide the sidebar (hover name: `hide sidebar` plus the live key). */
 export const SidebarButton: Story = {
     render: () => <SidebarDemo />,
-    play: async ({ canvasElement }) => focusEdge(canvasElement),
+    play: async ({ canvasElement }) => focusEdge(canvasElement, 'toggle-sidebar'),
 }
 
 /** Hidden sidebar: its line is the window's left edge, widened to an 8px reveal zone so reaching
  *  toward the left of the screen brings out `›` — show it. */
 export const SidebarHiddenButton: Story = {
     render: () => <SidebarDemo hidden />,
-    play: async ({ canvasElement }) => focusEdge(canvasElement, 8),
+    play: async ({ canvasElement }) => focusEdge(canvasElement, 'toggle-sidebar', 8),
 }
 
 /** The rail's line, mirrored: the chevron springs out LEFTWARD, `‹` — pin the rail open. */
 export const RailButton: Story = {
     render: () => <RailDemo />,
-    play: async ({ canvasElement }) => focusEdge(canvasElement),
+    play: async ({ canvasElement }) => focusEdge(canvasElement, 'toggle-tab-rail'),
 }
 
 /** A right sidebar at rest: the panel's 1px line is on its left; no highlight, no hint. */
@@ -264,7 +271,7 @@ export const SidebarRight: Story = { render: () => <SidebarRightDemo /> }
  *  pointing `right` — hide it toward the window's right edge. */
 export const SidebarRightButton: Story = {
     render: () => <SidebarRightDemo />,
-    play: async ({ canvasElement }) => focusEdge(canvasElement),
+    play: async ({ canvasElement }) => focusEdge(canvasElement, 'toggle-sidebar'),
 }
 
 /** Hidden right sidebar: its line is the window's RIGHT edge, the 8px reveal zone widens leftward
@@ -272,7 +279,7 @@ export const SidebarRightButton: Story = {
 export const SidebarRightHiddenButton: Story = {
     render: () => <SidebarRightDemo hidden />,
     play: async ({ canvasElement }) => {
-        await focusEdge(canvasElement, 8)
+        await focusEdge(canvasElement, 'toggle-sidebar', 8)
         const edge = canvasElement.querySelector<HTMLElement>('[data-edge-handle]')!
         const slot = edge.parentElement!.getBoundingClientRect()
         const r = edge.getBoundingClientRect()
@@ -283,7 +290,7 @@ export const SidebarRightHiddenButton: Story = {
 /** A left rail's line, mirrored from `RailButton`: the chevron springs out RIGHTWARD, `›` — pin it. */
 export const RailLeftButton: Story = {
     render: () => <RailLeftDemo />,
-    play: async ({ canvasElement }) => focusEdge(canvasElement),
+    play: async ({ canvasElement }) => focusEdge(canvasElement, 'toggle-tab-rail'),
 }
 
 /** Hidden sidebar over a gutter control: the reveal zone ends before the editor's gutter controls
@@ -303,7 +310,7 @@ export const SidebarHiddenGutterControl: Story = {
         chevron.click()
         await expect(chevron.getAttribute('aria-label')).toBe('unfold frontmatter')
         const toggle = canvasElement.querySelector('[data-edge-button] button')!
-        await expect(toggle.getAttribute('aria-label')).toBe('show sidebar (⌥S)')
+        await expect(toggle.getAttribute('aria-label')).toBe('show sidebar')
     },
 }
 

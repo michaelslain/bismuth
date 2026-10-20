@@ -975,7 +975,6 @@ export function PreviewView(props: {
                 onToggleScratch={toggleMargin}
                 darkOn={pdfDark}
                 onToggleDark={togglePdfDark}
-                drawKey={() => settings.keybindings['toggle-draw-mode']}
                 panelOpen={panelOpen}
                 onTogglePanel={() => setPanelOpen(v => !v)}
                 converting={() => isConverting(path())}

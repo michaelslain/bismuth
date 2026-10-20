@@ -31,7 +31,7 @@ toolbar:
 | `command` | One command id, or `daily-note:<id>` for a daily-note type. |
 | `commands` | A list of ids; the button runs the first one that resolves. |
 | `icon` | An icon name (any Phosphor icon) or an emoji. Required. |
-| `tooltip` | Hover text. Defaults to the command's label. |
+| `tooltip` | Hover text. Defaults to the command's label. A command with a keybinding also shows its shortcut there ([hover hints](keybindings.md#see-a-buttons-shortcut-by-hovering-it)). |
 
 A button whose command has an on state draws its icon in brackets while that state is on: the `create-menu` button reads `[+]` while its menu is open. Every other button is a bare icon.
 

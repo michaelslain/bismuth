@@ -4,7 +4,7 @@
 // variant ("normal" default | "selected" | "unselected"), danger, size, iconSize, plus any
 // native <button> attribute (disabled, onClick, …).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { IconButton } from './IconButton'
 import IconBar from './IconBar'
 import CloseButton from './CloseButton'
@@ -301,10 +301,27 @@ export const Tooltip: Story = {
         <Row wrap={false} gap="var(--bar-icon-gap)">
             <IconButton icon="Star" label="Star" />
             <IconButton icon="Search" label="Search" title="Search (Mod+F)" />
+            <IconButton icon="Search" label="Find in note" keybinding="find" />
         </Row>
     ),
     play: async ({ canvasElement }) => {
-        const [star, search] = [...canvasElement.querySelectorAll('button')]
+        const [star, search, find] = [...canvasElement.querySelectorAll('button')]
+        expect(find!.getAttribute('data-tooltip')).toBe('Find in note')
+        expect(find!.getAttribute('data-tooltip-keybinding')).toBe('find')
+        expect(star!.hasAttribute('data-tooltip-keybinding')).toBe(false)
+        // the bubble carries the live combo as a Kbd
+        const r = find!.getBoundingClientRect()
+        document.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: r.left + r.width / 2,
+                clientY: r.top + r.height / 2,
+                pointerType: 'mouse',
+                bubbles: true,
+            }),
+        )
+        await waitFor(() => expect(document.querySelector('[data-tooltip-bubble] [data-kbd]')).not.toBeNull(), {
+            timeout: 3000,
+        })
         expect(star!.getAttribute('data-tooltip')).toBe('Star')
         expect(search!.getAttribute('data-tooltip')).toBe('Search (Mod+F)')
         expect(star!.getAttribute('aria-label')).toBe('Star')

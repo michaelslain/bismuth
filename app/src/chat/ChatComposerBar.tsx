@@ -335,6 +335,7 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                         <IconButton
                             icon="Send"
                             label="Send message"
+                            keybinding="chat-send"
                             class={styles.send}
                             onClick={doSend}
                             disabled={
@@ -348,6 +349,7 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                     <IconButton
                         icon="Square"
                         label="Stop generating"
+                        keybinding="chat-stop"
                         danger
                         class={styles.send}
                         onClick={() => props.session?.stop()}

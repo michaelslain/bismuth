@@ -6,7 +6,7 @@
 // lowercase (dev warns otherwise — same rule as TextButton). `size`/`bracket` are deprecated
 // and ignored.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import type { JSX } from 'solid-js'
 import { IconTextButton } from './IconTextButton'
 import { IconButton } from './IconButton'
@@ -182,4 +182,63 @@ export const Examples: Story = {
             </IconTextButton>
         </Row>
     ),
+}
+
+/** `keybinding` names a catalog id; TooltipHost adds its live combo to the hover bubble. With no
+ *  title the bubble is just the key. */
+export const WithKeybinding: Story = {
+    render: () => (
+        <Row>
+            <IconTextButton icon="Search" keybinding="find">
+                find
+            </IconTextButton>
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const btn = canvasElement.querySelector('button')!
+        expect(btn.getAttribute('data-tooltip-keybinding')).toBe('find')
+        const r = btn.getBoundingClientRect()
+        document.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: r.left + r.width / 2,
+                clientY: r.top + r.height / 2,
+                pointerType: 'mouse',
+                bubbles: true,
+            }),
+        )
+        await waitFor(() => expect(document.querySelector('[data-tooltip-bubble] [data-kbd]')).not.toBeNull(), {
+            timeout: 3000,
+        })
+        expect(document.querySelector('[data-tooltip-bubble] [data-kbd]')!.textContent).toMatch(/F$/)
+    },
+}
+
+/** A `title` becomes `data-tooltip` (the TooltipHost bubble's label), never a native `title`, so the
+ *  OS tooltip does not stack on the bubble. */
+export const WithTitleAndKeybinding: Story = {
+    render: () => (
+        <Row>
+            <IconTextButton icon="Search" keybinding="find" title="Find in note">
+                find
+            </IconTextButton>
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const btn = canvasElement.querySelector('button')!
+        expect(btn.getAttribute('data-tooltip')).toBe('Find in note')
+        expect(btn.hasAttribute('title')).toBe(false)
+        const r = btn.getBoundingClientRect()
+        document.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: r.left + r.width / 2,
+                clientY: r.top + r.height / 2,
+                pointerType: 'mouse',
+                bubbles: true,
+            }),
+        )
+        await waitFor(() => expect(document.querySelector('[data-tooltip-bubble] [data-kbd]')).not.toBeNull(), {
+            timeout: 3000,
+        })
+        expect(document.querySelector('[data-tooltip-bubble]')!.textContent).toContain('Find in note')
+    },
 }

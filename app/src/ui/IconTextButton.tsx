@@ -4,6 +4,7 @@ import { Icon } from '../icons/Icon'
 import { isIconName } from '../icons/registry'
 import { warnBadIcon, warnLabelCase } from './devWarn'
 import type { ButtonState } from './buttonClass'
+import type { KeybindingId } from '../../../core/src/keybindings'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
 export type IconTextButtonVariant = ButtonState
@@ -19,6 +20,8 @@ export type IconTextButtonProps = {
     danger?: boolean
     /** Accent + bold, no box — the view's one emphasized action. At most one per view. */
     primary?: boolean
+    /** The catalog keybinding that does what this button does; TooltipHost shows its live combo. */
+    keybinding?: KeybindingId
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -35,6 +38,8 @@ function IconTextButton(props: IconTextButtonProps) {
         'iconSize',
         'variant',
         'children',
+        'keybinding',
+        'title',
     ])
     if (import.meta.env?.DEV && !isIconName(local.icon)) {
         warnBadIcon('IconTextButton', local.icon)
@@ -43,7 +48,13 @@ function IconTextButton(props: IconTextButtonProps) {
         createEffect(() => warnLabelCase('IconTextButton', local.children))
     }
     return (
-        <Button kind="text" state={local.variant ?? 'normal'} {...rest}>
+        <Button
+            kind="text"
+            state={local.variant ?? 'normal'}
+            data-tooltip={local.title}
+            data-tooltip-keybinding={local.keybinding}
+            {...rest}
+        >
             <Icon value={local.icon} size={local.iconSize} />
             {local.children}
         </Button>

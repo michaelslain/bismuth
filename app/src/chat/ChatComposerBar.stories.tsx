@@ -346,6 +346,49 @@ export const SlashPopoverNarrow: Story = {
  *  to the old two-argument `classifyComposerKey(e, state)` call (which silently falls back to
  *  `DEFAULT_COMPOSER_KEY_COMBOS`) fails this story at the second half: the rebind would do
  *  nothing, plain Enter would keep sending, and no second `.cm-line` would ever appear. */
+/** Send and Stop each name the composer key that does the same thing; the TooltipHost renders the
+ *  live combo as Kbd from this attribute. */
+export const ButtonsCarryKeys: Story = {
+    render: () => (
+        <ChatComposerBar
+            session={makeStubChatSession({ draft: 'hello' })}
+            placeholder="Message Claude"
+            noteNames={noNames}
+            memoryNames={noNames}
+            tagNames={noNames}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const send = await waitFor(() => {
+            const el = canvasElement.querySelector('[aria-label="Send message"]')
+            if (!el) throw new Error('no send')
+            return el
+        })
+        await expect(send.getAttribute('data-tooltip-keybinding')).toBe('chat-send')
+        await expect(send.getAttribute('data-tooltip')).toBe('Send message')
+    },
+}
+
+export const StopCarriesKey: Story = {
+    render: () => (
+        <ChatComposerBar
+            session={makeStubChatSession({ streaming: true })}
+            placeholder="Message Claude"
+            noteNames={noNames}
+            memoryNames={noNames}
+            tagNames={noNames}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const stop = await waitFor(() => {
+            const el = canvasElement.querySelector('[aria-label="Stop generating"]')
+            if (!el) throw new Error('no stop')
+            return el
+        })
+        await expect(stop.getAttribute('data-tooltip-keybinding')).toBe('chat-stop')
+    },
+}
+
 export const RebindingChatSendMovesIt: Story = (() => {
     let session: StubChatSession
     return {
@@ -364,6 +407,13 @@ export const RebindingChatSendMovesIt: Story = (() => {
         play: async ({ canvasElement }) => {
             const content = cmContent(canvasElement)
             await waitFor(() => expect(content.textContent).toBe('hello'))
+            // The Send button names the catalog id, so its hint follows the rebind below by
+            // construction (the host resolves the id live).
+            await expect(
+                canvasElement
+                    .querySelector('[aria-label="Send message"]')!
+                    .getAttribute('data-tooltip-keybinding'),
+            ).toBe('chat-send')
             await userEvent.click(content)
 
             // Default Enter sends.

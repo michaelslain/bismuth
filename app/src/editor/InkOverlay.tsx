@@ -1488,6 +1488,7 @@ export function InkOverlay(props: {
                         tools={tools}
                         setTools={setTools}
                         lasso
+                        inkKeys
                         onUndo={undo}
                         onRedo={redo}
                     />

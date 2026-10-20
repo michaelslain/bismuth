@@ -5,19 +5,8 @@
 import { PaletteModal, type PaletteItem } from './PaletteModal'
 import type { BoundCommand } from '../commands'
 import { settings } from '../settings'
+import { keybindingForCommand } from '../commandKeybindings'
 import { loadFrecency, recordUse, scoreOf, commandKey } from '../frecency'
-
-// Command id → keybinding id (core/src/keybindings.ts). Only commands whose action
-// has a real global keybinding appear here; the rest render no hint (no fabrication).
-const COMMAND_KEYBINDINGS: Record<string, keyof typeof settings.keybindings> = {
-    terminal: 'terminal',
-    'equalize-panes': 'equalize-panes',
-    'toggle-sidebar': 'toggle-sidebar',
-    'new-tab': 'new-tab',
-    'reopen-tab': 'reopen-tab',
-    'history-back': 'history-back',
-    'history-forward': 'history-forward',
-}
 
 type Props = {
     onClose: () => void
@@ -30,7 +19,7 @@ export function CommandPalette(props: Props) {
     // primitive (ui/ascii/Kbd.tsx, parseCombo), which owns the Mod→⌘/Ctrl mapping this file used
     // to duplicate inline (formatShortcut, retired).
     const shortcutFor = (id: string): string | undefined => {
-        const kb = COMMAND_KEYBINDINGS[id]
+        const kb = keybindingForCommand(id)
         return kb ? settings.keybindings[kb] : undefined
     }
     const items = (): PaletteItem[] =>

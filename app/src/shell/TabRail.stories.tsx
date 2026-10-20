@@ -356,7 +356,7 @@ export const WithEdge: Story = {
                             panel="tab rail"
                             edge="right"
                             open={pinned()}
-                            combo="Alt+Shift+S"
+                            keybinding="toggle-tab-rail"
                             onResizeStart={() => (start = width())}
                             onResize={dx =>
                                 setWidth(
@@ -511,7 +511,7 @@ export const WithEdgeLeft: Story = {
                             panel="tab rail"
                             edge="left"
                             open={pinned()}
-                            combo="Alt+Shift+S"
+                            keybinding="toggle-tab-rail"
                             onResizeStart={() => (start = width())}
                             onResize={dx =>
                                 setWidth(dragWidth('tabRailWidth', start, dx, 1))

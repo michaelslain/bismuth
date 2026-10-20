@@ -120,6 +120,25 @@ export const Full: Story = {
     },
 }
 
+/** Note/PDF ink surfaces pass `inkKeys`: Undo and Redo name the catalog ids their keys run. The
+ *  page-drawing dock (Full) binds no undo key, so its buttons stay label-only. */
+export const InkKeys: Story = {
+    render: () => {
+        const { tools, setTools } = useToolState()
+        return (
+            <div style={{ position: 'relative', height: '220px' }}>
+                <Toolbar tools={tools} setTools={setTools} inkKeys onUndo={() => {}} onRedo={() => {}} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const undo = canvasElement.querySelector('[aria-label="Undo"]')!
+        const redo = canvasElement.querySelector('[aria-label="Redo"]')!
+        await expect(undo.getAttribute('data-tooltip-keybinding')).toBe('ink-undo')
+        await expect(redo.getAttribute('data-tooltip-keybinding')).toBe('ink-redo')
+    },
+}
+
 /** A NARROW surface — the one the dock used to break on. The box is capped at
  *  `calc(100% - 24px)` so it cannot run off the surface, and its row could not wrap, so on a pane
  *  this size the bordered box stopped at the cap while the groups kept going: the pen toggle, the

@@ -1,7 +1,9 @@
 // app/src/ui/TooltipHost.tsx
 // THE hover-name bubble. Mounted ONCE per document (App.tsx; the Storybook decorator). It reads
 // `data-tooltip="<text>"` from whatever is under the pointer, or holds keyboard focus-visible,
-// and shows that text in a small label under the element (above it when there is no room).
+// and shows that text in a small label under the element (above it when there is no room). A holder
+// may also carry `data-tooltip-keybinding="<catalog id>"`: the bubble then adds that binding's live
+// combo (settings.keybindings, read on every open) as a muted Kbd beside the name.
 //
 // Hover is found by hit-testing the pointer position on document-level pointermove, never by an
 // event targeted at the element itself: a DISABLED button gets no pointer events in some engines
@@ -11,6 +13,9 @@ import { Portal } from 'solid-js/web'
 import styles from './TooltipHost.module.css'
 import { placeTooltip } from './tooltipPlacement'
 import { isDismissKey } from './widgetKeys'
+import Kbd from './ascii/Kbd'
+import { tooltipContent, type TooltipContent } from './tooltipContent'
+import { settings } from '../settings'
 
 export type TooltipHostProps = {
     /** Extra class merged onto the bubble. */
@@ -45,11 +50,21 @@ function gapPx(): number {
 }
 
 const holderOf = (el: Element | null): HTMLElement | null =>
-    (el?.closest('[data-tooltip]') as HTMLElement | null) ?? null
+    (el?.closest('[data-tooltip], [data-tooltip-keybinding]') as HTMLElement | null) ?? null
+
+/** What a holder shows right now: its `data-tooltip` name plus the live combo of its
+ *  `data-tooltip-keybinding` id, read from `settings.keybindings` each time (a rebind shows on the
+ *  next open). Null when it has neither a name nor a bound combo. */
+const contentOf = (el: HTMLElement): TooltipContent | null =>
+    tooltipContent(
+        el.getAttribute('data-tooltip'),
+        el.getAttribute('data-tooltip-keybinding'),
+        settings.keybindings,
+    )
 
 const TooltipHost: Component<TooltipHostProps> = props => {
     const [holder, setHolder] = createSignal<HTMLElement | null>(null)
-    const [text, setText] = createSignal('')
+    const [content, setContent] = createSignal<TooltipContent | null>(null)
     const [bubble, setBubble] = createSignal<HTMLDivElement>()
     let timer: ReturnType<typeof setTimeout> | undefined
     /** Pending / shown holder, so repeat moves over the same button do nothing. */
@@ -66,7 +81,7 @@ const TooltipHost: Component<TooltipHostProps> = props => {
     }
 
     const open = (el: HTMLElement) => {
-        setText(el.getAttribute('data-tooltip') ?? '')
+        setContent(contentOf(el))
         setHolder(el)
     }
 
@@ -91,7 +106,7 @@ const TooltipHost: Component<TooltipHostProps> = props => {
         dropStale()
         if (e.pointerType === 'touch') return
         const el = holderOf(document.elementFromPoint(e.clientX, e.clientY))
-        if (!el || !el.getAttribute('data-tooltip')) {
+        if (!el || !contentOf(el)) {
             quiet = null
             if (source === 'pointer') hide()
             return
@@ -110,7 +125,7 @@ const TooltipHost: Component<TooltipHostProps> = props => {
     const onFocusIn = (e: FocusEvent) => {
         dropStale()
         const el = holderOf(e.target as Element)
-        if (!el || !el.getAttribute('data-tooltip')) {
+        if (!el || !contentOf(el)) {
             if (source === 'focus') hide()
             return
         }
@@ -164,7 +179,7 @@ const TooltipHost: Component<TooltipHostProps> = props => {
     createEffect(() => {
         const el = holder()
         const node = bubble()
-        text()
+        content()
         if (!el || !node) return
         const r = el.getBoundingClientRect()
         const placed = placeTooltip({
@@ -185,10 +200,14 @@ const TooltipHost: Component<TooltipHostProps> = props => {
                 <div
                     ref={setBubble}
                     class={props.class ? `${styles.bubble} ${props.class}` : styles.bubble}
+                    classList={{ [styles.withKey]: !!content()?.combo && !!content()?.label }}
                     data-tooltip-bubble=""
                     aria-hidden="true"
                 >
-                    {text()}
+                    {content()?.label}
+                    <Show when={content()?.combo}>
+                        <Kbd combo={content()!.combo} muted />
+                    </Show>
                 </div>
             </Portal>
         </Show>

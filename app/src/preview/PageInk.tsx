@@ -663,6 +663,7 @@ function PageInk(props: PageInkProps) {
                     <Toolbar
                         tools={tools}
                         setTools={setTools}
+                        inkKeys
                         onUndo={store.undo}
                         onRedo={store.redo}
                         fgColor={theme().fg}

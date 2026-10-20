@@ -6,8 +6,8 @@
 //     command as its keybinding, so the line and Alt+S / Alt+Shift+S are one action;
 //     (Without `onActivate` the strip only resizes: no click action, no button.)
 //   • HOVER it (or focus it) and a chevron button springs out at the line's vertical centre,
-//     pointing the way the panel will move — the same toggle, as a visible target. Its tooltip
-//     names the action and the live keybinding.
+//     pointing the way the panel will move — the same toggle, as a visible target. Its hover
+//     name is the action; TooltipHost adds the live keybinding.
 //
 // The component owns no width. It reports a drag as a running `dx` from where the pointer went
 // down, and the caller turns that into a clamped width — which side grows is the caller's business
@@ -19,7 +19,7 @@
 import styles from './EdgeHandle.module.css'
 import IconButton from '../ui/IconButton'
 import { gestureStops } from '../ui/stopGestures'
-import { parseCombo } from '../ui/ascii/parseCombo'
+import type { KeybindingId } from '../../../core/src/keybindings'
 import { isActivateKey } from '../ui/widgetKeys'
 import { createSignal, Show } from 'solid-js'
 import { edgeHandleView, type EdgePanel, type EdgeSide } from './edgeHandleLogic'
@@ -37,8 +37,8 @@ export type EdgeHandleProps = {
     edge: EdgeSide
     /** The panel is expanded (sidebar visible / rail pinned), so the toggle collapses it. */
     open: boolean
-    /** The toggle's keybinding in the app's combo syntax, appended to the button's tooltip. */
-    combo?: string
+    /** The catalog keybinding that runs this toggle; the button's hover name shows its live combo. */
+    keybinding?: KeybindingId
     /** False while the panel is collapsed to nothing — the strip still toggles but cannot drag. */
     resizable?: boolean
     /** The panel is FULLY hidden, so this strip is all that is left of it at the window's edge:
@@ -54,12 +54,6 @@ export type EdgeHandleProps = {
      *  and no button pops out (an image's scratch line, which has no bar toggle to undo a hide). */
     onActivate?: () => void
     className?: string
-}
-
-/** "Alt+Shift+S" → "⌥⇧S" on a Mac — the first alternative only, one run, for a tooltip. */
-function comboText(combo: string | undefined): string {
-    const first = parseCombo(combo)[0]
-    return first ? first.join('') : ''
 }
 
 function EdgeHandle(props: EdgeHandleProps) {
@@ -108,10 +102,6 @@ function EdgeHandle(props: EdgeHandleProps) {
         props.onActivate()
     }
     const view = () => edgeHandleView(props.panel, props.edge, props.open)
-    const tooltip = () => {
-        const keys = comboText(props.combo)
-        return keys ? `${view().action} (${keys})` : view().action
-    }
 
     return (
         <div
@@ -153,7 +143,8 @@ function EdgeHandle(props: EdgeHandleProps) {
                     <div class={styles['chip']}>
                         <IconButton
                             icon={view().direction === 'left' ? 'ChevronLeft' : 'ChevronRight'}
-                            label={tooltip()}
+                            label={view().action}
+                            keybinding={props.keybinding}
                             tabIndex={-1}
                             onClick={() => {
                                 rootEl?.blur()

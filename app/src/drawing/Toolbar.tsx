@@ -141,6 +141,8 @@ export function Toolbar(props: {
     // Opt-in for the same reason `bg`/`zoom` are: the page drawing surface has no selection
     // model, and a control that does nothing is worse than no control.
     lasso?: boolean
+    /** Undo/redo carry the ink-undo/ink-redo hint; only where those keys act on this surface */
+    inkKeys?: boolean
     onUndo: () => void
     onRedo: () => void
     zoom?: () => number
@@ -315,12 +317,14 @@ export function Toolbar(props: {
                             <IconButton
                                 icon="Undo2"
                                 label="Undo"
+                                keybinding={props.inkKeys ? 'ink-undo' : undefined}
                                 size="sm"
                                 onClick={() => props.onUndo()}
                             />
                             <IconButton
                                 icon="Redo2"
                                 label="Redo"
+                                keybinding={props.inkKeys ? 'ink-redo' : undefined}
                                 size="sm"
                                 onClick={() => props.onRedo()}
                             />

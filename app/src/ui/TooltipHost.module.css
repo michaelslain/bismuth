@@ -24,3 +24,11 @@
   pointer-events: none;
   user-select: none;
 }
+
+/* label + shortcut: the name, then its key, one gap apart on a shared baseline. The bubble keeps
+   its label-only height (the Kbd is a text run on the same line box). */
+.withKey {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}

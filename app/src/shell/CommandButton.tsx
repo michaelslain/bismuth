@@ -1,6 +1,7 @@
 import { Show } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
 import Badge from '../ui/Badge'
+import type { KeybindingId } from '../../../core/src/keybindings'
 import styles from './CommandButton.module.css'
 
 // The purely-presentational rendering half of App.tsx's configurable toolbar button
@@ -48,6 +49,8 @@ export function CommandButton(props: {
     /** undefined = a plain action (bare glyph); true/false = a toggle or an open-menu trigger,
      *  drawn `selected` / `unselected`. */
     on?: boolean
+    /** The catalog keybinding that does what this button does; the hover name shows its live combo. */
+    keybinding?: KeybindingId
 }) {
     return (
         <div class={styles['toolbar-btn-wrap']}>
@@ -63,6 +66,7 @@ export function CommandButton(props: {
                           ? 'selected'
                           : 'unselected'
                 }
+                keybinding={props.keybinding}
                 onClick={props.onClick}
             />
             <Show when={(props.badge ?? 0) > 0}>

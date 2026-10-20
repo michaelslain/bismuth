@@ -44,6 +44,7 @@ import { SwitcherBar } from './palette/SwitcherBar'
 import { afterClose, afterToggle, type AppModal } from './appModal'
 import { switcherMatchNodeIds } from './palette/switcherMatches'
 import { TemplatePalette } from './palette/TemplatePalette'
+import { keybindingForCommand } from './commandKeybindings'
 import { bindCommands, resolveButtonCommands, type GraphMode } from './commands'
 import { BASE_VIEW_KINDS } from './baseViews'
 import { settings, setSettings, settingsHydrated } from './settings'
@@ -3130,6 +3131,7 @@ export default function App() {
                             label={props2.btn.tooltip ?? c().label}
                             onClick={e => c().action(e)}
                             on={c().isOn?.()}
+                            keybinding={keybindingForCommand(c().id)}
                             badge={
                                 c().id === 'open-inbox' ? dueCount() : undefined
                             }
@@ -3278,7 +3280,7 @@ export default function App() {
                         panel="sidebar"
                         edge={sidebarSide()}
                         open={sidebarVisible()}
-                        combo={settings.keybindings['toggle-sidebar']}
+                        keybinding="toggle-sidebar"
                         resizable={sidebarVisible()}
                         reveal={
                             !sidebarVisible() && sidebarSide() !== tabRailSide()
@@ -3500,7 +3502,7 @@ export default function App() {
                                 panel="tab rail"
                                 edge={tabRailSide()}
                                 open={tabRailPinned()}
-                                combo={settings.keybindings['toggle-tab-rail']}
+                                keybinding="toggle-tab-rail"
                                 onResizeStart={() =>
                                     startEdgeResize('tabRailWidth')
                                 }

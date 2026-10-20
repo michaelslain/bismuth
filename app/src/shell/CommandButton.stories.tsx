@@ -23,6 +23,7 @@
 // touches either neighbour's bracket (Acceptance 6).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { CommandButton } from './CommandButton'
+import { expect } from 'storybook/test'
 import IconBar from '../ui/IconBar'
 
 const noop = () => {}
@@ -123,6 +124,28 @@ export const WithBadgeLarge: Story = {
             </IconBar>
         </div>
     ),
+}
+
+/** A button whose action has a global key: it carries the catalog id, and TooltipHost shows the
+ *  user's live combo as Kbd beside the name on hover. */
+export const WithShortcut: Story = {
+    render: () => (
+        <IconBar label="Toolbar">
+            <CommandButton
+                icon="PanelLeft"
+                label="Toggle sidebar"
+                keybinding="toggle-sidebar"
+                onClick={noop}
+            />
+        </IconBar>
+    ),
+    play: async ({ canvasElement }) => {
+        const button = canvasElement.querySelector<HTMLElement>(
+            '[data-tooltip-keybinding="toggle-sidebar"]',
+        )
+        await expect(button).not.toBeNull()
+        await expect(button!.getAttribute('data-tooltip')).toBe('Toggle sidebar')
+    },
 }
 
 /** `on` undefined is a plain action (bare glyph); `true` is an on toggle or an open-menu trigger

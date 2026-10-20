@@ -80,7 +80,6 @@ function Harness(props: HarnessProps): JSX.Element {
                 onToggleScratch={() => setScratch(v => !v)}
                 darkOn={dark}
                 onToggleDark={() => setDark(v => !v)}
-                drawKey={() => 'Mod+Shift+D'}
                 panelOpen={panel}
                 onTogglePanel={() => setPanel(v => !v)}
                 converting={converting}
@@ -143,6 +142,15 @@ export const Pdf: Story = {
         await expect(p.selectedCount, 'selected controls at rest').toBe(0)
         const fit = canvas.getByLabelText('Fit width')
         await expect(fit.getAttribute('aria-pressed')).toBeNull()
+
+        // Draw shows its live combo: the button names the catalog id; TooltipHost renders the Kbd.
+        const draw = canvas.getByLabelText('Draw')
+        await expect(draw.getAttribute('data-tooltip-keybinding')).toBe('toggle-draw-mode')
+        await expect(draw.getAttribute('data-tooltip')).toBe('Draw')
+        await fireEvent.pointerEnter(draw)
+        await fireEvent.mouseOver(draw)
+        const tip = document.querySelector('[data-tooltip-host] [data-kbd], [data-kbd]')
+        if (tip) await expect(tip.textContent?.length).toBeGreaterThan(0)
 
         const scratch = canvas.getByLabelText('Scratch paper')
         await fireEvent.click(scratch)

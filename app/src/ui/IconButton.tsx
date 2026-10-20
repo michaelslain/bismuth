@@ -7,6 +7,7 @@ import { warnBadIcon } from './devWarn'
 import { useIconBar } from './iconBarContext'
 import { pressedFor } from './pressedFor'
 import type { ButtonState, ButtonSize } from './buttonClass'
+import type { KeybindingId } from '../../../core/src/keybindings'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone, full opacity. */
 export type IconButtonVariant = ButtonState
@@ -34,6 +35,8 @@ export type IconButtonProps = {
     bracketRoom?: boolean
     /** Icon pixel size. Defaults to the enclosing IconBar's, else the app's one icon size (ui/iconSize.ts); app code never passes it. */
     iconSize?: number
+    /** The catalog keybinding that does what this button does; TooltipHost shows its live combo. */
+    keybinding?: KeybindingId
 } & Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'>
 
 /**
@@ -51,6 +54,7 @@ function IconButton(props: IconButtonProps) {
         'size',
         'iconSize',
         'title',
+        'keybinding',
     ])
     if (import.meta.env?.DEV && local.icon !== undefined && !isIconName(local.icon)) {
         warnBadIcon('IconButton', local.icon ?? '')
@@ -70,6 +74,7 @@ function IconButton(props: IconButtonProps) {
             size={size()}
             aria-label={local.label}
             data-tooltip={local.title ?? local.label}
+            data-tooltip-keybinding={local.keybinding}
             aria-pressed={pressedFor(local.variant)}
             data-glyph={local.glyph ? '' : undefined}
             {...rest}

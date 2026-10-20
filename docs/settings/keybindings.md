@@ -69,6 +69,14 @@ keybindings:
 
 A comma splits the whole setting before it is parsed, so the comma key cannot be bound: `Mod+,` becomes the combos `Mod+` and an empty one, and neither matches.
 
+## See a button's shortcut by hovering it
+
+Hovering an icon button whose click does the same thing as a keybinding shows that shortcut in the button's hover name, after the label and in a fainter colour: hovering the sidebar chevron shows `hide sidebar ⌥S`.
+The hint reads your current `keybindings:` value each time it opens, so a rebound shortcut shows its new combo, and an unbound one (`""`) shows the label alone.
+
+Buttons that carry a hint include the sidebar and tab-rail toolbar buttons and edge chevrons, the PDF bar's draw toggle, the chat composer's send and stop, and undo and redo in the ink toolbar of a note or PDF.
+A button whose action only resembles a shortcut's shows no hint. The empty pane's new-terminal button is one example: it fills its own pane, while `terminal` acts on the focused pane.
+
 ## Silent failures
 
 Nothing reports a bad combo; it just never fires.
@@ -244,7 +252,14 @@ The recorder (`recordShortcut` in `app/src/editor/settingsComplete.ts`) is scope
 
 1. Add `{ id, label, default, doc }` to `KEYBINDING_CATALOG`. The schema field, autocomplete, lint and default follow.
 2. In the handler that should fire it, test `matchesKeybinding(e, settings.keybindings[id])` and act on a match.
+3. If an icon button performs the same action, pass `keybinding="<id>"` to its `IconButton` or `IconTextButton` so its hover name shows the shortcut. A toolbar command button gets it from `keybindingForCommand` in `app/src/commandKeybindings.ts`, which also feeds the command palette's hints.
+
+### Shortcut hints in hover names
+
+`IconButton` and `IconTextButton` take `keybinding?: KeybindingId` and render it as the attribute `data-tooltip-keybinding`, carrying the id, never a combo.
+`TooltipHost` (`app/src/ui/TooltipHost.tsx`) reads that attribute next to `data-tooltip` when it opens, resolves the id against the live `settings.keybindings` through `tooltipContent` (`app/src/ui/tooltipContent.ts`), and renders the label followed by a muted `Kbd`.
+An element with only the keybinding attribute still opens a bubble holding the shortcut alone.
 
 Both the catalog and the matcher are pure; `app/src/keybindings.test.ts` holds the canonical examples.
 
-Source: `core/src/keybindings.ts`, `app/src/keybindings.ts`, `app/src/keybindings.test.ts`, `app/src/ui/widgetKeys.ts`, `app/src/keybindingCoverage.test.ts`, `core/src/schema/settingsSchema.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsKeymap.ts`, `app/src/App.tsx`, `app/src/Editor.tsx`
+Source: `core/src/keybindings.ts`, `app/src/keybindings.ts`, `app/src/keybindings.test.ts`, `app/src/ui/widgetKeys.ts`, `app/src/keybindingCoverage.test.ts`, `core/src/schema/settingsSchema.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsKeymap.ts`, `app/src/App.tsx`, `app/src/Editor.tsx`, `app/src/ui/TooltipHost.tsx`, `app/src/ui/tooltipContent.ts`, `app/src/commandKeybindings.ts`

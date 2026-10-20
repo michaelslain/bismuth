@@ -7,6 +7,9 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor } from 'storybook/test'
 import TooltipHost from './TooltipHost'
 import { IconButton } from './IconButton'
+import { IconTextButton } from './IconTextButton'
+import { settings, setSettings } from '../settings'
+import type { KeybindingId } from '../../../core/src/keybindings'
 
 const meta = {
     title: 'UI/TooltipHost',
@@ -17,12 +20,18 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const Pinned = (props: { style: JSX.CSSProperties; disabled?: boolean; tip: string }) => (
+const Pinned = (props: {
+    style: JSX.CSSProperties
+    disabled?: boolean
+    tip: string
+    keybinding?: KeybindingId
+}) => (
     <div style={{ position: 'fixed', ...props.style }}>
         <IconButton
             icon="Star"
             label="Star"
             disabled={props.disabled}
+            keybinding={props.keybinding}
             data-tooltip={props.tip}
         />
     </div>
@@ -198,5 +207,94 @@ export const HidesWhenHolderRemoved: Story = {
         btn.remove()
         moveAway() // a focus-sourced bubble ignores pointer moves unless its holder is stale
         await gone()
+    },
+}
+
+const kbd = () => bubble()!.querySelector<HTMLElement>('[data-kbd]')
+
+/** A bound keybinding adds its live combo as a muted Kbd after the name, one --sp-3 gap apart. */
+export const WithShortcut: Story = {
+    render: () => <Pinned style={{ top: '40%', left: '50%' }} tip="Find in note" keybinding="find" />,
+    play: async ({ canvasElement }) => {
+        const { tip } = await hover(canvasElement)
+        expect(kbd()).not.toBeNull()
+        expect(kbd()!.textContent).toMatch(/F$/)
+        expect(bubble()!.firstChild!.textContent).toBe('Find in note')
+        const name = document.createRange()
+        name.selectNodeContents(bubble()!.firstChild!)
+        const gap = kbd()!.getBoundingClientRect().left - name.getBoundingClientRect().right
+        const sp3 = parseFloat(getComputedStyle(bubble()!).columnGap)
+        expect(sp3).toBeGreaterThan(0)
+        expect(Math.abs(gap - sp3)).toBeLessThan(1)
+        insideViewport(tip)
+    },
+}
+
+/** A long name plus a shortcut on the right edge: clamped fully inside the window. */
+export const ShortcutClampedRight: Story = {
+    render: () => (
+        <Pinned
+            style={{ top: '40%', right: 'var(--sp-2)' }}
+            tip="Reveal the selected file in the file manager"
+            keybinding="find"
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const { btn, tip } = await hover(canvasElement)
+        expect(kbd()).not.toBeNull()
+        expect(tip.left + tip.width / 2).toBeLessThan(btn.left + btn.width / 2)
+        insideViewport(tip)
+    },
+}
+
+/** The combo is read from the live settings on each open: rebind, reopen, see the new key. */
+export const ShortcutRebound: Story = {
+    render: () => <Pinned style={{ top: '40%', left: '50%' }} tip="Find in note" keybinding="find" />,
+    play: async ({ canvasElement }) => {
+        const restore = settings.keybindings.find
+        await hover(canvasElement)
+        expect(kbd()!.textContent).toMatch(/F$/)
+        moveAway()
+        await gone()
+        setSettings('keybindings', 'find', 'Mod+Shift+R')
+        try {
+            await hover(canvasElement)
+            expect(kbd()!.textContent).toMatch(/R$/)
+            expect(kbd()!.textContent).not.toMatch(/F$/)
+        } finally {
+            setSettings('keybindings', 'find', restore)
+        }
+    },
+}
+
+/** An IconTextButton with a keybinding and no title: the bubble is just the Kbd. */
+export const ShortcutOnly: Story = {
+    render: () => (
+        <div style={{ position: 'fixed', top: '40%', left: '50%' }}>
+            <IconTextButton icon="Search" keybinding="find">
+                find
+            </IconTextButton>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const btn = canvasElement.querySelector('button')!
+        moveOnto(btn)
+        await waitFor(() => expect(bubble()).not.toBeNull(), { timeout: 3000 })
+        await waitFor(() => expect(bubble()!.style.visibility).toBe('visible'))
+        expect(kbd()).not.toBeNull()
+        expect(kbd()!.textContent).toMatch(/F$/)
+        expect(bubble()!.textContent).toBe(kbd()!.textContent)
+        insideViewport(bubble()!.getBoundingClientRect())
+    },
+}
+
+/** A button with no keybinding keeps a label-only bubble: no Kbd is rendered. */
+export const UnwiredUnchanged: Story = {
+    render: () => <Pinned style={{ top: '40%', left: '50%' }} tip="Zoom out" />,
+    play: async ({ canvasElement }) => {
+        const { tip } = await hover(canvasElement)
+        expect(bubble()!.textContent).toBe('Zoom out')
+        expect(kbd()).toBeNull()
+        insideViewport(tip)
     },
 }

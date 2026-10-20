@@ -69,8 +69,6 @@ export type PreviewBarProps = {
      *  default); disabled with the annotate tools until the sidecar has loaded */
     darkOn?: () => boolean
     onToggleDark?: () => void
-    /** settings.keybindings['toggle-draw-mode'], for the tooltip */
-    drawKey: () => string
     /** pdf → markdown: true while the conversion runs (the button is disabled, a readout says so) */
     converting?: () => boolean
     onConvert?: () => void
@@ -212,7 +210,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                         <IconButton
                             icon="Pencil"
                             label="Draw"
-                            title={`Draw (${props.drawKey()})`}
+                            keybinding="toggle-draw-mode"
                             variant={props.drawMode() ? 'selected' : 'unselected'}
                             disabled={!props.annotReady()}
                             onClick={() => props.onToggleDraw()}
