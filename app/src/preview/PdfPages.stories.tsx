@@ -2044,15 +2044,20 @@ function buildHighlightAndInkPdf(): ArrayBuffer {
 
 const highlightAndInkBytes = buildHighlightAndInkPdf()
 
-/** pdf.js paints no /Highlight annotation (HighlightLayer is the only thing that draws one) while
- *  every other annotation kind still paints. The page carries a highlight whose appearance is red
- *  and an ink annotation whose appearance is black; no HighlightLayer is mounted, so the pixel
+/** With `onPdfHighlights` set (the caller draws highlights: HighlightLayer), pdf.js paints no
+ *  /Highlight annotation while every other annotation kind still paints. The page carries a
+ *  highlight whose appearance is red and an ink annotation whose appearance is black; no
+ *  HighlightLayer is mounted, so the pixel
  *  inside the highlight quad must be the page's white and the pixel inside the ink bar must be
  *  inked. Settled signal: the ink pixel going dark, since both annotations come out of one render. */
 export const HidesPdfJsHighlightsKeepsInk: Story = {
     render: () => (
         <div style={{ height: '640px' }}>
-            <PdfPages load={async () => highlightAndInkBytes.slice(0)} zoom={1} />
+            <PdfPages
+                load={async () => highlightAndInkBytes.slice(0)}
+                zoom={1}
+                onPdfHighlights={() => {}}
+            />
         </div>
     ),
     play: async ({ canvasElement }) => {

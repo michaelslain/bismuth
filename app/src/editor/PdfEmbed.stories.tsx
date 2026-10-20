@@ -6,6 +6,8 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor } from 'storybook/test'
 import PdfEmbed from './PdfEmbed'
 import { buildLetterPdf, inkedPct } from '../ui/_pdfStoryFixtures'
+import { applyPdfHighlightEdits } from '../../../core/src/drawing/pdfHighlights'
+import { PDF_HIGHLIGHT_YELLOW } from '../../../core/src/theme/tokens'
 
 const meta = {
     title: 'Editor/PdfEmbed',
@@ -186,5 +188,62 @@ export const LongName: Story = {
         expect(readout.getBoundingClientRect().right).toBeLessThanOrEqual(
             card.getBoundingClientRect().right,
         )
+    },
+}
+
+// The same document with one standard `/Highlight` annotation written into page one by the
+// core writer (the bytes a highlight made in the PDF tab saves), over the label and the blank
+// paper to its right.
+let highlighted: Uint8Array | undefined
+const loadHighlighted = async (): Promise<ArrayBuffer> => {
+    highlighted ??= await applyPdfHighlightEdits(new Uint8Array(await load()), {
+        add: [
+            {
+                page: 0,
+                highlight: {
+                    id: 'embed-hl',
+                    c: PDF_HIGHLIGHT_YELLOW.toLowerCase(),
+                    rects: [{ x: 90, y: 100, w: 330, h: 44 }],
+                },
+            },
+        ],
+        remove: [],
+    })
+    return highlighted.slice().buffer as ArrayBuffer
+}
+
+/** A canvas pixel at a fraction of the page, as [r, g, b]. */
+function pixelAt(c: HTMLCanvasElement, fx: number, fy: number): number[] {
+    const d = c
+        .getContext('2d')!
+        .getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data
+    return [d[0], d[1], d[2]]
+}
+
+/** A PDF's own highlights show in the embed: the paper under the mark reads yellow, the paper
+ *  above it stays white. */
+export const WithHighlight: Story = {
+    args: { load: loadHighlighted, name: 'papers/highlighted.pdf' },
+    render: args => (
+        <Box>
+            <PdfEmbed {...args} />
+        </Box>
+    ),
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                const c = canvasElement.querySelector('canvas') as HTMLCanvasElement
+                expect(inkedPct(c)).toBeGreaterThan(0)
+                // Page point (280pt, 92pt): blank paper inside the highlight.
+                const [r, g, b] = pixelAt(c, 280 / 612, 92 / 792)
+                expect(r).toBeGreaterThan(230)
+                expect(g).toBeGreaterThan(190)
+                expect(b).toBeLessThan(140)
+            },
+            { timeout: 5000 },
+        )
+        const c = canvasElement.querySelector('canvas') as HTMLCanvasElement
+        // Page point (280pt, 50pt): paper above the highlight.
+        expect(pixelAt(c, 280 / 612, 50 / 792)).toEqual([255, 255, 255])
     },
 }

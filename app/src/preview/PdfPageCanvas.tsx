@@ -38,7 +38,8 @@ export type PdfPageCanvasProps = {
     box: PageBox
     getPage: (i: number) => PDFPageProxy
     /** Awaited before every raster render: marks the page's `/Highlight` annotations as not
-     *  viewable so pdf.js leaves them off the canvas (HighlightLayer draws them). */
+     *  viewable so pdf.js leaves them off the canvas (HighlightLayer draws them). Absent = pdf.js
+     *  paints every annotation from the PDF itself, ignoring the shared annotation storage. */
     hideHighlights?: (page: PDFPageProxy) => Promise<void>
     pdfjs: () => PdfjsModule | undefined
     /** Last-frame rasters that outlive this component. On mount, a stashed canvas for this page
@@ -236,11 +237,14 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         }
         if (disposed || mine !== generation) return
         // ENABLE_STORAGE: every annotation kind still paints, minus those `noView` in the
-        // document's annotation storage (the highlights).
+        // document's annotation storage (the highlights). ENABLE when nothing hides them: the
+        // storage may hold another viewer's `noView` marks for the same document.
         const task = page.render({
             canvas: offscreen,
             viewport: renderViewport,
-            annotationMode: mod.AnnotationMode.ENABLE_STORAGE,
+            annotationMode: props.hideHighlights
+                ? mod.AnnotationMode.ENABLE_STORAGE
+                : mod.AnnotationMode.ENABLE,
         })
         renderTask = task
         try {

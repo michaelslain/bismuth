@@ -132,8 +132,9 @@ export type PdfPagesProps = {
     /** The loaded document's page count, once per document. */
     onPageCount?: (n: number) => void
     /** Once per loaded document (and again when it reloads after an external change): every
-     *  page's `/Highlight` annotations as Bismuth highlights, `length` = page count. pdf.js is told
-     *  not to paint these itself, so HighlightLayer is the only thing that draws a highlight. */
+     *  page's `/Highlight` annotations as Bismuth highlights, `length` = page count. Passing it
+     *  says the caller draws them (HighlightLayer), so pdf.js is told not to paint them itself.
+     *  Without it (a note embed) pdf.js paints each highlight's own appearance stream. */
     onPdfHighlights?: (pages: Highlight[][]) => void
     /** Once per loaded document (cache hit or fresh): every page's `/MediaBox`+`/CropBox` view and
      *  `/Rotate`, which a PDF highlight's id is hashed over. */
@@ -899,7 +900,11 @@ function PdfPages(props: PdfPagesProps) {
                                                 index={i}
                                                 box={box()}
                                                 getPage={getPage}
-                                                hideHighlights={hidePageHighlights}
+                                                hideHighlights={
+                                                    props.onPdfHighlights
+                                                        ? hidePageHighlights
+                                                        : undefined
+                                                }
                                                 pdfjs={() => pdfjs}
                                                 stash={stash()}
                                                 scrolling={scrolling}

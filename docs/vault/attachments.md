@@ -49,7 +49,7 @@ The extension decides how an embed renders.
 ## How does each kind render?
 
 - Image. With no size it shows at its natural width, up to the editor width. An unsized embed in the middle of a line is capped at 1.4 em tall so it flows like an icon.
-- PDF. The same page viewer as the PDF preview tab, in a card whose header names the file and carries a zoom group and a `p. N / M` readout. The default size is full width and 520 px tall. `#page=N` opens page N.
+- PDF. The same page viewer as the PDF preview tab, in a card whose header names the file and carries a zoom group and a `p. N / M` readout. The default size is full width and 520 px tall. `#page=N` opens page N. Highlights saved inside the PDF show on its pages; the card has no highlight or draw tools, so open the PDF in its preview tab to add them.
 - HTML. A live, interactive page: its inline scripts run. Default size is full width and 520 px tall. See [Security of HTML embeds](#security-of-html-embeds) for the isolation it runs under.
 - Audio. A player at most 420 px wide.
 - Video. A player that fits the editor width.
