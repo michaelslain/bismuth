@@ -156,6 +156,16 @@ export async function logActivity(
     }
 }
 
+/** Brain-start retention for one vault: prune expired day files, or keep every one when the vault
+ *  sets `daemon.keepLogs`. Returns how many were removed. Never throws. */
+export async function retainActivityLogs(
+    ctx: VaultContext,
+    now: Date = new Date(),
+): Promise<number> {
+    if (ctx.keepLogs) return 0
+    return pruneActivityLogs(ctx.logsDir, ACTIVITY_RETENTION_DAYS, now)
+}
+
 /** Delete activity files older than the retention window. Returns how many were removed.
  *  Never throws: a missing dir, an unreadable dir, or a failed unlink degrades to "removed
  *  fewer than we hoped", which is always survivable. */

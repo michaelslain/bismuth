@@ -137,6 +137,7 @@ export interface Settings {
         enabled: boolean // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
         // the daemon's NAME lives in .daemon/identity.md frontmatter, not in settings
         inboxRetentionDays: number // days a resolved daemon-inbox page stays listed before GC
+        keepLogs: boolean // keep the daemon's activity log forever + archive each daemon session transcript into .daemon/logs/sessions (off: 30-day activity log)
         notifications: boolean // desktop notification per new inbox page + per notify:true cron run (off by default: none for this vault)
         saveSessions: boolean // save each finished agent session (Bismuth terminal) and in-app chat as a memory note (off by default)
         dream: boolean // hourly cron folding changed notes and saved sessions into memory (off by default)

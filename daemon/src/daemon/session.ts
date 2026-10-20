@@ -16,6 +16,7 @@ import {
 } from '../lib/visibility.ts'
 import { mcpBin, cliBin, docsDir } from '../lib/bismuthPaths.ts'
 import { recordDaemonSessionId } from './sessionIds.ts'
+import { archiveSessionTranscript } from '../lib/sessionArchive.ts'
 import { sendCodexMessage } from './codexSession.ts'
 import { resolveTier } from './tier.ts'
 import { buildDaemonPersona, DAEMON_PERSONA_CHANNELS } from './persona.ts'
@@ -489,6 +490,9 @@ export async function sendMessage(
         }
     } finally {
         if (timeoutId) clearTimeout(timeoutId)
+        // In the finally so a timed-out or failed run is archived too: those are the ones to debug.
+        if (latestSessionId !== 'unknown')
+            await archiveSessionTranscript(ctx, latestSessionId)
     }
 
     return finalizeBotResponse(resultText, latestSessionId, refusal)

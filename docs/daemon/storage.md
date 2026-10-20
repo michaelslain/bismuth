@@ -54,6 +54,7 @@ The service definition itself lives outside this directory: see [the service fil
 | `memory/<name>.md`, `memory/<folder>/<name>.md` | markdown | The memory graph. See [memory](memory.md) |
 | `logs/activity-YYYY-MM-DD.jsonl` | JSON lines | The activity log, below |
 | `logs/<process>.{stdout,stderr}.log` | text | A background process's output, appended |
+| `logs/sessions/<session id>.jsonl`, `logs/sessions/<session id>/` | JSON lines | A Claude daemon session's full transcript and its subagents' transcripts, written only with `daemon.keepLogs`. See [keep every log](#keep-every-log-with-daemonkeeplogs) |
 | `session-id` | session id | The most recent daemon session. It changes with every new session |
 | `session-ids` | one id per line | Every session the daemon started, oldest first, capped at 2000 |
 | `session-ids-legacy` | one id per line | Daemon sessions found by scanning the Claude session store once, the first time chat History opens; core writes it |
@@ -104,7 +105,23 @@ The activity log is the daemon's history: every cron outcome, background-process
 | `daemon` | `cron-retired` | `reconcileSeeds` renamed a merged cron to `.disabled` |
 | `doctor` | `repair` | The doctor applied one repair. `outcome` is `success` or `failed`; `detail` is the finding id, what the repair did, the backup commit for a destructive one, and the first warning of a failed one, joined with ` // ` |
 
-Read it with `bismuth daemon logs --vault <vault>` (flags `--limit`, `--kind`, `--name`, `--since`), `GET /daemon/logs`, or the `daemon_logs` MCP tool. Files older than 30 days are deleted when a vault's brain starts. The daemon only appends, so a crash costs at most a truncated last line, and a full disk never fails a cron. A log row's `[x]` or `[ delete ]` on the daemon page removes one entry by rewriting its day file; the rewrite starts over when the daemon appended meanwhile, so no new line is lost.
+Read it with `bismuth daemon logs --vault <vault>` (flags `--limit`, `--kind`, `--name`, `--since`), `GET /daemon/logs`, or the `daemon_logs` MCP tool. Files older than 30 days are deleted when a vault's brain starts, unless the vault sets [`daemon.keepLogs`](#keep-every-log-with-daemonkeeplogs). The daemon only appends, so a crash costs at most a truncated last line, and a full disk never fails a cron. A log row's `[x]` or `[ delete ]` on the daemon page removes one entry by rewriting its day file; the rewrite starts over when the daemon appended meanwhile, so no new line is lost.
+
+## Keep every log with `daemon.keepLogs`
+
+`daemon.keepLogs: true` in a vault's `.settings` keeps the daemon's whole history in the vault, for debugging and improving the daemon. It is off by default.
+
+```yaml
+daemon:
+  keepLogs: true
+```
+
+With it on, two things change:
+
+- The activity log is never pruned: every `logs/activity-YYYY-MM-DD.jsonl` stays.
+- After every turn of a daemon session on the Claude backend, the session's transcript (each prompt, tool call, tool result and reply) is copied to `logs/sessions/<session id>.jsonl`, and its subagents' transcripts to `logs/sessions/<session id>/`. Claude Code deletes its own copies under `~/.claude/projects` after its cleanup period, 30 days by default; the vault's copy is never deleted. A timed-out or failed run is copied too.
+
+A session's id appears in `session-ids`, so a run in the activity log can be matched to its transcript by time. The Codex backend keeps its sessions under `.daemon/codex/`, which the daemon never prunes. Turning the setting off stops new copies and lets the next brain start prune activity older than 30 days; copies already in `logs/sessions/` stay until deleted by hand. Backups skip `logs/`, so transcripts never enter a vault snapshot.
 
 ## Which vaults the daemon serves
 
@@ -124,6 +141,7 @@ Bismuth's local git snapshots of a vault (`vault.backupOnSave`) track `identity.
 - Memory has no index. The graph is recomputed from the markdown on every read. The daemon passes `<vault>/.daemon/memory` explicitly, and tools read it from `BISMUTH_MEMORY_DIR`.
 - Core writes only control files. Bismuth writes `owner.json`, a cron or process's `enabled` frontmatter, trigger files, pages and their sidecars, and the vault registry. Every reader in core tolerates a missing or malformed file and returns an empty value.
 - Core appends `doctor` events. The doctor runs in core and the CLI, not in the daemon, so `appendActivity` in core writes them: to the vault the doctor ran with, or to every vault in `vaults.json` when it ran with none, and only to a vault whose `.daemon` folder exists. Each event is one whole-line append, the same discipline the daemon's writer keeps.
+- Transcripts are found by id, not by path. `archiveSessionTranscript` in `daemon/src/lib/sessionArchive.ts` searches every directory under `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) for `<id>.jsonl`, so it never re-derives Claude Code's encoding of the vault path. `sendMessage` in `daemon/src/daemon/session.ts` calls it in the `finally` of each turn; the copy is overwritten each time, since a resumed transcript only grows. `retainActivityLogs` in `activityLog.ts` skips the prune when `keepLogs` is on.
 - Writes to state files are queued. Writes to `.last-fired.json`, `.running.json` and the activity log go through a per-file queue in `daemon/src/lib/writeQueue.ts`, so concurrent runs do not lose updates.
 
-Source: `daemon/src/lib/{config,device,owner,registry,activityLog,writeQueue}.ts`, `daemon/src/daemon/{index,cron,process,seeds,sessionIds,pages}.ts`, `core/src/{daemon,daemonState,daemonGraph,daemonActivity,daemonPages,backup,chatDaemonLegacy}.ts`
+Source: `daemon/src/lib/{config,device,owner,registry,activityLog,sessionArchive,writeQueue}.ts`, `daemon/src/daemon/{index,cron,process,seeds,sessionIds,pages}.ts`, `core/src/{daemon,daemonState,daemonGraph,daemonActivity,daemonPages,backup,chatDaemonLegacy}.ts`

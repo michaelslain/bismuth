@@ -598,6 +598,11 @@ export const SETTINGS_SCHEMA: Schema = {
             max: 90,
             doc: "How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker.",
         },
+        keepLogs: {
+            type: 'boolean',
+            default: false,
+            doc: "Keep every daemon log for good, for debugging and improving the daemon. On: the activity log (.daemon/logs/activity-*.jsonl) is never pruned, and after every turn each Claude daemon session's full transcript is copied to .daemon/logs/sessions/<session id>.jsonl, where Claude Code's own 30-day cleanup cannot reach it. Off is the default: activity older than 30 days is deleted and transcripts live only in ~/.claude/projects.",
+        },
         notifications: {
             type: 'boolean',
             default: false,

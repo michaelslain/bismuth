@@ -179,12 +179,12 @@ test('loadAllVaults reuses unchanged settings, sees an mtime bump, and defaults 
     ])
     expect(await proc.exited, err).toBe(0)
     expect(JSON.parse(out.trim().split('\n').pop()!)).toEqual({
-        first: { enabled: true, name: 'Ada' },
-        unchangedMtime: { enabled: true, name: 'Ada' }, // served from cache: no re-read
-        edited: { enabled: false, name: 'Ada' },
-        noIdentity: { enabled: false, name: 'daemon' },
-        legacyFirst: { enabled: false, name: 'daemon' },
-        legacyEdited: { enabled: true, name: 'daemon' }, // legacy-shape-only edit seen
+        first: { enabled: true, name: 'Ada', keepLogs: true },
+        unchangedMtime: { enabled: true, name: 'Ada', keepLogs: true }, // served from cache: no re-read
+        edited: { enabled: false, name: 'Ada', keepLogs: false },
+        noIdentity: { enabled: false, name: 'daemon', keepLogs: false },
+        legacyFirst: { enabled: false, name: 'daemon', keepLogs: false },
+        legacyEdited: { enabled: true, name: 'daemon', keepLogs: false }, // legacy-shape-only edit seen
     })
 })
 

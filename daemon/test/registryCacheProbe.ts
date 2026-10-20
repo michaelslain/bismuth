@@ -10,11 +10,11 @@ const identity = join(root, '.daemon', 'identity.md')
 const at = (file: string, sec: number) => utimesSync(file, sec, sec)
 const look = async () => {
     const [v] = await loadAllVaults()
-    return { enabled: v!.enabled, name: v!.ctx.name }
+    return { enabled: v!.enabled, name: v!.ctx.name, keepLogs: v!.ctx.keepLogs }
 }
 
 mkdirSync(join(root, '.daemon'), { recursive: true })
-writeFileSync(settings, 'daemon:\n    enabled: true\n')
+writeFileSync(settings, 'daemon:\n    enabled: true\n    keepLogs: true\n')
 writeFileSync(identity, '---\nname: Ada\n---\n')
 at(settings, 1000)
 at(identity, 1000)

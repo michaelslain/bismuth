@@ -53,11 +53,17 @@ export interface VaultContext {
     /** settings.daemon.email — the inbox <-> email bridge (daemon/src/daemon/emailBridge.ts). Off
      *  by default; `address` is where a fresh email becomes a new page ('' = replies only). */
     email: { enabled: boolean; address: string }
+    /** settings.daemon.keepLogs — off by default. On: the activity log is never pruned
+     *  (pruneActivityLogs is skipped at brain-start) and every Claude session's transcript is copied
+     *  into {@link sessionLogsDir} after each turn (lib/sessionArchive.ts). */
+    keepLogs: boolean
     daemonDir: string
     memoryDir: string
     cronsDir: string
     processesDir: string
     logsDir: string
+    /** <root>/.daemon/logs/sessions — archived session transcripts, written only under keepLogs. */
+    sessionLogsDir: string
     /** <root>/.daemon/identity.md — the user-editable system prompt (personality/voice). */
     identityFile: string
     sessionFile: string
@@ -93,11 +99,13 @@ export function vaultPaths(
         codexWriteAgentsMd,
         inheritUserMcp,
         email: { enabled: false, address: '' },
+        keepLogs: false,
         daemonDir,
         memoryDir: join(daemonDir, 'memory'),
         cronsDir,
         processesDir,
         logsDir: join(daemonDir, 'logs'),
+        sessionLogsDir: join(daemonDir, 'logs', 'sessions'),
         identityFile: join(daemonDir, 'identity.md'),
         sessionFile: join(daemonDir, 'session-id'),
         lastFiredFile: join(cronsDir, '.last-fired.json'),
@@ -136,10 +144,8 @@ export const RESTART_BACKOFF_MAX_MS = 60_000
 
 /** How many days of `<vault>/.daemon/logs/activity-*.jsonl` to keep. Pruned on brain-start
  *  (daemon/index.ts's startVault), the same opportunistic-GC shape the daemon inbox uses for
- *  its own retention — no separate cron or ticker. A constant rather than a setting on purpose:
- *  the ask was for logs to EXIST, and a knob nobody turns is a schema entry, a parity field and a
- *  snapshot re-bless for nothing. Promoting it later means one entry beside `inboxRetentionDays`
- *  and one more field threaded through registry.ts's VaultContext build. */
+ *  its own retention — no separate cron or ticker. `daemon.keepLogs` turns the prune off entirely
+ *  rather than tuning this window: the setting exists so a whole history is there to debug. */
 export const ACTIVITY_RETENTION_DAYS = 30
 
 // ── Platform service names ──────────────────────────────────────────────────

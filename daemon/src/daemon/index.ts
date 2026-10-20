@@ -34,7 +34,7 @@ import {
     readDaemonPid,
 } from '../lib/platform.ts'
 import { augmentPath } from '../lib/childEnv.ts'
-import { logActivity, pruneActivityLogs } from '../lib/activityLog'
+import { logActivity, retainActivityLogs } from '../lib/activityLog'
 import { safeTick } from '../lib/safeTick'
 import { appRemovalWatcher } from '../lib/appRemoval'
 import {
@@ -151,8 +151,8 @@ async function startVault(
 
     // Retention runs here rather than on a ticker — brain-start is the one moment the daemon is
     // guaranteed to touch this vault, and a day-granular window does not need finer timing. Same
-    // opportunistic shape as the daemon inbox's own GC.
-    const pruned = await pruneActivityLogs(ctx.logsDir)
+    // opportunistic shape as the daemon inbox's own GC. `daemon.keepLogs` keeps every day file.
+    const pruned = await retainActivityLogs(ctx)
     if (pruned > 0) log(`Pruned ${pruned} expired activity log(s) for ${ctx.name}`)
 
     // Deliberately no `detail: ctx.root`: this log lives INSIDE that vault and every reader

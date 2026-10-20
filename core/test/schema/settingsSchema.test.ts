@@ -184,7 +184,7 @@ test('embeddings section is exactly { enabled }, a boolean that defaults off', (
     expect(embeddings.enabled.doc).toContain('keyword-only')
 })
 
-test('daemon section is exactly { backend, dream, email, enabled, inboxRetentionDays, inheritUserMcp, notifications, recall, saveSessions }', () => {
+test('daemon section is exactly { backend, dream, email, enabled, inboxRetentionDays, inheritUserMcp, keepLogs, notifications, recall, saveSessions }', () => {
     const daemon = objectFields(SETTINGS_SCHEMA.daemon)
     expect(Object.keys(daemon).sort()).toEqual([
         'backend',
@@ -193,6 +193,7 @@ test('daemon section is exactly { backend, dream, email, enabled, inboxRetention
         'enabled',
         'inboxRetentionDays',
         'inheritUserMcp',
+        'keepLogs',
         'notifications',
         'recall',
         'saveSessions',
@@ -207,6 +208,8 @@ test('daemon section is exactly { backend, dream, email, enabled, inboxRetention
     ])
     expect(daemon.inheritUserMcp.type).toBe('boolean')
     expect(daemon.inheritUserMcp.default).toBe(false)
+    expect(daemon.keepLogs.type).toBe('boolean')
+    expect(daemon.keepLogs.default).toBe(false)
     expect(daemon.notifications.type).toBe('boolean')
     expect(daemon.notifications.default).toBe(false)
     expect(daemon.saveSessions.default).toBe(false)

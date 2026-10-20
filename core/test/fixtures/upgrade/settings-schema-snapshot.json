@@ -2409,6 +2409,13 @@
     "max": null,
     "required": false
   },
+  "daemon.keepLogs": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "daemon.notifications": {
     "type": "boolean",
     "default": false,

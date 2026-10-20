@@ -54,6 +54,8 @@ interface DaemonSettings {
     inheritUserMcp: boolean
     /** settings.daemon.email — off + '' on anything missing/malformed. */
     email: { enabled: boolean; address: string }
+    /** settings.daemon.keepLogs — opt-in, default false; see VaultContext.keepLogs. */
+    keepLogs: boolean
 }
 
 /** A vault's daemon config: the `enabled` master switch + `backend`/`codexWriteAgentsMd` choices
@@ -65,6 +67,7 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
     let backend = 'claude'
     let codexWriteAgentsMd = false
     let inheritUserMcp = false
+    let keepLogs = false
     const email = { enabled: false, address: '' }
     // Settings live in the single `.settings` file; readVaultSettingsDoc walks the fallback shapes.
     const doc = (await readVaultSettingsDoc(root)) as {
@@ -72,6 +75,7 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
             enabled?: unknown
             backend?: unknown
             inheritUserMcp?: unknown
+            keepLogs?: unknown
             email?: { enabled?: unknown; address?: unknown }
         }
         codex?: { writeAgentsMd?: unknown }
@@ -82,6 +86,7 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
             backend = doc.daemon.backend.trim()
         codexWriteAgentsMd = doc.codex?.writeAgentsMd === true
         inheritUserMcp = doc.daemon?.inheritUserMcp === true
+        keepLogs = doc.daemon?.keepLogs === true
         email.enabled = doc.daemon?.email?.enabled === true
         if (typeof doc.daemon?.email?.address === 'string')
             email.address = doc.daemon.email.address.trim()
@@ -104,6 +109,7 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
         codexWriteAgentsMd,
         inheritUserMcp,
         email,
+        keepLogs,
     }
 }
 
@@ -288,6 +294,7 @@ export async function loadAllVaults(): Promise<
             s.inheritUserMcp,
         )
         ctx.email = s.email
+        ctx.keepLogs = s.keepLogs
         out.push({ ctx, enabled: s.enabled })
     }
     return out

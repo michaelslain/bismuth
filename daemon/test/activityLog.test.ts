@@ -14,6 +14,7 @@ import {
     expiredActivityFiles,
     logActivity,
     pruneActivityLogs,
+    retainActivityLogs,
     type ActivityEvent,
 } from '../src/lib/activityLog'
 import type { VaultContext } from '../src/lib/config'
@@ -208,4 +209,18 @@ test('pruneActivityLogs returns 0 for a missing dir instead of throwing', async 
     await expect(
         pruneActivityLogs(join(logsDir, 'does-not-exist'), 30, new Date()),
     ).resolves.toBe(0)
+})
+
+test('retainActivityLogs prunes expired days by default and keeps every day under keepLogs', async () => {
+    writeFileSync(join(logsDir, 'activity-2020-01-01.jsonl'), '{}\n')
+    const today = activityFileName(new Date())
+    writeFileSync(join(logsDir, today), '{}\n')
+
+    const kept = { logsDir, keepLogs: true } as unknown as VaultContext
+    expect(await retainActivityLogs(kept)).toBe(0)
+    expect((await readdir(logsDir)).sort()).toEqual(['activity-2020-01-01.jsonl', today].sort())
+
+    const pruning = { logsDir, keepLogs: false } as unknown as VaultContext
+    expect(await retainActivityLogs(pruning)).toBe(1)
+    expect(await readdir(logsDir)).toEqual([today])
 })
