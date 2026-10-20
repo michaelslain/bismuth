@@ -267,7 +267,7 @@ export const ReadOnly: Story = {
     },
 }
 
-/** No row has a valid location: the `no rows have a location` empty state over the bare basemap. */
+/** No row has a valid location: the lat / lng hint, as the one empty line, over the bare basemap. */
 export const Empty: Story = {
     render: () => {
         const view = { type: 'map' as const }
@@ -285,7 +285,7 @@ export const Empty: Story = {
     },
     play: async ({ canvasElement }) => {
         expect(
-            await within(canvasElement).findByText('no rows have a location'),
+            await within(canvasElement).findByText(/properties to a note to/),
         ).toBeVisible()
     },
 }

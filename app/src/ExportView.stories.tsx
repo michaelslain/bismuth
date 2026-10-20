@@ -381,7 +381,7 @@ export const BaseData: Story = {
     },
 }
 
-/** A cards base whose source resolves no rows: the sheet says `no rows` in the view's body rather
+/** A cards base whose source resolves no rows: the sheet says `no matches` in the view's body rather
  *  than handing over a blank page. */
 export const BaseEmpty: Story = {
     render: () => {
@@ -401,7 +401,7 @@ export const BaseEmpty: Story = {
     play: async ({ canvasElement }) => {
         await waitFor(() => {
             const empty = frameDoc(canvasElement)?.querySelector('.exp-empty')
-            expect(empty?.textContent).toBe('no rows')
+            expect(empty?.textContent).toBe('no matches')
         })
     },
 }

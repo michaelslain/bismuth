@@ -46,7 +46,7 @@ import { claimNativeDrop } from '../nativeDropRouting'
 import { GROUP_PALETTE, autoGroupColor, claimedSlots } from './groupHue'
 import { pushToast } from '../ui/ToastHost'
 import Callout from '../ui/Callout'
-import EmptyState from '../ui/EmptyState'
+import QueryEmpty from './QueryEmpty'
 import InlineCode from '../ui/InlineCode'
 import styles from './KanbanView.module.css'
 
@@ -640,12 +640,10 @@ export function KanbanView(props: {
                 ref={rootEl}
                 style={{ '--kb-drag-h': `${drag.dragH()}px` }}
             >
-                {/* No columns at all (no rows, none pinned): say so, centred in the board, rather than
+                {/* No columns at all (no rows, none pinned): say so in the one empty line, rather than
                     painting a blank lane. A writable board still gets its add-column ghost after it. */}
                 <Show when={columnKeys().length === 0}>
-                    <EmptyState fill title="no cards">
-                        nothing in this view matches its filters
-                    </EmptyState>
+                    <QueryEmpty flush />
                 </Show>
                 {/* Columns are keyed by their group KEY (a stable string), so a header reorder MOVES the
                     column DOM (FLIP-animated via data-kbcol) rather than re-rendering every column's

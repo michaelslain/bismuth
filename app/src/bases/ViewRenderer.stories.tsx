@@ -63,13 +63,13 @@ export const Heatmap = kind(
     { type: 'heatmap', x: 'due' },
     'right-click a day',
 )
-export const Map = kind({ type: 'map' }, 'no rows have a location')
+export const Map = kind({ type: 'map' }, 'properties to a note to pin it')
 
-/** The five ROW kinds with nothing to show. They must agree on where the empty state sits: the
- *  block is centred in the view area (`EmptyState fill`), not padded down from the top or left
- *  blank. Measured as the block's centre against the frame's, so a kind that drifts back to
- *  top-padded placement fails here instead of in a screenshot. */
-function empty(view: ViewConfig, title: string, dxTolerance = 24): Story {
+/** The five ROW kinds with nothing to show. They must agree on the empty state: one `no matches`
+ *  line (QueryEmpty) at the top-left of the view area, where the first row would start — never
+ *  centred, never a heading. Measured against the frame, so a kind that drifts back to a centred
+ *  block fails here instead of in a screenshot. */
+function empty(view: ViewConfig): Story {
     return {
         args: {
             ...argsFor(view),
@@ -84,33 +84,26 @@ function empty(view: ViewConfig, title: string, dxTolerance = 24): Story {
             </div>
         ),
         play: async ({ canvasElement }) => {
-            const block = () =>
-                canvasElement.querySelector<HTMLElement>('[data-testid="ui-empty-block"]')
-            await waitFor(() => expect(block()?.textContent).toContain(title))
+            const line = () =>
+                canvasElement.querySelector<HTMLElement>('[data-testid="query-empty"]')
+            await waitFor(() => expect(line()?.textContent).toBe('no matches'))
             const scroller = canvasElement.querySelector<HTMLElement>('[data-testid="empty-frame"]')!
             const frame = scroller.getBoundingClientRect()
-            // The empty block fits UNDER the header: a `fill` block as tall as the whole frame would
-            // push the scroller's content one header height past its own box.
             expect(scroller.scrollHeight).toBeLessThanOrEqual(scroller.clientHeight)
-            const box = block()!.getBoundingClientRect()
-            const dx = box.left + box.width / 2 - (frame.left + frame.width / 2)
-            const dy = box.top + box.height / 2 - (frame.top + frame.height / 2)
-            // Centred on x within `dxTolerance`; on y within a quarter of the frame (a table's header
-            // row sits above its empty block, so exact centring is not expected there).
-            expect(Math.abs(dx)).toBeLessThan(dxTolerance)
-            expect(Math.abs(dy)).toBeLessThan(frame.height / 4)
+            const box = line()!.getBoundingClientRect()
+            const range = document.createRange()
+            range.selectNodeContents(line()!)
+            const text = range.getBoundingClientRect()
+            // Text starts within the view gutter on the left, in the top band of the frame (a
+            // table's header row sits above it).
+            expect(text.left - frame.left).toBeLessThan(40)
+            expect(box.top - frame.top).toBeLessThan(80)
         },
     }
 }
 
-export const EmptyTable = empty({ type: 'table' }, 'no rows')
-export const EmptyCards = empty({ type: 'cards' }, 'no rows')
-export const EmptyList = empty({ type: 'list' }, 'no rows')
-export const EmptyBullets = empty({ type: 'bullets' }, 'no rows')
-export const EmptyKanban = empty(
-    { type: 'kanban', groupBy: { property: 'status' } },
-    'no cards',
-    // Kanban is writable here, so its add-column ghost takes the right edge of the board and the
-    // block centres in what is left — about half the ghost's width off the frame's centre.
-    120,
-)
+export const EmptyTable = empty({ type: 'table' })
+export const EmptyCards = empty({ type: 'cards' })
+export const EmptyList = empty({ type: 'list' })
+export const EmptyBullets = empty({ type: 'bullets' })
+export const EmptyKanban = empty({ type: 'kanban', groupBy: { property: 'status' } })

@@ -120,7 +120,7 @@ export const YearOfData: Story = {
 /** `x` resolves to a non-date column (status) — the empty state must show, not a blank grid. */
 export const NonDateX: Story = {
     play: async ({ canvasElement }) => {
-        await waitFor(() => expect(canvasElement.textContent).toContain('no data to chart'))
+        await waitFor(() => expect(canvasElement.textContent).toContain('set an x date column in view settings'))
         expect(canvasElement.textContent).toContain('set an x date column')
     },
     render: () => {

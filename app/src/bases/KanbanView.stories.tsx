@@ -91,8 +91,8 @@ export const Empty: Story = {
     play: async ({ canvasElement }) => {
         await waitFor(() =>
             expect(
-                canvasElement.querySelector('[data-testid="ui-empty-block"]')?.textContent,
-            ).toContain('no cards'),
+                canvasElement.querySelector('[data-testid="query-empty"]')?.textContent,
+            ).toBe('no matches'),
         )
         expect(canvasElement.querySelectorAll('[data-kbcol]').length).toBe(0)
     },

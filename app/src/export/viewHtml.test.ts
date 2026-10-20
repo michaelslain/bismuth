@@ -110,15 +110,15 @@ describe('a view with zero rows', () => {
         ['cards', cardsHtml],
         ['kanban', kanbanHtml],
         ['list', listHtml],
-    ] as const)('%s says "no rows" instead of an empty wrapper', (_, fn) => {
+    ] as const)('%s says "no matches" instead of an empty wrapper', (_, fn) => {
         const { body, css } = fn(cfg, empty, DARK)
-        expect(body).toBe('<div class="exp-empty">no rows</div>')
+        expect(body).toBe('<div class="exp-empty">no matches</div>')
         expect(css).toContain('.exp-empty')
     })
 
     test('no groups at all reads the same', () => {
         expect(cardsHtml(cfg, vr(['file.name'], []), DARK).body).toContain(
-            '>no rows<',
+            '>no matches<',
         )
     })
 })

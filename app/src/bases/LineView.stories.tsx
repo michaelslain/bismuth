@@ -317,7 +317,7 @@ export const Empty: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        await waitFor(() => expect(canvasElement.textContent).toContain('no data to chart'))
+        await waitFor(() => expect(canvasElement.textContent).toContain('no matches'))
         expect(canvasElement.querySelector('pre')).toBeNull()
     },
 }

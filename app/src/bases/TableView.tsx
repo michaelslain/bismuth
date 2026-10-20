@@ -25,7 +25,7 @@ import { todayISO } from '../../../core/src/dates'
 import { checkStatus, isOverdue } from './taskDisplay'
 import TaskCheck from './TaskCheck'
 import { settings } from '../settings'
-import EmptyState from '../ui/EmptyState'
+import QueryEmpty from './QueryEmpty'
 import { canWriteStoredRow, isStoredPlaceholder } from './taskWrite'
 import { commitMeta } from './rowWrites'
 import { useRowEditor } from './useRowEditor'
@@ -520,9 +520,7 @@ export function TableView(props: {
                 still legible, and the table's own mount-time width seeding never has to wait
                 for a first row. */}
             <Show when={allRows().length === 0}>
-                <EmptyState fill title="no rows" class={styles.emptyFill}>
-                    nothing in this view matches its filters
-                </EmptyState>
+                <QueryEmpty flush class={styles.emptyRow} />
             </Show>
         </div>
     )

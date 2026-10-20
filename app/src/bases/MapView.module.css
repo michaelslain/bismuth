@@ -52,7 +52,7 @@
   font-size: var(--fs-micro);
   line-height: 1;
 }
-/* Empty state (ui/EmptyState) centred over the basemap; the map underneath stays pannable. */
+/* The empty line (QueryEmpty) centred over the basemap; the map underneath stays pannable. */
 .mapEmpty {
   position: absolute;
   inset: 0;
@@ -61,14 +61,12 @@
   justify-content: center;
   pointer-events: none;
 }
-/* The empty-state text sits on a plate: without one it is typed straight onto the continent
-   strokes and the two read as one tangle. */
+/* A flat plate under the line, so faint text is not typed straight onto a continent's stroke. */
 .mapEmptyPlate {
-  padding: var(--sp-6) var(--sp-7);
+  padding: var(--sp-3) var(--sp-5);
   background: var(--surface-1);
   border: var(--rule-soft);
   border-radius: var(--r-0);
-  box-shadow: var(--lift);
 }
 /* Floating hint that follows the cursor while a row is armed for placement. */
 .mapPlacingLabel {

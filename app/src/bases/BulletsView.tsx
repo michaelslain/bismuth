@@ -6,7 +6,7 @@ import PlainButton from '../ui/PlainButton'
 import { canWriteStoredRow } from './taskWrite'
 import { useRowEditor } from './useRowEditor'
 import GroupHeader from '../ui/GroupHeader'
-import EmptyState from '../ui/EmptyState'
+import QueryEmpty from './QueryEmpty'
 import styles from './BulletsView.module.css'
 
 /**
@@ -55,9 +55,7 @@ export function BulletsView(props: {
         <Show
             when={!empty()}
             fallback={
-                <EmptyState fill title="no rows">
-                    nothing in this view matches its filters
-                </EmptyState>
+                <QueryEmpty />
             }
         >
             <div class={styles.bullets}>

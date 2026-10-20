@@ -190,7 +190,7 @@ aggregate: sum
 That base owns its rows (it has no `source:`), so clicking a day logs a value straight into the file; no daily notes are needed.
 
 - The grid is always one cell per day: `bin` is ignored and the view bar has no `bin` picker.
-- `x` must be a date column. With a category `x`, or no dated rows yet, the view shows `no data to chart` and no grid.
+- `x` must be a date column. With a category `x`, or no dated rows yet, the view shows `set an x date column in view settings` and no grid. Bar, line and stat views with nothing to plot show `no matches`.
 - The grid shows as many weeks as fit the pane, up to 53, and ends at today or the latest dated row, whichever is later.
 - Under the grid, one line counts days with a value above 0 and the current and longest runs of consecutive days: `18 days logged // current streak 0 days // longest streak 18 days`. The current streak is 0 unless the latest logged day is today or yesterday.
 

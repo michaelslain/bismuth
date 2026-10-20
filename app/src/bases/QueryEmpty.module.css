@@ -1,0 +1,3 @@
+/* One line at the first row's text inset: the view gutter sideways, a row's breathing room above. */
+.queryEmpty { margin: 0; padding: var(--sp-4) var(--view-gutter); }
+.flush { padding-inline: 0; }

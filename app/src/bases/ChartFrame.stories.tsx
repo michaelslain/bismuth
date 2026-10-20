@@ -39,7 +39,7 @@ export const WithContent: Story = {
     },
 }
 
-/** Empty: the one `no data to chart` state renders instead of `children`. */
+/** Empty: the one `no matches` line renders instead of `children`. */
 export const Empty: Story = {
     args: {
         empty: true,
@@ -47,7 +47,7 @@ export const Empty: Story = {
     },
 }
 
-/** Empty with a hint: the same title, plus the view's own remedy underneath (the heatmap's). */
+/** Empty with a hint: the view's own remedy (the heatmap's) replaces `no matches` in the same line. */
 export const EmptyWithHint: Story = {
     args: {
         empty: true,

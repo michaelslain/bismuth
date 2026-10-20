@@ -4,9 +4,8 @@
    with its own module — this file is the table shell and the data cell. */
 /* One root for the table + its empty state, so the parent sees a single child. */
 .frame {
-  /* A flex column that fills the pane, so the empty state (`fill`) centres in whatever room sits
-     under the header instead of padding itself down from it — the same placement every other view
-     kind gives its empty state. A populated table is unaffected (the table is `flex: none`). */
+  /* A flex column that fills the pane; the table is `flex: none`, so an empty result's line sits
+     directly under the header. */
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -18,9 +17,8 @@
      which is the room it needs). */
   padding: calc(var(--ascii-tile-h, var(--cell-h)) / 2) var(--view-gutter);
 }
-/* `fill` is min-height: 100% — as tall as the whole frame while the header sits above it, which overflows
-   the scroller by one header height. Under the header it only needs the room that is left. */
-.frame > .emptyFill { min-height: 0; }
+/* The empty line starts where a cell's text does: one tile in from the left `|`. */
+.frame > .emptyRow { padding-inline: var(--ascii-tile-w, 1ch); }
 .table { flex: none; border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
 /* The cell is the typed grid's HOST (position: relative, no clipping — see AsciiCellEdges), so it
    carries no padding and no overflow of its own: the gutter and the ellipsis live on `.clip`,

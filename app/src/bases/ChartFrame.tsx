@@ -2,16 +2,16 @@ import type { Component, JSX } from 'solid-js'
 import { Show, onCleanup, onMount } from 'solid-js'
 import type { ChartGrid } from './chartColumns'
 import { columnsFor } from './chartColumns'
-import EmptyState from '../ui/EmptyState'
+import QueryEmpty from './QueryEmpty'
 import Text from '../ui/Text'
 import styles from './ChartFrame.module.css'
 
 export type ChartFrameProps = {
-    /** True when the view has nothing to plot — renders the one `no data to chart` empty state
+    /** True when the view has nothing to plot — renders the one `no matches` line (QueryEmpty)
      *  instead of `children`. */
     empty: boolean
-    /** Optional body under that title, for a view whose empty state has a specific remedy (the
-     *  heatmap's missing date column). The title itself is not overridable. */
+    /** Replaces `no matches` in that line, for a view whose empty state has a specific remedy
+     *  (the heatmap's missing date column). */
     emptyHint?: JSX.Element
     class?: string
     /** One line above the body — see ui/Readout. */
@@ -27,7 +27,7 @@ export type ChartFrameProps = {
 
 /**
  * The chart chrome shared by Bar/Heatmap/Line/Stat views (bases-*.card.html): fixed outer
- * padding + scroll, one consistent empty state (`ui/EmptyState`), and — new here — the readout/footer/
+ * padding + scroll, one consistent empty state (`QueryEmpty`), and — new here — the readout/footer/
  * drill slots plus a live character-grid measurement every chart view needs to lay out its own
  * text grid. The body wraps a hidden 10-character probe in its own font; `cellWidth` is a tenth
  * of its rendered width, and `columns` is the body's content width divided by that, floored at
@@ -80,7 +80,7 @@ const ChartFrame: Component<ChartFrameProps> = props => {
                 </Text>
                 <Show
                     when={!props.empty}
-                    fallback={<EmptyState fill title="no data to chart">{props.emptyHint}</EmptyState>}
+                    fallback={<QueryEmpty flush>{props.emptyHint}</QueryEmpty>}
                 >
                     {props.children}
                 </Show>

@@ -47,7 +47,7 @@ Two `.settings` keys also shape the map; both are in the [settings reference](..
 
 A row becomes a pin when both coordinates are numbers, latitude is within -85 to 85 and longitude within -180 to 180. Web Mercator cannot draw the poles, so the latitude range stops at ±85.
 
-Any other row is unplaced: it draws no pin and shows no error, but the map's right-click menu offers to place it (see "Place, move and remove pins" below). When no row has a location, the map shows **no rows have a location**.
+Any other row is unplaced: it draws no pin and shows no error, but the map's right-click menu offers to place it (see "Place, move and remove pins" below). When no row has a location, the map shows `add lat / lng properties to a note to pin it` over the bare basemap; when the query returns no rows at all, it shows `no matches`.
 
 A pin's label is the row's value in the view's first column, which is `file.name` unless `order` puts another property first.
 

@@ -50,7 +50,7 @@ function fieldsHtml(
 
 // A view that resolves zero rows says so, rather than exporting an empty sheet.
 const hasRows = (vr: ViewResult): boolean => vr.groups.some(g => g.rows.length > 0)
-const EMPTY = `<div class="exp-empty">no rows</div>`
+const EMPTY = `<div class="exp-empty">no matches</div>`
 
 function groupHeader(key: string, p: ThemePalette): string {
     return key === ''
@@ -172,7 +172,7 @@ function fieldCss(t: ThemePalette): string {
   .exp-group { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
     margin: 1.2rem 0 0.5rem; }
   .exp-cardfields { display: flex; flex-direction: column; gap: 1px; }
-  .exp-empty { color: ${t.muted}; font-size: 0.9rem; }`
+  .exp-empty { color: ${t.muted}; font-size: 0.9rem; font-style: italic; }`
 }
 
 function cardsCss(t: ThemePalette): string {

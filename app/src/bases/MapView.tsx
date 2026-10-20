@@ -18,7 +18,7 @@ import { api } from '../api'
 import { pushToast } from '../ui/toastStore'
 import Text from '../ui/Text'
 import InlineCode from '../ui/InlineCode'
-import EmptyState from '../ui/EmptyState'
+import QueryEmpty from './QueryEmpty'
 import MapBasemap from './MapBasemap'
 import MapPin from './MapPin'
 import MapControls from './MapControls'
@@ -814,11 +814,18 @@ export function MapView(props: {
 
                 <Show when={markers().length === 0}>
                     <div class={styles.mapEmpty}>
-                        <EmptyState class={styles.mapEmptyPlate} title="no rows have a location">
-                            add <InlineCode>{latKey()}</InlineCode> /{' '}
-                            <InlineCode>{lngKey()}</InlineCode> properties to a
-                            note to pin it
-                        </EmptyState>
+                        <div class={styles.mapEmptyPlate}>
+                            <QueryEmpty flush>
+                                <Show
+                                    when={props.result.groups.some(g => g.rows.length > 0)}
+                                    fallback="no matches"
+                                >
+                                    add <InlineCode>{latKey()}</InlineCode> /{' '}
+                                    <InlineCode>{lngKey()}</InlineCode> properties to a note to
+                                    pin it
+                                </Show>
+                            </QueryEmpty>
+                        </div>
                     </div>
                 </Show>
             </div>

@@ -8,7 +8,7 @@ import { titleOf } from './kanbanMeta'
 import { useRowEditor } from './useRowEditor'
 import TaskRow from './TaskRow'
 import GroupHeader from '../ui/GroupHeader'
-import EmptyState from '../ui/EmptyState'
+import QueryEmpty from './QueryEmpty'
 import NoteLink from '../ui/NoteLink'
 import Label from '../ui/Label'
 import Text from '../ui/Text'
@@ -101,9 +101,7 @@ export function ListView(props: {
         <Show
             when={!empty()}
             fallback={
-                <EmptyState fill title="no rows">
-                    nothing in this view matches its filters
-                </EmptyState>
+                <QueryEmpty />
             }
         >
             <div class={styles.list}>

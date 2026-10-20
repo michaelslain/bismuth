@@ -56,7 +56,7 @@ group: status
 
 `of:` and `tasks:` are exclusive: with both, `of:` wins and `tasks:` and `from:` are ignored.
 
-A flat block never iterates the vault. A block with neither `of:` nor `tasks:`, or with `from:` alone, has no source and shows an empty state. To list notes, use the inline config form below, or point `of:` at a base whose `source` is `notes`.
+A flat block never iterates the vault. A block with neither `of:` nor `tasks:`, or with `from:` alone, has no source and shows `no matches`, the faint italic line every view kind shows for an empty result. To list notes, use the inline config form below, or point `of:` at a base whose `source` is `notes`.
 
 If `view:` is missing or not a valid kind, the block renders as a `list` for a tasks query and a `table` for everything else, without an error.
 

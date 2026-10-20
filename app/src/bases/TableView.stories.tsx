@@ -680,8 +680,8 @@ export const RightClickOpensRowEditor: Story = {
     },
 }
 
-/** A zero-row base is never a blank pane: the header stays and the `no rows` empty state sits
- *  under it. */
+/** A zero-row base is never a blank pane: the header stays and the `no matches` line sits
+ *  directly under it, starting at a cell's text inset. */
 export const Empty: Story = {
     render: () => (
         <TableView
@@ -690,11 +690,13 @@ export const Empty: Story = {
         />
     ),
     play: async ({ canvasElement }) => {
-        const empty = canvasElement.querySelector(
-            '[data-testid="ui-empty-block"]',
-        )!
-        expect(empty.textContent).toContain('no rows')
-        expect(empty.textContent).toContain('nothing in this view matches its filters')
+        const empty = canvasElement.querySelector<HTMLElement>('[data-testid="query-empty"]')!
+        expect(empty.textContent).toBe('no matches')
+        // Directly under the header, never overlapping it.
+        const head = canvasElement.querySelector('thead')!.getBoundingClientRect()
+        const line = empty.getBoundingClientRect()
+        expect(line.top).toBeGreaterThanOrEqual(head.bottom - 1)
+        expect(line.top - head.bottom).toBeLessThan(24)
         expect(canvasElement.querySelectorAll('tbody tr').length).toBe(0)
         // The table and its empty state share ONE root element.
         const table = canvasElement.querySelector('table')!

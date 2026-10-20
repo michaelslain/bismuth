@@ -772,6 +772,63 @@ export const QueryBlockSizing: Story = {
     },
 }
 
+const QUERY_EMPTY_TEXT = `Books I'm partway through, pulled from every note tagged \`reading\`.
+
+\`\`\`query
+source: notes where file.hasTag("reading")
+view: table
+order: [file.name, note.author, note.status]
+\`\`\`
+
+Nothing matched yet, so the block above says so in one quiet line and the note carries on.
+
+\`\`\`query
+source: notes where file.hasTag("reading")
+view: cards
+\`\`\`
+
+Prose after the second block.
+`
+
+/** An embedded \`\`\`query block whose result is empty, inside a real note: one faint italic
+ *  \`no matches\` line (bases/QueryEmpty) where the first row would start, under the table's
+ *  header and at the cards' first slot, with the note's prose around it. */
+export const QueryBlockEmpty: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { 'Reading log.md': QUERY_EMPTY_TEXT },
+                rows: [],
+            }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Reading log.md"
+                    initialText={QUERY_EMPTY_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const lines = await waitFor(() => {
+            const els = canvasElement.querySelectorAll<HTMLElement>(
+                '.bismuth-query-block [data-testid="query-empty"]',
+            )
+            if (els.length < 2) throw new Error('query blocks not rendered yet')
+            return els
+        })
+        for (const el of lines) {
+            await expect(el.textContent).toBe('no matches')
+            await expect(getComputedStyle(el).fontStyle).toBe('italic')
+        }
+    },
+}
+
 // A table that must actually WRAP: 6 columns, 8 rows, long free-text cells, a very long unbroken
 // token, and mixed content (a wikilink, inline code, a number column). The repo's only other table
 // fixture is a 2x2 of single characters, which cannot exercise any of this — and note tables just

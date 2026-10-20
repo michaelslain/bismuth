@@ -11,7 +11,7 @@ import CardCover from './CardCover'
 import { autoGroupColor, claimedSlots } from './groupHue'
 import { useRowEditor } from './useRowEditor'
 import GroupHeader from '../ui/GroupHeader'
-import EmptyState from '../ui/EmptyState'
+import QueryEmpty from './QueryEmpty'
 import { isActivateKey } from '../ui/widgetKeys'
 import { titleOf } from './kanbanMeta'
 import styles from './CardsView.module.css'
@@ -141,9 +141,7 @@ export function CardsView(props: {
         <Show
             when={!empty()}
             fallback={
-                <EmptyState title="no rows">
-                    nothing in this view matches its filters
-                </EmptyState>
+                <QueryEmpty />
             }
         >
             <div class={styles.cards}>

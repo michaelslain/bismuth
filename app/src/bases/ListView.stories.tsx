@@ -297,7 +297,7 @@ export const TasksWithMetadata: Story = {
     },
 }
 
-/** A zero-row view shows the `no rows` empty state. */
+/** A zero-row view shows the one `no matches` line. */
 export const Empty: Story = {
     render: () => (
         <ListView
@@ -307,9 +307,6 @@ export const Empty: Story = {
     ),
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        expect(c.getByText('no rows')).toBeInTheDocument()
-        expect(
-            c.getByText('nothing in this view matches its filters'),
-        ).toBeInTheDocument()
+        expect(c.getByText('no matches')).toBeInTheDocument()
     },
 }
