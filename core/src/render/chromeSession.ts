@@ -135,6 +135,25 @@ export async function launchChrome(
         { stdio: 'ignore' },
     )
 
+    // A REAPER, because no handler in this process runs on SIGKILL. An agent's watchdog or tool timeout
+    // SIGKILLs the tool by pid, Chrome is not in that kill, and it is reparented to launchd and lives on
+    // for days with its renderer tree. This detached shell polls the parent and kills Chrome and its
+    // profile once the parent is gone; close() kills the reaper first so a long-lived parent never
+    // leaves it holding a pid that could be reused.
+    const reaper =
+        chrome.pid === undefined
+            ? null
+            : spawn(
+                  '/bin/sh',
+                  [
+                      '-c',
+                      `while kill -0 ${process.pid} 2>/dev/null; do sleep 1; done; kill -9 ${chrome.pid} 2>/dev/null; sleep 1; rm -rf "$0"`,
+                      profile,
+                  ],
+                  { stdio: 'ignore', detached: true },
+              )
+    reaper?.unref()
+
     let socket: WebSocket | null = null
     let closed = false
     // SIGKILL, not the default SIGTERM, and then RETRY the delete. A gracefully-terminating Chrome keeps
@@ -144,6 +163,9 @@ export async function launchChrome(
     const close = () => {
         if (closed) return
         closed = true
+        try {
+            reaper?.kill('SIGKILL')
+        } catch {}
         try {
             socket?.close()
         } catch {}
@@ -164,9 +186,9 @@ export async function launchChrome(
         }
     }
     // "exit" covers every path out — the clean run, an exit(1) on drift, an unhandled throw. The signal
-    // handlers cover Ctrl-C, which previously leaked in all three tools.
+    // handlers cover Ctrl-C and a closed terminal; SIGKILL is the reaper's.
     process.on('exit', close)
-    for (const sig of ['SIGINT', 'SIGTERM'] as const)
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const)
         process.on(sig, () => process.exit(130))
 
     let wsUrl = ''
