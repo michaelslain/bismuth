@@ -15,9 +15,13 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import ChatSessionProbe from './ChatSessionProbe'
 import { chatSession } from './chatSessions'
-import { retainFakeChat } from './_fakeChatSocket'
+import {
+    fakeSentUserIds,
+    pushFakeFrame,
+    retainFakeChat,
+} from './_fakeChatSocket'
 import { LAST_MODE_KEY } from './chatSessionPrefs'
-import { modelStorageKeys } from './chatProvider'
+import { modelStorageKeys, providerStorageKey } from './chatProvider'
 import type { ChatFrame, ChatManifest } from '../../../core/src/chat'
 
 const meta = {
@@ -54,10 +58,15 @@ function clearPersistedPrefs(chatId: string) {
 function SessionHarness(props: {
     chatId: string
     frames: readonly ChatFrame[]
+    /** The chat's backend; unset is the default (Claude Code). */
+    provider?: string
 }) {
     // Synchronous, in this order, before the probe's first read: clear prefs → fake socket → forget
     // → retain (the last three via retainFakeChat).
     clearPersistedPrefs(props.chatId)
+    if (props.provider)
+        localStorage.setItem(providerStorageKey(props.chatId), props.provider)
+    else localStorage.removeItem(providerStorageKey(props.chatId))
     retainFakeChat(props.chatId, props.frames)
     return <ChatSessionProbe session={chatSession(props.chatId)} />
 }
@@ -130,7 +139,8 @@ export const SendAppendsAndStreams: Story = {
     },
 }
 
-/** A send while streaming STAGES the turn: a queued user item, still one live turn. */
+/** A send while streaming goes straight to Claude Code, shown queued until it is taken up: its
+ *  `delivered` frame clears the label, and the one `done` for the merged turn ends streaming. */
 export const QueuedWhileStreaming: Story = {
     args: { session: undefined },
     render: () => (
@@ -144,6 +154,7 @@ export const QueuedWhileStreaming: Story = {
         session.setDraft('first')
         session.send()
         await expectReadout(canvasElement, 'streaming', 'true')
+        pushFakeFrame({ type: 'delivered', ids: fakeSentUserIds().slice(-1) })
         session.setDraft('second')
         session.send()
         await expectReadout(canvasElement, 'transcript', '2')
@@ -153,14 +164,65 @@ export const QueuedWhileStreaming: Story = {
         await expectReadout(canvasElement, 'awaiting', 'true')
         // Sent history excludes the queued turn.
         await expect(session.historyEntries()).toEqual(['first'])
+        const ids = session.transcript.flatMap(it =>
+            it.role === 'user' && it.deliveryId ? [it.deliveryId] : [],
+        )
+        await expect(ids.length).toBe(1)
+        pushFakeFrame({ type: 'delivered', ids })
+        await expectReadout(canvasElement, 'queued', '0')
+        await expectReadout(canvasElement, 'streaming', 'true')
+        pushFakeFrame({ type: 'done' })
+        await expectReadout(canvasElement, 'streaming', 'false')
     },
 }
 
-/** stop(): streaming ends, the queued bubble comes out, and its text is restored to the draft. */
+/** Stop after a message went mid-turn: streaming ends, the message stays (it was sent), the stopped
+ *  turn's `done` is ignored, and when the backend takes the message up its turn streams. */
+export const StopKeepsSentMidTurn: Story = {
+    args: { session: undefined },
+    render: () => (
+        <SessionHarness chatId="story-session-sent" frames={SESSION_OPEN} />
+    ),
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(live('story-session-sent').manifest()).not.toBeNull(),
+        )
+        const session = live('story-session-sent')
+        session.setDraft('first')
+        session.send()
+        // The turn starts on the first message.
+        pushFakeFrame({ type: 'delivered', ids: fakeSentUserIds().slice(-1) })
+        session.setDraft('second')
+        session.send()
+        await expectReadout(canvasElement, 'queued', '1')
+        session.stop()
+        await expectReadout(canvasElement, 'streaming', 'false')
+        await expectReadout(canvasElement, 'queued', '1')
+        await expectReadout(canvasElement, 'draft', '')
+        // The stopped turn's done: the sent message is still waiting, so nothing changes.
+        pushFakeFrame({ type: 'done' })
+        await expectReadout(canvasElement, 'queued', '1')
+        const ids = session.transcript.flatMap(it =>
+            it.role === 'user' && it.deliveryId ? [it.deliveryId] : [],
+        )
+        pushFakeFrame({ type: 'delivered', ids })
+        await expectReadout(canvasElement, 'queued', '0')
+        await expectReadout(canvasElement, 'streaming', 'true')
+        pushFakeFrame({ type: 'done' })
+        await expectReadout(canvasElement, 'streaming', 'false')
+    },
+}
+
+/** A backend that holds messages (opencode): stop() ends streaming, the held bubble comes out, and
+ *  its text is restored to the draft. */
 export const StopRestoresQueued: Story = {
     args: { session: undefined },
     render: () => (
-        <SessionHarness chatId="story-session-stop" frames={SESSION_OPEN} />
+        <SessionHarness
+            chatId="story-session-stop"
+            frames={SESSION_OPEN}
+            provider="opencode"
+        />
     ),
     play: async ({ canvasElement }) => {
         await waitFor(() =>

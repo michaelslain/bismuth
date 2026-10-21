@@ -89,6 +89,9 @@ export interface UserItem {
     queued?: boolean
     /** Joins the bubble to its entry in the queued-turns list for cancel-before-send. */
     queueId?: string
+    /** Already sent to a backend that reads messages mid-turn, which has not taken it up yet. Shown
+     *  as queued with no cancel: it cannot be called back. A `delivered` frame clears it. */
+    deliveryId?: string
 }
 export interface AssistantItem {
     role: 'assistant'
@@ -239,6 +242,22 @@ export function applyChatFrame(
                 })
             })
             return true
+
+        case 'delivered': {
+            let touched = false
+            for (const item of transcript) {
+                if (
+                    item.role === 'user' &&
+                    item.deliveryId &&
+                    frame.ids.includes(item.deliveryId)
+                ) {
+                    item.queued = false
+                    item.deliveryId = undefined
+                    touched = true
+                }
+            }
+            return touched
+        }
 
         case 'result':
             // The turn's muted footer (turns + cost). The `isError` flag ALSO raises ChatView's inline

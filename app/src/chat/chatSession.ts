@@ -85,7 +85,13 @@ import { installedBackendIds, loadAgentAvailability } from './agentAvailability'
 import { restoreQueuedComposerState } from './chatQueueRestore'
 import { lastChange } from '../serverVersion'
 import { vaultTree, refreshVaultTree } from '../treeStore'
-import { gateDone, gateError, gateStop } from './chatTurnGate'
+import {
+    deliveryDone,
+    gateDone,
+    gateError,
+    gateStop,
+    settleDelivered,
+} from './chatTurnGate'
 import {
     reconcilePermissionMode,
     type PermissionMode,
@@ -500,6 +506,11 @@ export function createChatSession(
     let disposed = false
     // Stopped turns whose `done` has not arrived yet (chatTurnGate.ts).
     let staleDones = 0
+    // Ids of messages sent to a mid-turn backend that it has not taken up yet (chatTurnGate.ts).
+    let undelivered: string[] = []
+    // Claude Code reads a message sent mid-turn into the running turn; other backends get it held
+    // here until their turn ends.
+    const midTurn = () => providerCan(provider(), 'midTurnMessages')
     // Bumped on every rebind; an async resume replay bails when it no longer holds the latest.
     let bindGen = 0
     // Latched false at each new/resumed session: the desired mode/effort/model are pushed on the
@@ -629,13 +640,27 @@ export function createChatSession(
                 applyFrameToTranscript(frame)
                 break
             case 'done': {
-                const gate = gateDone(staleDones)
+                if (midTurn()) {
+                    const d = deliveryDone(undelivered, frame.idle)
+                    if (!d.pending.length && undelivered.length)
+                        releaseUndelivered()
+                    undelivered = d.pending
+                    if (d.finished) setStreaming(false)
+                    break
+                }
+                const gate = gateDone(staleDones, frame.idle)
                 staleDones = gate.stale
                 if (!gate.finished) break // the stopped turn's done — a newer turn may be running
                 setStreaming(false)
                 dispatchQueued()
                 break
             }
+            case 'delivered':
+                undelivered = settleDelivered(undelivered, frame.ids)
+                applyFrameToTranscript(frame)
+                // A turn now runs on it — after a Stop, the message sent mid-turn still gets its answer.
+                setStreaming(true)
+                break
             case 'models':
                 setModels(frame.models)
                 break
@@ -662,6 +687,7 @@ export function createChatSession(
                 break
             case 'error':
                 staleDones = gateError() // an error ends the turn with no `done`; nothing stale can still arrive
+                releaseUndelivered()
                 setStreaming(false)
                 if (frame.code === 'no-claude') setSetupError('claude')
                 else if (frame.code === 'no-opencode') setSetupError('opencode')
@@ -716,6 +742,15 @@ export function createChatSession(
             }),
         )
         setStreaming(true)
+    }
+
+    /** Messages the backend will never take up (the turn errored, or a reconnect found it idle) stop
+     *  showing as queued: they stay in the transcript as sent. */
+    const releaseUndelivered = () => {
+        if (!undelivered.length) return
+        const ids = undelivered
+        undelivered = []
+        applyFrameToTranscript({ type: 'delivered', ids })
     }
 
     const cancelQueued = (queueId: string) => {
@@ -1008,6 +1043,49 @@ export function createChatSession(
         const bubbleImages = atts.map(
             a => `data:${a.mediaType};base64,${a.data}`,
         )
+        const images = atts.map(a => ({
+            media_type: a.mediaType,
+            data: a.data,
+        }))
+        // An id the backend echoes in `delivered` once it takes the message up (mid-turn backends).
+        const messageId = midTurn() ? crypto.randomUUID() : undefined
+        // Mid-turn on a backend that reads it: send now, shown queued until the backend takes it up.
+        if (streaming() && messageId) {
+            if (
+                !sendJson({
+                    type: 'user',
+                    id: messageId,
+                    text: wire,
+                    provider: provider(),
+                    ...(images.length ? { images } : {}),
+                })
+            ) {
+                setTurnError(
+                    'Not connected to the backend — message not sent. Reconnecting…',
+                )
+                return
+            }
+            undelivered = [...undelivered, messageId]
+            setTranscript(
+                produce(
+                    m =>
+                        void m.push({
+                            role: 'user',
+                            text,
+                            images: bubbleImages.length
+                                ? bubbleImages
+                                : undefined,
+                            queued: true,
+                            deliveryId: messageId,
+                        }),
+                ),
+            )
+            setDraft('')
+            setAttachments([])
+            clearChatReferences(chatId)
+            emitAppend(true)
+            return
+        }
         // Mid-turn: STAGE the message with its context captured now; `done` dispatches it.
         if (streaming()) {
             const id = crypto.randomUUID()
@@ -1032,13 +1110,10 @@ export function createChatSession(
             emitAppend(true)
             return
         }
-        const images = atts.map(a => ({
-            media_type: a.mediaType,
-            data: a.data,
-        }))
         if (
             !sendJson({
                 type: 'user',
+                ...(messageId ? { id: messageId } : {}),
                 text: wire,
                 provider: provider(),
                 ...(images.length ? { images } : {}),
@@ -1051,6 +1126,7 @@ export function createChatSession(
             return
         }
         setTurnError(null)
+        if (messageId) undelivered = [...undelivered, messageId]
         setTranscript(
             produce(
                 m =>
@@ -1092,9 +1168,10 @@ export function createChatSession(
         setQueuedTurns([])
         setTranscript(
             produce(m => {
+                // Held turns come out; a message already sent mid-turn stays: it still gets its answer.
                 for (let i = m.length - 1; i >= 0; i--) {
                     const item = m[i]
-                    if (item.role === 'user' && item.queued) m.splice(i, 1)
+                    if (item.role === 'user' && item.queueId) m.splice(i, 1)
                 }
                 // The aborted turn's unanswered prompts are moot — mark them cancelled.
                 for (const item of m) {
@@ -1208,6 +1285,7 @@ export function createChatSession(
     const resetTranscript = () => {
         bindGen++
         staleDones = 0
+        undelivered = []
         setTranscript([])
         setStreaming(false)
         setTurnError(null)
@@ -1242,6 +1320,7 @@ export function createChatSession(
         started = true
         bindGen++
         staleDones = 0
+        undelivered = []
         clearTimeout(reconnectTimer)
         reconnectAttempt = 0
         modeEnforced = false

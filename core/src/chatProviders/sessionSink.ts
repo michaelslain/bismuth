@@ -88,7 +88,7 @@ export function rebindSessionSink(s: SessionSink, sink: ChatSink): void {
     reattachSessionSink(s, sink)
     if (!s.turnActive) {
         try {
-            sink({ type: 'done' })
+            sink({ type: 'done', idle: true })
         } catch {
             /* */
         }

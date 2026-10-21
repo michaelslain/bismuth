@@ -1569,6 +1569,7 @@ export function createServer(cfg: CoreConfig) {
                             images.length ? images : undefined,
                             effectiveMemoryDir(),
                             provider,
+                            typeof parsed.id === 'string' ? parsed.id : undefined,
                         )
                     } else if (
                         parsed.type === 'resume' &&

@@ -1,5 +1,5 @@
-// Visual spec for <ChatUserTurn> — one user turn: the "you" label (+ a queued note/cancel while
-// staged), the prose bubble, and any sent images. Reuses the same fixtures
+// Visual spec for <ChatUserTurn> — one user turn: the "you" label (+ a queued note, and a cancel
+// while held), the prose bubble, and any sent images. Reuses the same fixtures
 // ChatTranscript.stories.tsx composes from — one user turn, isolated.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
@@ -68,6 +68,31 @@ export const Queued: Story = {
             canvas.getByRole('button', { name: 'Cancel queued message' }),
         )
         await expect(args.onCancelQueued).toHaveBeenCalledWith('q-abc')
+    },
+}
+
+/** Sent mid-turn to Claude Code, which has not taken it up yet: the same muted "queued" note, but
+ *  no cancel — the message is already with the backend and cannot be called back. */
+export const QueuedSentMidTurn: Story = {
+    render: () => (
+        <div style={{ width: '600px' }}>
+            <ChatUserTurn
+                item={{
+                    role: 'user',
+                    text: 'Also check the daemon logs for errors.',
+                    queued: true,
+                    deliveryId: 'd-abc',
+                }}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('queued')).toBeInTheDocument()
+        await expect(
+            canvas.queryByRole('button', { name: 'Cancel queued message' }),
+        ).toBeNull()
     },
 }
 

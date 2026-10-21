@@ -135,8 +135,13 @@ export type ChatFrame =
           numTurns: number
           costUsd: number | null
       }
-    /** The turn is fully drained (pushed after `result`). */
-    | { type: 'done' }
+    /** The turn is fully drained (pushed after `result`). `idle` marks the one a reconnect sends
+     *  when no turn is running: nothing the client sent is still on its way to the backend. */
+    | { type: 'done'; idle?: true }
+    /** The backend took up these client message ids (a `user` frame's `id`): a turn started on them,
+     *  or a message sent mid-turn was read into the running turn. Only a backend with the
+     *  `midTurnMessages` capability emits it. */
+    | { type: 'delivered'; ids: string[] }
     /** The models this login can run (Query.supportedModels), fetched EAGERLY on session spawn — the
      *  SDK's `initialize` control request resolves the moment the CLI subprocess starts (NOT gated on a
      *  user turn), so this powers the header model picker the instant the chat opens, BEFORE the first
@@ -332,6 +337,7 @@ export function buildAskUserQuestionAnswer(
 export function makeUserMessage(
     text: string,
     images?: ChatImage[],
+    uuid?: string,
 ): SDKUserMessage {
     const content = (
         images && images.length
@@ -353,6 +359,8 @@ export function makeUserMessage(
         message: { role: 'user', content },
         parent_tool_use_id: null,
         session_id: '',
+        // The SDK echoes this back (replay-user-messages) when it takes the message up.
+        ...(uuid ? { uuid: uuid as SDKUserMessage['uuid'] } : {}),
     }
 }
 
@@ -385,7 +393,7 @@ interface PendingDialog {
  * promise that push()/close() later settles.
  */
 interface InputQueue extends AsyncIterable<SDKUserMessage> {
-    push(text: string, images?: ChatImage[]): void
+    push(text: string, images?: ChatImage[], uuid?: string): void
     close(): void
 }
 
@@ -395,9 +403,9 @@ function makeInputQueue(): InputQueue {
     let closed = false
 
     return {
-        push(text: string, images?: ChatImage[]) {
+        push(text: string, images?: ChatImage[], uuid?: string) {
             if (closed) return
-            const msg = makeUserMessage(text, images)
+            const msg = makeUserMessage(text, images, uuid)
             if (waiting) {
                 const resolve = waiting
                 waiting = null
@@ -505,6 +513,9 @@ interface ChatSession {
      *  Read by rebindSink: a reconnect that finds NO active turn pushes a synthetic `done` so a
      *  terminating frame lost to a dead socket can't wedge the client's streaming state forever. */
     turnActive: boolean
+    /** Client message ids pushed into the input queue that the SDK has not taken up yet. Each leaves
+     *  as a `delivered` frame — on its replay echo, or when the next turn starts. */
+    pendingIds: string[]
     /** Set by detachSink on an abnormal WS drop: frames buffer here (capped) instead of being
      *  fired into a dead socket, and rebindSink flushes them to the reconnected one — the chat
      *  analogue of terminal.ts's PTY detach/attach output buffering. */
@@ -892,8 +903,12 @@ export function formatMcpStatus(servers: ChatMcpServerSummary[]): string {
  * live session state, not a conversational turn, so turnCount/context-usage/title are left untouched
  * and a resumed session replay simply won't show it (like emitInitManifest's own synthetic manifest).
  */
-async function answerMcpCommand(session: ChatSession): Promise<void> {
+async function answerMcpCommand(
+    session: ChatSession,
+    messageId?: string,
+): Promise<void> {
     session.turnActive = true
+    if (messageId) emit(session, { type: 'delivered', ids: [messageId] })
     let text: string
     try {
         const servers = await session.q.mcpServerStatus()
@@ -932,6 +947,7 @@ export async function sendMessage(
     sink: ChatSink,
     images?: ChatImage[],
     memoryDir?: string,
+    messageId?: string,
 ): Promise<void> {
     const existing = sessions.get(chatId)
     if (existing) {
@@ -948,11 +964,10 @@ export async function sendMessage(
         // BUG #39: "/mcp" is answered locally instead of forwarded — see isMcpCommand/answerMcpCommand.
         // (images.length guard mirrors ChatView's own "slash commands can't carry images" send-time rule.)
         if (isMcpCommand(text) && !images?.length) {
-            await answerMcpCommand(existing)
+            await answerMcpCommand(existing, messageId)
             return
         }
-        existing.turnActive = true
-        existing.input.push(text, images)
+        pushTurn(existing, text, images, messageId)
         return
     }
 
@@ -967,14 +982,41 @@ export async function sendMessage(
 
     // BUG #39: same local "/mcp" interception for a chat's very FIRST turn.
     if (isMcpCommand(text) && !images?.length) {
-        await answerMcpCommand(session)
+        await answerMcpCommand(session, messageId)
         return
     }
 
     // The session's drain loop is already running (createSession starts it on spawn), so this just
     // pushes the first turn into the generator, which was parked on the empty input queue for it.
+    pushTurn(session, text, images, messageId)
+}
+
+/** Push a user message into the session's input queue. Pushed while a turn runs, the SDK reads it
+ *  into that turn at its next step (one `result` for both), else it starts the next turn. Only a
+ *  well-formed UUID rides as the SDK message's uuid: the SDK validates it. */
+function pushTurn(
+    session: ChatSession,
+    text: string,
+    images: ChatImage[] | undefined,
+    messageId: string | undefined,
+): void {
+    const id = messageId && UUID_RE.test(messageId) ? messageId : undefined
+    if (id) session.pendingIds.push(id)
     session.turnActive = true
-    session.input.push(text, images)
+    session.input.push(text, images, id)
+}
+
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Emit `delivered` for `ids` (all pending when omitted) and drop them from the pending list. */
+function deliverPending(session: ChatSession, ids?: string[]): void {
+    const taken = ids
+        ? session.pendingIds.filter(id => ids.includes(id))
+        : session.pendingIds
+    if (!taken.length) return
+    session.pendingIds = session.pendingIds.filter(id => !taken.includes(id))
+    emit(session, { type: 'delivered', ids: taken })
 }
 
 /** createSession, de-duplicated against a concurrent in-flight call for the same chatId (see
@@ -1155,6 +1197,7 @@ async function createSession(
         deniedEntries: denyEntries,
         apiKeySource: 'none',
         turnActive: false,
+        pendingIds: [],
         detached: false,
         buffer: [],
         memoryDir,
@@ -1380,9 +1423,12 @@ function spawnChatQuery(
                 // supports it — passes `--chrome` (a boolean flag, hence `null`) so the spawned claude
                 // process can launch and control a Chromium browser. No client input decides this
                 // anymore; it is unconditional the moment the capability exists.
-                ...(can('claude', 'computerUse')
-                    ? { extraArgs: { chrome: null } }
-                    : {}),
+                // `replay-user-messages` echoes each pushed user message back as the SDK takes it up,
+                // which is how a message sent mid-turn learns it was delivered (see drain).
+                extraArgs: {
+                    'replay-user-messages': null,
+                    ...(can('claude', 'computerUse') ? { chrome: null } : {}),
+                },
                 // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
                 // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
                 // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
@@ -2279,6 +2325,8 @@ async function drain(session: ChatSession): Promise<void> {
             }
 
             if (msg.type === 'system' && msg.subtype === 'init') {
+                // A turn starts by taking up everything pushed so far (a slash command never echoes).
+                deliverPending(session)
                 // "none" => the user is on a Claude subscription login (no API key), so the reported cost
                 // is notional and we hide it. Read from Claude Code's own init — the app doesn't decide this.
                 session.apiKeySource =
@@ -2356,6 +2404,12 @@ async function drain(session: ChatSession): Promise<void> {
                         })
                     }
                 }
+                continue
+            }
+
+            if (msg.type === 'user' && 'isReplay' in msg && msg.isReplay) {
+                // The echo of a message the client pushed: delivered. Its bubble came from the client.
+                deliverPending(session, msg.uuid ? [msg.uuid] : [])
                 continue
             }
 

@@ -35,6 +35,8 @@ export interface ChatTurnContext {
     text?: string
     /** Image attachments for a turn (sendMessage only). */
     images?: ChatImage[]
+    /** The client's id for this message (sendMessage only), echoed in a `delivered` frame. */
+    messageId?: string
     /** The backend's own durable session id (resumeSession only). */
     sessionId?: string
 }
@@ -113,6 +115,7 @@ type BackendModule = {
         sink: ChatSink,
         images?: ChatImage[],
         memoryDir?: string,
+        messageId?: string,
     ): unknown
     resumeSession(
         chatId: string,
@@ -156,6 +159,7 @@ const moduleBackend = (
             c.sink,
             c.images,
             c.memoryDir,
+            c.messageId,
         ),
     resumeSession: c =>
         void mod.resumeSession(

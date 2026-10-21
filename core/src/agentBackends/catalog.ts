@@ -168,6 +168,9 @@ export interface BackendCapabilities {
     cost: boolean
     /** Context-window usage is reported (the header's context pill). */
     contextUsage: boolean
+    /** A message sent while a turn runs goes straight to the backend, which reads it into that turn
+     *  (Claude Code's own mid-turn queue). False = the client holds it until the turn ends. */
+    midTurnMessages: boolean
 
     // --- the other surfaces -----------------------------------------------------------------
     /** Has an interactive TUI worth hosting in a terminal tab. */
@@ -265,6 +268,7 @@ const CLAUDE: BackendDescriptor = {
         auth: false,
         cost: true,
         contextUsage: true,
+        midTurnMessages: true,
         terminal: true,
         relayReporting: 'hooks',
         subagents: true,
@@ -349,6 +353,7 @@ const OPENCODE: BackendDescriptor = {
         // run mode still accumulates step_finish's cost. Free/subscription models report 0 either way.
         cost: true,
         contextUsage: false,
+        midTurnMessages: false,
         terminal: true,
         // No session telemetry: an opencode session still does not appear in the agents graph. Server
         // mode's session.children()/session lifecycle events COULD feed this, but wiring it into
@@ -487,6 +492,7 @@ const CODEX: BackendDescriptor = {
         auth: false,
         cost: false,
         contextUsage: false,
+        midTurnMessages: false,
         terminal: true,
         relayReporting: 'hooks',
         subagents: true,
@@ -570,6 +576,7 @@ const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
     auth: false,
     cost: false,
     contextUsage: false,
+    midTurnMessages: false,
     terminal: true,
     relayReporting: 'none',
     subagents: false,

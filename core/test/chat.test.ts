@@ -246,6 +246,12 @@ describe('makeUserMessage (content shape)', () => {
         expect(msg.message.content).toBe('/compact')
     })
 
+    test('a uuid rides as the message uuid (the SDK echoes it back as the delivery signal)', () => {
+        const id = '3f2b8c1e-5a4d-4e6f-9b0a-1c2d3e4f5a6b'
+        expect(makeUserMessage('hi', undefined, id).uuid).toBe(id)
+        expect('uuid' in makeUserMessage('hi')).toBe(false)
+    })
+
     test('an empty images array is treated as no images → still a string', () => {
         expect(makeUserMessage('hello world', []).message.content).toBe(
             'hello world',

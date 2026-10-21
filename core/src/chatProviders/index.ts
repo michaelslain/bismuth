@@ -110,6 +110,7 @@ export function sendMessage(
     images: ChatImage[] | undefined,
     memoryDir: string | undefined,
     provider: BackendId,
+    messageId?: string,
 ): void {
     const b = target(chatId, provider)
     withVisibilityGate(b.id, cwd, sink, () =>
@@ -120,6 +121,7 @@ export function sendMessage(
             sink,
             images,
             memoryDir,
+            messageId,
         }),
     )
 }

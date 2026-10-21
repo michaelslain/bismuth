@@ -85,7 +85,8 @@ The composer is a small markdown editor: live preview, `[[wikilink]]`, `#tag` an
 - Mention a note. Type `@` to search vault files, or drag a note from the file tree onto the chat pane. A referenced file is listed in the message's context for that one send.
 - Attach images. Drop or paste an image. PNG, JPEG, GIF and WebP up to 10 MB each, about 12 MB per message, are sent to the model as images. A slash command cannot carry an image; if one is staged, the send is refused with an inline error.
 - Hand over a file. Drop or paste any other file from Finder and its absolute path goes into the draft; the agent reads it where it is, and nothing is copied. See [draggables](../overview/draggables.md).
-- Queue a follow-up. A message sent while a reply streams is staged as a dimmed bubble and sent when the reply finishes. **Stop** restores staged messages and their images into the composer instead of discarding them.
+- Send while a reply streams. With Claude Code the message goes to the agent at once and shows `queued` until the agent reads it, at its next step inside the running turn or as the next turn; the reply then accounts for it. It cannot be called back, and **Stop** ends the current work but still answers a message already sent.
+  Other backends hold the message as a `queued` bubble with a cancel `[x]` and send it when the reply finishes; **Stop** restores held messages and their images into the composer.
 
 ### What does the agent know about my open notes?
 
@@ -202,7 +203,8 @@ The server answers with `ChatFrame` messages, exported from `core/src/chat.ts`:
 | `tool-result` | `{id, content, isError}` |
 | `permission` | `{id, toolName, input}`: asks the user to approve or deny |
 | `question` | `{id, questions}`: 1 to 4 multiple-choice questions |
-| `result`, `done` | A turn ended (`isError`, `numTurns`, `costUsd`), then fully drained |
+| `result`, `done` | A turn ended (`isError`, `numTurns`, `costUsd`), then fully drained; `done` carries `idle: true` when a reconnect finds no turn running |
+| `delivered` | `{ids}`: the backend took up these user-frame ids; only a `midTurnMessages` backend sends it |
 | `models` | The models this login can run, each with `effortLevels` and an optional `free` flag; sent once per session |
 | `title` | The conversation summary, which names the tab |
 | `session` | `{sessionId, origin}`; the client stores it by tab id so reopening resumes the conversation |
@@ -247,7 +249,11 @@ With images, content is an array: an optional text block, then one base64 image 
 
 AskUserQuestion arrives through the same `canUseTool` channel, not `onUserDialog`, which does not fire for a programmatic `query()`. The driver intercepts the tool, normalizes its questions (`extractAskUserQuestions`), emits a `question` frame and parks the promise.
 `buildAskUserQuestionAnswer` then returns `{behavior: "allow", updatedInput: {...input, answers}}`; a skip returns the input unchanged so the tool reports "no answer selected" and the turn continues.
-A pending question blocks the turn from ending, so a follow-up sent meanwhile is staged and dispatched on `done`. Stop cancels every parked question.
+A pending question blocks the turn from ending; a follow-up sent meanwhile is read once the turn moves on. Stop cancels every parked question.
+
+A user frame carries an `id`. `pushTurn` passes it to the SDK as the message `uuid` and records it as pending; the session spawns with `replay-user-messages`, so the SDK echoes each message as it takes it up, and the drain turns that echo, or the next turn's `system/init` (a slash command never echoes), into a `delivered` frame.
+The client keeps the ids it sent and treats a `done` as the end of the busy state only when every one has been delivered: a `done` that arrives while a sent message is still waiting belongs to an earlier turn, such as the one Stop just ended.
+Two messages read into one turn produce one `result` and one `done`, so the client never counts turns. `chatTurnGate.ts` holds both rules: `deliveryDone` and `settleDelivered` for this backend, and the stale-`done` count after a Stop for backends without `midTurnMessages`.
 
 `/mcp` is the one slash command answered locally. `isMcpCommand` matches a bare `/mcp`, and `answerMcpCommand` calls `Query.mcpServerStatus()`, formats it with `formatMcpStatus`, and emits an `assistant-text` reply followed by a synthetic `result` and `done`.
 It never touches the input queue or the transcript, so it does not appear in replayed history.
@@ -278,7 +284,7 @@ The service dedups per session, so a note shown at the prompt is not injected ag
 
 ### Connection lifecycle
 
-A reconnect with the same `chatId` rebinds the session's sink (`chatRebindSink`), so frames from a turn in flight keep arriving. On socket close, code `1000` (an intentional tab close) tears the session down at once (`closeChat`).
+A reconnect with the same `chatId` rebinds the session's sink (`chatRebindSink`), so frames from a turn in flight keep arriving; between turns it also sends a `done` with `idle: true`, which ends the client's busy state whatever it was waiting for. On socket close, code `1000` (an intentional tab close) tears the session down at once (`closeChat`).
 An abnormal close (reload `1001`, drop `1006`) detaches the sink, so frames buffer, and schedules a teardown after a grace period (`BISMUTH_CHAT_GRACE_MS`, default 30 s).
 The detach is identity-guarded: on a half-open drop the client's new socket may already have rebound the session, and the stale close must not kill it. The client reconnects with exponential backoff capped at 8 s and holds a `pendingResume` for a session picked before the socket opens.
 Every session is closed on process exit, so headless `claude` children do not outlive a backend restart.
@@ -323,7 +329,8 @@ The chat's rules sit in pure modules under `app/src/chat/`, each unit-tested, wi
 | `chatComposerKeys.ts` | `classifyComposerKey`: slash popover first, then Escape-to-stop, then send, then history recall, else pass to CodeMirror |
 | `chatHistory.ts` | Prompt-history cursor that stashes the draft on the first Up |
 | `chatVisibility.ts` | Which level the history row menu writes and checks (picking visible under a restricting default writes `all`), and the undo toast's wording |
-| `chatQueueRestore.ts` | Stop restores queued messages into the composer |
+| `chatQueueRestore.ts` | Stop restores held messages into the composer |
+| `chatTurnGate.ts` | When a `done` ends the busy state: delivery tracking for mid-turn backends, the stale-`done` count after a Stop for the rest |
 | `chatPermissionMode.ts` | Mode values, the Bypass default, `reconcilePermissionMode` so a re-reported spawn default does not revert your pick |
 | `chatSessionStore.ts` | Tab id to SDK session id, so Reopen closed tab resumes |
 | `chatColors.ts`, `chatTitles.ts` | Per-tab tint and title precedence (rename, then summary, then fallback) |

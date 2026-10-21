@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { gateDone, gateError, gateStop } from './chatTurnGate'
+import {
+    deliveryDone,
+    gateDone,
+    gateError,
+    gateStop,
+    settleDelivered,
+} from './chatTurnGate'
 
 describe('chatTurnGate', () => {
     test('a done with no stop outstanding finishes the turn', () => {
@@ -25,5 +31,44 @@ describe('chatTurnGate', () => {
         expect(gateStop(0, true)).toBe(1)
         const stale = gateError()
         expect(gateDone(stale)).toEqual({ stale: 0, finished: true })
+    })
+})
+
+describe('chatTurnGate idle done', () => {
+    test('an idle done finishes even with a stop outstanding', () => {
+        expect(gateDone(gateStop(0, true), true)).toEqual({
+            stale: 0,
+            finished: true,
+        })
+    })
+})
+
+describe('chatTurnGate delivery', () => {
+    test('a done with nothing waiting finishes the turn', () => {
+        expect(deliveryDone([])).toEqual({ pending: [], finished: true })
+    })
+
+    test('a done while a sent message is waiting belongs to an earlier turn', () => {
+        expect(deliveryDone(['m1'])).toEqual({ pending: ['m1'], finished: false })
+    })
+
+    test('stop then send: the stopped turn done is ignored, the new turn done finishes', () => {
+        let pending = ['m2']
+        expect(deliveryDone(pending).finished).toBe(false)
+        pending = settleDelivered(pending, ['m2'])
+        expect(deliveryDone(pending).finished).toBe(true)
+    })
+
+    test('two messages read into one turn give one done, and it finishes', () => {
+        const pending = settleDelivered(['m1', 'm2'], ['m1'])
+        const after = settleDelivered(pending, ['m2'])
+        expect(deliveryDone(after).finished).toBe(true)
+    })
+
+    test('an idle done drops messages the backend never received', () => {
+        expect(deliveryDone(['lost'], true)).toEqual({
+            pending: [],
+            finished: true,
+        })
     })
 })

@@ -1,5 +1,5 @@
 // app/src/chat/ChatUserTurn.tsx — ChatUserTurn.module.css is the ONLY importer.
-// One user turn: the "you" label (+ a queued note/cancel while staged), the prose bubble, and any
+// One user turn: the "you" label (+ a queued note, and a cancel while held), the prose bubble, and any
 // sent images. Extracted verbatim in markup/behaviour from ChatView.tsx's transcript list render
 // (the fallback branch of its role Show chain).
 import { For, Show, type Component } from 'solid-js'
@@ -29,13 +29,18 @@ const ChatUserTurn: Component<ChatUserTurnProps> = props => {
                         <Text as="span" eyebrow size="micro" tone="muted">
                             queued
                         </Text>
-                        <CloseButton
-                            label="Cancel queued message"
-                            class={styles['chat-queued-cancel']}
-                            onClick={() =>
-                                props.onCancelQueued(props.item.queueId!)
-                            }
-                        />
+                        {/* A held turn can be called back; one already sent mid-turn cannot. */}
+                        <Show when={props.item.queueId}>
+                            {queueId => (
+                                <CloseButton
+                                    label="Cancel queued message"
+                                    class={styles['chat-queued-cancel']}
+                                    onClick={() =>
+                                        props.onCancelQueued(queueId())
+                                    }
+                                />
+                            )}
+                        </Show>
                     </Show>
                 }
             />

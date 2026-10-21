@@ -233,7 +233,7 @@ describe('rebindSessionSink — synthetic done rule', () => {
 
         rebindSessionSink(s, f => received.push(f))
 
-        expect(received).toEqual([{ type: 'done' }])
+        expect(received).toEqual([{ type: 'done', idle: true }])
     })
 
     test('a rebind mid-turn (turnActive: true) does NOT append a synthetic done', () => {
@@ -259,7 +259,7 @@ describe('rebindSessionSink — synthetic done rule', () => {
 
         rebindSessionSink(s, f => received.push(f))
 
-        expect(received).toEqual([...buffered, { type: 'done' }])
+        expect(received).toEqual([...buffered, { type: 'done', idle: true }])
     })
 
     test('a between-turns rebind still attempts the synthetic done even when an earlier frame in the same flush failed', () => {
@@ -281,7 +281,7 @@ describe('rebindSessionSink — synthetic done rule', () => {
         // f0 attempted (and threw), f1 retained for retry — but the synthetic done must STILL have
         // been attempted: the f0 failure proved nothing about whether this later, unrelated write (a
         // fresh { type: "done" } object) would also fail.
-        expect(received).toEqual([textFrame(0), { type: 'done' }])
+        expect(received).toEqual([textFrame(0), { type: 'done', idle: true }])
     })
 
     test('a sink that throws only on the synthetic done still delivers the buffered frames first', () => {

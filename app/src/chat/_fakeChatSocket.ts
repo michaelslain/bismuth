@@ -30,6 +30,21 @@ import type { ChatFrame } from '../../../core/src/chat'
 export type FakeChatFrames =
     readonly ChatFrame[] | ((provider: string) => readonly ChatFrame[])
 
+/** The most recently opened fake socket, so a story can push a frame mid-play (`pushFakeFrame`). */
+let lastSocket: { replay(script: readonly ChatFrame[]): void } | null = null
+
+/** Deliver `frame` on the latest fake socket, as a backend would mid-turn (a `delivered`, a `done`). */
+export function pushFakeFrame(frame: ChatFrame): void {
+    lastSocket?.replay([frame])
+}
+
+/** The `id` of every `{type:"user"}` message any fake socket was sent, oldest first — what a story
+ *  hands back in a `delivered` frame. */
+const sentUserIds: string[] = []
+export function fakeSentUserIds(): string[] {
+    return [...sentUserIds]
+}
+
 export function makeFakeChatSocketClass(frames: FakeChatFrames) {
     return class FakeChatSocket {
         static readonly CONNECTING = 0
@@ -45,6 +60,7 @@ export function makeFakeChatSocketClass(frames: FakeChatFrames) {
         onerror: ((ev: Event) => void) | null = null
 
         constructor(public url: string) {
+            lastSocket = this
             // Defer past the current microtask: the session assigns its handlers synchronously right
             // after `new WebSocket(...)` returns, and a real socket never opens inside its constructor.
             queueMicrotask(() => {
@@ -56,7 +72,7 @@ export function makeFakeChatSocketClass(frames: FakeChatFrames) {
             })
         }
 
-        private replay(script: readonly ChatFrame[]): void {
+        replay(script: readonly ChatFrame[]): void {
             for (const frame of script) {
                 this.onmessage?.({
                     data: JSON.stringify(frame),
@@ -67,15 +83,15 @@ export function makeFakeChatSocketClass(frames: FakeChatFrames) {
         send(...args: unknown[]): void {
             // No backend on the other end. A per-provider script is the one exception: the session's
             // `{type:"open", provider}` picks which script answers, as the real router would.
-            if (typeof frames !== 'function' || typeof args[0] !== 'string')
-                return
-            let msg: { type?: string; provider?: string }
+            if (typeof args[0] !== 'string') return
+            let msg: { type?: string; provider?: string; id?: string }
             try {
                 msg = JSON.parse(args[0])
             } catch {
                 return
             }
-            if (msg.type !== 'open') return
+            if (msg.type === 'user' && msg.id) sentUserIds.push(msg.id)
+            if (typeof frames !== 'function' || msg.type !== 'open') return
             const script = frames(msg.provider ?? 'claude')
             queueMicrotask(() => {
                 if (this.readyState === FakeChatSocket.OPEN) this.replay(script)

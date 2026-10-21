@@ -545,3 +545,23 @@ describe('buildTranscript', () => {
         expect(buildTranscript(frames)).toEqual(stepwise)
     })
 })
+
+describe('applyChatFrame — delivered', () => {
+    it('clears the queued mark on the bubbles it names, and only those', () => {
+        const transcript: TurnItem[] = [
+            { role: 'user', text: 'a', queued: true, deliveryId: 'd1' },
+            { role: 'user', text: 'b', queued: true, deliveryId: 'd2' },
+            { role: 'user', text: 'c', queued: true, queueId: 'q1' },
+        ]
+        expect(applyChatFrame(transcript, { type: 'delivered', ids: ['d1'] })).toBe(true)
+        expect(transcript[0]).toEqual({ role: 'user', text: 'a', queued: false, deliveryId: undefined })
+        expect(transcript[1]).toMatchObject({ queued: true, deliveryId: 'd2' })
+        expect(transcript[2]).toMatchObject({ queued: true, queueId: 'q1' })
+    })
+
+    it('an id with no bubble leaves the transcript alone', () => {
+        const transcript: TurnItem[] = [{ role: 'user', text: 'a' }]
+        expect(applyChatFrame(transcript, { type: 'delivered', ids: ['x'] })).toBe(false)
+        expect(transcript).toEqual([{ role: 'user', text: 'a' }])
+    })
+})
