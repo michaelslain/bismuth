@@ -87,6 +87,31 @@ export const HeroSizes: Story = {
     ),
 }
 
+/** Every level as a two-line wrapped title in a narrow box, so the line-height ratio is visible:
+ *  all levels lead at --lh-tight, hero sizes at --lh-display. */
+export const WrappedTitles: Story = {
+    render: () => (
+        <div
+            style={{
+                width: '170px',
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: '16px',
+            }}
+        >
+            <Heading level={1}>Wrapped title level one</Heading>
+            <Heading level={2}>Wrapped title level two</Heading>
+            <Heading level={3}>Wrapped title level three</Heading>
+            <Heading level={4}>Wrapped title level four</Heading>
+            <Heading level={5}>Wrapped title level five</Heading>
+            <Heading level={6}>Wrapped title level six</Heading>
+            <Heading level={1} size="hero">
+                Wrapped hero title
+            </Heading>
+        </div>
+    ),
+}
+
 /** Each level renders its own tag — matters for accessibility (screen-reader heading
  *  navigation) and for the editors' parity claim above. */
 export const RenderedTags: Story = {

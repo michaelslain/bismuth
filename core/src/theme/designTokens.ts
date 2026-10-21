@@ -278,6 +278,8 @@ const WEIGHT: TokenDef[] = [
 const lineHeight = grp('line-height')
 const LINE_HEIGHT: TokenDef[] = [
     lineHeight('lh-tight', 'number', '1.4', 'Tight line height.'),
+    lineHeight('lh-snug', 'number', '1.3', 'Dense prose titles in cards and chips.'),
+    lineHeight('lh-display', 'number', '1.02', 'Hero display steps.'),
     lineHeight('lh-ui', 'number', '1.7', 'Chrome line height.'),
     lineHeight('lh-prose', 'number', '1.6', 'Prose line height where the editor setting does not apply.'),
     lineHeight('lh-grid', 'number', '1', 'Character-grid line height; one cell tall.'),

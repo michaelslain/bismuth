@@ -130,7 +130,7 @@
   border-color: var(--accent);
 }
 .search-empty-icon { color: var(--accent); }
-.search-empty-title { font-size: var(--fs-body-lg); color: var(--fg); font-weight: var(--fw-medium); }
+.search-empty-title { font-size: var(--fs-body-lg); color: var(--fg); font-weight: var(--fw-medium); line-height: var(--lh-tight); }
 .search-empty-hint { font-size: var(--fs-ui); color: var(--text-muted); }
 
 /* Restores the ask-AI loading/error panels' padding + gap (Finding 3, ds-conformance design pass):

@@ -272,6 +272,8 @@
 
   /* ── Line height — unchanged, moved verbatim from ui.css:36-39. */
   --lh-tight: 1.4;
+  --lh-snug: 1.3;
+  --lh-display: 1.02;
   --lh-ui: 1.7;
   --lh-prose: 1.6;
   --lh-grid: 1;         /* ASCII fields: line-height must equal the cell height */

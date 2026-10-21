@@ -285,10 +285,10 @@ Lora Variable stay selectable.
 Plex, drawn beside a mono — for the part a person actually wrote. The two never mix within one register.
 
 ### Hierarchy
-- **Hero** (40px `--fs-hero`, 48px `--fs-hero-xl`, via `Heading size`): the vault intro and the wordmark only; never in app chrome.
-- **Display** (600, 24px `--fs-display`): note titles; the one big size in chrome.
-- **Title** (600, 19px `--fs-title`): panel titles.
-- **Lead** (15px `--fs-lead`): section heads in chrome; also the editor's first-paint size.
+- **Hero** (40px `--fs-hero`, 48px `--fs-hero-xl`, via `Heading size`; line-height `--lh-display`): the vault intro and the wordmark only; never in app chrome.
+- **Display** (600, 24px `--fs-display`, line-height `--lh-tight`): note titles; the one big size in chrome.
+- **Title** (600, 19px `--fs-title`, line-height `--lh-tight`): panel titles.
+- **Lead** (15px `--fs-lead`, line-height `--lh-tight`): section heads in chrome; also the editor's first-paint size.
 - **Body** (13px `--fs-body`): prose inside panels.
 - **UI** (11.5px `--fs-ui`, line-height 1.7): the workhorse. Rail, tabs, tables, menus, popovers,
   and every `[text button]`.
@@ -300,7 +300,7 @@ Plex, drawn beside a mono — for the part a person actually wrote. The two neve
   `EventChip.module.css`; a new one needs this entry amended first, naming the use and why
   `--fs-micro` cannot serve it.
 - **UI prose** (`--fs-ui-prose` = `--fs-ui` × the face's `--prose-scale` × 1.06): the user's own
-  words inside chrome, such as a calendar chip title or a card title. The prose face at the chrome
+  words inside chrome, such as a calendar chip title or a card title, with line-height `--lh-snug`. The prose face at the chrome
   step, set 6% over x-height parity with the `--fs-ui` mono beside it, because a serif at matched
   x-height reads smaller than the mono.
 - **Prose** (`--prose-font-size` = the user's editor size × the face's `--prose-scale`: 1.00 for Plex,
@@ -311,6 +311,8 @@ Plex, drawn beside a mono — for the part a person actually wrote. The two neve
   (`--fs-rel-code`, the same ratio off `1em`), `#tags`, task checkboxes and fields, list and syntax
   marks. One step below prose because Monaspace at prose x-height is 24% wider and carries 16% more
   ink than Lora; 0.89 is ink parity, and holds for Plex too (code/prose ink 1.10 vs Lora's 1.11). KaTeX output is not code and keeps its own size.
+
+A heading or title reads its line-height from a `--lh-*` token (`--lh-display`, `--lh-tight`, `--lh-snug`), never the row's. Three exceptions: note-body headings h3–h6 take the editor's line, CardCover's title band sits on the character grid (`--cell-h`), and a compact in-grid event chip title keeps 1.25 so its time and title share one line.
 
 ### The three registers
 Text is set in exactly one of three registers, each with one size:

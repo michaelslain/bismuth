@@ -34,7 +34,7 @@
    DESIGN.md's Register Rule: a card title is prose). No font-family here, or it would race that.
    Regular weight at the prose size: Libron ships only 400 and 700, and a bold serif dominates the cell
    beside the mono time, so the hierarchy comes from --fg against the muted time instead. */
-.event-chip-title { font-weight: var(--fw-regular); font-size: var(--fs-ui-prose); white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
+.event-chip-title { font-weight: var(--fw-regular); font-size: var(--fs-ui-prose); white-space: normal; line-height: var(--lh-snug); word-break: break-word; flex-shrink: 0; }
 .event-chip-meta { display: flex; align-items: center; gap: var(--sp-2); overflow: hidden; flex-shrink: 1; min-height: 0; }
 /* line-height must be set explicitly: the app shell (shell/AppFrame.module.css) sets an ABSOLUTE `line-height: var(--row-h)`
    (18px), so any descendant that doesn't override it inherits 18px regardless of its own
@@ -65,7 +65,7 @@
 /* Non-compact (stacked) time-grid title: clamp to 2 lines with a clean ellipsis so a
    long title ends in "…" at a line boundary instead of having its last line clipped
    mid-glyph when the chip is just a little too short. */
-.event-chip.in-grid:not(.compact) .event-chip-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; min-height: 0; }
+.event-chip.in-grid:not(.compact) .event-chip-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: var(--lh-snug); min-height: 0; }
 /* A 45-min block (~34px, ~28px of content box — a size query measures the CONTENT box) holds the
    time and ONE title line: clamp to it, so the title ends in "…" instead of a second line cut
    through its glyphs. At line-height 1.3 (1.15 cut g/y descenders) two lines need ~43px, so a 1h block gets one line too; a timeless chip
@@ -73,7 +73,7 @@
 @container evchip (height < 43px) {
   .event-chip.in-grid:not(.compact):not(.timeless) .event-chip-title { -webkit-line-clamp: 1; line-clamp: 1; }
 }
-/* In the grid the title runs at line-height 1.15, so a title-led head centres its dots on that. */
+/* A title-led head centres its dots on a 1.15 line (the grid title itself runs at --lh-snug, so the dots sit a hair above the title centre). */
 .event-chip.in-grid .event-chip-head[data-untimed] .event-chip-dots { height: calc(var(--fs-ui-prose) * 1.15); }
 /* Genuinely tiny blocks (a back-to-back 30-min slot is only ~33px tall): time, title and dots on
    ONE line. The head row dissolves into the chip's row so the dots can follow the title. */

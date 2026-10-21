@@ -290,6 +290,8 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | key | kind | default | what it paints |
 |---|---|---|---|
 | `lh-tight` | number | `1.4` | Tight line height. |
+| `lh-snug` | number | `1.3` | Dense prose titles in cards and chips. |
+| `lh-display` | number | `1.02` | Hero display steps. |
 | `lh-ui` | number | `1.7` | Chrome line height. |
 | `lh-prose` | number | `1.6` | Prose line height where the editor setting does not apply. |
 | `lh-grid` | number | `1` | Character-grid line height; one cell tall. |

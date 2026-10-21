@@ -13,18 +13,17 @@
   margin: 0;
   color: var(--fg);
   overflow-wrap: anywhere;
+  line-height: var(--lh-tight);
 }
 
 .heading--h1 {
   font-size: var(--fs-title);
   font-weight: var(--fw-bold);
-  line-height: var(--lh-tight);
   letter-spacing: var(--ls-display);
 }
 .heading--h2 {
   font-size: var(--fs-lead);
   font-weight: var(--fw-bold);
-  line-height: var(--lh-tight);
 }
 .heading--h3 {
   font-size: var(--fs-body-lg);
@@ -54,7 +53,7 @@
 .heading--hero,
 .heading--hero-xl {
   font-weight: var(--fw-regular);
-  line-height: 1.02;
+  line-height: var(--lh-display);
   letter-spacing: 0;
   text-wrap: balance;
 }

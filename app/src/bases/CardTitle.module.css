@@ -3,7 +3,7 @@
    on the character grid (CardCover's band) set its own line-height without a competing rule. */
 .cardTitle {
   font-size: var(--fs-ui-prose);
-  line-height: var(--card-title-lh, 1.3);
+  line-height: var(--card-title-lh, var(--lh-snug));
   overflow-wrap: anywhere;
 }
 /* Two-line clamp (CardCover's title band). */

@@ -66,8 +66,8 @@
 .wysiwyg :global(.bismuth-doc-milkdown h2) { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); margin: var(--sp-3) 0; }
 .wysiwyg :global(.bismuth-doc-milkdown h3) { font-size: var(--fs-h3); font-weight: var(--fw-h3); line-height: var(--lh-tight); margin: var(--sp-3) 0 var(--sp-2); }
 .wysiwyg :global(.bismuth-doc-milkdown h4) { font-size: var(--fs-h4); font-weight: var(--fw-h4); line-height: var(--lh-tight); margin: var(--sp-3) 0 var(--sp-2); }
-.wysiwyg :global(.bismuth-doc-milkdown h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); letter-spacing: var(--ls-label); margin: var(--sp-3) 0 var(--sp-2); }
-.wysiwyg :global(.bismuth-doc-milkdown h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); margin: var(--sp-3) 0 var(--sp-2); }
+.wysiwyg :global(.bismuth-doc-milkdown h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); line-height: var(--lh-tight); letter-spacing: var(--ls-label); margin: var(--sp-3) 0 var(--sp-2); }
+.wysiwyg :global(.bismuth-doc-milkdown h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); line-height: var(--lh-tight); color: var(--text-muted); margin: var(--sp-3) 0 var(--sp-2); }
 .wysiwyg :global(.bismuth-doc-milkdown ul),
 .wysiwyg :global(.bismuth-doc-milkdown ol) { margin: var(--sp-2) 0; padding-left: var(--sp-7); }
 .wysiwyg :global(.bismuth-doc-milkdown li) { margin: var(--sp-1) 0; }

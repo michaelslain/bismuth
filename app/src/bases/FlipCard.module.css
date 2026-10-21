@@ -113,8 +113,8 @@
 .card-md :global(h2) { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); }
 .card-md :global(h3) { font-size: var(--fs-h3); font-weight: var(--fw-h3); line-height: var(--lh-tight); }
 .card-md :global(h4) { font-size: var(--fs-h4); font-weight: var(--fw-h4); line-height: var(--lh-tight); }
-.card-md :global(h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); }
-.card-md :global(h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); }
+.card-md :global(h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); line-height: var(--lh-tight); }
+.card-md :global(h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); line-height: var(--lh-tight); color: var(--text-muted); }
 /* The prompt, alone on the front face, is the card's one headline: the display size, never below
    the prose it would otherwise be (a large editor size wins), and larger than the answer body's
    --fs-title on the back so the two faces read as question -> answer. Set on the front face, so

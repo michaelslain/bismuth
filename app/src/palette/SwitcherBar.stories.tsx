@@ -298,7 +298,7 @@ export const NoMatchesShortQueryAskAiCta: Story = {
         // And the plain empty state it replaced is genuinely gone, not merely also present.
         expect(
             within(canvasElement).queryByText('No matching files', {
-                selector: 'div:not([class*="search-empty-title"])',
+                selector: 'div:not([data-search-empty-title])',
             }),
         ).toBeNull()
     },

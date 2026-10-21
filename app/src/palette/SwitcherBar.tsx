@@ -477,6 +477,7 @@ export function SwitcherBar(props: Props) {
                                 <Text
                                     as="div"
                                     inherit
+                                    data-search-empty-title=""
                                     class={switcherStyles['search-empty-title']}
                                 >
                                     No matches in file names or note text

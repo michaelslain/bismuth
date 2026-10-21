@@ -44,7 +44,7 @@
   font-family: var(--ui-font-stack);
   font-size: var(--fs-display);
   font-weight: var(--fw-medium);
-  line-height: 1.1;
+  line-height: var(--lh-tight);
   user-select: none;
   flex: 0 0 auto;
 }
@@ -69,21 +69,20 @@
   font-family: var(--prose-font);
   font-size: var(--fs-display);
   font-weight: var(--fw-bold);
-  line-height: 1.1;
+  line-height: var(--lh-tight);
   letter-spacing: var(--ls-display);
-  /* Floor the height at one line (line-height 1.1 + the 0.22em descender padding) so the
-     JS autosize can never collapse the title to a clipped sliver if it measures scrollHeight
-     before layout/font are ready — e.g. when CodeMirror virtualizes this block widget back
-     into view on a long note (B3). autosize still grows it for multi-line titles. */
-  min-height: calc(1.1em + 0.22em);
-  /* Bottom padding gives the prose font's descenders (g/p/y) room inside the clip box.
-     `overflow: hidden` clips to the PADDING edge, and line-height 1.1 is tighter
-     than the font's glyph box, so without this the tails get cut off. Top padding
-     stays 0 so the `#` glyph (flex-start) still aligns to the first line. */
+  /* Floor the height at one line (one --lh-tight line box) so the JS autosize can never
+     collapse the title to a clipped sliver if it measures scrollHeight before layout/font are
+     ready — e.g. when CodeMirror virtualizes this block widget back into view on a long note
+     (B3). autosize still grows it for multi-line titles. `overflow: hidden` clips to the
+     padding edge; --lh-tight is taller than the font's glyph box, so descenders sit inside the
+     line box and need no extra bottom padding. Top padding is 0 so the `#` glyph (flex-start)
+     still aligns to the first line. */
+  min-height: calc(var(--lh-tight) * 1em);
   /* Left padding is CodeMirror's own `.cm-line` inset (6px = --sp-3), so the title's text edge lands
      on the body text's edge: the field used to carry --sp-1 (2px) and sat 4px left of every line
      it heads. Right stays --sp-1. */
-  padding: 0 var(--sp-1) 0.22em var(--sp-3);
+  padding: 0 var(--sp-1) 0 var(--sp-3);
   border-radius: var(--r-0);
   /* textarea-specific: wrap freely, no manual resize handle, no scrollbar
      (height is driven from scrollHeight), render as a block heading. */

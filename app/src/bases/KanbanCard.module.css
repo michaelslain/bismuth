@@ -10,7 +10,7 @@
    bold, so it reads as a heading without shouting. Clicking opens the modal. */
 .kbCardTitle {
   font-size: var(--fs-ui-prose); font-weight: var(--fw-medium); color: var(--fg);
-  line-height: 1.3; overflow-wrap: anywhere;
+  line-height: var(--lh-snug); overflow-wrap: anywhere;
 }
 .kbEditable { cursor: text; }
 
