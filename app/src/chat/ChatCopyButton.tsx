@@ -4,7 +4,7 @@
 // ChatView.tsx's local `CopyButton` closure.
 import type { Component } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
-import { copyChatText } from './copyChatText'
+import { copyText } from '../ui/copyText'
 import styles from './ChatCopyButton.module.css'
 
 export type ChatCopyButtonProps = {
@@ -20,7 +20,7 @@ const ChatCopyButton: Component<ChatCopyButtonProps> = props => {
             label="Copy message"
             size="sm"
             class={`${styles['chat-copy-btn']} ${props.class ?? ''}`}
-            onClick={() => copyChatText(props.text)}
+            onClick={() => copyText(props.text)}
         />
     )
 }

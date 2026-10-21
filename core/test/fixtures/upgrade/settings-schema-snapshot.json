@@ -603,6 +603,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.fence-ink": {
+    "type": {
+      "kind": "token",
+      "token": "fence-ink"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.fg": {
     "type": {
       "kind": "token",

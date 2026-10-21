@@ -6,6 +6,7 @@ import { Show, type Component } from 'solid-js'
 import { renderNoteBody } from '../bases/markdown'
 import ChatCopyButton from './ChatCopyButton'
 import { createTypedTables } from '../ui/table/typeTables'
+import { createCodeFences } from '../ui/codeFences'
 import styles from './ChatTextBubble.module.css'
 
 export type ChatTextBubbleProps = {
@@ -37,6 +38,12 @@ const ChatTextBubble: Component<ChatTextBubbleProps> = props => {
     // string has landed, mount the edges onto its cells. Declared AFTER `bubble` so it re-runs after
     // the `innerHTML` binding when `text` changes, and tears its roots down before the next pass.
     createTypedTables(
+        () => el,
+        () => props.text,
+    )
+    // Fences likewise: each `<pre>` becomes a CodeFence, the ```lang label + copy button a note's
+    // code block wears.
+    createCodeFences(
         () => el,
         () => props.text,
     )

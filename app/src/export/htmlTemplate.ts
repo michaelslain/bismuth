@@ -232,7 +232,7 @@ ${headingRules}
         white-space: pre-wrap; word-break: break-word; line-height: ${rule}px; }
   /* EVERYTHING PULLED BACK OUT OF PROSE RETURNS TO THE MONO FACE AT THE EDITOR SIZE — the same
      scoping global.css's CodeMirror theming section applies in the app, not a guess at what looks code-ish. Its list is
-     cm-codeblock, cm-inline-code, cm-code-header, cm-code-lang, cm-code-numbered, cm-frontmatter,
+     cm-codeblock, cm-inline-code, cm-code-headerwrap, cm-code-numbered, cm-frontmatter,
      cm-fm-key, cm-math, cm-math-src, cm-inline-math, cm-list-marker, cm-syntax-mark, cm-tag and
      cm-task-field — and BOTH the family and the SIZE reset, to --code-font-size: a step below
      the prose, because at equal size the mono reads bigger and heavier than the serif.

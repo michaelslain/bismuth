@@ -106,6 +106,7 @@ const SURFACE: TokenDef[] = [
     surface('surface-2', 'color', '#272A33', 'Second raised surface: inputs, wells.', { field: 'surface2' }),
     surface('surface-3', 'color', '#31353F', 'Third raised surface: pressed and selected fills.', { field: 'surface3' }),
     surface('code-bg', 'color', 'color-mix(in srgb, var(--surface-1) 55%, var(--editor))', 'Code block, frontmatter and callout fill: a step under surface-1, toward the note pane.'),
+    surface('fence-ink', 'color', 'color-mix(in srgb, var(--fg) 30%, transparent)', 'Fence text: a code block\'s language label and the frontmatter and closing fence rows.'),
     surface('panel', 'color', '#20222A', 'Panel fill (same as surface-1 in every built-in theme).'),
     surface('rail', 'color', '#101116', 'Sidebar and top strip, a notch under the canvas.', { field: 'rail' }),
     surface('editor', 'color', '#121317', 'Main note pane.', { field: 'editor' }),

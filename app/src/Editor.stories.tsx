@@ -395,7 +395,7 @@ export const MixedTypography: Story = {
         // The two fences are ONE style: a frontmatter `---` row and a code ```lang row open (and
         // close) their blocks with rows of the same height, padding and fence-text tone.
         const fenceText = (row: HTMLElement) =>
-            row.querySelector('.cm-fence-syntax, .cm-code-lang') as HTMLElement
+            row.querySelector('.cm-fence-syntax, [data-testid="code-lang"]') as HTMLElement
         for (const pair of [tops, bottoms]) {
             const [a, b] = pair.map(r => r.getBoundingClientRect().height)
             await expect(Math.abs(a! - b!)).toBeLessThan(0.5)

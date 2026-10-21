@@ -46,7 +46,7 @@ import DropCue from '../ui/DropCue'
 import styles from './DaemonPageHost.module.css'
 import { pushUndoToast } from '../undoToast'
 import { pushToast } from '../ui/toastStore'
-import { copyChatText } from '../chat/copyChatText'
+import { copyText } from '../ui/copyText'
 import DaemonChat from './DaemonChat'
 import DaemonOverview, {
     type DaemonOverviewProps,
@@ -136,7 +136,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             .terminalInfo()
             .then(i => i.vault.replace(/\/+$/, ''))
             .catch(() => '')
-        copyChatText(vault ? `${vault}/${path}` : path, {
+        copyText(vault ? `${vault}/${path}` : path, {
             ok: 'Copied path',
             fail: "Couldn't copy path",
         })

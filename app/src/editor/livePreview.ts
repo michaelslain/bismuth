@@ -27,7 +27,7 @@ import { TaskCheckbox, charToStatus, type TaskStatus } from './TaskCheckbox'
 import { reorderAroundLine } from './taskFold'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import { LIST_STEP } from './listLayout'
-import { CodeHeader } from './CodeHeader'
+import CodeHeader from '../ui/CodeHeader'
 import { groupTableBlocks } from './tableModel'
 import { TableWidget, loadTypeTable } from './tableWidget'
 import { watchFitTable } from '../ui/table/fitTable'
@@ -152,7 +152,7 @@ const blockBottomRule = Decoration.line({ class: 'cm-block-bottom' })
 const fenceMark = Decoration.mark({ class: 'cm-fence-syntax' })
 // The one tone for fence text — a frontmatter `---`, a code block's ``` and its ```lang label —
 // so the two kinds of block open and close with identical rows.
-const FENCE_TONE = 'color-mix(in srgb, var(--fg) 30%, transparent)'
+const FENCE_TONE = 'var(--fence-ink)'
 const fmKeyMark = Decoration.mark({ class: 'cm-fm-key' })
 const tableLine = Decoration.line({ class: 'cm-table' })
 // A body-level `---` / `***` / `___` thematic break: off the cursor line the literal
@@ -2018,45 +2018,6 @@ export const livePreview = [
             width: '100%',
             'line-height': '1',
         },
-        '.cm-code-header': {
-            display: 'flex',
-            width: '100%',
-            'justify-content': 'space-between',
-            'align-items': 'center',
-            'line-height': '1',
-            // No font-size here: the ```lang label is FENCE TEXT, so it takes the fence rows' size
-            // (--code-font-size, global.css's size-reset list) — the same as a frontmatter `---`.
-            // It used to be --fs-micro, which made a code fence and a frontmatter fence two
-            // different-looking rows.
-        },
-        // The same tone as a frontmatter `---` (FENCE_TONE): the label IS the fence.
-        '.cm-code-lang': {
-            'font-family': 'var(--ui-font-stack)',
-            color: FENCE_TONE,
-            'letter-spacing': '0.04em',
-        },
-        // The copy button is an <IconButton> (.btn.btn--icon), which already supplies the
-        // browser-reset chrome (background:transparent, border:none, cursor:pointer); only the
-        // genuinely-overriding props live here.
-        // Height 0 + the flex centring: IconButton ships a min-height this row cannot afford, and it
-        // is the tallest thing in the header once the line-height above stops inflating everything
-        // else. The 12px glyph is the app's bar-icon size, so the header ends up the same height as
-        // a toolbar icon rather than a text line.
-        '.cm-code-copy': {
-            display: 'inline-flex',
-            'align-items': 'center',
-            'justify-content': 'center',
-            // Rest/hover is told by INK, not by opacity (DESIGN.md:426-428): the glyph was
-            // `--fg` at 45% AND 0.8 opacity, i.e. the same tint applied twice, lifting to 1 on
-            // hover. One colour step does the whole job.
-            color: 'var(--text-muted)',
-            padding: '0',
-            height: 'auto',
-            'min-height': '0',
-            'line-height': '1',
-            transition: 'color var(--dur) var(--ease)',
-        },
-        '.cm-code-copy:hover': { color: 'var(--accent)' },
         // Frontmatter: monospace property rows at --code-font-size — the SAME size as a fenced code
         // block (global.css's size-reset list), not the --fs-ui chrome size it once sat at. Plenty of
         // notes are mostly frontmatter (a book note is a dozen property rows and one query), so it is

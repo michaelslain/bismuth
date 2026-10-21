@@ -62,6 +62,7 @@ import { serverErrorText } from './serverError'
 import { debounce } from './debounce'
 import TooltipHost from './ui/TooltipHost'
 import { ToastHost, pushToast, dismissToast, updateToast } from './ui/ToastHost'
+import { copyText } from './ui/copyText'
 import {
     applyUpdateAndRelaunch,
     cancelUpdate,
@@ -3258,10 +3259,7 @@ export default function App() {
         const vp = vaultPath().replace(/\/+$/, '')
         const target = c && !isSentinel(c) ? (vp ? `${vp}/${c}` : c) : vp
         if (!target) return
-        navigator.clipboard
-            .writeText(target)
-            .then(() => pushToast('Copied path'))
-            .catch(() => pushToast("Couldn't copy path"))
+        copyText(target, { ok: 'Copied path', fail: "Couldn't copy path" })
     }
 
     return (

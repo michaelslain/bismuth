@@ -22,7 +22,7 @@ import { IconTextButton } from '../ui/IconTextButton'
 import { TextButton } from '../ui/TextButton'
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
 import Popover from '../ui/Popover'
-import { copyChatText } from './copyChatText'
+import { copyText } from '../ui/copyText'
 import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
 import ChatUserTurn from './ChatUserTurn'
@@ -168,7 +168,7 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
             {
                 label: 'Copy',
                 icon: 'Copy',
-                onSelect: () => copyChatText(selected || text),
+                onSelect: () => copyText(selected || text),
             },
         ]
         setMenu({ x: e.clientX, y: e.clientY, items })

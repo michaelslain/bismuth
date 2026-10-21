@@ -3,8 +3,10 @@
 // bubble and ChatAssistantTurn's text parts (see their own stories for the composed shapes); this
 // one isolates the bubble itself, including the empty-text no-render case.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fireEvent, fn, waitFor, within } from 'storybook/test'
+import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test'
 import ChatTextBubble from './ChatTextBubble'
+import { stubClipboard } from '../ui/_clipboardStub'
+import { ToastHost } from '../ui/ToastHost'
 
 const meta = {
     title: 'Chat/ChatTextBubble',
@@ -63,6 +65,7 @@ export const CodeFence: Story = {
     render: () => (
         <div style={{ width: '480px' }}>
             <ChatTextBubble text={fenceText} role="assistant" />
+            <ToastHost />
         </div>
     ),
     play: async ({ canvasElement }) => {
@@ -82,6 +85,7 @@ export const CodeFence: Story = {
                 parseFloat(cs.paddingBottom)) /
             lines
         await expect(lines).toBe(3)
+        await expect(within(canvasElement).getAllByRole('button', { name: 'Copy code' })).toHaveLength(1)
         await expect(Math.abs(fencePitch - prosePitch)).toBeLessThan(0.5)
         // It scrolls sideways only and never takes a vertical wheel from the transcript: under
         // global.css's app-wide `overscroll-behavior: none`, a box whose `overflow-y` computes to
@@ -89,6 +93,80 @@ export const CodeFence: Story = {
         // properties that hand it up are the check.
         await expect(cs.overflowY).toBe('hidden')
         await expect(cs.overscrollBehaviorY).toBe('auto')
+    },
+}
+
+const twoFenceText = [
+    '```ts',
+    "export const greet = (name: string) => `hi ${name}`",
+    '```',
+    '',
+    'And the shell side:',
+    '',
+    '```',
+    'bun run greet --name ada',
+    '```',
+].join('\n')
+
+/** Two fences, opening and closing the message: each wears its own ```lang header and copy button
+ *  (the same CodeHeader a note shows), and clicking one copies exactly that fence's code. */
+export const TwoFences: Story = {
+    render: () => (
+        <div style={{ width: '480px' }}>
+            <ChatTextBubble text={twoFenceText} role="assistant" />
+            <ToastHost />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const buttons = await waitFor(() => {
+            const b = canvas.getAllByRole('button', { name: 'Copy code' })
+            if (b.length !== 2) throw new Error('fences not adopted yet')
+            return b
+        })
+        await expect(canvas.getAllByTestId('code-lang').map(e => e.textContent)).toEqual([
+            '```ts',
+            '```',
+        ])
+        const clip = stubClipboard()
+        await userEvent.click(buttons[1]!)
+        await userEvent.click(buttons[0]!)
+        await waitFor(() =>
+            expect(clip.written()).toEqual([
+                'bun run greet --name ada',
+                'export const greet = (name: string) => `hi ${name}`',
+            ]),
+        )
+        await waitFor(() => expect(canvas.getAllByText('Copied').length).toBeGreaterThan(0))
+        clip.restore()
+        // Leave the story at rest: no focused copy button still showing.
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        // Fences at both ends leave no free corner: the message copy yields to the fences' own.
+        const msg = canvasElement.querySelector('[aria-label="Copy message"]')!
+        await expect(getComputedStyle(msg).display).toBe('none')
+    },
+}
+
+const fenceFirstText = ['```sh', 'bun run db:migrate', '```', '', 'Safe to repeat.'].join('\n')
+
+/** A message that opens with a fence: the fence's copy holds the top-right, so the message's own
+ *  copy sits at the bottom-right, never on top of it. */
+export const OpensWithFence: Story = {
+    render: () => (
+        <div style={{ width: '480px' }}>
+            <ChatTextBubble text={fenceFirstText} role="assistant" />
+            <ToastHost />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const code = await waitFor(() => canvas.getByRole('button', { name: 'Copy code' }))
+        const msg = canvas.getByRole('button', { name: 'Copy message' })
+        const a = code.getBoundingClientRect()
+        const b = msg.getBoundingClientRect()
+        const apart =
+            a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top
+        await expect(apart).toBe(true)
     },
 }
 

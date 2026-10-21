@@ -1,0 +1,27 @@
+/* CodeHeader.module.css — CodeHeader.tsx is the ONLY importer. No font-size: the header takes its
+   host's (a note's fence row, CodeFence's mono run), so the ```lang label is fence text at the size
+   of the code under it. */
+.header {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    line-height: 1;
+    font-family: var(--ui-font-stack);
+}
+
+/* The same tone as a frontmatter `---`: the label IS the fence. */
+.lang {
+    color: var(--fence-ink);
+    letter-spacing: 0.04em;
+}
+
+/* The copy glyph is IconButton `size="sm"` — muted at rest, accent on hover, the same control as a
+   chat message's copy. Only its box height is overridden: sm ships a --h-control height that would
+   make the fence row taller than the code rows under it. Doubled class to match Button's own
+   two-class `.btn--icon.btn--sm` without depending on stylesheet order. */
+.copy.copy {
+    height: auto;
+    min-height: 0;
+    line-height: 1;
+}

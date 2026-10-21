@@ -63,6 +63,7 @@
   --surface-2: #272A33;
   --surface-3: #31353F;
   --code-bg: color-mix(in srgb, var(--surface-1) 55%, var(--editor));
+  --fence-ink: color-mix(in srgb, var(--fg) 30%, transparent);
   --border-soft: #282B34;
   --faint: #827F78;
   --rail: #101116;
@@ -1874,9 +1875,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    the mono size, which reads optically small (that gap is exactly what --prose-scale exists for). */
 .cm-editor .cm-codeblock,
 .cm-editor .cm-inline-code,
-.cm-editor .cm-code-header,
 .cm-editor .cm-code-headerwrap,
-.cm-editor .cm-code-lang,
 .cm-editor .cm-code-numbered,
 .cm-editor .cm-frontmatter,
 .cm-editor .cm-fm-key,
@@ -1902,9 +1901,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    livePreview.ts's EditorView.theme() rather than going through the family list above — any class
    that does that needs a matching entry in THIS list too, or it inherits the prose size. */
 .cm-editor .cm-codeblock,
-.cm-editor .cm-code-header,
 .cm-editor .cm-code-headerwrap,
-.cm-editor .cm-code-lang,
 .cm-editor .cm-code-numbered,
 .cm-editor .cm-block-top,
 .cm-editor .cm-block-bottom,

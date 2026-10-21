@@ -36,6 +36,14 @@
 .chat-bubble > :last-child {
     margin-bottom: 0;
 }
+/* A fence sits inside its `display: contents` mount (ui/codeFences.ts), one level below the
+   bubble's own children, so the two trims above reach it through that mount. */
+.chat-bubble > :first-child > [data-code-fence] {
+    margin-top: 0;
+}
+.chat-bubble > :last-child > [data-code-fence] {
+    margin-bottom: 0;
+}
 .chat-bubble p {
     margin: 0 0 0.55em;
 }
@@ -146,18 +154,8 @@
     overflow-y: hidden;
     overscroll-behavior-y: auto;
 }
-.chat-bubble pre {
-    margin: 0.55em 0;
-    padding: var(--sp-5) var(--sp-5);
-    background: var(--code-bg);
-    border: var(--rule-soft);
-    border-radius: var(--r-0);
-    /* sideways only, for the same reason as inline code above: a fence never scrolls vertically and
-       never stops the wheel on its way to the transcript */
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-y: auto;
-}
+/* A fence's box and its header are ui/CodeFence's (createCodeFences adopts every `<pre>`); only
+   the prose-side resets live here. */
 .chat-bubble pre code {
     background: none;
     padding: 0;

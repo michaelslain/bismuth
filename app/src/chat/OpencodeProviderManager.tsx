@@ -21,7 +21,7 @@ import { filterAvailable } from './opencodeProviderFilter'
 import { api, type OpencodeProviderList } from '../api'
 import { OPENCODE_LOGIN_COMMAND } from './chatProvider'
 import { pushToast } from '../ui/toastStore'
-import { copyChatText } from './copyChatText'
+import { copyText } from '../ui/copyText'
 
 export type OpencodeProviderManagerProps = {
     /** Called when "open terminal" hands off to a terminal tab, so the hosting panel can close. */
@@ -66,7 +66,7 @@ const OpencodeProviderManager: Component<
         )
     }
     const copyCommand = () =>
-        copyChatText(OPENCODE_LOGIN_COMMAND, {
+        copyText(OPENCODE_LOGIN_COMMAND, {
             ok: `Copied "${OPENCODE_LOGIN_COMMAND}"`,
             fail: `Couldn't copy — type ${OPENCODE_LOGIN_COMMAND} in a terminal.`,
         })

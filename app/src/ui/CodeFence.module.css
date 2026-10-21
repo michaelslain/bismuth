@@ -1,0 +1,34 @@
+/* CodeFence.module.css — CodeFence.tsx is the ONLY importer. The box is the note's fenced block:
+   the --code-bg band, a hairline, square corners. The header row is one host line tall (`1lh`), the
+   same height the opening fence row has in a note, and shares the code's left and right inset. */
+.fence {
+    margin: 0.55em 0;
+    background: var(--code-bg);
+    border: var(--rule-soft);
+    border-radius: var(--r-0);
+    font-family: var(--ui-font-stack);
+    font-size: var(--code-font-size);
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    min-height: 1lh;
+    padding: var(--sp-3) var(--sp-5) 0;
+}
+
+/* The `<pre>` scrolls sideways on its own, so a long line never drags the header with it. Its box
+   chrome is the fence's, above. */
+.body > pre {
+    margin: 0;
+    padding: 0 var(--sp-5) var(--sp-5);
+    background: none;
+    border: none;
+    border-radius: 0;
+    /* sideways only: `overflow-x: auto` alone computes `overflow-y` to `auto`, and global.css's
+       app-wide `overscroll-behavior: none` would then stop a vertical wheel here instead of handing
+       it to whatever scrolls behind the fence */
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-y: auto;
+}
