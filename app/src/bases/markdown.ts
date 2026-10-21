@@ -1,6 +1,7 @@
 import { marked, type Token, type TokenizerAndRendererExtension } from 'marked'
 import { sanitizeHtml } from '../sanitizeHtml'
 import { MEMORY_REF_RE, memoryRefPath } from '../../../core/src/memoryRef'
+import { TAG_NAME_SRC } from '../../../core/src/tags'
 import { escapeHtml, escapeAttr } from '../htmlEscape'
 import { renderMath, onMathReady } from '../editor/katexLoader'
 import {
@@ -84,7 +85,7 @@ const mathBlockExt: TokenizerAndRendererExtension = {
 // MAX_INLINE_MATH_LINES (mathBlock.ts) so reading mode and live preview agree.
 const MAX_INLINE_MATH_NEWLINES = 10
 
-const MATH_INLINE_RE = /^\$(?![\s$])((?:\\[\s\S]|[^$\\])*?)(?<!\s)\$(?!\$)/
+const MATH_INLINE_RE = /^\$(?![\s$])((?:\\[\s\S]|[^$\\])*?)(?<!\s)\$(?![$\d])/
 const INLINE_MATH_NEWLINE_RE = /\n/g
 const mathInlineExt: TokenizerAndRendererExtension = {
     name: 'bismuthMathInline',
@@ -94,8 +95,9 @@ const mathInlineExt: TokenizerAndRendererExtension = {
         return i < 0 ? undefined : i
     },
     tokenizer(src) {
-        // Single `$…$` (not `$$`), no whitespace just inside either delimiter, `\$` escapes a
-        // literal dollar — same rule as the editor's inlineMarkdown. Content MAY span newlines
+        // Single `$…$` (not `$$`), no whitespace just inside either delimiter, a closing `$` not
+        // followed by a digit, `\$` escapes a literal dollar — same rule as editor/inlineMath.ts,
+        // so `$5 and $10` and `$5-$10` stay text. Content MAY span newlines
         // (Obsidian parity: a `$…$` that soft-wrapped renders as one inline KaTeX widget); the
         // inline lexer already keeps `src` within one paragraph, so this can't cross a blank
         // line, and the newline cap below keeps two stray `$` (a "$5 … $9" pair) literal.
@@ -313,9 +315,9 @@ function wikilinksToAnchors(src: string): string {
 // transclusion shows tags the same way a note does. Runs AFTER wikilinksToAnchors (which
 // strips a `[[Note#Section]]` anchor first, so its `#Section` isn't wrapped) and BEFORE
 // marked — same raw-source pass + in-code caveat as wikilinksToAnchors. `#` must follow
-// start-of-string or whitespace/`(`, and a tag starts with a letter (so `# Heading`, which
-// has a space, and bare `#123` never match).
-const TAG_RE = /(^|[\s(])#([A-Za-zÀ-ɏ][\w/-]*)/g
+// start-of-string or whitespace/`(`, and the name follows core's TAG_NAME_SRC (so `# Heading`,
+// which has a space, and bare `#123` never match).
+const TAG_RE = new RegExp(`(^|[\\s(])#(${TAG_NAME_SRC})`, 'gu')
 function tagsToSpans(src: string): string {
     return src.replace(
         TAG_RE,

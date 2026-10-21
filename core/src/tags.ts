@@ -1,8 +1,15 @@
 import { parseList, normalizeTag } from './schema/coerce'
 import { stripCode } from './wikilinks'
 
-/** Regex to match inline tags: #tag-name (preceded by whitespace or line start). */
-export const INLINE_TAG_REGEX = /(?:^|\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)/g
+/** A tag name: letters, digits, `_`, `/` (nesting) and `-`, starting with a letter, digit or `_`,
+ *  and holding at least one letter — so `#42`, `#2026` and `#1-2` stay plain text (Obsidian's
+ *  rule). The one source every tag reader builds its regex from (core indexing, the editor's
+ *  tint, the reader's spans). Use with the `u` flag. */
+export const TAG_NAME_SRC = '(?=[\\p{L}\\p{N}_/-]*\\p{L})[\\p{L}\\p{N}_][\\p{L}\\p{N}_/-]*'
+
+/** Regex to match inline tags: #tag-name (preceded by whitespace or line start). A `\#` is not
+ *  a tag, since the `#` follows a backslash. */
+export const INLINE_TAG_REGEX = new RegExp(`(?:^|\\s)#(${TAG_NAME_SRC})`, 'gu')
 
 export function extractTags(
     data: Record<string, unknown>,

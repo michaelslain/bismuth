@@ -30,6 +30,7 @@ import { sanitizeHtml } from '../sanitizeHtml'
 import { specForWikiEmbed } from '../editor/embedSpec'
 import { api } from '../api'
 import { parseWikilink } from '../editor/wikilink'
+import { TAG_NAME_SRC } from '../../../core/src/tags'
 
 // ---------------------------------------------------------------------------------------
 // Generic atom factory
@@ -336,8 +337,9 @@ const embedImg = makeAtom({
 })
 
 // `#tag` (incl. nested `#a/b`, `-`). Requires start-of-line or whitespace before the `#` so it
-// doesn't match a markdown heading (`# `, which has a space) or `C#`. Matches editor/tag.ts.
-const TAG_RE = /(?:^|\s)#[\w/-]+/
+// doesn't match a markdown heading (`# `, which has a space) or `C#`; the name follows core's
+// TAG_NAME_SRC, so `#42` stays text.
+const TAG_RE = new RegExp(`(?:^|\\s)#${TAG_NAME_SRC}`, 'u')
 const tag = makeAtom({
     id: 'bismuthTag',
     pattern: TAG_RE,
@@ -346,14 +348,15 @@ const tag = makeAtom({
     dom: m => chip('bismuth-tag', m[0].slice(m[0].indexOf('#'))),
 })
 
-// Inline `$math$` (single `$`, non-empty, no embedded `$` or newline; not `$$`). Rendered via
+// Inline `$math$` by editor/inlineMath.ts's rule (not `$$`, no space just inside, no digit after
+// the close, `\$` literal, single line). Rendered via
 // the SAME shared KaTeX renderer the CodeMirror live-preview + renderNoteBody use (renderMath /
 // onMathReady), so the chip shows typeset math — not a raw `$…$` placeholder. KaTeX loads
 // lazily (~280KB), so if it isn't ready yet we paint the source as a `.bismuth-math` placeholder
 // carrying `data-math` and schedule an upgrade pass that fills every still-empty placeholder the
 // moment the chunk lands (mirrors bases/markdown.ts). The atom's `raw` is the verbatim `$…$`, so
 // it round-trips byte-stable regardless of whether KaTeX has rendered.
-const MATH_RE = /\$(?!\s)([^$\n]+?)(?<!\s)\$/
+const MATH_RE = /(?<![\\$])\$(?![\s$])((?:\\[^\n]|[^$\\\n])+?)(?<!\s)\$(?![$\d])/
 const math = makeAtom({
     id: 'bismuthMath',
     pattern: MATH_RE,

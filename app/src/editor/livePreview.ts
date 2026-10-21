@@ -23,6 +23,8 @@ import { mathField } from './mathBlock'
 import { wikilinkVisibleRange } from './wikilink'
 import { MEMORY_REF_RE } from '../../../core/src/memoryRef'
 import { findBareUrls } from './urls'
+import { findInlineMath, findSymbolEscapes } from './inlineMath'
+import { TAG_NAME_SRC } from '../../../core/src/tags'
 import { TaskCheckbox, charToStatus, type TaskStatus } from './TaskCheckbox'
 import { reorderAroundLine } from './taskFold'
 import { openTaskStatusMenu } from '../taskStatusMenu'
@@ -171,7 +173,6 @@ const TASK_LINE_RE = /^(\s*)([-*+])(\s+)\[([ xX/\\-])\](\s)/
 const BULLET_LINE_RE = /^(\s*)([-*+])(\s+)/
 const ORDERED_LINE_RE = /^(\s*)(\d+)([.)])(\s+)/
 const BLOCK_MATH_RE = /\$\$([^$]+)\$\$/g
-const INLINE_MATH_RE = /(?<!\$)\$([^$\n]+)\$(?!\$)/g
 const INLINE_CODE_RE = /(`+)((?:(?!\1)[^\n])*?)\1/g
 // The leading group swallows a sequence dash too, so `  - type: table` marks `type`.
 const FM_KEY_RE = /^(\s*(?:-\s+)?)([A-Za-z0-9_$.-]+)\s*:/
@@ -179,7 +180,7 @@ const YAML_LANGS = new Set(['yaml', 'yml'])
 // STRONG_STAR_RE / STRONG_UNDERSCORE_RE / EM_RE / STRIKE_RE live in ./inlineEmphasis.
 const WIKILINK_RE = /(?<!!)\[\[([^\]]+?)\]\]/g
 const MD_LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g
-const TAG_RE = /(^|\s)(#[\p{L}\d/_-]+)/gu
+const TAG_RE = new RegExp(`(^|\\s)(#${TAG_NAME_SRC})`, 'gu')
 // Fresh instance: MEMORY_REF_RE is module-level + global, so scanning it directly here would share
 // `lastIndex` with the renderer's passes.
 const MEMORY_REF_LINE_RE = new RegExp(MEMORY_REF_RE.source, 'g')
@@ -492,13 +493,44 @@ function pushBareUrls(
 }
 
 /** Tint body `#tag` spans (incl. the leading `#`) in --teal. A tag is `#` at
- *  start-of-line or after whitespace + tag chars (letters/digits/`/`/`_`/`-`). The
+ *  start-of-line or after whitespace + a name by core's TAG_NAME_SRC (holds a letter, so `#42`
+ *  stays plain). The
  *  mark only colors text and hides nothing, so the cursor-line reveal stays consistent
  *  with raw source either way. Heading `#`s never match (callers skip heading lines). */
 function pushTags(deco: Range<Decoration>[], text: string, lineFrom: number) {
     for (const m of text.matchAll(TAG_RE)) {
         const tagStart = lineFrom + (m.index ?? 0) + m[1].length
         deco.push(tag.range(tagStart, tagStart + m[2].length))
+    }
+}
+
+/** Hide the backslash of each `\$` / `\#` escape (the way to write a literal dollar or hash that
+ *  would otherwise open math or a tag) unless the caret touches it. Skips escapes inside math,
+ *  raw HTML, inline code, links, bare URLs and wikilinks: those keep their source verbatim, and
+ *  a hide inside another token's replace decoration would overlap it. */
+function pushSymbolEscapes(
+    deco: Range<Decoration>[],
+    text: string,
+    lineFrom: number,
+    revealsRange: (from: number, to: number) => boolean,
+    math: { from: number; to: number }[],
+    html: { from: number; to: number }[],
+) {
+    const escapes = findSymbolEscapes(text)
+    if (escapes.length === 0) return
+    const prot: { from: number; to: number }[] = [...math, ...html]
+    const add = (a: number, len: number) =>
+        prot.push({ from: lineFrom + a, to: lineFrom + a + len })
+    for (const m of text.matchAll(INLINE_CODE_RE))
+        add(m.index ?? 0, m[0].length)
+    for (const m of text.matchAll(WIKILINK_RE)) add(m.index ?? 0, m[0].length)
+    for (const m of text.matchAll(MD_LINK_RE)) add(m.index ?? 0, m[0].length)
+    for (const { start, end } of findBareUrls(text)) add(start, end - start)
+    for (const i of escapes) {
+        const from = lineFrom + i
+        if (prot.some(p => from < p.to && p.from < from + 2)) continue
+        if (revealsRange(from, from + 2)) continue
+        deco.push(hide.range(from, from + 1))
     }
 }
 
@@ -1027,16 +1059,17 @@ function buildDecorations(
                     }
                 }
 
-                // inline math: $...$ (not $$, at least one non-$ char inside)
-                // negative lookbehind/ahead for $ to avoid matching $$
+                // inline math: $...$ by the shared rule (editor/inlineMath.ts) — no whitespace
+                // just inside either `$`, a closing `$` not followed by a digit, `\$` literal — so
+                // a dollar amount like `$5 and $10` stays text.
                 // Render it display-STYLE (\displaystyle — full-size fractions/sums/limits, the
                 // same typography as a $$ block) but still INLINE (displayMode:false → flows in the
                 // text, no jarring centered line break mid-sentence). So `$\frac{a}{b}$` looks like
                 // the block instead of the cramped default inline style. `\displaystyle` is a valid
                 // KaTeX switch; throwOnError:false in renderMath shrugs off anything malformed.
-                for (const m of text.matchAll(INLINE_MATH_RE)) {
-                    const s = line.from + (m.index ?? 0)
-                    const end = s + m[0].length
+                for (const m of findInlineMath(text)) {
+                    const s = line.from + m.from
+                    const end = line.from + m.to
                     if (inHtmlSpan(s, end)) continue
                     // A `$` on this line that is actually a delimiter of a multi-line span (owned by
                     // mathBlock) must not be re-claimed here — its replace would overlap mathBlock's.
@@ -1050,13 +1083,13 @@ function buildDecorations(
                             syntaxMark.range(s, s + 1),
                             syntaxMark.range(end - 1, end),
                         )
-                        for (const d of latexTokenDecorations(s + 1, m[1]))
+                        for (const d of latexTokenDecorations(s + 1, m.inner))
                             deco.push(d)
                     } else {
                         deco.push(
                             Decoration.replace({
                                 widget: new MathWidget(
-                                    `\\displaystyle ${m[1]}`,
+                                    `\\displaystyle ${m.inner}`,
                                     false,
                                 ),
                             }).range(s, end),
@@ -1108,6 +1141,16 @@ function buildDecorations(
             // body #hashtags — tint TEAL. Skipped on heading lines so heading "#"s
             // are never tinted (frontmatter/code/table lines already `continue` above).
             if (!hm) pushTags(deco, text, line.from)
+
+            // `\$` / `\#` escapes: hide the backslash so a literal dollar or hash reads plain.
+            pushSymbolEscapes(
+                deco,
+                text,
+                line.from,
+                revealsRange,
+                mathSpans,
+                htmlSpans,
+            )
 
             // iridescent "bismuth": tint every whole-word occurrence, skipping any that sit inside
             // code / math / raw-HTML / links / URLs / wikilinks / tags (frontmatter + fenced code

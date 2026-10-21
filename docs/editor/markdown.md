@@ -85,6 +85,18 @@ Double-click inside the block, or start typing in it, to show the raw fences. Mo
 
 Inline math renders at display size but flows in the sentence, so `$\frac{a}{b}$` looks like the block form. A `$...$` span can run across several lines; an unclosed `$` ends at a blank line or code fence, so a price like `$5` does not swallow the note.
 
+## Write a literal dollar sign
+
+A dollar sign is plain text unless it opens a valid `$...$` span. A span needs a non-space character just inside each `$`, and the closing `$` cannot be followed by a digit, so prices stay text without any escaping:
+
+```markdown
+lunch was $5 and dinner $10      plain text
+a range of $5-$10                plain text
+area is $x^2$                    math
+```
+
+To force a literal dollar anywhere, write `\$`. The editor hides the backslash unless the cursor is on it, and the reader, exports and table cells show a plain `$`. The same backslash writes a literal hash: `\#idea` is not a tag (tag rules: [Wikilinks and tags](../vault/wikilinks-tags.md)).
+
 Set `editor.mathMacros` to a preamble of `\newcommand`, `\renewcommand`, `\providecommand` and `\def` definitions to use your own commands in every note:
 
 ```yaml
@@ -122,7 +134,7 @@ Reveal is decided by three predicates built from the selection ranges, and all o
 
 Hidden delimiters carry `cm-hidden-syntax` (`display: none`); revealed ones carry `cm-syntax-mark` (dim mono). An empty list or task item with the caret on it keeps its raw marker so the caret has somewhere to sit. Nesting depth for lists comes from the parse tree, falling back to the raw indent at four spaces per level (`listDepth`), and the hanging indent uses `LIST_STEP` from `listLayout.ts`.
 
-Each inline token has its own pass: `pushEmphasis` in `inlineEmphasis.ts`, then math widgets, an inline-code loop that matches equal-length backtick runs, `pushMarkdownLinks`, `pushBareUrls`, `pushWikilinks`, `pushMemoryRefs`, `pushTags` and `pushBismuth`. Inline math widgets and inline HTML widgets are both replace decorations, and overlapping replaces throw, so the math pass skips ranges that `pushInlineHtml` already claimed. Frontmatter rows get only the link passes.
+Each inline token has its own pass: `pushEmphasis` in `inlineEmphasis.ts`, then math widgets, an inline-code loop that matches equal-length backtick runs, `pushMarkdownLinks`, `pushBareUrls`, `pushWikilinks`, `pushMemoryRefs`, `pushTags` and `pushBismuth`. The math pass reads spans with `findInlineMath` from `inlineMath.ts`, the rule table cells share; the reader's marked tokenizer in `app/src/bases/markdown.ts` and `scanMultilineInlineMath` in `mathBlock.ts` apply the same rule. After `pushTags`, `pushSymbolEscapes` hides the backslash of each `\$` and `\#` (from `findSymbolEscapes`) outside math, code, links and HTML. `cellEditorExtensions.ts` retags markdown's `Escape` node as plain content, so `codeHighlightStyle`'s escape colour never tints the escaped character. Inline math widgets and inline HTML widgets are both replace decorations, and overlapping replaces throw, so the math pass skips ranges that `pushInlineHtml` already claimed. Frontmatter rows get only the link passes.
 
 A click on a rendered link is handled in `Editor.tsx`, which scans the raw line text rather than the DOM, so the same code opens links in frontmatter. The click handler only runs when the target has `.cm-link` or `.cm-wikilink`, which are absent on a link the caret is revealing. Checkbox clicks and right-clicks are handled in `livePreview.ts`; completion reordering uses `reorderAroundLine` from `taskFold.ts`.
 
@@ -136,4 +148,4 @@ A callout's body is rendered by `renderNoteBody` (`bases/markdown.ts`) into the 
 
 All rendered HTML goes through `sanitizeHtml` in `app/src/sanitizeHtml.ts`, DOMPurify configured with the HTML, MathML and SVG profiles and `target` allowed on links. With no DOM available (Bun tests), it returns its input unchanged. A live HTML artifact embed (`![[viz.html]]`) runs in a sandboxed iframe from `embedBlock.ts` instead, since `<script>` is always stripped here.
 
-Source: `app/src/editor/livePreview.ts`, `app/src/editor/blockRegions.ts`, `app/src/editor/inlineEmphasis.ts`, `app/src/editor/listLayout.ts`, `app/src/editor/callout.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/katexLoader.ts`, `app/src/ui/CodeHeader.tsx`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLanguages.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/editor/foldBlocks.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/findPanel.ts`, `app/src/editor/markdownFormat.ts`, `app/src/editor/wrapSelection.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/datePickerExtension.tsx`, `app/src/sanitizeHtml.ts`, `app/src/Editor.tsx`, `app/src/editor/blockHeights.ts`, `app/src/editor/blockHeightRecorder.ts`, `app/src/editor/tableWidget.ts`, `app/src/ui/table/typeTable.ts`
+Source: `app/src/editor/livePreview.ts`, `app/src/editor/inlineMath.ts`, `app/src/editor/blockRegions.ts`, `app/src/editor/inlineEmphasis.ts`, `app/src/editor/listLayout.ts`, `app/src/editor/callout.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/katexLoader.ts`, `app/src/ui/CodeHeader.tsx`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLanguages.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/editor/foldBlocks.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/findPanel.ts`, `app/src/editor/markdownFormat.ts`, `app/src/editor/wrapSelection.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/datePickerExtension.tsx`, `app/src/sanitizeHtml.ts`, `app/src/Editor.tsx`, `app/src/editor/blockHeights.ts`, `app/src/editor/blockHeightRecorder.ts`, `app/src/editor/tableWidget.ts`, `app/src/ui/table/typeTable.ts`

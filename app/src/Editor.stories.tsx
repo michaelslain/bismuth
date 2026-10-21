@@ -1731,6 +1731,65 @@ const NON_FIELD_BRACKETS = [
     '[due 2026-02-30]',
 ]
 
+const LITERAL_SYMBOLS_TEXT = [
+    'Math still renders: $x^2 + y^2$ and #physics is a tag.',
+    '',
+    'Prices stay text: lunch was $5 and dinner $10, a range of $5-$10.',
+    '',
+    'Numbers stay text: issue #42 closed in #2026.',
+    '',
+    'Escapes: a literal \\$x\\$ and a literal \\#hashtag.',
+].join('\n')
+
+/** A dollar or hash that is not math or a tag stays plain text in the editor: `$5 and $10` and
+ *  `$5-$10` never typeset, `#42` never tints, and a `\$` / `\#` escape hides its backslash off
+ *  the caret. Exactly one math widget (line 1) and one tag (line 1) render. */
+export const LiteralSymbols: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { 'Literal Symbols.md': LITERAL_SYMBOLS_TEXT },
+            }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Literal Symbols.md"
+                    initialText={LITERAL_SYMBOLS_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.cm-math')) {
+                throw new Error('math not rendered yet')
+            }
+            return true
+        })
+        const math = canvasElement.querySelectorAll('.cm-math')
+        expect(math.length).toBe(1)
+        const tags = [...canvasElement.querySelectorAll('.cm-tag')].map(
+            t => t.textContent,
+        )
+        expect(tags).toEqual(['#physics'])
+        // innerText, not textContent: a hidden escape backslash is display:none, still in the DOM.
+        const lines = [
+            ...canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        ].map(l => l.innerText)
+        expect(lines.find(l => l.startsWith('Prices'))).toBe(
+            'Prices stay text: lunch was $5 and dinner $10, a range of $5-$10.',
+        )
+        expect(lines.find(l => l.startsWith('Escapes'))).toBe(
+            'Escapes: a literal $x$ and a literal #hashtag.',
+        )
+    },
+}
+
 /** Regression for livePreview.ts's bracket task-field chip (tasks-replacement plan, Task 6):
  *  `[due 2026-09-14]`, `[high]`, `[every week]` each render wrapped in `.cm-task-field`. It is
  *  a MARK, not a replace widget — the raw bracket text IS the chip, so unlike RevealedMarks'

@@ -19,6 +19,7 @@
 import type { Extension } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { syntaxHighlighting } from '@codemirror/language'
+import { styleTags, tags as t } from '@lezer/highlight'
 import type { CompletionContext } from '@codemirror/autocomplete'
 import { toggleBold, toggleItalic } from './markdownFormat'
 import { livePreview } from './livePreview'
@@ -99,9 +100,15 @@ export function markdownEditingExtensions(
             { id: 'toggle-italic', run: toggleItalic },
         ]),
         // `remove: ["IndentedCode"]` keeps a 4-space-indented line prose, not a code block.
+        // A markdown `\$` / `\#` escape is prose, not a code escape: retag it as plain content so
+        // codeHighlightStyle's `t.escape` teal (meant for `\n` in fenced code) never tints a
+        // literal dollar or hash. livePreview hides the backslash off the caret.
         markdown({
             codeLanguages,
-            extensions: [{ remove: ['IndentedCode'] }],
+            extensions: [
+                { remove: ['IndentedCode'] },
+                { props: [styleTags({ Escape: t.content })] },
+            ],
         }),
         // Enter continues list/blockquote markup, else a plain newline (no stray auto-indent).
         enterKeymap,

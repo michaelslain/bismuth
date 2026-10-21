@@ -13,6 +13,8 @@
 import { Marked } from 'marked'
 import { renderMath } from './katexLoader'
 import { escapeHtml } from '../htmlEscape'
+import { TAG_NAME_SRC } from '../../../core/src/tags'
+import { findInlineMath, matchInlineMath } from './inlineMath'
 import { renderCellListHtml } from './cellList'
 import { iridescentBismuthWith } from './bismuthWord'
 import {
@@ -57,37 +59,14 @@ const CELL_EMBED_MAX_H = 240
 const MD_IMAGE_AT = /^!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/
 
 // An Obsidian `#tag`, anchored at the start of the slice we test (the caller has already checked
-// the char BEFORE it is start-of-cell or whitespace). The tag must start with a LETTER (Latin +
-// accents À-ɏ) then word chars / `/` (nested tags) / `-`, mirroring the reader's TAG_RE and
-// editor/tag.ts — so `#123`, `#`, `C#` are never treated as tags (false-positive guard, #41).
-const TAG_AT = /^#([A-Za-zÀ-ɏ][\w/-]*)/
+// the char BEFORE it is start-of-cell or whitespace). The name follows core's TAG_NAME_SRC, so
+// `#123`, `#`, `C#` are never tags.
+const TAG_AT = new RegExp(`^#(${TAG_NAME_SRC})`, 'u')
 
 // NOTE: this attr-escape additionally escapes `>` (via escapeHtml) — a different set
 // than the canonical escapeAttr (`& < "`) — so it stays local to preserve behavior.
 function escapeAttr(s: string): string {
     return escapeHtml(s).replace(/"/g, '&quot;')
-}
-
-/** If a `$` at `open` begins an inline-math span, return the index just past its closing
- *  `$`; else -1. Common rule: no whitespace just inside either delimiter, not `$$`
- *  (that's display math, handled elsewhere), single line, `\$` escapes a literal dollar. */
-function matchMath(src: string, open: number): number {
-    if (src[open] !== '$' || src[open + 1] === '$') return -1
-    const after = src[open + 1]
-    if (after === undefined || after === ' ' || after === '\t') return -1
-    for (let j = open + 1; j < src.length; j++) {
-        const ch = src[j]
-        if (ch === '\\') {
-            j++
-            continue
-        } // skip the escaped char (e.g. \$)
-        if (ch === '\n') return -1
-        if (ch === '$') {
-            const prev = src[j - 1]
-            return prev === ' ' || prev === '\t' ? -1 : j + 1
-        }
-    }
-    return -1
 }
 
 /** Split a cell's markdown into segments, pulling wikilinks and inline math out of the
@@ -161,8 +140,8 @@ export function tokenizeInline(src: string): InlineSeg[] {
             }
         }
         // #tag — an Obsidian tag chip. Only at the start of the cell or right after whitespace (so a
-        // mid-word `C#` / a URL fragment `x#y` / a heading `# h` never match), and the tag body must
-        // start with a letter (TAG_AT), matching how tags parse in the note body and reader (#41).
+        // mid-word `C#` / a URL fragment `x#y` / a heading `# h` never match), and the tag name must
+        // hold a letter (TAG_AT), matching how tags parse in the note body and reader.
         if (src[i] === '#' && (i === 0 || /\s/.test(src[i - 1] ?? ''))) {
             const m = TAG_AT.exec(src.slice(i))
             if (m) {
@@ -171,6 +150,13 @@ export function tokenizeInline(src: string): InlineSeg[] {
                 i += m[0].length
                 continue
             }
+        }
+        // `\$` is a literal dollar: keep the pair for `marked` (which drops the backslash) so the
+        // `$` never opens inline math.
+        if (src[i] === '\\' && src[i + 1] === '$') {
+            buf += '\\$'
+            i += 2
+            continue
         }
         // `$$…$$` is DISPLAY math (owned by the math-block path) — pass the fence through
         // literally so the inner single-`$` scan below doesn't misread it as inline math.
@@ -181,7 +167,7 @@ export function tokenizeInline(src: string): InlineSeg[] {
         }
         // inline $math$
         if (src[i] === '$') {
-            const end = matchMath(src, i)
+            const end = matchInlineMath(src, i)
             if (end !== -1) {
                 flush()
                 segs.push({ type: 'math', expr: src.slice(i + 1, end - 1) })
@@ -300,27 +286,10 @@ function renderSeg(seg: InlineSeg, assetUrl: (t: string) => string): string {
 // HTML wrapper around the recursively-rendered inner content, and leaves every plain (non-
 // spanning) emphasis token to `marked` exactly as before — zero change to the existing path.
 
-/** Spans of inline `$…$` math in `src` (inclusive of the `$` delimiters), mirroring
- *  tokenizeInline's scan: `$$` fences pass through, matchMath decides validity. */
+/** Spans of inline `$…$` math in `src` (inclusive of the `$` delimiters), by the same rule as
+ *  tokenizeInline's scan. */
 function mathSpansIn(src: string): { from: number; to: number }[] {
-    const spans: { from: number; to: number }[] = []
-    let i = 0
-    while (i < src.length) {
-        if (src[i] === '$' && src[i + 1] === '$') {
-            i += 2
-            continue
-        } // display-math fence — not inline math
-        if (src[i] === '$') {
-            const end = matchMath(src, i)
-            if (end !== -1) {
-                spans.push({ from: i, to: end })
-                i = end
-                continue
-            }
-        }
-        i++
-    }
-    return spans
+    return findInlineMath(src).map(({ from, to }) => ({ from, to }))
 }
 
 /** An accepted spanning-emphasis token: [start, end) in the source, `markLen` delimiter chars on

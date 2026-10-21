@@ -132,9 +132,16 @@ test('both frontmatter array and comma-separated string mixed', () => {
     expect(tags).toContain('bar')
 })
 
-test('tags with numbers at start are extracted', () => {
-    const tags = extractTags({}, '#123tag #456')
-    expect(Array.isArray(tags)).toBe(true)
+test('a tag may start with a digit but a bare number is plain text', () => {
+    expect(extractTags({}, '#123tag #456 issue #42 #1-2 #2026')).toEqual(['123tag'])
+})
+
+test('an escaped hash is plain text', () => {
+    expect(extractTags({}, 'not a tag: \\#literal, but #real is')).toEqual(['real'])
+})
+
+test('tag names take non-Latin letters', () => {
+    expect(extractTags({}, '#café #日本語')).toEqual(['café', '日本語'])
 })
 
 test('duplicate tags in frontmatter array are deduped', () => {

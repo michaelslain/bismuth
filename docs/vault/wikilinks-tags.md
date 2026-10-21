@@ -75,7 +75,9 @@ Commas are the only separator in a string. Whitespace inside a tag is kept.
 Inline tags follow these rules:
 
 - The `#` is at the start of a line or after whitespace.
-- The next character is a letter, digit or `_`. Later characters may also be `/` (nesting) and `-`.
+- The next character is a letter, digit or `_`. Later characters may also be `/` (nesting) and `-`. Letters include accented and non-Latin ones.
+- The name holds at least one letter, so a bare number like `#42` or `#2026` is plain text.
+- A backslash before the `#` (`\#idea`) writes a literal hash. The editor hides the backslash unless the cursor is on it.
 - Tags are case-sensitive: `#MyTag` and `#mytag` are two tags.
 
 ```text
@@ -86,6 +88,9 @@ Inline tags follow these rules:
 C#               not a tag (# mid-word)
 `#fix`           not a tag (inline code)
 #tag1#tag2       only "tag1"; the second # follows a letter, not whitespace
+#2026-q1         tag "2026-q1"
+issue #42        not a tag (no letter)
+\#idea           not a tag (escaped); reads as "#idea"
 ```
 
 ## What does the editor autocomplete?
@@ -117,7 +122,7 @@ The 2nd brain graph shows both note and tag nodes. Memory notes are separate; se
 `extractWikilinks` returns the distinct targets, matching `/(?<!!)\[\[([^\]]+?)\]\]/g` against the masked text and cutting each match at the first `|` and then the first `#`.
 It skips the work entirely when the note has no `[[`.
 
-`core/src/tags.ts` exports `extractTags(data, body)`. Frontmatter tags go through `parseList` and `normalizeTag` from `core/src/schema/coerce.ts`. Inline tags use `INLINE_TAG_REGEX` (`/(?:^|\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)/g`) on the masked body. The result is a deduplicated array without the `#`.
+`core/src/tags.ts` exports `extractTags(data, body)`. Frontmatter tags go through `parseList` and `normalizeTag` from `core/src/schema/coerce.ts`. Inline tags use `INLINE_TAG_REGEX` on the masked body. Its name pattern is `TAG_NAME_SRC`, which the editor's tag tint (`livePreview.ts`), the reader's tag spans (`app/src/bases/markdown.ts`), table cells (`inlineMarkdown.ts`) and the flashcard field editor (`milkdown/inlineNodes.ts`) also build their regexes from, so every surface agrees on what is a tag. The result is a deduplicated array without the `#`.
 
 ### Resolution
 

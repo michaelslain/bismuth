@@ -14,8 +14,8 @@ The table orients you; where a linked live page disagrees, follow the live page 
 | Aspect | Obsidian | Bismuth |
 |---|---|---|
 | frontmatter `tags` | a YAML list | YAML list, flow list or a comma-separated string; a leading `#` is stripped; `tags: a b` is one tag `a b` |
-| inline `#tag` | letters, numbers, `_`, `-`, `/`, and Unicode (including emoji) | ASCII only: `A-Za-z0-9_` then `A-Za-z0-9_/-`; a non-ASCII tag is not a graph tag |
-| purely numeric tag (`#1984`) | not a tag | `#123` is a tag |
+| inline `#tag` | letters, numbers, `_`, `-`, `/`, and Unicode (including emoji) | letters (any script), numbers, `_`, then also `/` and `-`; emoji end the tag |
+| purely numeric tag (`#1984`) | not a tag | not a tag; the name needs a letter |
 | case | case-insensitive | case-sensitive: `#Foo` and `#foo` are two tags |
 | nested `#a/b` | works; `hasTag("a")` matches `a/b` | works, but `file.hasTag("a")` does not match `a/b` |
 | tags in code spans and fences | ignored | ignored |

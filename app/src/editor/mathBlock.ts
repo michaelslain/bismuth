@@ -178,7 +178,8 @@ function overlapsAny(
 }
 
 /** Scan `text` for multi-line inline `$…$` spans — a single `$` (not `$$`, honoring `\$`
- *  escapes and the no-space-just-inside-the-delimiter rule) whose matching closing `$` is on
+ *  escapes, the no-space-just-inside-the-delimiter rule and no digit after the close —
+ *  editor/inlineMath.ts's rule) whose matching closing `$` is on
  *  a LATER line. Returns doc-absolute `[from, to)` ranges (delimiters included), in order and
  *  non-overlapping. Single-line spans are intentionally omitted (livePreview owns them); `$$`
  *  delimiters, code fences, blank lines and the line cap bound the scan so an unclosed `$`
@@ -310,6 +311,8 @@ function findClose(
             if (text[j + 1] === '$') return -1 // `$$` — a display delimiter can't sit inside inline math
             const prev = text[j - 1]
             if (prev === ' ' || prev === '\t' || prev === '\n') return -1 // space-just-inside → invalid close
+            const next = text[j + 1]
+            if (next !== undefined && next >= '0' && next <= '9') return -1 // `$5 … $9`: a price, not a close
             return j
         }
     }

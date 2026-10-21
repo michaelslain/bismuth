@@ -34,6 +34,19 @@ describe('renderMarkdown — inline math', () => {
         expect(html).not.toContain('bismuth-math')
     })
 
+    test('a price range `$5-$10` stays literal (a close followed by a digit is no close)', () => {
+        const html = renderMarkdown('between $5-$10 each')
+        expect(html).not.toContain('bismuth-math')
+        expect(html).toContain('$5-$10')
+    })
+
+    test('an escaped `\\$` renders as a plain dollar and never opens math', () => {
+        const html = renderMarkdown('literal \\$x\\$ here')
+        expect(html).not.toContain('bismuth-math')
+        expect(html).toContain('$x$')
+        expect(html).not.toContain('\\$')
+    })
+
     // Regression (ReDoS): a long unclosed `$…` paragraph full of `\`-escapes used to backtrack
     // exponentially in the inline-math tokenizer. The disambiguated alternation is linear, so this
     // renders effectively instantly and leaves the `$` literal (no closing `$` → not math). If the
@@ -179,6 +192,14 @@ describe('renderNoteBody — wikilinks/tags vs code', () => {
     test('a #tag in prose becomes a styled span, but stays literal in code', () => {
         expect(renderNoteBody('a #book here')).toContain('class="bismuth-tag"')
         expect(renderNoteBody('the `#book` macro')).not.toContain('bismuth-tag')
+    })
+
+    test('a bare number and an escaped hash stay plain text', () => {
+        expect(renderNoteBody('issue #42 is open')).not.toContain('bismuth-tag')
+        const html = renderNoteBody('not a tag: \\#literal')
+        expect(html).not.toContain('bismuth-tag')
+        expect(html).toContain('#literal')
+        expect(html).not.toContain('\\#')
     })
 
     test('masking code never corrupts a bare space-delimited number', () => {
