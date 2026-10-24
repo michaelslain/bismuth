@@ -40,6 +40,7 @@
 //   git commit --no-verify             — skip every hook (blunter)
 // Both are legitimate for a WIP commit on a branch. Neither should be how you land on main.
 import { spawnSync } from 'node:child_process'
+import { fastPhases } from './fastTests'
 
 const WORKSPACES = [
     'core',
@@ -251,16 +252,20 @@ function main(): void {
         // ("cli" is in "clineMocked"), so the gate silently ran 7 unrelated tests and reported a
         // count nobody could reconcile. The trailing slash scopes it to the directory.
         // `--parallel=4` matches the root `test:fast` script: four files at a time, sized for
-        // several sessions testing on one machine (docs/contributing/testing.md).
+        // several sessions testing on one machine (docs/contributing/testing.md). The vault-watcher
+        // files run one at a time after it (scripts/fastTests.ts says why).
         if (ok) {
-            ok = run(
-                `tests (fast) — ${tests.join(', ')}`,
-                'bun',
-                ['test', '--parallel=4', ...tests.map(t => `${t}/`)],
-                {
-                    BISMUTH_FAST_TESTS: '1',
-                },
-            )
+            for (const { label, args } of fastPhases(tests.map(t => `${t}/`))) {
+                ok = run(
+                    `tests (fast, ${label}) — ${tests.join(', ')}`,
+                    'bun',
+                    args,
+                    {
+                        BISMUTH_FAST_TESTS: '1',
+                    },
+                )
+                if (!ok) break
+            }
         }
     }
 

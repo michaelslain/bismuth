@@ -4,9 +4,11 @@ import { reconcileSettings } from '../src/settings'
 import { makeVault, tempDir, waitForFsQuiet } from './helpers'
 import { shouldRunSlowTests } from './slowGate'
 
-// Gated with shouldRunSlowTests: each test here waits on the real watcher — up to ~3.7 s per test
-// (waitForFsQuiet's 3 s cap, then server boot and a 500 ms settle) — which test:fast skips.
+// Gated with shouldRunSlowTests: each test here waits on the real watcher (waitForFsQuiet waits for
+// a fresh watch to go live, seconds under load, then server boot and a 500 ms settle), which
+// test:fast skips. TEST_MS outlasts waitForFsQuiet's own 15 s deadline.
 const t = shouldRunSlowTests(process.env) ? test : test.skip
+const TEST_MS = 30_000
 
 // Throwaway machine dirs for createServer's boot-time side effects (daemon machine registry +
 // run registry) — mirrors server.test.ts (:19-37) and server.gcal-ticker.test.ts, so this file
@@ -66,14 +68,19 @@ t(
             stop()
         }
     },
+    TEST_MS,
 )
 
-t('CORS preflight is cacheable', async () => {
-    const { url, stop } = await startTestServer({ files: {} })
-    try {
-        const res = await fetch(`${url}/tree`, { method: 'OPTIONS' })
-        expect(res.headers.get('Access-Control-Max-Age')).toBe('600')
-    } finally {
-        stop()
-    }
-})
+t(
+    'CORS preflight is cacheable',
+    async () => {
+        const { url, stop } = await startTestServer({ files: {} })
+        try {
+            const res = await fetch(`${url}/tree`, { method: 'OPTIONS' })
+            expect(res.headers.get('Access-Control-Max-Age')).toBe('600')
+        } finally {
+            stop()
+        }
+    },
+    TEST_MS,
+)

@@ -1,8 +1,17 @@
 import { test, expect } from 'bun:test'
-import { mkdirSync, readdirSync, rmSync, writeFileSync, watch } from 'node:fs'
+import {
+    mkdirSync,
+    readdirSync,
+    renameSync,
+    rmSync,
+    utimesSync,
+    writeFileSync,
+    watch,
+} from 'node:fs'
 import { join } from 'node:path'
 import { watchLive } from '../src/liveWatch'
 import { tempDir } from './tempDirs'
+import { WATCH_TEST_TIMEOUT_MS } from './support/vaultEvents'
 
 type Cb = (event: string, filename: string | null) => void
 
@@ -103,6 +112,90 @@ test('a delete during startup, which no stat can name, is reported as extent-unk
     w.close()
 })
 
+test('a folder chain created during startup is reported folder by folder, not as extent-unknown', async () => {
+    const root = tempDir('live-watch-')
+    const fake = fakeWatch()
+    const got: (string | null)[] = []
+    const w = watchLive(root, f => got.push(f), { watchFn: fake.watchFn })
+    await tick()
+    // a/ and a/b/ moved only because a new child folder appeared in each; the new folders account
+    // for that, so nothing here is a lost child and the file's path must survive.
+    mkdirSync(join(root, 'a/b/c'), { recursive: true })
+    writeFileSync(join(root, 'a/b/c/note.md'), 'x')
+    fake.goLive(root)
+    await settle(root, fake)
+    expect(got.sort()).toEqual(['a', 'a/b', 'a/b/c', 'a/b/c/note.md'])
+    w.close()
+})
+
+test('an empty folder created during startup is reported, not extent-unknown', async () => {
+    const root = tempDir('live-watch-')
+    const fake = fakeWatch()
+    const got: (string | null)[] = []
+    const w = watchLive(root, f => got.push(f), { watchFn: fake.watchFn })
+    await tick()
+    mkdirSync(join(root, 'empty'))
+    fake.goLive(root)
+    await settle(root, fake)
+    // Its own mtime moved with nothing in it to show for it; a new folder held nothing to lose.
+    expect(got).toEqual(['empty'])
+    w.close()
+})
+
+test('a file moved into a folder created during startup is reported, though its mtime is old', async () => {
+    const root = tempDir('live-watch-')
+    const outside = tempDir('live-watch-src-')
+    writeFileSync(join(outside, 'old.md'), 'x')
+    const old = new Date('2020-01-01T00:00:00Z')
+    utimesSync(join(outside, 'old.md'), old, old)
+    const fake = fakeWatch()
+    const got: (string | null)[] = []
+    const w = watchLive(root, f => got.push(f), { watchFn: fake.watchFn })
+    await tick()
+    mkdirSync(join(root, 'new'))
+    renameSync(join(outside, 'old.md'), join(root, 'new/old.md'))
+    fake.goLive(root)
+    await settle(root, fake)
+    expect(got.sort()).toEqual(['new', 'new/old.md'])
+    w.close()
+})
+
+test('a delete beside a folder that only changed inside is still extent-unknown', async () => {
+    const root = tempDir('live-watch-')
+    mkdirSync(join(root, 'sub/kept'), { recursive: true })
+    writeFileSync(join(root, 'sub/gone.md'), 'x')
+    const fake = fakeWatch()
+    const got: (string | null)[] = []
+    const w = watchLive(root, f => got.push(f), { watchFn: fake.watchFn })
+    await tick()
+    rmSync(join(root, 'sub/gone.md'))
+    writeFileSync(join(root, 'sub/kept/new.md'), 'x')
+    fake.goLive(root)
+    await settle(root, fake)
+    await until(() => got.includes(null))
+    // kept/ moved, but it is not new, so it does not explain sub/ losing gone.md.
+    expect(got).toEqual(['sub/kept/new.md', null])
+    w.close()
+})
+
+test('a folder created before a delete in the same parent does not cover the delete', async () => {
+    const root = tempDir('live-watch-')
+    mkdirSync(join(root, 'sub'))
+    writeFileSync(join(root, 'sub/gone.md'), 'x')
+    const fake = fakeWatch()
+    const got: (string | null)[] = []
+    const w = watchLive(root, f => got.push(f), { watchFn: fake.watchFn })
+    await tick()
+    mkdirSync(join(root, 'sub/fresh'))
+    await new Promise(r => setTimeout(r, 20)) // past the folder-creation slack
+    rmSync(join(root, 'sub/gone.md'))
+    fake.goLive(root)
+    await settle(root, fake)
+    await until(() => got.includes(null))
+    expect(got).toEqual(['sub/fresh', null])
+    w.close()
+})
+
 test('skipDir keeps a directory out of the catch-up walk', async () => {
     const root = tempDir('live-watch-')
     mkdirSync(join(root, '.git'))
@@ -156,13 +249,15 @@ test('with the real fs.watch, a write made the moment watchLive returns is repor
     const w = watchLive(root, f => got.push(f))
     writeFileSync(join(root, 'b.md'), 'x')
     try {
-        const deadline = Date.now() + 5000
+        // The write is reported once the watcher's probe is delivered, which a busy FSEvents can
+        // hold back for seconds; the deadline leaves the test's own timeout room to report.
+        const deadline = Date.now() + WATCH_TEST_TIMEOUT_MS - 5000
         while (!got.includes('b.md') && Date.now() < deadline) await tick()
         expect(got).toContain('b.md')
     } finally {
         w.close()
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('a write dropped while a sibling watcher opens or closes is still delivered', async () => {
     const root = tempDir('live-watch-')

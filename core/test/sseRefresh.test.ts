@@ -11,75 +11,33 @@
 // Asserting only (1) would pass even if the tree never rebuilt; asserting only (2) would pass
 // even if the frontend was never told. The bug class needs both.
 //
-// SSE is read with fetch + a ReadableStream reader, matching server.test.ts — Bun has no global
-// EventSource. Frames are split on "\n\n" and non-`data:` lines are skipped, because the server
-// interleaves `: keepalive` comments (core/src/server.ts, every settings.server.sseHeartbeatMs).
+// SSE is read through support/vaultEvents.ts (fetch + a ReadableStream reader — Bun has no global
+// EventSource), which waits against a deadline sized for a watcher that is slow to go live.
 import { test, expect } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 import { initializeSettings } from '../src/settings'
 import { makeSampleVault } from './helpers'
+import {
+    openVaultEvents,
+    WATCH_TEST_TIMEOUT_MS,
+    type VaultFrame,
+} from './support/vaultEvents'
 
-// waitForFrame's own poll runs up to 4000ms by default, on top of vault setup, server boot, and
-// several HTTP round trips — leaving only a few hundred ms of headroom against Bun's 5s default
-// per-test timeout (the exact flake class fixed in 46680ecb for the CLI suite). Give each test
-// real margin via bun:test's third `test()` argument, matching cli/test/cli.test.ts's style.
-const TEST_TIMEOUT_MS = 15_000
-
-/** Read SSE frames until `match` accepts one, or `timeoutMs` elapses. Returns the frame. The read
- *  races the deadline, so a stream that goes quiet fails at `timeoutMs` instead of hanging until the
- *  test's own timeout, and the error lists every frame that arrived without matching. */
+/** Opens the event stream, runs `trigger`, and returns the first frame `match` accepts. */
 async function waitForFrame(
     base: string,
-    match: (payload: {
-        version: number
-        paths: string[]
-        dirty?: { graph: boolean; tree: boolean }
-    }) => boolean,
+    vault: string,
+    match: (payload: VaultFrame) => boolean,
     trigger: () => Promise<void> | void,
-    timeoutMs = 4000,
-): Promise<{
-    version: number
-    paths: string[]
-    dirty?: { graph: boolean; tree: boolean }
-}> {
-    const res = await fetch(`${base}/events`)
-    const reader = res.body!.getReader()
-    const decoder = new TextDecoder()
-    const seen: string[] = []
-    const deadline = Date.now() + timeoutMs
+): Promise<VaultFrame> {
+    const events = await openVaultEvents(base, vault)
     try {
         await trigger()
-        let buf = ''
-        while (true) {
-            const left = deadline - Date.now()
-            if (left <= 0) break
-            let timer: ReturnType<typeof setTimeout> | undefined
-            const next = await Promise.race([
-                reader.read(),
-                new Promise<'timeout'>(resolve => {
-                    timer = setTimeout(() => resolve('timeout'), left)
-                }),
-            ]).finally(() => clearTimeout(timer))
-            if (next === 'timeout' || next.done) break
-            buf += decoder.decode(next.value)
-            const frames = buf.split('\n\n')
-            buf = frames.pop() ?? ''
-            for (const f of frames) {
-                if (!f.startsWith('data: ')) continue // skip `: keepalive` comments
-                const payload = JSON.parse(f.slice(6))
-                if (match(payload)) return payload
-                seen.push(f.slice(6))
-            }
-        }
-        throw new Error(
-            `no matching SSE frame within ${timeoutMs}ms; non-matching frames: ${
-                seen.length ? seen.join(' | ') : '(none)'
-            }; trailing buf=${buf}`,
-        )
+        return await events.waitFor(match, 'the expected change')
     } finally {
-        await reader.cancel().catch(() => {})
+        await events.close()
     }
 }
 
@@ -107,6 +65,7 @@ test(
 
             const frame = await waitForFrame(
                 base,
+                vault,
                 p => p.dirty?.tree === true,
                 () => {
                     mkdirSync(join(vault, 'BrandNewFolder'))
@@ -120,7 +79,7 @@ test(
             server.stop(true)
         }
     },
-    TEST_TIMEOUT_MS,
+    WATCH_TEST_TIMEOUT_MS,
 )
 
 test(
@@ -142,6 +101,7 @@ test(
 
             const frame = await waitForFrame(
                 base,
+                vault,
                 p => p.dirty?.tree === true,
                 () => {
                     writeFileSync(
@@ -158,7 +118,7 @@ test(
             server.stop(true)
         }
     },
-    TEST_TIMEOUT_MS,
+    WATCH_TEST_TIMEOUT_MS,
 )
 
 test(
@@ -176,6 +136,7 @@ test(
 
             const frame = await waitForFrame(
                 base,
+                vault,
                 p => p.paths.includes('ViaApi.md'),
                 async () => {
                     await fetch(`${base}/create`, {
@@ -196,7 +157,7 @@ test(
             server.stop(true)
         }
     },
-    TEST_TIMEOUT_MS,
+    WATCH_TEST_TIMEOUT_MS,
 )
 
 test(
@@ -221,6 +182,7 @@ test(
 
             const frame = await waitForFrame(
                 base,
+                vault,
                 p => p.paths.includes('EditMe.md'),
                 async () => {
                     await fetch(`${base}/file`, {
@@ -239,7 +201,7 @@ test(
             server.stop(true)
         }
     },
-    TEST_TIMEOUT_MS,
+    WATCH_TEST_TIMEOUT_MS,
 )
 
 test(
@@ -264,6 +226,7 @@ test(
         try {
             const frame = await waitForFrame(
                 base,
+                vault,
                 p => p.paths.includes('BootBorn.md'),
                 async () => {
                     writeFileSync(join(vault, 'BootBorn.md'), '# born at boot\n')
@@ -275,7 +238,6 @@ test(
                         await new Promise(resolve => setTimeout(resolve, 10))
                     }
                 },
-                8000,
             )
             expect(frame.dirty?.tree).toBe(true)
             const tree = await (await fetch(`${base}/tree`)).text()
@@ -285,5 +247,5 @@ test(
             server.stop(true)
         }
     },
-    TEST_TIMEOUT_MS,
+    WATCH_TEST_TIMEOUT_MS,
 )

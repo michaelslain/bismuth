@@ -15,6 +15,7 @@ import { resetRelay, snapshot as relaySnapshot } from '../src/relay'
 import { readRunRecords } from '../src/runRegistry'
 import { searchPromptDeps } from '../src/searchPrompt'
 import { makeSampleVault, tempDir } from './helpers'
+import { openVaultEvents, WATCH_TEST_TIMEOUT_MS } from './support/vaultEvents'
 import * as visibility from '../src/visibility'
 import * as engine from '../src/engine'
 import { configureParsedNotes, parsedNoteStats } from '../src/parsedNotes'
@@ -516,68 +517,31 @@ test('writing a note into a new .daemon/memory subfolder on disk bumps dirty.tre
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        // Prime — flushes SSE response headers (same prime step the tests above use).
-        await fetch(`${base}/file`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
-        })
-
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
+        const events = await openVaultEvents(base, vault, memory)
 
         // A real filesystem write outside the API — exactly what ClaudeCode adding a sub-folder
-        // + file to its memory looks like (not the mutatingHandler path).
+        // + file to its memory looks like (not the mutatingHandler path). It may land before the
+        // watcher is live, so the catch-up has to report it too.
         const subPath = '.daemon/memory/topics/housing.md'
         mkdirSync(join(vault, '.daemon', 'memory', 'topics'), {
             recursive: true,
         })
         await Bun.write(join(vault, subPath), '# Housing notes\n')
 
-        const start = Date.now()
-        while (Date.now() - start < 3000) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buf += decoder.decode(value)
-            const frames = buf.split('\n\n')
-            buf = frames.pop() ?? ''
-            for (const f of frames) {
-                if (!f.startsWith('data: ')) continue
-                const payload = JSON.parse(f.slice(6))
-                if (
-                    Array.isArray(payload.paths) &&
-                    payload.paths.includes(subPath)
-                ) {
-                    expect(payload.dirty.tree).toBe(true)
-                    await reader.cancel()
-                    return
-                }
-            }
-        }
-        throw new Error(`no SSE frame mentioned ${subPath}; buf=${buf}`)
+        const frame = await events.waitForPath(subPath)
+        expect(frame.dirty?.tree).toBe(true)
+        await events.close()
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('daemon memory autosave git churn does not dirty the tree', async () => {
     const { vault, memory } = await makeSampleVault()
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        // Prime — flushes SSE response headers (same prime step the tests above use).
-        await fetch(`${base}/file`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
-        })
-
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
+        const events = await openVaultEvents(base, vault, memory)
 
         // The memory dir's own autosave git repo — exactly what scheduleBackup's commit
         // touches on every memory write, not an API-driven change.
@@ -599,90 +563,47 @@ test('daemon memory autosave git churn does not dirty the tree', async () => {
         })
         await Bun.write(join(vault, notePath), '# Rent notes\n')
 
-        const start = Date.now()
-        while (Date.now() - start < 3000) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buf += decoder.decode(value)
-            const parts = buf.split('\n\n')
-            buf = parts.pop() ?? ''
-            for (const f of parts) {
-                if (!f.startsWith('data: ')) continue
-                const payload = JSON.parse(f.slice(6))
-                if (!Array.isArray(payload.paths)) continue
-                // Any frame carrying .git churn is itself the defect under test, regardless of
-                // whether it's the one that also mentions notePath.
-                expect(
-                    payload.paths.some((p: string) =>
-                        p.includes('.daemon/memory/.git'),
-                    ),
-                ).toBe(false)
-                if (payload.paths.includes(notePath)) {
-                    await reader.cancel()
-                    return
-                }
-            }
-        }
-        throw new Error(`no SSE frame mentioned ${notePath}; buf=${buf}`)
+        const frame = await events.waitForPath(notePath)
+        // Any frame up to the note's carrying .git churn is itself the defect under test,
+        // regardless of whether it's the one that also mentions notePath.
+        const churn = events.frames
+            .slice(0, events.after(frame))
+            .flatMap(f => f.paths)
+            .filter(p => p.includes('.daemon/memory/.git'))
+        expect(churn).toEqual([])
+        await events.close()
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('adding then removing a .png on disk marks dirty.tree in the SSE payload (classifyVault treats non-.md as structural)', async () => {
     const { vault, memory } = await makeSampleVault()
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        // Prime — flushes SSE response headers before the real assertions (same prime step the
-        // .daemon/pages test above uses).
-        await fetch(`${base}/file`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
-        })
-
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
-        const waitForPath = async (path: string): Promise<void> => {
-            const start = Date.now()
-            while (Date.now() - start < 3000) {
-                const { value, done } = await reader.read()
-                if (done) break
-                buf += decoder.decode(value)
-                const frames = buf.split('\n\n')
-                buf = frames.pop() ?? ''
-                for (const f of frames) {
-                    if (!f.startsWith('data: ')) continue
-                    const payload = JSON.parse(f.slice(6))
-                    if (
-                        Array.isArray(payload.paths) &&
-                        payload.paths.includes(path)
-                    ) {
-                        expect(payload.dirty.tree).toBe(true)
-                        return
-                    }
-                }
-            }
-            throw new Error(`no SSE frame mentioned ${path}; buf=${buf}`)
-        }
+        const events = await openVaultEvents(base, vault, memory)
+        const from = await events.quiesce()
 
         // A real filesystem write outside the API — this is exactly what a vault sync tool or a
         // manual drop into the vault folder looks like, and what Task 3's OS-drop upload also
         // triggers via the file watcher (not the mutatingHandler path).
         await Bun.write(join(vault, 'photo.png'), 'not-really-a-png')
-        await waitForPath('photo.png')
+        const added = await events.waitForPath('photo.png', from)
+        expect(added.dirty?.tree).toBe(true)
 
         rmSync(join(vault, 'photo.png'))
-        await waitForPath('photo.png')
+        const removed = await events.waitForPath(
+            'photo.png',
+            events.after(added),
+        )
+        expect(removed.dirty?.tree).toBe(true)
 
-        await reader.cancel()
+        await events.close()
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('rewriting an existing .pdf and .pdf.draw names the path but dirties neither graph nor tree', async () => {
     const { vault, memory } = await makeSampleVault()
@@ -691,48 +612,24 @@ test('rewriting an existing .pdf and .pdf.draw names the path but dirties neithe
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        await fetch(`${base}/file`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
-        })
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
-        const waitForPath = async (path: string) => {
-            const start = Date.now()
-            while (Date.now() - start < 3000) {
-                const { value, done } = await reader.read()
-                if (done) break
-                buf += decoder.decode(value)
-                const frames = buf.split('\n\n')
-                buf = frames.pop() ?? ''
-                for (const f of frames) {
-                    if (!f.startsWith('data: ')) continue
-                    const payload = JSON.parse(f.slice(6))
-                    if (
-                        Array.isArray(payload.paths) &&
-                        payload.paths.includes(path)
-                    )
-                        return payload
-                }
-            }
-            throw new Error(`no SSE frame mentioned ${path}; buf=${buf}`)
-        }
+        const events = await openVaultEvents(base, vault, memory)
+        // The watcher reports the fixture writes above when it goes live, before the presence
+        // tracker may know them, and in a batch with whatever else it replays; a frame from that
+        // batch is not the rewrite under test.
+        const from = await events.quiesce()
         await Bun.write(join(vault, 'paper.pdf'), 'pdf-v2')
-        const a = await waitForPath('paper.pdf')
-        expect(a.dirty.graph).toBe(false)
-        expect(a.dirty.tree).toBe(false)
+        const a = await events.waitForPath('paper.pdf', from)
+        expect(a.dirty?.graph).toBe(false)
+        expect(a.dirty?.tree).toBe(false)
         await Bun.write(join(vault, 'paper.pdf.draw'), 'draw-v2')
-        const b = await waitForPath('paper.pdf.draw')
-        expect(b.dirty.graph).toBe(false)
-        expect(b.dirty.tree).toBe(false)
-        await reader.cancel()
+        const b = await events.waitForPath('paper.pdf.draw', events.after(a))
+        expect(b.dirty?.graph).toBe(false)
+        expect(b.dirty?.tree).toBe(false)
+        await events.close()
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('GET /daemon/pages + POST /daemon/pages/resolve round-trip end-to-end', async () => {
     const { vault, memory } = await makeSampleVault()
@@ -2357,73 +2254,41 @@ test('POST /daily-note bumps version only on create (SSE carries the new path), 
             body: JSON.stringify({ id: 'journal' }),
         })
     try {
+        // Open the SSE stream so we can capture the frame emitted by the create, and let the
+        // watcher report the boot writes (.settings above, and the config reload it triggers)
+        // before taking the baseline.
+        const events = await openVaultEvents(base, vault)
+        const from = await events.quiesce()
         const v0 = (await (await fetch(`${base}/version`)).json()).version
-
-        // Open the SSE stream so we can capture the frame emitted by the create.
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
 
         // First call CREATES the note → it broadcasts an SSE frame naming the new path and
         // bumps the version. We don't assert an exact delta: writing the note also triggers
-        // the vault file-watcher, which invalidates again shortly after — B3's guarantee is
-        // about the NO-OP reopen below, not the precise create delta.
+        // the vault file-watcher, which may invalidate again — B3's guarantee is about the
+        // NO-OP reopen below, not the precise create delta.
         const r1 = await (await call()).json()
         expect(r1.created).toBe(true)
+        await events.waitForPath(r1.path, from)
 
-        let sawPath = false
-        let buf = ''
-        const start = Date.now()
-        while (Date.now() - start < 2000) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buf += decoder.decode(value)
-            const frames = buf.split('\n\n')
-            buf = frames.pop() ?? ''
-            for (const f of frames) {
-                if (!f.startsWith('data: ')) continue
-                const payload = JSON.parse(f.slice(6))
-                if (
-                    Array.isArray(payload.paths) &&
-                    payload.paths.includes(r1.path)
-                ) {
-                    sawPath = true
-                    break
-                }
-            }
-            if (sawPath) break
-        }
-        await reader.cancel()
-        expect(sawPath).toBe(true)
-
-        // Let any debounced file-watch invalidation from the create settle: wait until the
-        // version is unchanged for 500ms straight, then take that as the stable baseline.
-        const readVersion = async () =>
-            (await (await fetch(`${base}/version`)).json()).version
-        const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-        let settled = await readVersion()
-        let stableSince = Date.now()
-        const settleStart = Date.now()
-        while (Date.now() - settleStart < 3000) {
-            await sleep(100)
-            const next = await readVersion()
-            if (next !== settled) {
-                settled = next
-                stableSince = Date.now()
-            } else if (Date.now() - stableSince >= 500) break
-        }
+        // Once the marker's frame lands, the create's own watcher echo has been published, so
+        // its version is the stable baseline.
+        const settledAt = await events.quiesce()
+        const settled = events.frames[settledAt - 1]!.version
         expect(settled).toBeGreaterThan(v0) // the create bumped the version
 
         // Second call is a no-op (note already exists) → it writes nothing, so it must NOT
-        // invalidate / bump the version (the core of bugfix B3).
+        // invalidate / bump the version (the core of bugfix B3). A late bump would be published
+        // before the next marker's frame, so the marker is the only change between the two.
         const r2 = await (await call()).json()
         expect(r2.created).toBe(false)
-        await sleep(400) // longer than the file-watch debounce — confirm no late bump
-        expect(await readVersion()).toBe(settled)
+        const doneAt = await events.quiesce()
+        expect(events.frames.slice(settledAt, doneAt).map(f => f.version)).toEqual([
+            settled + 1,
+        ])
+        await events.close()
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('GET /graph/views returns 2nd/3rd-brain view layouts', async () => {
     const { vault, memory } = await makeSampleVault()
@@ -3585,74 +3450,46 @@ test('POST /move produces exactly ONE structural invalidation, not two', async (
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        await new Promise(r => setTimeout(r, 800)) // let boot-time settings reconcile settle
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        const waves: { paths: string[] }[] = []
-        const pump = (async () => {
-            while (true) {
-                const { value, done } = await reader.read()
-                if (done) break
-                for (const line of decoder.decode(value).split('\n\n')) {
-                    if (!line.startsWith('data:')) continue
-                    const evt = JSON.parse(line.slice(5))
-                    if (evt.paths?.includes('essay.md')) waves.push(evt)
-                }
-            }
-        })()
-        await new Promise(r => setTimeout(r, 50))
+        // The watcher replays the fixture's own write of essay.md when it goes live; that is
+        // not a wave of the move.
+        const events = await openVaultEvents(base, vault, memory)
+        const from = await events.quiesce()
         await fetch(`${base}/move`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ from: 'essay.md', to: 'essay2.md' }),
         })
-        await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce
-        reader.cancel()
-        await pump.catch(() => {})
+        // An unsuppressed echo of the move is published by the time the marker's frame is.
+        const to = await events.quiesce()
+        await events.close()
+        const waves = events.frames
+            .slice(from, to)
+            .filter(f => f.paths.includes('essay.md'))
         expect(waves.length).toBe(1)
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('an EXTERNAL write inside the suppression window is still reported', async () => {
     // Guards the fix from over-suppressing: write via the API, then write the SAME path from
     // outside the server (node:fs), and assert the watcher still publishes it as its OWN,
     // separate wave. Without this, a too-broad suppression silently drops CLI/agent/git edits.
     //
-    // The gap before the external write is deliberately > fileWatchDebounceMs (250ms default).
-    // A short gap does NOT discriminate: pre-fix, the API write's own (unsuppressed) watcher
-    // echo and the external write both land inside the SAME pending debounce batch and get
-    // coalesced by the existing pendingVault Set into one flush — so a naive assertion of
-    // "at least 2 waves" passes whether or not suppression exists at all (verified: it does,
-    // both before and after this fix). Waiting out a full debounce first forces the self-echo
-    // to flush on its own if it isn't suppressed, which is what makes the counts diverge:
-    // pre-fix that flush is a REAL, extra wave (3 total); post-fix it never happens (2 total).
+    // The API write's echo is flushed BEFORE the external write. Without that gap, pre-fix,
+    // the API write's own (unsuppressed) watcher echo and the external write both land inside
+    // the SAME pending debounce batch and get coalesced by the existing pendingVault Set into
+    // one flush — so a naive assertion of "at least 2 waves" passes whether or not suppression
+    // exists at all (verified: it does, both before and after this fix). Flushing first forces
+    // the self-echo out on its own if it isn't suppressed, which is what makes the counts
+    // diverge: pre-fix that flush is a REAL, extra wave (3 total); post-fix it never happens
+    // (2 total).
     const { vault, memory } = await makeSampleVault()
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        await new Promise(r => setTimeout(r, 800)) // let boot-time settings reconcile settle
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        const waves: {
-            paths: string[]
-            dirty: { graph: boolean; tree: boolean }
-        }[] = []
-        const pump = (async () => {
-            while (true) {
-                const { value, done } = await reader.read()
-                if (done) break
-                for (const line of decoder.decode(value).split('\n\n')) {
-                    if (!line.startsWith('data:')) continue
-                    const evt = JSON.parse(line.slice(5))
-                    if (evt.paths?.includes('essay.md')) waves.push(evt)
-                }
-            }
-        })()
-        await new Promise(r => setTimeout(r, 50))
+        const events = await openVaultEvents(base, vault, memory)
+        const from = await events.quiesce()
 
         // The API write — its OWN watcher echo is exactly what the suppression is meant to
         // swallow, and it does: this is reported once, inline, by mutatingHandler itself.
@@ -3666,9 +3503,10 @@ test('an EXTERNAL write inside the suppression window is still reported', async 
             }),
         })
 
-        // Let a full watcher debounce elapse BEFORE the external write — see the comment above
-        // for why this is what makes the assertion able to fail.
-        await new Promise(r => setTimeout(r, 400))
+        // Flush the API write's own echo BEFORE the external write — see the comment above for
+        // why this is what makes the assertion able to fail. An echo the suppression let through
+        // is published by the time the marker's frame is.
+        await events.quiesce()
 
         // An external actor — the CLI, an agent, a `git checkout`, the daemon — touches the SAME
         // path well after the API's own echo has already been consumed (see consumeSelfWritten),
@@ -3678,9 +3516,11 @@ test('an EXTERNAL write inside the suppression window is still reported', async 
             '# Essay\n\nReligion and historical materialism.\n\nExternal edit.\n',
         )
 
-        await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce again
-        reader.cancel()
-        await pump.catch(() => {})
+        const to = await events.quiesce()
+        await events.close()
+        const waves = events.frames
+            .slice(from, to)
+            .filter(f => f.paths.includes('essay.md'))
 
         // Exactly 2: one wave for the API's own write (published inline) and one for the
         // external write the watcher must still catch. A 3rd (the API write's own un-suppressed
@@ -3689,13 +3529,7 @@ test('an EXTERNAL write inside the suppression window is still reported', async 
     } finally {
         server.stop(true)
     }
-    // 30s, not Bun's default 5s. The sleeps above are deliberate and total ~1.95s (800ms boot
-    // settle + 400ms to force the self-echo to flush + 700ms to span the debounce again), and
-    // makeSampleVault plus a server boot sit on top of that. Idle that fits inside 5s; inside the
-    // full suite it does not, and the test then failed on the clock rather than on its assertion —
-    // which is worse than useless, because a flaky gate is a gate people learn to bypass. The
-    // budget is a hang guard; the real assertion is still the exact wave count.
-}, 30_000)
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('a non-throwing rejection (404 on a stale path) does not leave its path falsely armed', async () => {
     // Guards the blanket `res.status >= 400` check in mutatingHandler: several routes reject via
@@ -3706,23 +3540,8 @@ test('a non-throwing rejection (404 on a stale path) does not leave its path fal
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        await new Promise(r => setTimeout(r, 800)) // let boot-time settings reconcile settle
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        const waves: { paths: string[] }[] = []
-        const pump = (async () => {
-            while (true) {
-                const { value, done } = await reader.read()
-                if (done) break
-                for (const line of decoder.decode(value).split('\n\n')) {
-                    if (!line.startsWith('data:')) continue
-                    const evt = JSON.parse(line.slice(5))
-                    if (evt.paths?.includes('ghost.md')) waves.push(evt)
-                }
-            }
-        })()
-        await new Promise(r => setTimeout(r, 50))
+        const events = await openVaultEvents(base, vault, memory)
+        const from = await events.quiesce()
 
         // ghost.md never existed — set-property 404s via `return error(...)`, not a throw.
         const setRes = await fetch(`${base}/set-property`, {
@@ -3739,9 +3558,11 @@ test('a non-throwing rejection (404 on a stale path) does not leave its path fal
         // An external write to that same (never-touched) path, right after the rejection.
         writeFileSync(join(vault, 'ghost.md'), '# Ghost\n\nExternal write.\n')
 
-        await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce
-        reader.cancel()
-        await pump.catch(() => {})
+        const to = await events.quiesce()
+        await events.close()
+        const waves = events.frames
+            .slice(from, to)
+            .filter(f => f.paths.includes('ghost.md'))
 
         // The rejected request's own inline invalidate() still runs (out of scope — see the
         // "silent no-op writes" deferral) and always publishes one wave for ghost.md regardless
@@ -3752,7 +3573,7 @@ test('a non-throwing rejection (404 on a stale path) does not leave its path fal
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('a rejected mutation (destination already exists) does not leave its paths falsely armed', async () => {
     // Guards unmarkSelfWritten: markSelfWritten runs BEFORE run(), on intent to write, not
@@ -3766,23 +3587,8 @@ test('a rejected mutation (destination already exists) does not leave its paths 
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        await new Promise(r => setTimeout(r, 800)) // let boot-time settings reconcile settle
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        const waves: { paths: string[] }[] = []
-        const pump = (async () => {
-            while (true) {
-                const { value, done } = await reader.read()
-                if (done) break
-                for (const line of decoder.decode(value).split('\n\n')) {
-                    if (!line.startsWith('data:')) continue
-                    const evt = JSON.parse(line.slice(5))
-                    if (evt.paths?.includes('essay.md')) waves.push(evt)
-                }
-            }
-        })()
-        await new Promise(r => setTimeout(r, 50))
+        const events = await openVaultEvents(base, vault, memory)
+        const from = await events.quiesce()
 
         // housing.md already exists (makeSampleVault) — renaming essay.md onto it must 409 and
         // must not touch either file: moveEntry checks the destination BEFORE it renames.
@@ -3799,9 +3605,11 @@ test('a rejected mutation (destination already exists) does not leave its paths 
             '# Essay\n\nReligion and historical materialism.\n\nExternal edit after a rejected move.\n',
         )
 
-        await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce
-        reader.cancel()
-        await pump.catch(() => {})
+        const to = await events.quiesce()
+        await events.close()
+        const waves = events.frames
+            .slice(from, to)
+            .filter(f => f.paths.includes('essay.md'))
 
         // The failed move published nothing (invalidate() was never reached), so the only wave
         // is the external write's own. Pre-fix this is 0: essay.md stayed falsely armed from the
@@ -3810,7 +3618,7 @@ test('a rejected mutation (destination already exists) does not leave its paths 
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)
 
 // The first-run intro names the daemon through this route, often before the daemon's first
 // brain-start has seeded identity.md: owner-gated like the other /daemon/* writes, 400 on a
@@ -3902,25 +3710,31 @@ test('an external delete or folder rename of cached notes leaves no stale parse 
     const base = `http://localhost:${server.port}`
     try {
         await migrationSettled(base)
-        await fetch(`${base}/graph`)
+        // Let the watcher report the boot writes, then disconnect: with a client connected every
+        // structural flush rebuilds the graph for the view warm-up, which would re-parse the
+        // renamed notes under their new paths.
+        const events = await openVaultEvents(base, vault, memory)
+        await events.quiesce()
+        await events.close()
+        await fetch(`${base}/graph`) // also waits out a warm-up build still in flight
         await fetch(`${base}/vault-data`)
-        await new Promise(r => setTimeout(r, 800)) // let boot watcher noise flush
-        const settle = () => new Promise(r => setTimeout(r, 900)) // spans the debounce
+        // With no client connected nothing re-parses, so the count only falls as the watcher's
+        // flushes drop entries; a stale entry keeps it above the target until the deadline.
+        const entries = async () => parsedNoteStats().entries
         const start = parsedNoteStats().entries
 
         rmSync(join(vault, 'essay.md'))
-        await settle()
-        const afterDelete = parsedNoteStats().entries
+        const afterDelete = await until(entries, n => n <= start - 1)
         expect(afterDelete).toBe(start - 1)
 
         renameSync(join(vault, 'pile'), join(vault, 'heap'))
-        await settle()
+        await until(entries, n => n <= afterDelete - 2)
         expect(parsedNoteStats().entries).toBe(afterDelete - 2)
     } finally {
         server.stop(true)
         configureParsedNotes()
     }
-}, 30000)
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('a note mv-d into the vault during boot (old birthtime, fresh ctime) is not seeded, so its first change is structural', async () => {
     const { vault, memory } = await makeSampleVault()
@@ -3942,37 +3756,22 @@ test('a note mv-d into the vault during boot (old birthtime, fresh ctime) is not
     })
     const base = `http://localhost:${server.port}`
     try {
-        const res = await fetch(`${base}/events`)
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        const waves: { dirty: { graph: boolean; tree: boolean } }[] = []
-        const pump = (async () => {
-            while (true) {
-                const { value, done } = await reader.read()
-                if (done) break
-                for (const line of decoder.decode(value).split('\n\n')) {
-                    if (!line.startsWith('data:')) continue
-                    const evt = JSON.parse(line.slice(5))
-                    if (evt.paths?.includes('moved.md')) waves.push(evt)
-                }
-            }
-        })()
+        // The rename waits for the watcher to go live (the scan is still held, so it is still
+        // boot for the tracker). A note renamed in before then keeps its old mtime, so the
+        // catch-up can only report it as an unknown-extent change that names no path.
+        const events = await openVaultEvents(base, vault, memory)
+        const from = await events.quiesce()
         renameSync(src, join(vault, 'moved.md')) // during boot: old birthtime, fresh ctime
         release()
         await migrationSettled(base)
-        await until(
-            async () => waves.length,
-            n => n > 0,
-        )
-        reader.cancel()
-        await pump.catch(() => {})
-        expect(waves.length).toBeGreaterThan(0)
-        expect(waves[0]!.dirty.tree).toBe(true)
+        const first = await events.waitForPath('moved.md', from)
+        await events.close()
+        expect(first.dirty?.tree).toBe(true)
     } finally {
         release()
         server.stop(true)
     }
-}, 30000)
+}, WATCH_TEST_TIMEOUT_MS)
 
 test('structural edits with no SSE client build no graph; a later GET /graph is fresh', async () => {
     const { vault, memory } = await makeSampleVault()
@@ -4012,9 +3811,11 @@ test('with an SSE client connected, a structural edit rebuilds the graph once fo
     const build = spyOn(engine, 'buildGraph')
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
-    const events = await fetch(`${base}/events`)
-    const reader = events.body!.getReader()
+    const events = await openVaultEvents(base, vault, memory)
     try {
+        // A boot write the watcher reports late is a structural flush of its own, and with a
+        // client connected it rebuilds the graph; let those land before the baseline.
+        await events.quiesce()
         await fetch(`${base}/graph`)
         // The client's arrival lets the parked warm-up run; wait for its pass on the current graph.
         await migrationSettled(base)
@@ -4032,8 +3833,8 @@ test('with an SSE client connected, a structural edit rebuilds the graph once fo
         await new Promise(r => setTimeout(r, 100))
         expect(build.mock.calls.length).toBe(baseline + 1)
     } finally {
-        await reader.cancel().catch(() => {})
+        await events.close()
         build.mockRestore()
         server.stop(true)
     }
-}, 20000)
+}, WATCH_TEST_TIMEOUT_MS)

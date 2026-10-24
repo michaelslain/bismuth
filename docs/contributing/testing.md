@@ -8,7 +8,7 @@ Browser-based checks of the UI have their own page, [Visual checks](visual-check
 ```bash
 bun test core/test/vault.test.ts   # one file, exact path
 bun test vault                     # every file whose path contains "vault"
-bun run test:fast                  # everything except the slow suites, four files at a time
+bun run test:fast                  # everything except the slow suites: four files at a time, then the watcher files one at a time
 bun test                           # everything, slow suites included
 bun run typecheck                  # tsc --noEmit in every workspace
 bun run gate                       # what the pre-commit hook runs, by hand
@@ -62,7 +62,7 @@ Both hooks live in `.githooks/`. A fresh clone enables them with `bun run hooks:
 The commit gate runs these steps in order and stops at the first failure:
 
 1. **Typecheck** across all workspaces, whatever you staged. It is the only step that catches a change in one workspace breaking another's types.
-2. **Fast tests** (`BISMUTH_FAST_TESTS=1`, four files at a time, as `bun run test:fast` runs them) for the affected workspaces only. Editing `app/` does not re-run `daemon/`. Touching `package.json`, `bun.lock`, `tsconfig.base.json`, `bunfig.toml`, `scripts/` or `.githooks/` widens the run to every workspace.
+2. **Fast tests** (`BISMUTH_FAST_TESTS=1`, as `bun run test:fast` runs them) for the affected workspaces only, in two phases: every other file four at a time, then the affected workspaces' [vault-watcher files](#a-test-that-waits-on-the-vault-watcher) one at a time. Editing `app/` does not re-run `daemon/`. Touching `package.json`, `bun.lock`, `tsconfig.base.json`, `bunfig.toml`, `scripts/` or `.githooks/` widens the run to every workspace.
 3. **Design-system gate and `tokenLint`** when a staged path is under `app/src/`, `design/` or `scripts/designSystem/`, or is `DESIGN.md`. See [Visual checks](visual-checks.md#how-do-the-design-system-gate-and-tokenlint-work).
 4. **`bench/moduleClassCheck.ts`** when a staged path is an `app/src/**/*.css` file. It builds the app, so it is the slowest step. A change to a `.tsx` file alone does not trigger it, so run it by hand after editing class names in TSX.
 
@@ -156,7 +156,7 @@ test('GET /my-route returns the right shape', async () => {
 
 A test file whose tests start a process (the CLI, a shell, a fake agent binary, `git`) or a worker
 calls `useSpawnBudget()` once after its imports. Process start-up slows down when the machine is
-busy, and `bun run test:fast` runs four files at a time beside whatever other checkouts are testing,
+busy, and `bun run test:fast` runs most files four at a time beside whatever other checkouts are testing,
 so Bun's 5-second default fails such a test on the clock while the behaviour it checks is fine. The
 budget raises that file's default to 30 seconds; a test that really hangs still fails.
 
@@ -217,6 +217,18 @@ Use `registerTempDir(dir)` for a directory a subsystem creates itself.
 
 The preload also points `BISMUTH_LAYOUT_CACHE_DIR` at a temp directory, so the suite never writes to the real layout cache under `~/.bismuth`.
 It points `BISMUTH_RUN_DIR` at a fresh temp directory (one per file under `--parallel`), so a core a test boots never registers in the real `~/.bismuth/run`, and a CLI a test spawns never sees another worker's cores.
+
+### A test that waits on the vault watcher
+
+A test file that waits on real file-watch events is listed in `WATCHER_TESTS` in `scripts/fastTests.ts`, so `bun run test:fast` and the commit gate run it alone, after the parallel phase.
+macOS delivers file events late, or drops them, while other processes churn files, and four parallel test workers are that churn: beside them a watcher test times out on an event that has not arrived, and alone it passes.
+A watcher test file left off the list fails at random, not every run.
+
+A test that waits on the vault watcher reads the server's `/events` stream through `openVaultEvents(base, vault)` from `core/test/support/vaultEvents.ts`, never a fixed sleep.
+The watcher takes seconds to go live on a loaded machine, then reports the writes made just before it started.
+`quiesce()` writes a marker file and resolves once the marker's frame arrives, by which point everything the watcher saw earlier is published; bracket an action between two `quiesce()` calls to assert that nothing else happened.
+Give such a test the `WATCH_TEST_TIMEOUT_MS` timeout, so a missing frame fails with the frames that did arrive, and derive any deadline of its own from it rather than a fixed few seconds.
+To let a fixture's own writes drain before a server boots, call `waitForFsQuiet(dir)` from `core/test/helpers.ts`.
 
 ## What do the upgrade tests protect?
 
@@ -306,4 +318,4 @@ It strips git's repository-location variables (`sanitizeGitEnv`) from the childr
 `.githooks/pre-push` runs `scripts/check-docs.ts --pre-push`, which checks relative `.md` links, `page.md#heading` anchors, the history-word lint, the `bun run` scripts CLAUDE.md cites, and workspace parity, then warns when source changed without docs.
 Run `bun run scripts/check-docs.ts` by hand to check a docs change.
 
-Source: `scripts/gate.ts`, `scripts/check-docs.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `bunfig.toml`, `package.json`, `tsconfig.base.json`, `core/test/setup.ts`, `core/test/helpers.ts`, `core/test/tempDirs.ts`, `core/test/slowGate.ts`, `core/test/spawnBudget.ts`, `core/test/ports.ts`, `core/test/upgrade/`
+Source: `scripts/gate.ts`, `scripts/fastTests.ts`, `scripts/check-docs.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `bunfig.toml`, `package.json`, `tsconfig.base.json`, `core/test/setup.ts`, `core/test/helpers.ts`, `core/test/tempDirs.ts`, `core/test/slowGate.ts`, `core/test/spawnBudget.ts`, `core/test/ports.ts`, `core/test/support/vaultEvents.ts`, `core/test/upgrade/`

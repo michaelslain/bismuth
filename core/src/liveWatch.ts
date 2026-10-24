@@ -13,9 +13,10 @@ import { join } from 'node:path'
  *
  * So the watch proves itself live with a probe file, then catches up. The probe is created BEFORE
  * the watch starts and its mtime is the boundary: anything on disk modified after it that the
- * watcher never reported is reported once, as if the watcher had seen it. A directory whose mtime
- * moved with no reported child to account for it lost a child to a delete or rename, which a stat
- * walk cannot name — that is reported as a null filename, the watcher's own "extent unknown".
+ * watcher never reported is reported once, as if the watcher had seen it, and so is a folder
+ * created after it, with everything in it. A directory whose mtime moved with no changed file or
+ * new folder in it to account for it lost a child to a delete or rename, which a stat walk cannot
+ * name — that is reported as a null filename, the watcher's own "extent unknown".
  * Rewriting (never re-creating) the probe keeps the probe itself from moving the root's mtime.
  *
  * Opening or closing ANY recursive watch in the process also drops events on the watches that are
@@ -52,6 +53,9 @@ const liveWatchers = new Set<Sibling>()
 // stream is set up) until its close returns; the walk starts that far back and waits for it to settle.
 const SIBLING_LOOKBACK_MS = 250
 const SIBLING_SETTLE_MS = 300
+// Creating a folder stamps its parent's mtime within about a microsecond of the folder's birthtime
+// (APFS, measured); a parent changed later than this after the folder was born changed for another reason.
+const NEW_DIR_PARENT_SLACK_MS = 5
 const announceSibling = (owner: Sibling | null, from: number) => {
     for (const w of liveWatchers) if (w !== owner) w.rescanFrom(from)
 }
@@ -177,13 +181,24 @@ export function watchLive(
      *  also looks at the root, and trusts only reports made after `from`. */
     async function catchUp(from: number, rescan: boolean, rootMtime?: number) {
         const changed = new Map<string, number>()
+        // Folders created after `from`, reported like a changed file. Nobody knew what was in one, so
+        // it lost nothing; it explains its parent only when its creation is the parent's latest
+        // change, so a delete beside it still reads as lost.
+        const newDirs = new Map<string, number>()
+        const explainedByNewDir = new Set<string>()
         if (rescan) {
             try {
                 rootMtime = statSync(root).mtimeMs
             } catch {}
         }
         const movedDirs: string[] = (rootMtime ?? 0) > from ? [''] : []
-        const walk = async (rel: string): Promise<void> => {
+        // `fresh`: rel is a new folder, so everything in it is new, even a file renamed in with an
+        // old mtime.
+        const walk = async (
+            rel: string,
+            relMtime: number,
+            fresh: boolean,
+        ): Promise<void> => {
             let entries
             try {
                 entries = await readdir(join(root, rel), {
@@ -197,27 +212,43 @@ export function watchLive(
                 if (isProbe(childRel)) continue
                 if (e.isDirectory() && opts.skipDir?.(childRel)) continue
                 let mtime: number
+                let born: number
                 try {
-                    mtime = (await stat(join(root, childRel))).mtimeMs
+                    const st = await stat(join(root, childRel))
+                    mtime = st.mtimeMs
+                    born = st.birthtimeMs
                 } catch {
                     continue // removed mid-walk
                 }
                 if (e.isDirectory()) {
                     if (mtime > from) movedDirs.push(childRel)
-                    await walk(childRel)
-                } else if (mtime > from && (seen.get(childRel) ?? 0) < mtime) {
+                    // Without this a fresh folder chain (`mkdir -p a/b && write a/b/x.md`) reads as
+                    // a lost child in a/ and in the root, and the extent-unknown report that follows
+                    // drops every path in the batch it lands in.
+                    const isNew = fresh || born > from
+                    if (isNew) {
+                        newDirs.set(childRel, born)
+                        explainedByNewDir.add(childRel)
+                        if (relMtime - born < NEW_DIR_PARENT_SLACK_MS)
+                            explainedByNewDir.add(rel)
+                    }
+                    await walk(childRel, mtime, isNew)
+                } else if (
+                    (fresh || mtime > from) &&
+                    (seen.get(childRel) ?? 0) < mtime
+                ) {
                     changed.set(childRel, mtime)
                 }
             }
         }
-        await walk('')
+        await walk('', rootMtime ?? 0, false)
         if (closed) return
-        const explained = new Set<string>()
+        const explained = new Set(explainedByNewDir)
         for (const [p, at] of seen) if (at > from) explained.add(parentOf(p))
         for (const p of changed.keys()) explained.add(parentOf(p))
         // Anything the watcher reported while the walk ran has already gone through onChange.
-        for (const [p, mtime] of changed) {
-            if ((seen.get(p) ?? 0) >= mtime) continue
+        for (const [p, at] of [...changed, ...newDirs]) {
+            if ((seen.get(p) ?? 0) >= at) continue
             seen.set(p, reportedAt())
             onChange(p)
         }

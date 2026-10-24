@@ -158,7 +158,7 @@ API writes enter the same path through `mutatingHandler(run, pathOf)`: it extrac
 Without suppression, each API write would trigger two event waves: one from the handler and one when the watcher notices the file. `createSelfWriteMarks` in `core/src/selfWriteMarks.ts` prevents the second.
 
 - `mark(paths)` runs before the write, so the watcher cannot win the race. Its expiry is a backstop of one debounce interval.
-- `rearm(paths)` runs when the write resolves. It extends the expiry to the larger of the debounce and `SELF_WRITE_GRACE_MS` (2 seconds) and records the path's mtime-and-size stamp. It only touches entries still present.
+- `rearm(paths)` runs when the write resolves. It extends the expiry to the larger of the debounce and `SELF_WRITE_GRACE_MS` (10 seconds, since a busy FSEvents can hold an echo back for several) and records the path's mtime-and-size stamp. It only touches entries still present.
 - `consume(path)` swallows an echo while the stamp still matches what the write left, however many echoes arrive, because one write can produce several watcher deliveries. When the stamp has changed, it deletes the mark and lets the event through, so a genuine external write (the CLI, an agent, `git checkout`, the daemon) is never swallowed.
 - `unmark(paths)` runs when a handler throws or returns a status of 400 or above. Several routes reject by returning an error response, so both shapes unmark; otherwise a failed request leaves the path armed and swallows the next external edit.
 

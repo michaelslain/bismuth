@@ -2,6 +2,7 @@
 import { test, expect } from 'bun:test'
 import { createServer } from '../src/server'
 import { makeVault } from './helpers'
+import { WATCH_TEST_TIMEOUT_MS } from './support/vaultEvents'
 import { THEMES } from '../src/theme/tokens'
 import { themeTemplate } from '../src/theme/customTheme'
 
@@ -71,8 +72,11 @@ test('a theme created while the server runs dirties the tree', async () => {
         await fetch(`${base}/tree`) // warm the tree cache
         await Bun.sleep(300)
         await Bun.write(`${vault}/.themes/late.yaml`, themeTemplate({ label: 'Late', extends: 'ink' }))
+        // The tree goes dirty once the watcher delivers the write, which a busy FSEvents can hold
+        // back for seconds; the deadline leaves the test's own timeout room to report.
+        const deadline = Date.now() + WATCH_TEST_TIMEOUT_MS - 5000
         let seen = false
-        for (let i = 0; i < 30 && !seen; i++) {
+        while (!seen && Date.now() < deadline) {
             await Bun.sleep(200)
             const tree = (await (await fetch(`${base}/tree`)).json()) as { path: string }[]
             seen = tree.some(e => e.path === '.themes/late.yaml')
@@ -81,4 +85,4 @@ test('a theme created while the server runs dirties the tree', async () => {
     } finally {
         server.stop(true)
     }
-})
+}, WATCH_TEST_TIMEOUT_MS)

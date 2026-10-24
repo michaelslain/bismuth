@@ -196,8 +196,10 @@ const gcalTickMs = (): number =>
 // stays armed once RE-armed (see selfWriteMarks.ts's rearm()) after its write resolves. The
 // debounce alone isn't enough headroom: a write that itself takes longer than the debounce (a
 // big rename, a slow disk) would otherwise have its mark expire before the watcher even notices
-// the write, letting the echo through as a second, spurious change.
-const SELF_WRITE_GRACE_MS = 2000
+// the write, letting the echo through as a second, spurious change. A busy FSEvents holds echoes
+// back for several seconds, so the floor is generous: an echo is still matched by the file's
+// stamp, so a genuine external edit inside the window changes the stamp and is reported.
+const SELF_WRITE_GRACE_MS = 10_000
 
 export function cliArg(name: string): string | undefined {
     const i = Bun.argv.indexOf(`--${name}`)
