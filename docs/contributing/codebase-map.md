@@ -45,7 +45,7 @@ Find the change in the table, then follow its steps in the section below. A test
 | A shell component | `app/src/shell/` | design-system gate |
 | A chat backend | `core/src/agentBackends/catalog.ts` | `catalogParity.test.ts` |
 | A CLI command | `cli/src/commands/<group>.ts` | `guideCommands.test.ts` |
-| An MCP tool | `mcp/src/server.ts` | `mcpParity.test.ts` |
+| An MCP tool | `mcp/src/server.ts` | `mcpParity.test.ts`, `mcpArgParity.test.ts` |
 | A component | `app/src/<area>/` | design-system gate |
 
 ### Add an HTTP endpoint
@@ -126,6 +126,7 @@ Extend `STATUS_BUILTINS` or the item model in `core/src/statusBarItems.ts`, eval
 
 1. Export a CLI command from a group in `cli/src/commands/<group>.ts` (`commands: CommandMap`). A new group is imported and listed in `GROUPS` in `cli/src/registry.ts`. Document it in `docs/cli/reference.md`.
 2. Add an MCP tool to the tool list in `mcp/src/server.ts` and a `CLI_TWINS` entry in `mcp/src/cliTwins.ts`. `cli/test/mcpParity.test.ts` fails without the twin.
+3. Declare the twin command's `args` and give every tool parameter a flag or positional, or add an `ARG_EXCEPTIONS` entry with a reason. `cli/test/mcpArgParity.test.ts` fails on a one-sided argument.
 
 ### Add a component
 

@@ -337,13 +337,24 @@ const memoryTools = [
 // for this vault (memoryDir()/daemonEnabled(), i.e. BISMUTH_MEMORY_DIR is injected). Outside a
 // daemon-enabled session the server exposes only the always-on set; a machine-wide session
 // with no daemon never sees remember/recall/forget nor the crons/processes/pages tools.
+/** The slice of a tool definition the parity audits read: its name and its input parameters. */
+export type ToolDef = {
+    name: string
+    inputSchema: {
+        required?: readonly string[]
+        properties: Record<
+            string,
+            { type?: string; enum?: readonly string[]; items?: { type?: string } }
+        >
+    }
+}
+
 /** Every tool this server can ever list — the always-on set plus the daemon-gated memory and
- *  daemon tools. `cli/test/mcpParity.test.ts` checks each against CLI_TWINS (./cliTwins.ts). */
-export const ALL_TOOL_NAMES: string[] = [
-    ...tools,
-    ...memoryTools,
-    ...daemonTools,
-].map(t => t.name)
+ *  daemon tools. `cli/test/mcpParity.test.ts` checks each against CLI_TWINS (./cliTwins.ts) and
+ *  `cli/test/mcpArgParity.test.ts` checks each one's input parameters against its twin's arguments. */
+export const ALL_TOOLS = [...tools, ...memoryTools, ...daemonTools] as readonly ToolDef[]
+
+export const ALL_TOOL_NAMES: string[] = ALL_TOOLS.map(t => t.name)
 
 /** PURE: the CLI argv a vault_map call runs. */
 export function vaultMapCliArgs(a: Record<string, unknown>): string[] {

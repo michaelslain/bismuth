@@ -20,6 +20,7 @@ export const commands: CommandMap = {
         summary:
             'List daemon inbox pages (each merged with its dynamic .state sidecar)',
         usage: '[--vault <dir>] [--retention-days <n>] [--pretty]',
+        args: { flags: { 'retention-days': 'value', vault: 'value', pretty: 'bool' } },
         run: args => {
             const retention = Number(flag(args, 'retention-days') ?? 7) || 7
             out(listDaemonPages(requireVault(args), retention), args)
@@ -29,6 +30,18 @@ export const commands: CommandMap = {
         summary:
             'Create a daemon inbox page with validated frontmatter + action buttons',
         usage: "<slug> [--title <t>] [--body <md>] [--actions '<json>'] [--source <s>] [--deliver-at <iso>] [--vault <dir>]",
+        args: {
+            positionals: ['slug'],
+            flags: {
+                title: 'value',
+                body: 'value',
+                actions: 'value',
+                source: 'value',
+                'deliver-at': 'value',
+                vault: 'value',
+                pretty: 'bool',
+            },
+        },
         run: args => {
             const [slug] = positionals(args)
             if (!slug)
@@ -61,6 +74,7 @@ export const commands: CommandMap = {
         summary:
             'Press a page action (approve → daemon runs its prompt; dismiss → resolved here, no daemon)',
         usage: '<page-path> <actionId> [--vault <dir>] [--pretty]',
+        args: { positionals: ['path', 'action'], flags: { vault: 'value', pretty: 'bool' } },
         run: args => {
             const [path, actionId] = positionals(args)
             if (!path || !actionId)

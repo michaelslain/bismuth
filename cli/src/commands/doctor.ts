@@ -61,6 +61,17 @@ export const commands: CommandMap = {
         summary:
             'Find leftovers from older builds, version skew and pending vault migrations; --fix repairs them',
         usage: '[--fix] [--safe-only] [--only <id>[,<id>…]] [--section <id>[,<id>…]] [--vault <path>] [--json]',
+        args: {
+            flags: {
+                fix: 'bool',
+                'safe-only': 'bool',
+                only: 'value',
+                section: 'value',
+                vault: 'value',
+                json: 'bool',
+                pretty: 'bool',
+            },
+        },
         run: async args => {
             const vault = optionalVault(args)
             const agent = isAgent()

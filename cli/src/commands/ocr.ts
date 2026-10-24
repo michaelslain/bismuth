@@ -85,6 +85,18 @@ export const commands: CommandMap = {
         summary:
             "OCR a PDF or image: give a PDF a selectable text layer in place; --math also transcribes it (math as LaTeX) to <name>.ocr.md beside it",
         usage: '<file> [--math] [--force] [--lang eng] [--pages 1-3,7] [--replace]',
+        args: {
+            positionals: ['path'],
+            flags: {
+                math: 'bool',
+                force: 'bool',
+                lang: 'value',
+                pages: 'value',
+                replace: 'bool',
+                vault: 'value',
+                pretty: 'bool',
+            },
+        },
         run: async args => {
             const vault = requireVault(args)
             const [file] = positionals(args, BOOLS)

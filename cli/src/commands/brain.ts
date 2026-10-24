@@ -13,6 +13,7 @@ export const commands: CommandMap = {
     brain: {
         summary: 'Print the brain: who you work with, the vault map and the memory index',
         usage: '[--vault <dir>]',
+        args: { flags: { vault: 'value', pretty: 'bool' } },
         run: async args => {
             const vault = requireVault(args)
             // The strictest of both env signals (an MCP-spawned CLI counts). The owner gets the chat view.

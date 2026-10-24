@@ -688,9 +688,11 @@ The `bismuth` binary is the `cli` workspace, a thin wrapper over `@bismuth/core`
 Everything after the matched words is the command's `args`.
 
 Each group lives in `cli/src/commands/<group>.ts` and exports a `CommandMap`; the merge order in `registry.ts` is load-bearing, because a later group's key overwrites an earlier one.
-The same registry backs `cli/test/mcpParity.test.ts`, which requires every MCP tool to have a CLI twin, and `cli/test/guideCommands.test.ts`, which checks that every `bismuth …` phrase in the agent guides resolves.
+The same registry backs `cli/test/mcpParity.test.ts`, which requires every MCP tool to have a CLI twin, `cli/test/mcpArgParity.test.ts`, which pairs their arguments, and `cli/test/guideCommands.test.ts`, which checks that every `bismuth …` phrase in the agent guides resolves.
 
 Argument parsing is in `cli/src/args.ts`.
+A command with an MCP twin declares its arguments in `args` (`CommandArgs` in `cli/src/types.ts`): its positionals by the MCP param they carry, and its flags as `'value'`, `'bool'` or `{ kind, param }` when the MCP param is spelled differently (`--off` carries `enabled`).
+`cli/test/mcpArgParity.test.ts` scans the source of `run` (`cli/test/commandArgScan.ts`) and fails when the body reads a flag the declaration omits, declares a flag the body never reads, or hands `args` to a helper that `ARG_HELPERS` does not list.
 `cli/src/baseResolve.ts` resolves an extensionless base path for `base`, `row`, `calendar` and `card review --file`.
 The visibility gate in `core/src/visibilityCliGate.ts` runs once in `index.ts` before any command, so no invocation skips it.
 Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `call` attaches the owner token and turns failures into messages.

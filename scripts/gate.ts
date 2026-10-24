@@ -64,6 +64,13 @@ const SHARED_PREFIXES = [
 ]
 
 /**
+ * Workspaces whose tests check each other's source, so touching either runs both. The MCP tool list
+ * and the CLI commands are held to argument-level parity by cli/test/mcpArgParity.test.ts, which a
+ * commit that only edits mcp/ would otherwise never run.
+ */
+const COUPLED: readonly (readonly Workspace[])[] = [['cli', 'mcp']]
+
+/**
  * Map staged file paths to the workspaces that need testing.
  * Exported (and pure) so gate.test.ts can pin the routing without touching git or the filesystem.
  */
@@ -75,6 +82,8 @@ export function affectedWorkspaces(staged: string[]): Workspace[] {
         const ws = WORKSPACES.find(w => f.startsWith(`${w}/`))
         if (ws) hit.add(ws)
     }
+    for (const group of COUPLED)
+        if (group.some(w => hit.has(w))) group.forEach(w => hit.add(w))
     return WORKSPACES.filter(w => hit.has(w))
 }
 

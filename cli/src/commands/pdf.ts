@@ -13,6 +13,10 @@ export const commands: CommandMap = {
         summary:
             'Convert a PDF to a new markdown note beside it (x.pdf → x.md, math as LaTeX, `source` links back); the PDF is untouched',
         usage: '<file.pdf> [--pages 1-3,7] [--force] [--replace]',
+        args: {
+            positionals: ['path'],
+            flags: { pages: 'value', force: 'bool', replace: 'bool', vault: 'value', pretty: 'bool' },
+        },
         run: async args => {
             const vault = requireVault(args)
             const [file] = positionals(args, BOOLS)

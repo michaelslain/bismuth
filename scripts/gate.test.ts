@@ -18,6 +18,12 @@ test('a single-workspace edit tests only that workspace', () => {
     ).toEqual(['core'])
 })
 
+test('cli and mcp test together, because their argument parity is checked from cli/test', () => {
+    expect(affectedWorkspaces(['mcp/src/server.ts'])).toEqual(['cli', 'mcp'])
+    expect(affectedWorkspaces(['cli/src/commands/map.ts'])).toEqual(['cli', 'mcp'])
+    expect(affectedWorkspaces(['app/src/y.ts', 'mcp/src/x.ts'])).toEqual(['app', 'cli', 'mcp'])
+})
+
 test('edits across workspaces test each of them, in a stable order', () => {
     expect(affectedWorkspaces(['daemon/src/x.ts', 'app/src/y.ts'])).toEqual([
         'app',

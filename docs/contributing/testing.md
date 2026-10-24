@@ -293,6 +293,7 @@ Several tests exist to fail when two things that must agree drift apart. If one 
 | `core/test/guides.test.ts` | A Bases authoring page is missing for a view kind, lacks its three fixed sections, or cites a missing docs page |
 | `cli/test/guideCommands.test.ts` | A `bismuth …` command shown in a guide is not a real CLI command |
 | `cli/test/mcpParity.test.ts` | An MCP tool has no CLI twin in `CLI_TWINS`, or a twin names a missing command |
+| `cli/test/mcpArgParity.test.ts` | A tool parameter or a twin command's flag or positional has no partner and no `ARG_EXCEPTIONS` entry, a command's `args` disagrees with what its `run` reads, or an argv mapper drops a parameter |
 | `mcp/test/serverInstructions.test.ts` | The MCP server instructions grow past their size pin or name a missing docs page |
 | `core/test/agentBackends/catalogParity.test.ts` | A backend's capability flag in `catalog.ts` is true but its `CHAT_BACKENDS` entry lacks the matching verb, or the reverse |
 | `core/test/noRawMkdtemp.test.ts` | A test calls `mkdtemp` instead of `tempDir` |
@@ -309,7 +310,7 @@ Several tests exist to fail when two things that must agree drift apart. If one 
 ## How it works
 
 `scripts/gate.ts` decides what a commit runs.
-Three exported pure functions pin its routing and are unit-tested in `scripts/gate.test.ts`: `affectedWorkspaces` maps staged paths to workspaces, `touchesDesignSystem` and `touchesStylesheets` pick the design-system and `moduleClassCheck` steps, and `plan` combines them.
+Three exported pure functions pin its routing and are unit-tested in `scripts/gate.test.ts`: `affectedWorkspaces` maps staged paths to workspaces (`cli` and `mcp` always test together, because `cli/test/mcpArgParity.test.ts` reads both), `touchesDesignSystem` and `touchesStylesheets` pick the design-system and `moduleClassCheck` steps, and `plan` combines them.
 The gate passes `<workspace>/` with a trailing slash to `bun test`, because a bare `cli` would also match `core/test/chatProviders/clineMocked.test.ts`.
 It strips git's repository-location variables (`sanitizeGitEnv`) from the children it spawns, so tests that run `git` against temp directories cannot write into the real repository.
 

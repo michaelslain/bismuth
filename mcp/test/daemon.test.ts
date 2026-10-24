@@ -228,6 +228,15 @@ test('page tools map to page list / create / resolve', () => {
         V,
         '--pretty',
     ])
+    expect(daemonCliArgs('page_list', { retentionDays: 30 }, V)).toEqual([
+        'page',
+        'list',
+        '--vault',
+        V,
+        '--pretty',
+        '--retention-days',
+        '30',
+    ])
 
     // minimal create
     expect(daemonCliArgs('page_create', { slug: 'hello' }, V)).toEqual([

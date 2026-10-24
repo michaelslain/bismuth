@@ -33,6 +33,16 @@ export const commands: CommandMap = {
     map: {
         summary: 'Print the vault map (folders, clusters, hubs, tags), or one note neighbourhood',
         usage: '[--folder <f>] [--around <note>] [--json] [--vault <dir>]',
+        args: {
+            flags: {
+                folder: 'value',
+                around: 'value',
+                json: 'bool',
+                vault: 'value',
+                api: 'value',
+                pretty: 'bool',
+            },
+        },
         run: async args => {
             const vault = requireVault(args)
             const json = bool(args, 'json')

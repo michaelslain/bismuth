@@ -43,7 +43,7 @@ The memory tools read and write the vault's memory graph. [Memory](../daemon/mem
 | `cron_toggle` | `name`, `enabled?` | `daemon cron toggle <name> [--off]` | Enable a cron, or pause it with `enabled: false` |
 | `process_toggle` | `name`, `enabled?` | `daemon process toggle <name> [--off]` | Enable or disable a background process, and start or stop it |
 | `daemon_logs` | `limit?`, `kind?`, `name?`, `since?` | `daemon logs` | This vault's activity log, newest first |
-| `page_list` | none | `page list` | The inbox, each page with its status |
+| `page_list` | `retentionDays?` | `page list [--retention-days <n>]` | The inbox, each page with its status |
 | `page_create` | `slug`, `title?`, `body?`, `actions?`, `source?`, `deliver_at?` | `page create <slug> …` | Write an inbox page with validated frontmatter |
 | `page_resolve` | `path`, `action` | `page resolve <path> <action>` | Press a page's button: approve runs its prompt, dismiss closes it |
 
@@ -74,6 +74,6 @@ There are no tools to create or delete a cron or process, to start or stop a pro
 
 `mcp/src/daemon.ts` holds the tool definitions and `daemonCliArgs`, a pure function that maps a tool name and its arguments, plus the vault root, to the CLI arguments. It throws on an unknown tool or a missing required argument, and the server turns that into an error result. `runDaemonTool` resolves the vault root, calls `runCli` from `mcp/src/cli.ts`, and returns the combined output with `isError` set for a non-zero exit. The vault visibility gate checks the arguments before the CLI runs, in `runCli`, so a daemon tool cannot reach a hidden note either.
 
-Every tool here has a CLI twin, listed in `CLI_TWINS` in `mcp/src/cliTwins.ts`: `remember`, `recall` and `forget` pair with `memory remember`, `memory recall` and `memory forget`, and each daemon tool with the command in the table. `cli/test/mcpParity.test.ts` fails when a tool lacks a twin. The memory tools call functions in `mcp/src/memory.ts` that the `bismuth memory` commands import directly; the daemon tools spawn the CLI instead, so this workspace has no dependency on `@bismuth/core`.
+Every tool here has a CLI twin, listed in `CLI_TWINS` in `mcp/src/cliTwins.ts`: `remember`, `recall` and `forget` pair with `memory remember`, `memory recall` and `memory forget`, and each daemon tool with the command in the table. `cli/test/mcpParity.test.ts` fails when a tool lacks a twin, and `cli/test/mcpArgParity.test.ts` fails when `daemonCliArgs` drops a parameter or passes a flag the command does not declare. The memory tools call functions in `mcp/src/memory.ts` that the `bismuth memory` commands import directly; the daemon tools spawn the CLI instead, so this workspace has no dependency on `@bismuth/core`.
 
 Source: `mcp/src/{daemon,memory,server,cli,cliTwins}.ts`, `cli/src/commands/{daemon,page,memory}.ts`, `core/src/{daemon,daemonGraph,daemonPages,daemonActivity}.ts`, `mcp/test/daemon.test.ts`

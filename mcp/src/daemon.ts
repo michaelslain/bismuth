@@ -159,7 +159,16 @@ export const daemonTools = [
         name: 'page_list',
         description:
             'List the daemon inbox — pages the daemon authored asking the user to approve/dismiss an action (each merged with its dynamic status). (bismuth page list)',
-        inputSchema: { type: 'object', properties: {} },
+        inputSchema: {
+            type: 'object',
+            properties: {
+                retentionDays: {
+                    type: 'number',
+                    description:
+                        'Resolved pages older than this many days are deleted while listing (default 7).',
+                },
+            },
+        },
     },
     {
         name: 'page_create',
@@ -295,8 +304,15 @@ export function daemonCliArgs(
         }
 
         // ── vault-scoped: the daemon inbox (pages) ──────────────────────────────
-        case 'page_list':
-            return ['page', 'list', ...vault, '--pretty']
+        case 'page_list': {
+            const argv = ['page', 'list', ...vault, '--pretty']
+            if (
+                typeof a.retentionDays === 'number' &&
+                Number.isFinite(a.retentionDays)
+            )
+                argv.push('--retention-days', String(a.retentionDays))
+            return argv
+        }
         case 'page_create': {
             const argv = ['page', 'create', req('slug'), ...vault]
             const title = str('title')

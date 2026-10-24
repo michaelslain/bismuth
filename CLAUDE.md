@@ -105,7 +105,9 @@ They override framework habits, and most violations compile, render and pass tes
 - **A mutation marks the paths it writes** (`core/src/selfWriteMarks.ts`) so the watcher drops its
   own echo.
 - **An agent guide is a docs page plus one line in `mcp/src/instructions.ts`** naming when to read
-  it. Every MCP tool has a CLI twin (`mcp/src/cliTwins.ts`, `cli/test/mcpParity.test.ts`).
+  it. Every MCP tool has a CLI twin (`mcp/src/cliTwins.ts`, `cli/test/mcpParity.test.ts`), and every
+  tool parameter pairs with a flag of its twin, or an `ARG_EXCEPTIONS` entry says why not
+  (`cli/test/mcpArgParity.test.ts`).
 
 ## Traps
 

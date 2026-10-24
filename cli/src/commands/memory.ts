@@ -90,6 +90,19 @@ export const commands: CommandMap = {
     'memory remember': {
         summary: "Save a note to this vault's memory graph (the 3rd brain); overwrites by name",
         usage: '--name <n> --content <md> [--type <t>] [--tags a,b] [--folder <f>] [--description <text>] [--memory <dir>] [--vault <dir>]',
+        args: {
+            flags: {
+                name: 'value',
+                content: 'value',
+                type: 'value',
+                tags: 'value',
+                folder: 'value',
+                description: 'value',
+                memory: 'value',
+                vault: 'value',
+                pretty: 'bool',
+            },
+        },
         run: async args => {
             const name = flag(args, 'name')
             const content = flag(args, 'content')
@@ -124,6 +137,10 @@ export const commands: CommandMap = {
     'memory recall': {
         summary: "Search this vault's memory graph (tag: type: keyword: link: after: before: filters)",
         usage: '<query…> [--folder <f>] [--memory <dir>] [--vault <dir>] [--pretty]',
+        args: {
+            positionals: ['query'],
+            flags: { folder: 'value', memory: 'value', vault: 'value', pretty: 'bool' },
+        },
         run: async args => {
             const query = positionals(args).join(' ')
             if (!query) fail('usage: bismuth memory recall <query…> [--folder <f>]')
@@ -141,6 +158,10 @@ export const commands: CommandMap = {
     'memory forget': {
         summary: "Remove a note from this vault's memory graph (name may be folder-prefixed)",
         usage: '<name> [--memory <dir>] [--vault <dir>]',
+        args: {
+            positionals: ['name'],
+            flags: { memory: 'value', vault: 'value', pretty: 'bool' },
+        },
         run: async args => {
             const [name] = positionals(args)
             if (!name) fail('usage: bismuth memory forget <name>')

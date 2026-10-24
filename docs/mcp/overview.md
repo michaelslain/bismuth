@@ -90,7 +90,27 @@ Every MCP tool has a CLI command that does the same thing, and every CLI command
 | `bismuth_docs_list`, `bismuth_docs_search`, `bismuth_docs_read` | `docs list`, `docs search`, `docs read` |
 | `bismuth_doctor` | `doctor` |
 
-[Daemon tools](daemon-tools.md) lists the twins of the gated tools. `CLI_TWINS` in `mcp/src/cliTwins.ts` holds the table, and `cli/test/mcpParity.test.ts` fails when a tool is added without a twin or the other way round.
+[Daemon tools](daemon-tools.md) lists the twins of the gated tools. `CLI_TWINS` in `mcp/src/cliTwins.ts` holds the table, and `cli/test/mcpParity.test.ts` fails when a tool is added without a twin or the other way round, and `cli/test/mcpArgParity.test.ts` pairs their arguments.
+
+### Parameters pair with flags
+
+Every input parameter of a tool pairs with a flag or positional of its CLI twin, and every flag or positional of the twin pairs with a parameter.
+Names pair after dropping `-` and `_` and ignoring case, so `safeOnly` pairs with `--safe-only` and `deliver_at` with `--deliver-at`.
+A boolean parameter pairs with a bare flag and every other type with a flag that takes a value or with a positional.
+
+An argument that exists on one side only is listed in `ARG_EXCEPTIONS` in `mcp/src/cliTwins.ts`, one entry per tool and argument, with the reason it is one-sided.
+The reasons that recur:
+
+| Reason | Example |
+|---|---|
+| Output format: the tool returns its result in the format it chose | `--pretty`, `--json` |
+| Session scope: the MCP server supplies the value itself, so an agent cannot redirect the tool | `--vault`, `--memory`, `--api` |
+| The CLI has no such behaviour to switch | `full` on `bismuth_docs_read`, because the CLI never caps a page |
+
+An entry that matches no one-sided argument fails the test, so the table cannot go stale.
+A reason that starts with `TODO(user)` marks an argument whose fate is an open decision.
+
+To add a parameter, add the flag to the twin in the same change, or add an exception with a reason.
 
 ## Drive the running app
 
@@ -106,9 +126,9 @@ An agent can open, close and rename tabs, run a safe command, and author an inbo
 | `mcp/src/cli.ts` | `runCli` and `cliHelp`. Runs the compiled CLI named by `BISMUTH_CLI`, or `bun run cli/src/index.ts` in a checkout. Checks the visibility gate first, passes the environment through, stamps `BISMUTH_MCP_CHANNEL`, and never throws |
 | `mcp/src/memory.ts` | `remember`, `recall`, `forget` and the `memoryDir()` gate |
 | `mcp/src/daemon.ts` | The daemon tools, the `daemonCliArgs` mapper from tool call to CLI arguments, and the vault resolution |
-| `mcp/src/cliTwins.ts` | The parity table |
+| `mcp/src/cliTwins.ts` | The parity table and `ARG_EXCEPTIONS` |
 | `mcp/src/instructions.ts` | The server instructions |
 
 `cli/src/commands/docs.ts` and `memory.ts` import `mcp/src/docs.ts` and `memory.ts` directly, so the MCP tool and its CLI twin run one implementation. The daemon and doctor tools go the other way and spawn the CLI.
 
-Source: `mcp/src/{server,docs,cli,memory,daemon,cliTwins,instructions}.ts`, `cli/test/mcpParity.test.ts`, `relay/.mcp.json`, `core/src/{bismuthInstall,agentBackends/mcpRegistrars}.ts`, `core/src/schema/settingsSchema.ts`
+Source: `mcp/src/{server,docs,cli,memory,daemon,cliTwins,instructions}.ts`, `cli/test/{mcpParity,mcpArgParity}.test.ts`, `relay/.mcp.json`, `core/src/{bismuthInstall,agentBackends/mcpRegistrars}.ts`, `core/src/schema/settingsSchema.ts`

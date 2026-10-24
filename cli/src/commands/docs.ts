@@ -21,6 +21,7 @@ export const commands: CommandMap = {
     'docs list': {
         summary: 'List every Bismuth doc page as {path, title} (the index — start here)',
         usage: '[--pretty]',
+        args: { flags: { pretty: 'bool' } },
         run: args => {
             out(listDocs(docsRoot()), args)
         },
@@ -28,6 +29,7 @@ export const commands: CommandMap = {
     'docs search': {
         summary: 'Search the docs; prints ranked {path, heading, snippet} hits (snippets only, not pages)',
         usage: '<query…> [--limit <n>] [--pretty]',
+        args: { positionals: ['query'], flags: { limit: 'value', pretty: 'bool' } },
         run: args => {
             const query = positionals(args).join(' ')
             if (!query) fail('usage: bismuth docs search <query…> [--limit <n>]')
@@ -40,6 +42,7 @@ export const commands: CommandMap = {
     'docs read': {
         summary: 'Print one doc page raw, or a single ## section of it',
         usage: '<path> [--section <heading>]',
+        args: { positionals: ['path'], flags: { section: 'value' } },
         run: args => {
             const [path] = positionals(args)
             if (!path) fail('usage: bismuth docs read <path> [--section <heading>]')

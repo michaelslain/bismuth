@@ -55,6 +55,7 @@ export const commands: CommandMap = {
         summary:
             "Print the daemon's liveness, this device id, and current owner",
         usage: '[--pretty]',
+        args: { flags: { pretty: 'bool' } },
         run: args => {
             out(daemonStatus(), args)
         },
@@ -62,6 +63,7 @@ export const commands: CommandMap = {
     'daemon devices': {
         summary: 'List all heartbeating devices (each flagged owner/this)',
         usage: '[--pretty]',
+        args: { flags: { pretty: 'bool' } },
         run: args => {
             out(listDevices(), args)
         },
@@ -70,6 +72,7 @@ export const commands: CommandMap = {
         summary:
             'Print the current owner device, or claim a device as owner when <deviceId> is given',
         usage: '[<deviceId>] [--pretty]',
+        args: { positionals: ['device'], flags: { pretty: 'bool' } },
         run: args => {
             const [deviceId] = positionals(args)
             if (deviceId === undefined) {
@@ -116,6 +119,7 @@ export const commands: CommandMap = {
         summary:
             "Build this vault's daemon-mode graph (daemon hub → crons + processes) and print it as JSON",
         usage: '--vault <dir> [--pretty]',
+        args: { flags: { vault: 'value', pretty: 'bool' } },
         run: args => {
             out(daemonGraph(vaultDaemonDir(requireVault(args))), args)
         },
@@ -124,6 +128,16 @@ export const commands: CommandMap = {
         summary:
             "Print this vault's daemon activity log (cron outcomes, process lifecycle, brain starts), newest first",
         usage: '--vault <dir> [--limit n] [--kind cron|process|daemon|session|doctor] [--name <name>] [--since <iso>] [--pretty]',
+        args: {
+            flags: {
+                limit: 'value',
+                kind: 'value',
+                name: 'value',
+                since: 'value',
+                vault: 'value',
+                pretty: 'bool',
+            },
+        },
         run: args => {
             const limit = flag(args, 'limit')
             out(
@@ -141,6 +155,10 @@ export const commands: CommandMap = {
         summary:
             'Enable (or, with --off, disable) a cron in this vault by flipping its `enabled` frontmatter',
         usage: '<name> --vault <dir> [--off]',
+        args: {
+            positionals: ['name'],
+            flags: { off: { kind: 'bool', param: 'enabled' }, vault: 'value', pretty: 'bool' },
+        },
         run: args => {
             const [name] = positionals(args)
             if (name === undefined)
@@ -157,6 +175,7 @@ export const commands: CommandMap = {
         summary:
             'Request the daemon to run a cron in this vault NOW (drops a trigger file the daemon polls)',
         usage: '<name> --vault <dir>',
+        args: { positionals: ['name'], flags: { vault: 'value', pretty: 'bool' } },
         run: args => {
             const [name] = positionals(args)
             if (name === undefined)
@@ -169,6 +188,10 @@ export const commands: CommandMap = {
         summary:
             'Enable (or, with --off, disable) a background process in this vault by flipping its `enabled` frontmatter',
         usage: '<name> --vault <dir> [--off]',
+        args: {
+            positionals: ['name'],
+            flags: { off: { kind: 'bool', param: 'enabled' }, vault: 'value', pretty: 'bool' },
+        },
         run: args => {
             const [name] = positionals(args)
             if (name === undefined)
