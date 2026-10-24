@@ -4,73 +4,11 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-    affectedWorkspaces,
     plan,
     sanitizeGitEnv,
     touchesDesignSystem,
     touchesStylesheets,
 } from './gate'
-
-test('a single-workspace edit tests only that workspace', () => {
-    expect(affectedWorkspaces(['app/src/App.tsx'])).toEqual(['app'])
-    expect(
-        affectedWorkspaces(['core/src/server.ts', 'core/test/server.test.ts']),
-    ).toEqual(['core'])
-})
-
-test('cli and mcp test together, because their argument parity is checked from cli/test', () => {
-    expect(affectedWorkspaces(['mcp/src/server.ts'])).toEqual(['cli', 'mcp'])
-    expect(affectedWorkspaces(['cli/src/commands/map.ts'])).toEqual(['cli', 'mcp'])
-    expect(affectedWorkspaces(['app/src/y.ts', 'mcp/src/x.ts'])).toEqual(['app', 'cli', 'mcp'])
-})
-
-test('edits across workspaces test each of them, in a stable order', () => {
-    expect(affectedWorkspaces(['daemon/src/x.ts', 'app/src/y.ts'])).toEqual([
-        'app',
-        'daemon',
-    ])
-})
-
-test('a shared root file widens the gate to every workspace', () => {
-    // These can change resolution/config for everything, so a narrow gate would be false comfort.
-    for (const f of [
-        'package.json',
-        'bun.lock',
-        'tsconfig.base.json',
-        'bunfig.toml',
-        'scripts/gate.ts',
-    ]) {
-        expect(affectedWorkspaces([f])).toEqual([
-            'core',
-            'app',
-            'cli',
-            'mcp',
-            'relay',
-            'memory',
-            'daemon',
-        ])
-    }
-})
-
-test('docs-only and asset-only changes touch no workspace, so the gate stays out of the way', () => {
-    expect(
-        affectedWorkspaces([
-            'docs/README.md',
-            'CLAUDE.md',
-            '.gitignore',
-            'design/x.png',
-        ]),
-    ).toEqual([])
-})
-
-test('a workspace name appearing mid-path does not count as that workspace', () => {
-    // "docs/core/x.md" is docs, not core — the match is anchored to the path's first segment.
-    expect(affectedWorkspaces(['docs/core/x.md'])).toEqual([])
-})
-
-test('nothing staged yields nothing to test', () => {
-    expect(affectedWorkspaces([])).toEqual([])
-})
 
 // --- design-system gate routing ---------------------------------------------------------------
 
@@ -84,55 +22,59 @@ test('touchesDesignSystem fires on the manifest, the baseline and the copied gat
     expect(touchesDesignSystem(['design/baseline.json'])).toBe(true)
     expect(touchesDesignSystem(['design-system.baseline.json'])).toBe(false)
     expect(touchesDesignSystem(['scripts/designSystem/checks.mjs'])).toBe(true)
-    expect(touchesDesignSystem(['scripts/designSystem/lib/yamlSubset.mjs'])).toBe(true)
+    expect(
+        touchesDesignSystem(['scripts/designSystem/lib/yamlSubset.mjs']),
+    ).toBe(true)
 })
 
 test('touchesDesignSystem stays out of the way for everything else', () => {
     expect(touchesDesignSystem(['core/src/server.ts'])).toBe(false)
     expect(touchesDesignSystem(['docs/README.md'])).toBe(false)
-    // a workspace name appearing mid-path is not a match — same discipline as affectedWorkspaces
+    // a workspace name appearing mid-path is not a match
     expect(touchesDesignSystem(['scripts/gate.ts'])).toBe(false)
     expect(touchesDesignSystem(['app/package.json'])).toBe(false)
 })
 
-test('a workspace change alone with no design-system trigger still tests only that workspace', () => {
-    // DESIGN.md is a root file with no workspace prefix, so affectedWorkspaces alone would miss
-    // it entirely -- the gate has to OR the two signals, not just widen affectedWorkspaces.
-    expect(affectedWorkspaces(['DESIGN.md'])).toEqual([])
-    expect(touchesDesignSystem(['DESIGN.md'])).toBe(true)
-})
+// --- plan() — what main() decides to run, so a regression in how it COMBINES the predicates (the
+// design-system step silently skipping tests) is a plain assertion instead of something only a live
+// `git commit` would surface. Which tests run is scripts/testGraph.ts's job (testGraph.test.ts).
 
-// --- plan() — what main() actually decides to run, not just the two pure predicates in isolation.
-// The two tests above prove affectedWorkspaces/touchesDesignSystem individually; neither one would
-// notice main() regressing how it COMBINES them (e.g. the design-system step silently skipping
-// tests). Pinning plan()'s output is what makes that a plain assertion instead of something only a
-// live `git commit` would surface.
-
-test('plan: a design-system-only change (DESIGN.md) runs the design-system step and skips tests', () => {
+test('plan: a design-system-only change (DESIGN.md) runs the design-system step and the tests, not the typecheck', () => {
     expect(plan(['DESIGN.md'])).toEqual({
         typecheck: false,
-        tests: [],
+        tests: true,
         designSystem: true,
         moduleClassCheck: false,
     })
 })
 
-test('plan: a docs-only change runs nothing', () => {
+test('plan: a docs-only change runs only the tests, which select what reads docs', () => {
     expect(plan(['docs/x.md'])).toEqual({
         typecheck: false,
-        tests: [],
+        tests: true,
         designSystem: false,
         moduleClassCheck: false,
     })
 })
 
-test('plan: an app/src .ts-only change runs typecheck, its workspace tests AND the design-system step, but not moduleClassCheck', () => {
+test('plan: an app/src .tsx change runs typecheck, tests AND the design-system step, but not moduleClassCheck', () => {
     expect(plan(['app/src/X.tsx'])).toEqual({
         typecheck: true,
-        tests: ['app'],
+        tests: true,
         designSystem: true,
         moduleClassCheck: false,
     })
+})
+
+test('plan: design-system routing follows the STAGED paths, tests follow every changed path', () => {
+    expect(plan(['app/src/X.tsx', 'core/src/y.ts'], ['core/src/y.ts'])).toEqual(
+        {
+            typecheck: true,
+            tests: true,
+            designSystem: false,
+            moduleClassCheck: false,
+        },
+    )
 })
 
 // --- moduleClassCheck routing ------------------------------------------------------------------

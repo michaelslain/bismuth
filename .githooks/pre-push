@@ -1,8 +1,10 @@
 #!/bin/sh
 # Pre-push gate — the FULL check, complementing pre-commit's fast one:
 #   1. docs: block on broken links, warn on stale docs (scripts/check-docs.ts)
-#   2. the complete test suite, INCLUDING the slow suites pre-commit skips
-#      (real agent binaries, PTY/websocket integration, the layout benchmark)
+#   2. scripts/treeGate.ts --full: typecheck + every test, INCLUDING the slow suites pre-commit
+#      skips (real agent binaries, PTY/websocket integration, the layout benchmark). A tree that
+#      already passed the full tier runs nothing; against an upstream that passed it, only the
+#      tests the pushed diff can reach run (scripts/testGraph.ts).
 # Enabled via: git config core.hooksPath .githooks   (or `bun run hooks:install`)
 #
 # Bypass deliberately with `git push --no-verify`, or BISMUTH_SKIP_GATE=1 to skip only the tests.
@@ -30,5 +32,4 @@ if [ -n "$refs" ] && ! printf '%s\n' "$refs" | awk '$2 !~ /^0+$/ { real = 1 } EN
   exit 0
 fi
 
-printf '\033[2m[pre-push] running the FULL test suite (slow suites included)…\033[0m\n'
-bun test
+exec bun run scripts/treeGate.ts --full

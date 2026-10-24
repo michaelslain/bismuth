@@ -32,7 +32,8 @@ cd app && bun run dev:app       # the same + the Tauri window, in one process gr
 cd app && bun run storybook     # :6006, the visual-verification surface
 bun run typecheck               # tsc per workspace
 bun test core                   # one workspace; pass an exact file path for one file
-bun run gate                    # what pre-commit runs: typecheck + fast tests for touched workspaces
+bun run gate                    # what pre-commit runs: typecheck + the fast tests the change can reach
+bun run gate:tree               # typecheck + fast tests for HEAD's tree, skipped once it passed: verify a merge
 bun run visual                  # visual invariants over the stories your diff affects
 cd app && bun run build         # Vite production build; `bun run tauri build` for the native app
 ```
@@ -44,8 +45,13 @@ gates: `docs/contributing/testing.md`; Storybook and every `bench/` tool with it
 ## Rules that fail silently
 
 - **Tests are required to commit.** `.githooks/pre-commit` runs `scripts/gate.ts`; pre-push runs
-  `scripts/check-docs.ts` and the full suite. Never bypass with `BISMUTH_SKIP_GATE`. A fresh clone
-  runs `bun run hooks:install`.
+  `scripts/check-docs.ts` and `gate:tree --full`. Never bypass with `BISMUTH_SKIP_GATE`. A fresh
+  clone runs `bun run hooks:install`.
+- **Gates run the tests the dependency graph selects** and skip a tree that already passed; build a
+  test's repo paths from `import.meta.dir` so the graph sees them (`docs/contributing/testing.md`).
+- **One test suite runs at a time on the machine**: gates and `test:fast` wait on
+  `.claude/coord/test.lock` in the main checkout. A merged tip is verified with `bun run gate:tree`,
+  never `bun run gate`, which checks only staged files.
 - **`bun test core -- <pattern>` does not filter**: Bun's positional args are OR'd path substrings
   and `core` already matches everything. Pass the file path.
 - **`BISMUTH_FAST_TESTS=1` skips slow suites**; plain `bun test` and CI run everything.

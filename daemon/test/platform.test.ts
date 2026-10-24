@@ -181,7 +181,7 @@ describe('unloadDaemon', () => {
     // Two reasons this always imports a FRESH, cache-busted module instance rather than a plain
     // top-level `import { unloadDaemon }`: (1) IS_LINUX is a module-scope const captured from
     // process.platform at import time, so exercising the Linux branch needs a module evaluated
-    // while process.platform reads "linux"; (2) cli/test/cli.test.ts mock.module's this same
+    // while process.platform reads "linux"; (2) cli/test/cliBasesDaemonGcal.test.ts mock.module's this same
     // specifier (daemon/src/lib/platform) for the whole `bun test` process — mock.module mutates
     // the shared module-namespace object in place, so a plain import here could silently pick up
     // that CLI-test stub instead of the real spawnSync-driven implementation when both test files
