@@ -130,6 +130,10 @@ export async function launchChrome(
             '--no-first-run',
             '--no-default-browser-check',
             '--disable-extensions',
+            // A fresh profile otherwise asks the macOS keychain for "Chrome Safe Storage", which
+            // pops a keychain dialog on the user's screen for every launch a test or sweep makes.
+            '--use-mock-keychain',
+            '--password-store=basic',
             'about:blank',
         ],
         { stdio: 'ignore' },
