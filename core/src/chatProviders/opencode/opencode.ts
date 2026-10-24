@@ -6,8 +6,9 @@
 //
 //  - SERVER mode (preferred): one persistent `opencode serve` process, owned by
 //    ./opencodeServer.ts and shared by every opencode chat this core process hosts (lazily started
-//    on the first opencode chat, never one-per-chat). Sessions/turns ride @opencode-ai/sdk's typed
-//    HTTP client; real-time deltas/tool progress/permission asks ride the server's GLOBAL event
+//    on the first opencode chat, never one-per-chat). On opencode 1 sessions/turns ride
+//    @opencode-ai/sdk's typed HTTP client; on opencode 2 they ride ./opencodeV2Client.ts, whose prompt
+//    returns at once and whose turn ends on a `session.execution.*` event (runTurnServerV2); real-time deltas/tool progress/permission asks ride the server's GLOBAL event
 //    stream (one subscription for the whole process — see opencodeServer.ts). This closes the
 //    degradations the old per-turn subprocess had: real token-level streaming
 //    (`message.part.delta`), a genuine permission request/response cycle (`permission.asked` +
@@ -73,9 +74,22 @@ import {
 } from './opencodeCli'
 import {
     ensureOpencodeServer,
+    OPENCODE_STREAM_CLOSED,
     registerOpencodeServerListener,
     type OpencodeServerHandle,
 } from './opencodeServer'
+import type { OpencodeV2Client, OpencodeV2File } from './opencodeV2Client'
+import {
+    commandEntriesFromV2,
+    modelEntriesFromV2Models,
+    newOpencodeV2TurnState,
+    opencodeV2ModelRef,
+    opencodeV2RetryGiveUp,
+    opencodeV2TurnModel,
+    parseOpencodeV2PermissionAsk,
+    providerListFromV2,
+    translateOpencodeV2Event,
+} from './opencodeV2Translate'
 import {
     buildDenyPaths,
     buildSandboxDenyPaths,
@@ -167,7 +181,21 @@ interface OpencodeSession {
     /** Permission ids this session has asked about and not yet answered (server mode only) — guards
      *  respondPermission against answering an id twice or one from a stale/foreign session. */
     pendingPermissions: Set<string>
+    /** opencode 2 only: the model and variant the server session currently runs (`provider/model#
+     *  variant`; its model is per session, not per prompt), so a turn switches only on a change. */
+    serverModel?: string
+    /** The reasoning-effort level the user picked (set_effort). On opencode 2 it rides the turn's
+     *  model as its variant when that model lists the level; nothing else reads it. */
+    effort?: string
+    /** opencode 2 only: whether the session holds Bismuth's memory instructions entry. */
+    memoryEntrySet?: boolean
 }
+
+type ServerV1 = Extract<OpencodeServerHandle, { version: 1 }>
+type ServerV2 = Extract<OpencodeServerHandle, { version: 2 }>
+
+/** The opencode 2 instructions-entry key Bismuth's per-turn memory rides in. */
+const MEMORY_ENTRY_KEY = 'bismuth-memory'
 
 // Frame buffering + reconnect lifecycle (emit / rebindSessionSink / scheduleSessionClose) is
 // transport-agnostic and shared with the Claude provider — see ./sessionSink. OpencodeSession
@@ -276,13 +304,37 @@ let openInfoInFlight: Promise<void> | null = null
 /** The inline-config key the cached model list was fetched under. A local-model change adds,
  *  removes or renames the `local/*` models, so the cache is dropped when it moves. */
 let openInfoKey: string | null = null
+/** The server the caches were read from: a restarted server (or a different opencode) may list
+ *  other models and commands, so a new one refetches. */
+let openInfoServer: OpencodeServerHandle | null = null
 function ensureOpenInfo(
     bin: string,
     cwd: string,
     server: OpencodeServerHandle | null,
 ): Promise<void> {
+    if (server !== openInfoServer) {
+        openInfoServer = server
+        openInfoInFlight = null
+    }
     if (!openInfoInFlight) {
         openInfoInFlight = (async () => {
+            if (server?.version === 2) {
+                try {
+                    modelsCache = modelEntriesFromV2Models(
+                        await server.client.models(cwd),
+                    )
+                } catch {
+                    modelsCache = []
+                }
+                try {
+                    commandsCache = withOpencodeBuiltinCommands(
+                        commandEntriesFromV2(await server.client.commands(cwd)),
+                    )
+                } catch {
+                    commandsCache = withOpencodeBuiltinCommands([])
+                }
+                return
+            }
             if (server) {
                 try {
                     const res = await server.client.config.providers({
@@ -395,15 +447,32 @@ async function emitModelsAndAuth(
     if (!hadCommands && commandsCache?.length) emit(s, manifestFrame(s))
     const models = withZenFreeRotate(modelsCache ?? [])
     if (models.length) emit(s, { type: 'models', models })
-    const providers = parseOpencodeAuthList(
-        await runCliText(s.bin, s.cwd, ['auth', 'list']).catch(() => ''),
-    )
+    // opencode 2's server lists its connections itself; `auth list` would boot a second, private
+    // server for every chat open.
+    const providers =
+        server?.version === 2
+            ? await server.client
+                  .integrations(s.cwd)
+                  .then(list =>
+                      providerListFromV2(list).connected.map(c => ({
+                          name: c.name,
+                          kind: c.kind,
+                      })),
+                  )
+                  .catch(() => [])
+            : parseOpencodeAuthList(
+                  await runCliText(s.bin, s.cwd, ['auth', 'list']).catch(
+                      () => '',
+                  ),
+              )
     if (sessions.get(s.id) === s) emit(s, { type: 'auth', providers })
 }
 
-/** The shared server's typed client for the provider-connect routes, or null when opencode is not
- *  installed or its server will not start. */
-export async function opencodeClient(): Promise<OpencodeClient | null> {
+/** The shared server's client for the provider-connect routes (opencode 1's SDK client or the
+ *  opencode 2 client), or null when opencode is not installed or its server will not start. */
+export async function opencodeClient(): Promise<
+    OpencodeClient | OpencodeV2Client | null
+> {
     const bin = whichBinary('opencode')
     if (!bin) return null
     const server = await ensureOpencodeServer(bin).catch(() => null)
@@ -411,11 +480,8 @@ export async function opencodeClient(): Promise<OpencodeClient | null> {
 }
 
 /** Why `opencodeClient` has no client, worded for the provider manager, which shows it in place
- *  of its lists. opencode 2 has a binary but no server the SDK drives (opencodeCli.ts). */
+ *  of its lists. */
 export async function opencodeUnavailableMessage(): Promise<string> {
-    const bin = whichBinary('opencode')
-    if (bin && usesBackgroundService(await opencodeMajor(bin)))
-        return 'Bismuth connects providers through the opencode 1 server, which opencode 2 does not have. Connect a provider in a terminal with `opencode auth login`.'
     return 'opencode is not installed, or its server did not start. Install opencode (opencode.ai) to manage providers.'
 }
 
@@ -580,7 +646,20 @@ async function getOrCreateSession(
         lastActivityAt: Date.now(),
         pendingPermissions: new Set(),
     }
-    if (server && !resume) {
+    if (server?.version === 2 && !resume) {
+        const ref = session.model ? opencodeV2ModelRef(session.model) : null
+        try {
+            session.sessionId = await server.client.createSession(cwd, ref)
+            if (ref) session.serverModel = `${session.model}#`
+        } catch {
+            sink({
+                type: 'error',
+                code: 'spawn',
+                message: 'The opencode server could not start a session.',
+            })
+            return null
+        }
+    } else if (server?.version === 1 && !resume) {
         let created: { data?: { id?: string }; error?: unknown } | null = null
         try {
             created = await server.client.session.create({
@@ -605,6 +684,54 @@ async function getOrCreateSession(
     return session
 }
 
+/** The per-turn memory a server-mode turn carries as system text: the session-start brain block
+ *  (fetched once per session) then the recall for THIS prompt. Undefined with no memory dir or
+ *  nothing to inject. opencode 1 sends it as the prompt's `system`; opencode 2 stores it in a
+ *  session instructions entry before the prompt. */
+async function turnSystemText(
+    s: OpencodeSession,
+    text: string,
+): Promise<string | undefined> {
+    if (!s.memoryDir) return undefined
+    // `system` is per-call (fresh every turn), so the session ledger would wrongly suppress notes
+    // on later turns: reset it before each recall.
+    const svc = recallServiceFor(s.cwd, s.memoryDir)
+    svc.reset(s.sessionId as string)
+    const recalled = await recallWithin(
+        svc,
+        {
+            mode: 'prompt',
+            sessionId: s.sessionId as string,
+            prompt: text,
+        },
+        1500,
+    ).catch(() => null)
+    // `system` is per-call, so EVERY turn carries the session-start brain block (profile, vault
+    // map, memory index) ahead of that turn's recall. Fetched once per session and reused; opencode
+    // exposes no compact/clear hook to refetch on. Via the recall service so the settings gate
+    // applies.
+    let brainText = brainBySession.get(s)
+    if (brainText === undefined) {
+        const b = await recallWithin(
+            svc,
+            {
+                mode: 'session-start',
+                sessionId: s.sessionId as string,
+                source: 'startup',
+                channel: 'chat',
+            },
+            3000,
+        ).catch(() => null)
+        brainText = b?.context ?? ''
+        // Cache only a real brain block; a timeout, no-match or a map not ready yet retries next
+        // turn.
+        if (b?.context && b.context.includes('# Vault map'))
+            brainBySession.set(s, b.context)
+    }
+    const parts = [brainText, recalled?.context].filter((p): p is string => !!p)
+    return parts.length ? parts.join('\n\n') : undefined
+}
+
 /** Send one turn against the shared opencode SERVER: registers a listener on the server's global
  *  event stream for real-time deltas/tool progress (unregistered once the call settles — see
  *  opencodeServer.ts), then awaits `session.prompt()` (or `session.command()` for a leading
@@ -617,7 +744,7 @@ async function runTurnServer(
     s: OpencodeSession,
     text: string,
     images: ChatImage[] | undefined,
-    server: OpencodeServerHandle,
+    server: ServerV1,
 ): Promise<void> {
     s.turnActive = true
     s.lastActivityAt = Date.now()
@@ -660,49 +787,7 @@ async function runTurnServer(
         // Per-turn memory injection (RE-FIX: opencode had none before server mode): recall off the
         // CURRENT prompt and ride it as `system` — a genuine per-call override, verified live
         // (SessionPromptData.system), so this is real auto-recall, not a once-per-session digest.
-        let system: string | undefined
-        if (s.memoryDir) {
-            // `system` is per-call (fresh every turn), so the session ledger would wrongly suppress
-            // notes on later turns: reset it before each recall.
-            const svc = recallServiceFor(s.cwd, s.memoryDir)
-            svc.reset(s.sessionId as string)
-            const recalled = await recallWithin(
-                svc,
-                {
-                    mode: 'prompt',
-                    sessionId: s.sessionId as string,
-                    prompt: text,
-                },
-                1500,
-            ).catch(() => null)
-            // `system` is per-call, so EVERY turn carries the session-start brain block (profile,
-            // vault map, memory index) ahead of that turn's recall. Fetched once per session and
-            // reused; opencode exposes no compact/clear hook to refetch on. Via the recall service
-            // so the settings gate applies.
-            let brainText = brainBySession.get(s)
-            if (brainText === undefined) {
-                const b = await recallWithin(
-                    svc,
-                    {
-                        mode: 'session-start',
-                        sessionId: s.sessionId as string,
-                        source: 'startup',
-                        channel: 'chat',
-                    },
-                    3000,
-                ).catch(() => null)
-                brainText = b?.context ?? ''
-                // Cache only a real brain block; a timeout, no-match or a map not ready yet retries
-                // next turn.
-                if (b?.context && b.context.includes('# Vault map'))
-                    brainBySession.set(s, b.context)
-            }
-            const brain = brainText ? { context: brainText } : null
-            const parts = [brain?.context, recalled?.context].filter(
-                (p): p is string => !!p,
-            )
-            if (parts.length) system = parts.join('\n\n')
-        }
+        const system = await turnSystemText(s, text)
         if (slash) {
             const res = await server.client.session.command({
                 path: { id: s.sessionId as string },
@@ -794,6 +879,17 @@ async function runTurnServer(
         for (const frame of reconcileOpencodeFinalParts(finalParts, state))
             emit(s, frame)
 
+    endServerTurn(s, text, isError, costUsd)
+}
+
+/** The tail every server-mode turn shares: `result` + `done`, the tab title off the first prompt,
+ *  then the next queued turn. */
+function endServerTurn(
+    s: OpencodeSession,
+    text: string,
+    isError: boolean,
+    costUsd: number | null,
+): void {
     emit(s, { type: 'result', isError, numTurns: 1, costUsd })
     emit(s, { type: 'done' })
     if (!s.titleSent) {
@@ -807,6 +903,139 @@ async function runTurnServer(
     s.lastActivityAt = Date.now()
     const next = s.queue.shift()
     if (next) void runTurn(s, next.text, next.images)
+}
+
+/** A chat image as an opencode 2 prompt file: a `data:` URI the server inlines. Pure. */
+export function opencodeV2Files(
+    images: ChatImage[] | undefined,
+): OpencodeV2File[] {
+    return (images ?? []).map((im, i) => ({
+        uri: `data:${im.media_type};base64,${im.data}`,
+        name: `image-${i + 1}.${im.media_type.split('/')[1] || 'png'}`,
+    }))
+}
+
+/** Send one turn to an opencode 2 server. Its prompt call returns at once (the message joins the
+ *  session's inbox), so the turn is the span between posting it and the session's
+ *  `session.execution.succeeded|failed|interrupted` event; everything in between streams off the
+ *  shared event stream (opencodeV2Translate.ts). Model and memory are per session on opencode 2,
+ *  so they are applied to the session just before the prompt. A provider that keeps failing is
+ *  stopped after OPENCODE_V2_MAX_ATTEMPTS rather than retried forever. */
+async function runTurnServerV2(
+    s: OpencodeSession,
+    text: string,
+    images: ChatImage[] | undefined,
+    server: ServerV2,
+): Promise<void> {
+    s.turnActive = true
+    s.lastActivityAt = Date.now()
+    const client = server.client
+    const sessionId = s.sessionId as string
+    const state = newOpencodeV2TurnState()
+    const slash = parseOpencodeRunCommand(
+        text,
+        (commandsCache ?? []).map(c => c.name),
+    )
+    const model =
+        s.model === ZEN_FREE_ROTATE_ID
+            ? pickZenFreeModel(zenFreeModelIds(modelsCache ?? []), s.turnCount)
+            : s.model
+    s.turnCount += 1
+
+    let ended!: () => void
+    const whenEnded = new Promise<void>(resolve => (ended = resolve))
+    let gaveUp: string | null = null
+    let streamLost = false
+    const unregister = registerOpencodeServerListener(sessionId, ev => {
+        if ((ev as { type?: unknown }).type === OPENCODE_STREAM_CLOSED) {
+            streamLost = true
+            ended()
+            return
+        }
+        for (const frame of translateOpencodeV2Event(ev, state)) emit(s, frame)
+        const asked = parseOpencodeV2PermissionAsk(ev)
+        if (asked && !s.pendingPermissions.has(asked.id)) {
+            s.pendingPermissions.add(asked.id)
+            emit(s, {
+                type: 'permission',
+                id: asked.id,
+                toolName: asked.toolName,
+                input: asked.input,
+            })
+        }
+        const stop = opencodeV2RetryGiveUp(ev)
+        if (stop && !gaveUp) {
+            gaveUp = stop
+            void client.interrupt(sessionId).catch(() => {})
+        }
+        if (state.outcome) ended()
+    })
+
+    let isError = false
+    try {
+        const system = await turnSystemText(s, text)
+        // Best-effort: the entries route is experimental, and a turn without memory still runs.
+        if (system)
+            s.memoryEntrySet = await client
+                .putInstruction(sessionId, MEMORY_ENTRY_KEY, system)
+                .then(() => true)
+                .catch(() => s.memoryEntrySet)
+        else if (s.memoryEntrySet)
+            s.memoryEntrySet = await client
+                .removeInstruction(sessionId, MEMORY_ENTRY_KEY)
+                .then(() => false)
+                .catch(() => true)
+        const levels =
+            (modelsCache ?? []).find(m => m.value === model)?.effortLevels ?? []
+        const ref = model ? opencodeV2TurnModel(model, s.effort, levels) : null
+        const key = ref ? `${model}#${ref.variant ?? ''}` : undefined
+        if (ref && key !== s.serverModel) {
+            await client.switchModel(sessionId, ref)
+            s.serverModel = key
+        }
+        // Stopped while memory or the model was being applied: nothing was sent, so nothing runs.
+        if (!s.aborting) {
+            if (slash)
+                await client.command(sessionId, slash.command, slash.args)
+            else
+                await client.prompt(sessionId, {
+                    text,
+                    files: opencodeV2Files(images),
+                })
+            await whenEnded
+        }
+    } catch (e) {
+        isError = !s.aborting
+        if (!s.aborting)
+            emit(s, {
+                type: 'error',
+                code: 'error',
+                message: e instanceof Error ? e.message : String(e),
+            })
+    } finally {
+        unregister()
+    }
+
+    const wasAborted = s.aborting
+    s.aborting = false
+    if (sessions.get(s.id) !== s) return
+    if (!isError && !wasAborted) {
+        const outcome = state.outcome
+        const message = gaveUp
+            ? gaveUp
+            : streamLost
+              ? 'Lost connection to the opencode server.'
+              : outcome?.kind === 'failed'
+                ? outcome.message
+                : outcome?.kind === 'interrupted' && !state.declined
+                  ? `opencode stopped the turn (${outcome.reason || 'interrupted'}).`
+                  : null
+        if (message) {
+            isError = true
+            emit(s, { type: 'error', code: 'error', message })
+        }
+    }
+    endServerTurn(s, text, isError, state.costUsd)
 }
 
 /** Emit a terminal error+result+done for a turn that never ran (a visibility refusal, a lost
@@ -1079,7 +1308,9 @@ async function runTurn(
 
     const server = await ensureOpencodeServer(s.bin).catch(() => null)
     if (!server) return refuseTurn(s, 'Lost connection to the opencode server.')
-    return runTurnServer(s, text, images, server)
+    return server.version === 2
+        ? runTurnServerV2(s, text, images, server)
+        : runTurnServer(s, text, images, server)
 }
 
 /** Queue-or-run gate shared by sendMessage's two call sites (existing session / freshly created). */
@@ -1179,7 +1410,15 @@ export async function sessionHistoryFrames(
     const bin = whichBinary('opencode')
     if (!bin || !/^[\w-]+$/.test(sessionId)) return []
     const server = await ensureOpencodeServer(bin).catch(() => null)
-    if (server) {
+    if (server?.version === 2) {
+        try {
+            return translateOpencodeSessionMessages(
+                await server.client.messages(sessionId),
+            )
+        } catch {
+            /* fall through to the CLI export fallback below */
+        }
+    } else if (server) {
         try {
             const res = await server.client.session.messages({
                 path: { id: sessionId },
@@ -1232,12 +1471,15 @@ export function abortTurn(chatId: string): void {
     s.aborting = true
     s.queue = []
     void ensureOpencodeServer(s.bin)
-        .then(server =>
-            server?.client.session.abort({
-                path: { id: s.sessionId as string },
-                query: { directory: s.cwd },
-            }),
-        )
+        .then(async server => {
+            if (server?.version === 2)
+                await server.client.interrupt(s.sessionId as string)
+            else
+                await server?.client.session.abort({
+                    path: { id: s.sessionId as string },
+                    query: { directory: s.cwd },
+                })
+        })
         .catch(() => {
             /* best-effort — a turn that never settles is still reported by the awaited call's own catch */
         })
@@ -1261,16 +1503,22 @@ export function respondPermission(
     )
         return
     s.pendingPermissions.delete(id)
+    const response = opencodePermissionResponse(behavior, always)
     void ensureOpencodeServer(s.bin)
-        .then(server =>
-            server?.client.postSessionIdPermissionsPermissionId({
-                path: { id: s.sessionId as string, permissionID: id },
-                query: { directory: s.cwd },
-                body: {
-                    response: opencodePermissionResponse(behavior, always),
-                },
-            }),
-        )
+        .then(async server => {
+            if (server?.version === 2)
+                await server.client.replyPermission(
+                    s.sessionId as string,
+                    id,
+                    response,
+                )
+            else
+                await server?.client.postSessionIdPermissionsPermissionId({
+                    path: { id: s.sessionId as string, permissionID: id },
+                    query: { directory: s.cwd },
+                    body: { response },
+                })
+        })
         .catch(() => {
             /* best-effort — the pending ask just stays parked client-side if this fails */
         })
@@ -1281,6 +1529,15 @@ export function respondPermission(
  *  ignored rather than poisoning the next run. The virtual `ZEN_FREE_ROTATE_ID`
  *  (`bismuth/zen-free-rotate`) shares the shape, passes here, and is resolved to a real free Zen
  *  model per turn in runTurnServer/runTurnLegacy — it never reaches the CLI/server as-is. */
+/** The reasoning-effort level for FUTURE turns. Only opencode 2 models list levels (as variants),
+ *  and a level the turn's model does not list is left out (opencodeV2TurnModel), so a stale or
+ *  foreign value never reaches opencode. */
+export function setEffort(chatId: string, effort: string): void {
+    const s = sessions.get(chatId)
+    if (!s) return
+    s.effort = /^[\w-]{1,32}$/.test(effort) ? effort : undefined
+}
+
 export function setModel(chatId: string, model: string): void {
     const s = sessions.get(chatId)
     if (!s) return
@@ -1336,9 +1593,19 @@ export async function erasePrivateSession(
     s: Pick<OpencodeSession, 'sessionId' | 'mode' | 'bin' | 'cwd'>,
     proc: { exited: Promise<unknown> } | null,
     deps: {
-        server?: () => Promise<{
-            client: { session: { delete: (o: unknown) => Promise<unknown> } }
-        } | null>
+        server?: () => Promise<
+            | {
+                  version?: 1
+                  client: {
+                      session: { delete: (o: unknown) => Promise<unknown> }
+                  }
+              }
+            | {
+                  version: 2
+                  client: { deleteSession: (id: string) => Promise<void> }
+              }
+            | null
+        >
         cli?: (bin: string, cwd: string, args: string[]) => Promise<unknown>
     } = {},
 ): Promise<void> {
@@ -1351,10 +1618,12 @@ export async function erasePrivateSession(
         )().catch(() => null)
         if (server) {
             try {
-                await server.client.session.delete({
-                    path: { id },
-                    query: { directory: s.cwd },
-                })
+                if (server.version === 2) await server.client.deleteSession(id)
+                else
+                    await server.client.session.delete({
+                        path: { id },
+                        query: { directory: s.cwd },
+                    })
                 return
             } catch {
                 /* fall through to the CLI */

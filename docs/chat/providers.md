@@ -7,7 +7,7 @@ The catalog of backends and the capability flags that decide which controls rend
 | Provider | Binary | Driver | Conversation lives in |
 | --- | --- | --- | --- |
 | `claude` | your `claude` | one long-lived Agent SDK `query()` per chat | the SDK session store, shared with terminal sessions |
-| `opencode` | your `opencode` | opencode 1: one shared `opencode serve` process, or a per-turn `opencode run` fallback; opencode 2: a per-turn `opencode run` | opencode's own store (`ses_…` ids) |
+| `opencode` | your `opencode` | one shared `opencode serve` process (opencode 1 and 2), or a per-turn `opencode run` in a vault that hides notes | opencode's own store (`ses_…` ids) |
 | `codex` | your `codex` | a `codex exec --json` subprocess per turn | Codex thread ids; no history replay |
 | every ACP backend | the agent's own CLI | one shared ACP driver, one subprocess per chat | the agent's own session |
 
@@ -26,7 +26,6 @@ On the wire, the client's `open`, `user` and `resume` frames carry `provider`. T
 Controls that rely on a Claude-only surface are hidden for opencode, not broken. Each is gated by a capability flag in the catalog ([backends.md](backends.md#how-do-controls-know-what-a-backend-can-do)).
 
 - Permission mode select: opencode can raise and answer a live approval request, but its server API has no Default, Plan, Accept edits or Bypass vocabulary, so the mode select stays hidden.
-- Effort toggle: opencode models report no effort levels, so the model dialog shows no effort row.
 - Cross-session history. The `history` button lists the Claude Code session store. opencode conversations resume per tab but do not appear in that list.
 - Slash commands. The `/` popover lists opencode's own command registry instead of Claude's. `/rename` and `/color` work on every provider.
 - Context meter. The header shows no context-window usage for opencode.
@@ -35,16 +34,21 @@ Streamed markdown, tool chips, thinking sections, the editor-context preamble, q
 
 ## Which opencode versions work?
 
-opencode 1 and opencode 2 both run chats. Run `opencode --version` to see which one you have.
+opencode 1 and opencode 2 both run chats in server mode: token-by-token streaming, live tool approvals, image attachments, opencode's `/` commands, the **Zen Free (rotating)** model and the [provider manager](opencode-providers.md). Run `opencode --version` to see which one you have.
 
-- opencode 1 runs in server mode when it can serve: token-by-token streaming, live tool approvals, image attachments and opencode's `/` commands.
-- opencode 2 runs every turn in run mode, because its server speaks an API Bismuth's opencode client does not drive. Text and reasoning arrive a whole part at a time, tool permissions are approved automatically (except what your own opencode config denies), and images are refused with an error.
-- opencode 2 shows no opencode commands in the `/` popover: its `run` sends a leading `/name` to the model as plain text.
-- opencode 2 shows no **Zen Free (rotating)** model, because its model list carries no cost metadata to tell free models from paid ones.
-- opencode 2 cannot use the provider manager; connect a provider with `opencode auth login` in a terminal ([opencode providers](opencode-providers.md#what-if-opencode-is-not-installed)).
+Three behaviours belong to opencode 2:
+
+- Effort. A model that offers reasoning levels shows the same effort row in the model dialog as Claude Code, with exactly the levels that model lists (`low` to `max`, or `none` and `minimal` on some). A model with none shows no row, and opencode 1 models never show one.
+  The level you pick applies from the next turn, and a remembered level the new model does not offer runs that model at its default.
+
+- Denying a tool ends the reply. opencode 2 stops the turn after a declined call, so the chat shows the declined tool and the turn ends without an error.
+- A model that cannot be reached ends the turn with opencode's error after three failed attempts. opencode 2 on its own keeps retrying an unreachable provider with a growing delay, which reads as a chat that never answers; an offline local server is the usual cause.
+
+A vault that hides notes from AI runs every opencode turn in run mode instead, on either version ([visibility](../vault/visibility.md)). In run mode text and reasoning arrive a whole part at a time, tool permissions are approved automatically (except what your own opencode config denies), and images are refused with an error.
+On opencode 2, run mode also offers no `/` commands and no **Zen Free (rotating)** model.
 
 On either version, a turn that costs nothing shows no cost in its footer.
-An opencode 2 chat runs on its own private opencode server, so it shares no config, environment or sandbox with the opencode you run yourself or with another Bismuth window.
+Bismuth starts its own opencode server with its own password, so the opencode background service you run yourself never carries a Bismuth chat.
 
 ## What happens when a provider's CLI is missing?
 
@@ -61,15 +65,15 @@ The Claude driver is `core/src/chat.ts`. `sessionSink.ts` holds the sink-bufferi
 
 ### The opencode driver
 
-`core/src/chatProviders/opencode/opencode.ts` prefers server mode and falls back to run mode only when the installed opencode cannot serve. A session's mode is decided once, at creation.
-`opencodeCli.ts` reads `opencode --version` once per binary; an opencode 2 never starts a server, so its sessions go straight to run mode.
+`core/src/chatProviders/opencode/opencode.ts` prefers server mode and falls back to run mode when the installed opencode cannot serve or the vault restricts any note. A session's mode is decided once, at creation.
+`opencodeCli.ts` reads `opencode --version` once per binary. The major picks the server client (`@opencode-ai/sdk` for opencode 1, `opencodeV2Client.ts` for opencode 2) and the run-mode argv.
 
 #### Server mode
 
 - Lifecycle: `opencodeServer.ts` starts one shared server lazily on the first opencode chat: `opencode serve --port 0 --hostname 127.0.0.1` (a random free port) with the same augmented PATH every Bismuth-spawned CLI uses.
-  It waits for the `opencode server listening on <url>` banner, then binds `@opencode-ai/sdk`'s typed client to the URL. Every opencode chat and vault shares that one process through a `directory` query parameter on each request.
-  It is killed on process exit, and a startup failure resolves `null` so sessions fall back to run mode.
-  opencode 2's `serve` prints `server listening on <url>` and serves its API under `/api` behind a printed password; `@opencode-ai/sdk` 1.x drives neither, which is why the version check skips it.
+  It waits for the `server listening on <url>` banner (opencode 1 prefixes it with `opencode`), then binds the major's client to the URL. Every opencode chat and vault shares that one process.
+  It is killed on process exit, and a startup failure resolves `null` so sessions fall back to run mode. The handle is `{version, client, url}`, and the driver branches on `version`.
+  The bullets below describe opencode 1; [server mode on opencode 2](#server-mode-on-opencode-2) lists what differs.
 - Spawning. Bismuth uses the SDK's typed client but not its process-spawning helpers, which hardcode a bare `process.env` and cannot take the augmented PATH a Finder-launched app needs.
 - Streaming. One subscription to `GET /global/event` serves the whole process and dispatches by opencode session id. Token deltas arrive as a `message.part.delta` event with `{sessionID, messageID, partID, field, delta}`.
 - Permissions. A tool call that needs approval raises `permission.asked`, parked as a `permission` frame. `respondPermission` answers with `POST /session/{id}/permissions/{permissionID}` and `{response: "once" | "always" | "reject"}`.
@@ -78,8 +82,27 @@ The Claude driver is `core/src/chat.ts`. `sessionSink.ts` holds the sink-bufferi
 - Memory. When the daemon is enabled, `session.prompt`'s `system` field carries a fresh recall from the core recall service (mode `prompt`, raced against 1500 ms) on every turn.
 - History and resume: `GET /session/{id}/message` is the primary source; `opencode export` is the fallback. Both read the same on-disk store, so a session started in one mode replays in the other.
   On opencode 2 the fallback is `opencode session export`, whose messages are `{type: "user", text}` and `{type: "assistant", content: […]}`; `translateOpencodeExport` reads both shapes.
-- Models and commands. They come from `GET /config/providers` and `GET /command`.
+- Models and commands. They come from `GET /config/providers` and `GET /command`, cached per server: a replaced or restarted server refetches them.
 - Cost and stop. Cost is read off the turn's `session.prompt()` response (`info.cost`); a zero cost becomes `null`, the run-mode rule too (`opencodeTurnCost`). Stop calls `session.abort()`; the blocked prompt then resolves with `MessageAbortedError`, reported as a clean Stop.
+
+#### Server mode on opencode 2
+
+opencode 2's `serve` speaks a different HTTP API, which `opencodeV2Client.ts` drives and `opencodeV2Translate.ts` translates:
+
+- Auth. Every route sits under `/api` behind HTTP Basic `opencode:<password>`. `opencodeServer.ts` puts a random password in `OPENCODE_SERVER_PASSWORD` for each spawn; opencode strips that variable from every child it runs.
+- Sessions. A session belongs to the directory it was created with (`POST /api/session` with `location.directory`), instead of a `directory` query on every call. Catalog reads take a `location[directory]` query.
+- Turns. `POST /api/session/{id}/prompt` queues the message and returns at once. `runTurnServerV2` registers its listener first, posts the prompt (or `POST …/command` for a known `/command`), and ends the turn on `session.execution.succeeded`, `failed` or `interrupted` for that session.
+  If the event stream closes, every waiting turn is told (`OPENCODE_STREAM_CLOSED`) and fails with a lost-connection error.
+- Streaming. `GET /api/event` carries `{type, data}` with the session in `data.sessionID`. `session.text.delta` and `session.reasoning.delta` stream; their `*.ended` events carry the whole part, and only the unstreamed suffix is emitted.
+  A tool chips on `session.tool.called` (its input) and resolves on `session.tool.success` or `session.tool.failed`. `session.step.ended` costs are summed.
+- Model, effort and memory. A prompt carries none of them. The model is set per session (`POST …/model`) before a turn whose pick changed.
+  A model's effort levels are its variants that set `reasoningEffort` (`effortLevelsFromV2Variants`); `setEffort` stores the pick, and `opencodeV2TurnModel` adds it as the `Model.Ref` variant only when the turn's model lists it, because the server accepts any variant string without an error. No variant means the model's default. The per-turn recall rides the session instructions entry `bismuth-memory` (`PUT /api/experimental/session/{id}/instructions/entries/{key}`), removed on a turn with nothing to inject.
+- Images. Each image is a `files` entry with a `data:<mime>;base64,…` uri.
+- Permissions. `permission.asked` carries `{id, action, resources}`; a shell ask shows its command line. `respondPermission` posts `{decision: "once" | "always" | "reject"}` to `…/permission/{id}/reply`.
+  After a declined call opencode ends the turn as `interrupted` (reason `shutdown`); a tool failure of type `aborted` marks the turn declined, so it ends without an error.
+- Retries. A failing provider call is retried with `session.retry.scheduled`. At attempt `OPENCODE_V2_MAX_ATTEMPTS` the driver interrupts the session and ends the turn with the provider's error.
+- Stop, history, erase. Stop is `POST …/interrupt`. History reads every page of `GET /api/session/{id}/message` (oldest first) through the same translator as the CLI export, including a user turn's inline images. A private chat is erased with `DELETE /api/session/{id}`.
+- Models, commands, credentials. `GET /api/model` (free when the first cost tier is $0 in and out), `GET /api/command`, and `GET /api/integration` for the `auth` frame, so a chat open spawns no CLI.
 
 #### Run mode
 
@@ -99,7 +122,7 @@ An error event nests its message under `error.data.message`, and a run that stre
 
 - *Commands.* Server mode reads the typed `GET /command`; run mode parses `opencode debug config`. Both merge the built-ins `/init` and `/review`. Run mode on opencode 2 offers none.
   A sent turn that leads with a known `/command` runs as `session.command()` (or `opencode run --command` in run mode); an unknown `/word` goes through as prose.
-- *Credentials.* `opencode auth list` is emitted as an `auth` frame per session open and stored as `authProviders`. No component renders it; credentials are managed in the model dialog ([opencode-providers.md](opencode-providers.md)).
+- *Credentials.* The connected providers are emitted as an `auth` frame per session open (`opencode auth list`, or the server's integrations on opencode 2) and stored as `authProviders`. No component renders it; credentials are managed in the model dialog ([opencode-providers.md](opencode-providers.md)).
 - *Zen Free rotation.* When Zen offers free models (`cost.input === 0 && cost.output === 0` on `opencode/…` ids), the model list gains a virtual **Zen Free (rotating)** entry (`bismuth/zen-free-rotate`).
   Selecting it makes each turn round-robin a real free model (`pickZenFreeModel`); the virtual id never reaches the CLI. An empty roster hides the entry.
 
@@ -155,4 +178,4 @@ The pure half (JSON-RPC envelopes, the `session/update` to `ChatFrame` translato
 - Capabilities are one shared profile, `ACP_SHARED_CAPABILITIES`, plus per-agent overrides.
 - Missing binary emits `no-binary` with ``The `<binary>` CLI was not found. Install <label> to use this provider.`` For the two adapters the binary is `npx`.
 
-Source: `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/chatProviders/sessionSink.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/chatProviders/opencode/opencodeCli.ts`, `core/src/chatProviders/opencode/opencodeTranslate.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/chatProviders/codex/protocol.ts`, `core/src/chatProviders/acp/driver.ts`, `core/src/chatProviders/acp/agents.ts`, `core/src/chatProviders/acp/protocol.ts`, `core/src/freeAgent.ts`, `core/src/agentBackends/catalog.ts`, `app/src/chat/chatProvider.ts`
+Source: `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/chatProviders/sessionSink.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/chatProviders/opencode/opencodeCli.ts`, `core/src/chatProviders/opencode/opencodeTranslate.ts`, `core/src/chatProviders/opencode/opencodeV2Client.ts`, `core/src/chatProviders/opencode/opencodeV2Translate.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/chatProviders/codex/protocol.ts`, `core/src/chatProviders/acp/driver.ts`, `core/src/chatProviders/acp/agents.ts`, `core/src/chatProviders/acp/protocol.ts`, `core/src/freeAgent.ts`, `core/src/agentBackends/catalog.ts`, `app/src/chat/chatProvider.ts`

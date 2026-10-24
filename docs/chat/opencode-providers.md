@@ -9,7 +9,7 @@ It drives the same `opencode serve` process every opencode chat shares ([Chat pr
 
 - Connected. One row per provider opencode reports as connected, with how: `api key`, `oauth` or `env` (an environment variable the server inherited).
 - Add a provider. A filterable list of every provider that is not connected yet. An API-key provider takes a pasted key; an OAuth provider opens its sign-in page.
-- API key. The key goes to `POST /opencode/auth`, core hands it to opencode's `auth.set`, and opencode writes it to its own credential store. Bismuth never persists it, logs it, or echoes it back: an error from opencode is scrubbed of the key before it reaches the response.
+- API key. The key goes to `POST /opencode/auth`, core hands it to opencode (`auth.set` on opencode 1, the integration's key connect on opencode 2), and opencode writes it to its own credential store. Bismuth never persists it, logs it, or echoes it back: an error from opencode is scrubbed of the key before it reaches the response.
 - OAuth: `POST /opencode/oauth/authorize` returns the URL to open and whether the flow is `auto` (opencode finishes when the browser callback lands) or `code` (you paste a code); `POST /opencode/oauth/callback` finishes it.
 - New models appear at once. After a successful connect, core re-sends the model list and credential state to every live opencode chat, so the new provider's models show in the model dialog (grouped under the provider's name) without reopening the chat.
 
@@ -27,11 +27,10 @@ The background [daemon](../daemon/overview.md) still needs Claude Code or Codex,
 
 The routes answer `409 { error: "opencode-missing" }` when the `opencode` binary is absent or its server will not start. The manager shows that message in place of the lists; the terminal footer still works.
 
-opencode 2 gets the same `409`, because its server is not one Bismuth's opencode client drives. The message says so and points to `opencode auth login`, which connects a provider from a terminal.
-
 ## How do I disconnect a provider?
 
 The manager has no disconnect button. Disconnecting, custom providers, and any provider that needs several prompts go through `opencode auth login` and `opencode auth logout` in a terminal; the manager's footer opens a terminal tab or copies the command.
+On opencode 2 that includes a sign-in that asks a question first (an enterprise URL, a cloud project or profile): the manager offers only the methods it can start without one, and a provider with none is not listed.
 Credentials written that way show up the next time the manager opens.
 
 ## Where is the local model?
@@ -43,6 +42,9 @@ A local model is configured in `.settings`, not connected here. When [`localMode
 The manager is `OpencodeProviderManager`, hosted by `ChatModelPicker`.
 It calls `GET /opencode/providers`, `POST /opencode/auth`, `POST /opencode/oauth/authorize` and `POST /opencode/oauth/callback`, each served over the shared `opencode serve` client and refused to non-owner callers. opencode's SDK has no auth-remove call and `opencode auth logout` is an interactive wizard, which is why disconnecting is terminal-only.
 
+On opencode 2 the same four routes drive `/api/integration`. `opencodeV2Methods` builds each provider's method list (a key, or an OAuth method whose form fields all have defaults), and the routes' `method` index points into it.
+An OAuth start keeps the attempt id per provider; the callback completes a `code` attempt with the pasted code, and polls an `auto` attempt's status until it completes, fails or ten minutes pass.
+
 The injected `local` provider rides `OPENCODE_CONFIG_CONTENT`. When the local config changes, the shared server is replaced: immediately when no opencode turn is running, otherwise once the running turn settles, so a turn is never cut off mid-answer.
 
-Source: `app/src/chat/OpencodeProviderManager.tsx`, `app/src/chat/opencodeProviderFilter.ts`, `core/src/routes/agents.ts`, `core/src/chatProviders/opencode/opencodeProviders.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/freeAgent.ts`
+Source: `app/src/chat/OpencodeProviderManager.tsx`, `app/src/chat/opencodeProviderFilter.ts`, `core/src/routes/agents.ts`, `core/src/chatProviders/opencode/opencodeProviders.ts`, `core/src/chatProviders/opencode/opencodeV2Translate.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/freeAgent.ts`

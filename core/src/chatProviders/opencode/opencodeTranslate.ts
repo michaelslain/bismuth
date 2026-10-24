@@ -250,7 +250,26 @@ function v1MessageShape(raw: unknown): unknown {
     if (!raw || typeof raw !== 'object') return raw
     const m = raw as Record<string, unknown>
     if ('info' in m || 'parts' in m) return raw
-    if (m.type === 'user')
+    if (m.type === 'user') {
+        // An attached image is stored inline as `files: [{data, mime}]`.
+        const files = Array.isArray(m.files) ? m.files : []
+        const images = files.flatMap(f => {
+            const ff = (f && typeof f === 'object' ? f : {}) as Record<
+                string,
+                unknown
+            >
+            return typeof ff.data === 'string' &&
+                typeof ff.mime === 'string' &&
+                ff.mime.startsWith('image/')
+                ? [
+                      {
+                          type: 'file',
+                          mime: ff.mime,
+                          url: `data:${ff.mime};base64,${ff.data}`,
+                      },
+                  ]
+                : []
+        })
         return {
             info: { role: 'user' },
             parts: [
@@ -258,8 +277,10 @@ function v1MessageShape(raw: unknown): unknown {
                     type: 'text',
                     text: typeof m.text === 'string' ? m.text : '',
                 },
+                ...images,
             ],
         }
+    }
     if (m.type !== 'assistant' || !Array.isArray(m.content)) return raw
     const parts = m.content.map(c => {
         const p = (c && typeof c === 'object' ? c : {}) as Record<
@@ -308,6 +329,7 @@ function framesFromOpencodeMessages(messages: unknown): ChatFrame[] {
         if (!Array.isArray(m.parts)) continue
         if (role === 'user') {
             const texts: string[] = []
+            const images: string[] = []
             for (const p of m.parts) {
                 const pp = p as Record<string, unknown> | null
                 if (
@@ -317,9 +339,21 @@ function framesFromOpencodeMessages(messages: unknown): ChatFrame[] {
                     pp.text
                 )
                     texts.push(pp.text)
+                else if (
+                    pp &&
+                    pp.type === 'file' &&
+                    typeof pp.url === 'string' &&
+                    pp.url.startsWith('data:image/')
+                )
+                    images.push(pp.url)
             }
             const text = stripEditorContext(texts.join(''))
-            if (text) out.push({ type: 'user-message', text })
+            if (text || images.length)
+                out.push({
+                    type: 'user-message',
+                    text,
+                    ...(images.length ? { images } : {}),
+                })
             continue
         }
         if (role !== 'assistant') continue

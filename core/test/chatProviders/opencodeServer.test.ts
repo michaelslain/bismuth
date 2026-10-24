@@ -118,3 +118,25 @@ describe('opencodeServerEventSessionId', () => {
         expect(opencodeServerEventSessionId({})).toBeNull()
     })
 })
+
+test('opencode 2 events carry the session in data.sessionID', () => {
+    expect(
+        opencodeServerEventSessionId({
+            id: 'evt_1',
+            type: 'session.text.delta',
+            data: {
+                sessionID: 'ses_v2',
+                assistantMessageID: 'msg_1',
+                ordinal: 0,
+                delta: 'hi',
+            },
+        }),
+    ).toBe('ses_v2')
+    expect(
+        opencodeServerEventSessionId({
+            id: 'evt_0',
+            type: 'server.connected',
+            data: {},
+        }),
+    ).toBeNull()
+})

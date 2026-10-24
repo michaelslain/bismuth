@@ -6,6 +6,12 @@
 // request below carries a `directory` query param, so one server multiplexes every vault/chat this core process serves, mirroring the daemon's "one process,
 // many vault brains" shape (core/src/daemon.ts).
 //
+// OPENCODE 2: the same lifecycle serves both majors; only the client differs. opencode 2's `serve`
+// prints `server listening on <url>`, guards its `/api` routes with the password this module puts
+// in `OPENCODE_SERVER_PASSWORD`, and is driven by opencodeV2Client.ts (the SDK below is opencode 1
+// only). Its events carry the session in `data.sessionID`, and its turns end on an event rather
+// than on an HTTP response, so a dead stream is announced to every listener (OPENCODE_STREAM_CLOSED).
+//
 // SDK-vs-raw-HTTP: this module uses @opencode-ai/sdk's TYPED CLIENT (createOpencodeClient) — the
 // documented, generated-from-opencode's-own-OpenAPI-schema client, so request/response shapes for the
 // calls WE build (session.create, session.prompt, session.abort, the permission-response endpoint)
@@ -51,10 +57,15 @@
 // build ourselves — session.create, session.prompt, session.command, session.abort, and
 // POST /session/{id}/permissions/{permissionID} — WERE independently verified live to match the
 // generated types exactly, so those go through the typed client normally.
+import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk'
 import { claudeSpawnEnv } from '../../claudeWhich'
 import { opencodeMajor, usesBackgroundService } from './opencodeCli'
+import {
+    createOpencodeV2Client,
+    type OpencodeV2Client,
+} from './opencodeV2Client'
 
 /** What a server spawn needs from the local-model seam: the env (`OPENCODE_CONFIG_CONTENT`) — a
  *  `ResolvedLocal` from agentBackends/localModelProbe.ts satisfies it. */
@@ -92,20 +103,26 @@ export function planServerChange(s: {
     return s.turns > 0 ? 'wait' : 'restart'
 }
 
-export interface OpencodeServerHandle {
-    client: OpencodeClient
-    url: string
-}
+/** The shared server, by the API it speaks: opencode 1 through @opencode-ai/sdk's typed client,
+ *  opencode 2 through opencodeV2Client.ts (the SDK cannot drive its `/api` surface). */
+export type OpencodeServerHandle =
+    | { version: 1; client: OpencodeClient; url: string }
+    | { version: 2; client: OpencodeV2Client; url: string }
 
 /** How long to wait for the "opencode server listening on <url>" banner before giving up and
  *  falling back to the per-turn `run` path (an old opencode with no `serve` subcommand, or one
  *  that's simply slow to boot on a loaded machine). */
 const STARTUP_TIMEOUT_MS = 8000
-const LISTEN_BANNER_RE = /opencode server listening on\s+(https?:\/\/\S+)/
+/** opencode 1 prints `opencode server listening on <url>`, opencode 2 `server listening on <url>`. */
+const LISTEN_BANNER_RE = /(?:^|\s)server listening on\s+(https?:\/\/\S+)/m
 
-interface LiveServer extends OpencodeServerHandle {
+type LiveServer = OpencodeServerHandle & {
     proc: ReturnType<typeof Bun.spawn>
 }
+
+/** The event a v2 listener receives when the shared event stream ends, so a turn waiting on its
+ *  `session.execution.*` end event fails instead of waiting forever. */
+export const OPENCODE_STREAM_CLOSED = 'bismuth.opencode.stream-closed'
 
 /** The one shared server for this core process, once started. */
 let live: LiveServer | null = null
@@ -148,8 +165,13 @@ function whenNoTurnActive(): Promise<void> {
 export function opencodeServerEventSessionId(raw: unknown): string | null {
     if (!raw || typeof raw !== 'object') return null
     const ev = raw as Record<string, unknown>
+    // opencode 1 nests an event's payload under `properties`, opencode 2 under `data`.
     const props = (
-        ev.properties && typeof ev.properties === 'object' ? ev.properties : ev
+        ev.properties && typeof ev.properties === 'object'
+            ? ev.properties
+            : ev.data && typeof ev.data === 'object'
+              ? ev.data
+              : ev
     ) as Record<string, unknown>
     if (typeof props.sessionID === 'string' && props.sessionID)
         return props.sessionID
@@ -186,19 +208,28 @@ export function opencodeServerEventSessionId(raw: unknown): string | null {
 async function consumeEvents(
     handle: LiveServer,
     stream: AsyncGenerator<unknown>,
+    already: unknown[] = [],
 ): Promise<void> {
+    const dispatch = (gev: unknown) => {
+        const g = gev as { payload?: unknown } | null
+        const payload =
+            g && typeof g === 'object' && 'payload' in g ? g.payload : gev
+        const sid = opencodeServerEventSessionId(payload)
+        if (sid) listeners.get(sid)?.(payload)
+    }
     try {
+        for (const ev of already) dispatch(ev)
         for await (const gev of stream) {
             if (live !== handle) return // superseded by a restart
-            const g = gev as { payload?: unknown } | null
-            const payload =
-                g && typeof g === 'object' && 'payload' in g ? g.payload : gev
-            const sid = opencodeServerEventSessionId(payload)
-            if (sid) listeners.get(sid)?.(payload)
+            dispatch(gev)
         }
     } catch {
         /* stream torn down (server exit/network hiccup) — handled by watchExit below */
     }
+    // An opencode 2 turn ends only on an event, so every turn in flight is told the stream is gone.
+    if (handle.version === 2)
+        for (const handler of [...listeners.values()])
+            handler({ type: OPENCODE_STREAM_CLOSED })
 }
 
 /** Open the global event SUBSCRIPTION and return once it's established (the SDK's `global.event()`
@@ -209,6 +240,14 @@ async function consumeEvents(
  *  actual event consumption then runs detached (consumeEvents, fire-and-forget) for the rest of the
  *  server's life. */
 async function subscribeToEvents(handle: LiveServer): Promise<void> {
+    if (handle.version === 2) {
+        const stream = handle.client.events()
+        // opencode 2 sends `server.connected` the moment the stream opens, so the first event is
+        // the subscription's proof of life.
+        const first = await stream.next()
+        void consumeEvents(handle, stream, first.done ? [] : [first.value])
+        return
+    }
     const { stream } = await handle.client.global.event()
     void consumeEvents(handle, stream)
 }
@@ -235,7 +274,12 @@ function watchExit(handle: LiveServer): void {
 function spawnAndWaitForBanner(
     bin: string,
     env: Record<string, string>,
+    version: 1 | 2,
 ): Promise<LiveServer | null> {
+    // opencode 2 guards its API with a password it reads from the env (and strips from every child
+    // it spawns); a fresh random one per server keeps it private to this core process.
+    const password = randomBytes(24).toString('base64url')
+    if (version === 2) env = { ...env, OPENCODE_SERVER_PASSWORD: password }
     return new Promise(resolve => {
         let proc: ReturnType<typeof Bun.spawn>
         try {
@@ -295,8 +339,26 @@ function spawnAndWaitForBanner(
                     const m = pending.match(LISTEN_BANNER_RE)
                     if (m) {
                         const url = m[1]
-                        const client = createOpencodeClient({ baseUrl: url })
-                        finish({ client, url, proc })
+                        finish(
+                            version === 2
+                                ? {
+                                      version,
+                                      client: createOpencodeV2Client(
+                                          url,
+                                          password,
+                                      ),
+                                      url,
+                                      proc,
+                                  }
+                                : {
+                                      version,
+                                      client: createOpencodeClient({
+                                          baseUrl: url,
+                                      }),
+                                      url,
+                                      proc,
+                                  },
+                        )
                         return
                     }
                 }
@@ -329,11 +391,8 @@ function startServer(
         local,
     )
     const attempt = (async () => {
-        // opencode 2's `serve` speaks an API @opencode-ai/sdk 1.x cannot drive (opencodeCli.ts), so
-        // it is never spawned there: null sends every session to the per-turn `run` path at once,
-        // instead of after a banner timeout.
-        if (usesBackgroundService(await opencodeMajor(bin))) return null
-        const handle = await spawnAndWaitForBanner(bin, env)
+        const version = usesBackgroundService(await opencodeMajor(bin)) ? 2 : 1
+        const handle = await spawnAndWaitForBanner(bin, env, version)
         if (!handle) return null
         live = handle
         watchExit(handle)
@@ -345,7 +404,8 @@ function startServer(
         // this is judged good-enough for a same-machine localhost connection that just proved itself
         // reachable by printing its own listening banner moments ago).
         await subscribeToEvents(handle).catch(() => {})
-        return { client: handle.client, url: handle.url }
+        const { proc: _proc, ...rest } = handle
+        return rest as OpencodeServerHandle
     })()
     starting = attempt
     return attempt

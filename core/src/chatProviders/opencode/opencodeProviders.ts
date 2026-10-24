@@ -6,8 +6,62 @@
 // SECRETS: an API key goes core -> `client.auth.set` (opencode's own credential store) and nowhere
 // else. It is never logged, never written by Bismuth, and never appears in a thrown message — every
 // message that leaves this module is run through `redact`.
+import { homedir } from 'node:os'
 import type { OpencodeClient } from '@opencode-ai/sdk'
 import { LOCAL_PROVIDER_ID } from '../../agentBackends/localModel'
+import type { OpencodeV2Client } from './opencodeV2Client'
+import {
+    opencodeV2AttemptStatus,
+    opencodeV2Methods,
+    providerListFromV2,
+} from './opencodeV2Translate'
+
+/** The shared server's client: opencode 1's SDK client, or the opencode 2 client, whose provider
+ *  credentials are "integrations" (`/api/integration`). */
+export type OpencodeProviderClient = OpencodeClient | OpencodeV2Client
+
+function isV2(client: OpencodeProviderClient): client is OpencodeV2Client {
+    return (client as { version?: unknown }).version === 2
+}
+
+/** Run an opencode 2 call; any rejection becomes an OpencodeBadRequest with `secret` scrubbed. */
+async function callV2<T>(
+    run: () => Promise<T>,
+    fallback: string,
+    secret?: string,
+): Promise<T> {
+    try {
+        return await run()
+    } catch (e) {
+        throw new OpencodeBadRequest(messageOf(e, fallback, secret))
+    }
+}
+
+/** The OAuth attempt an opencode 2 sign-in started, per provider, until its callback finishes it:
+ *  opencode 2 names an attempt by id where opencode 1 named the provider and method. */
+const v2Attempts = new Map<
+    string,
+    { attemptID: string; mode: 'auto' | 'code' }
+>()
+
+/** How long an `auto` sign-in waits for the browser callback, and how often it asks. */
+const V2_OAUTH_WAIT_MS = 10 * 60 * 1000
+const V2_OAUTH_POLL_MS = 1000
+
+/** The opencode 2 integration `id`, read fresh (methods depend on the machine: an AWS profile, a
+ *  gcloud project). */
+async function v2Integration(
+    client: OpencodeV2Client,
+    id: string,
+): Promise<unknown> {
+    const all = await callV2(
+        () => client.integrations(homedir()),
+        'opencode could not list providers',
+    )
+    const hit = all.find(i => (i as { id?: unknown } | null)?.id === id)
+    if (!hit) throw new OpencodeBadRequest('Unknown provider id.')
+    return hit
+}
 
 export type OpencodeAuthMethod = { type: 'api' | 'oauth'; label: string }
 export type OpencodeProviderList = {
@@ -92,9 +146,16 @@ async function call<T>(
  * injects (`LOCAL_PROVIDER_ID`) is neither — it is configured in `.settings`, not connected here.
  */
 export async function listProviders(
-    client: OpencodeClient,
+    client: OpencodeProviderClient,
     env: Record<string, string | undefined> = process.env,
 ): Promise<OpencodeProviderList> {
+    if (isV2(client))
+        return providerListFromV2(
+            await callV2(
+                () => client.integrations(homedir()),
+                'opencode could not list providers',
+            ),
+        )
     const list = await call(
         () => client.provider.list() as never,
         'opencode could not list providers',
@@ -144,7 +205,7 @@ export async function listProviders(
 
 /** Store an API key in opencode's own credential store. */
 export async function setProviderKey(
-    client: OpencodeClient,
+    client: OpencodeProviderClient,
     id: string,
     key: string,
 ): Promise<void> {
@@ -153,6 +214,14 @@ export async function setProviderKey(
     if (typeof key !== 'string' || !key.trim())
         throw new OpencodeBadRequest('An API key is required.')
     const k = key.trim()
+    if (isV2(client)) {
+        await callV2(
+            () => client.connectKey(id, k),
+            'opencode rejected the API key',
+            k,
+        )
+        return
+    }
     await call(
         () =>
             client.auth.set({
@@ -167,7 +236,7 @@ export async function setProviderKey(
 /** Start an OAuth sign-in: the URL to open, and whether opencode finishes on its own (`auto`) or
  *  needs the pasted code (`code`). */
 export async function oauthAuthorize(
-    client: OpencodeClient,
+    client: OpencodeProviderClient,
     id: string,
     method: number,
 ): Promise<OpencodeAuthorization> {
@@ -175,6 +244,18 @@ export async function oauthAuthorize(
         throw new OpencodeBadRequest('Unknown provider id.')
     if (!Number.isInteger(method) || method < 0)
         throw new OpencodeBadRequest('Unknown sign-in method.')
+    if (isV2(client)) {
+        // `method` indexes the list listProviders offered, which opencodeV2Methods builds.
+        const m = opencodeV2Methods(await v2Integration(client, id))[method]
+        if (!m || m.type !== 'oauth')
+            throw new OpencodeBadRequest('Unknown sign-in method.')
+        const a = await callV2(
+            () => client.oauthConnect(id, m.methodId, m.answer),
+            'opencode could not start the sign-in',
+        )
+        v2Attempts.set(id, { attemptID: a.attemptID, mode: a.mode })
+        return { url: a.url, method: a.mode, instructions: a.instructions }
+    }
     const res = await call(
         () =>
             client.provider.oauth.authorize({
@@ -196,15 +277,53 @@ export async function oauthAuthorize(
 /** Finish an OAuth sign-in. `auto` flows resolve when the browser callback lands (no code); `code`
  *  flows pass the pasted code. */
 export async function oauthCallback(
-    client: OpencodeClient,
+    client: OpencodeProviderClient,
     id: string,
     method: number,
     code?: string,
+    pollMs = V2_OAUTH_POLL_MS,
 ): Promise<void> {
     if (!validProviderId(id))
         throw new OpencodeBadRequest('Unknown provider id.')
     if (!Number.isInteger(method) || method < 0)
         throw new OpencodeBadRequest('Unknown sign-in method.')
+    if (isV2(client)) {
+        const attempt = v2Attempts.get(id)
+        if (!attempt)
+            throw new OpencodeBadRequest(
+                'No sign-in is in progress for this provider.',
+            )
+        if (attempt.mode === 'code') {
+            await callV2(
+                () => client.oauthComplete(id, attempt.attemptID, code ?? null),
+                'opencode could not finish the sign-in',
+                code,
+            )
+            v2Attempts.delete(id)
+            return
+        }
+        // An `auto` sign-in finishes when the browser lands on opencode's own callback; wait for it.
+        const deadline = Date.now() + V2_OAUTH_WAIT_MS
+        while (Date.now() < deadline) {
+            const status = opencodeV2AttemptStatus(
+                await callV2(
+                    () => client.oauthStatus(id, attempt.attemptID),
+                    'opencode could not check the sign-in',
+                ),
+            )
+            if (status.kind === 'complete') {
+                v2Attempts.delete(id)
+                return
+            }
+            if (status.kind === 'failed') {
+                v2Attempts.delete(id)
+                throw new OpencodeBadRequest(status.message)
+            }
+            await Bun.sleep(pollMs)
+        }
+        v2Attempts.delete(id)
+        throw new OpencodeBadRequest('The sign-in timed out.')
+    }
     const res = await call(
         () =>
             client.provider.oauth.callback({

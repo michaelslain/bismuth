@@ -391,3 +391,140 @@ describe('routes', () => {
         )
     })
 })
+
+describe('opencode 2 (integrations)', () => {
+    /** A fake opencode 2 client: integrations to list, and a journal of the connect calls. */
+    function fakeV2(
+        opts: {
+            integrations?: unknown[]
+            connectKeyThrows?: unknown
+            statuses?: unknown[]
+            mode?: 'auto' | 'code'
+        } = {},
+    ) {
+        const calls: { fn: string; args: unknown[] }[] = []
+        const statuses = [...(opts.statuses ?? [{ status: 'complete' }])]
+        const client = {
+            version: 2 as const,
+            url: 'http://fake',
+            integrations: async () =>
+                opts.integrations ?? [
+                    {
+                        id: 'openai',
+                        name: 'OpenAI',
+                        methods: [
+                            { type: 'key' },
+                            {
+                                id: 'chatgpt',
+                                type: 'oauth',
+                                label: 'Sign in with ChatGPT',
+                            },
+                        ],
+                        connections: [],
+                    },
+                ],
+            connectKey: async (...args: unknown[]) => {
+                calls.push({ fn: 'connectKey', args })
+                if (opts.connectKeyThrows) throw opts.connectKeyThrows
+            },
+            oauthConnect: async (...args: unknown[]) => {
+                calls.push({ fn: 'oauthConnect', args })
+                return {
+                    attemptID: 'att_1',
+                    url: 'https://auth.example/x',
+                    instructions: 'go',
+                    mode: opts.mode ?? 'auto',
+                }
+            },
+            oauthStatus: async (...args: unknown[]) => {
+                calls.push({ fn: 'oauthStatus', args })
+                return statuses.shift() ?? { status: 'pending' }
+            },
+            oauthComplete: async (...args: unknown[]) => {
+                calls.push({ fn: 'oauthComplete', args })
+            },
+        }
+        return { calls, client: client as never }
+    }
+
+    test('lists providers from integrations', async () => {
+        const { client } = fakeV2()
+        expect(await listProviders(client)).toEqual({
+            connected: [],
+            available: [
+                {
+                    id: 'openai',
+                    name: 'OpenAI',
+                    methods: [
+                        { type: 'api', label: 'API key' },
+                        { type: 'oauth', label: 'Sign in with ChatGPT' },
+                    ],
+                },
+            ],
+        })
+    })
+
+    test('a key goes to connect/key, and a refusal never echoes it', async () => {
+        const ok = fakeV2()
+        await setProviderKey(ok.client, 'openai', '  sk-secret  ')
+        expect(ok.calls).toEqual([
+            { fn: 'connectKey', args: ['openai', 'sk-secret'] },
+        ])
+        const bad = fakeV2({
+            connectKeyThrows: new Error('invalid key sk-secret'),
+        })
+        const err = await setProviderKey(
+            bad.client,
+            'openai',
+            'sk-secret',
+        ).catch(e => e)
+        expect(err).toBeInstanceOf(OpencodeBadRequest)
+        expect(err.message).toBe('invalid key [redacted]')
+    })
+
+    test('the method index picks the OAuth method, and an auto sign-in waits for completion', async () => {
+        const { calls, client } = fakeV2({
+            statuses: [{ status: 'pending' }, { status: 'complete' }],
+        })
+        expect(await oauthAuthorize(client, 'openai', 1)).toEqual({
+            url: 'https://auth.example/x',
+            method: 'auto',
+            instructions: 'go',
+        })
+        await oauthCallback(client, 'openai', 1, undefined, 1)
+        expect(calls.map(c => c.fn)).toEqual([
+            'oauthConnect',
+            'oauthStatus',
+            'oauthStatus',
+        ])
+        expect(calls[0].args).toEqual(['openai', 'chatgpt', null])
+    })
+
+    test('a code sign-in completes with the pasted code; a key-method index is refused', async () => {
+        const { calls, client } = fakeV2({ mode: 'code' })
+        await oauthAuthorize(client, 'openai', 1)
+        await oauthCallback(client, 'openai', 1, 'C0DE')
+        expect(calls.at(-1)).toEqual({
+            fn: 'oauthComplete',
+            args: ['openai', 'att_1', 'C0DE'],
+        })
+        const err = await oauthAuthorize(client, 'openai', 0).catch(e => e)
+        expect(err.message).toBe('Unknown sign-in method.')
+    })
+
+    test('a failed sign-in reports opencode’s message', async () => {
+        const { client } = fakeV2({
+            statuses: [{ status: 'failed', message: 'denied by user' }],
+        })
+        await oauthAuthorize(client, 'openai', 1)
+        const err = await oauthCallback(
+            client,
+            'openai',
+            1,
+            undefined,
+            1,
+        ).catch(e => e)
+        expect(err).toBeInstanceOf(OpencodeBadRequest)
+        expect(err.message).toBe('denied by user')
+    })
+})

@@ -301,7 +301,9 @@ const CLAUDE: BackendDescriptor = {
  * opencodeTranslate.ts's top-of-file notes for the exact requests/responses observed) — not inferred
  * from the SDK's generated types alone, which were confirmed to have real drift from live behavior
  * (see opencodeServer.ts's top-of-file note on "permission.asked" vs the documented
- * "permission.updated", and the separate "message.part.delta" event type).
+ * "permission.updated", and the separate "message.part.delta" event type). opencode 2's `/api`
+ * server carries every server-mode capability below as well (token deltas, permission asks, images,
+ * commands, resume), verified live against opencode 2.0.32 (opencodeV2Client.ts).
  */
 const OPENCODE: BackendDescriptor = {
     id: 'opencode',
@@ -322,9 +324,10 @@ const OPENCODE: BackendDescriptor = {
         // …but there is still no cross-session list, so the history picker stays Claude-only.
         sessionPicker: false,
         models: true,
-        // opencode models report no effort levels (the models frame carries effortLevels: []) in EITHER
-        // mode — server mode's config.providers() has no per-model effort field either.
-        effort: false,
+        // opencode 2 models list their reasoning-effort levels as variants (`GET /api/model`), and a
+        // turn runs the chosen level as its model's variant — verified live against 2.0.32. opencode 1
+        // models report none, so their `models` entries carry effortLevels: [] and the row stays hidden.
+        effort: true,
         // Server mode accepts a real attachment: verified live with an actual POST — a FilePartInput
         // {type:"file",mime,url:"data:image/png;base64,..."} was accepted (HTTP 200) and a vision-capable
         // free model (opencode/mimo-v2.5-free) read genuine pixel content back. Run mode still has no

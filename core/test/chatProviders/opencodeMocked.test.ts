@@ -64,7 +64,6 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test'
 import { rm } from 'node:fs/promises'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
-import { parseOpencodeMajor } from '../../src/chatProviders/opencode/opencodeCli'
 import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
@@ -95,16 +94,6 @@ const OPENCODE_SERVE_PATTERN = 'opencode serve --port 0 --hostname 127.0.0.1'
  *  `serve --stdio`, and the v2 per-user background `serve --service` a call without `--standalone`
  *  starts (detached, PPID 1). afterAll requires that none this file started outlives it. */
 const ANY_OPENCODE_SERVE_PATTERN = 'opencode.*serve'
-
-/** The installed opencode's major version (the production parse, opencodeCli.ts). */
-function installedOpencodeMajor(): number | null {
-    try {
-        const r = Bun.spawnSync(['opencode', '--version'])
-        return parseOpencodeMajor(r.stdout.toString())
-    } catch {
-        return null
-    }
-}
 
 /** PIDs of any already-running shared opencode server, matched by `pattern` (the exact v1 argv
  *  above by default). Best effort: `pgrep` missing/erroring yields [] rather than throwing. */
@@ -437,11 +426,7 @@ describeOrSkip(
             // benign no-op, whether caused by `pidsBefore` wrongly swallowing this file's own server or
             // `isChildOfThisProcess` incorrectly rejecting a legitimate target. This assertion is what
             // makes a loop that silently selects nothing fail loudly instead of reporting a false green.
-            // opencode 2 never starts the shared server (its API is not the one the SDK drives), so there
-            // is a server to select only on v1.
-            const major = installedOpencodeMajor()
-            if (anyChatOpened && (major === null || major < 2))
-                expect(killedCount).toBeGreaterThanOrEqual(1)
+            if (anyChatOpened) expect(killedCount).toBeGreaterThanOrEqual(1)
             expect(leaked).toEqual([])
             // Room for the leak poll plus SIGTERM/SIGKILL confirmation, past bun's 5s hook default.
         }, 30_000)
@@ -509,9 +494,10 @@ describeOrSkip(
         }, 60_000)
 
         test('a multi-word prompt reaches the model exactly as typed', async () => {
-            // opencode 2's `run` shell-quotes a whitespace-bearing message argument, so the model would
-            // read `"say hello to me"` with literal quotes; the driver sends it on stdin there. The
-            // mock's request journal shows what the model actually received.
+            // Server mode posts the prompt as JSON; run mode puts it on stdin, because opencode 2's
+            // `run` shell-quotes a whitespace-bearing message argument (the model would read
+            // `"say hello to me"` with literal quotes). The mock's request journal shows what the
+            // model actually received.
             await setup()
 
             const cwd = await newTempDir()

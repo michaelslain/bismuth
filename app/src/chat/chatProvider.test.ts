@@ -60,7 +60,7 @@ describe('header gating + options', () => {
         expect(providerCan('opencode', 'permissionModes')).toBe(false)
         expect(providerCan('opencode', 'computerUse')).toBe(false)
         expect(providerCan('opencode', 'sessionPicker')).toBe(false)
-        expect(providerCan('opencode', 'effort')).toBe(false)
+        expect(providerCan('opencode', 'effort')).toBe(true)
         expect(providerCan('opencode', 'images')).toBe(true)
     })
     test('resume and sessionPicker are distinct: opencode resumes per tab with no cross-session list', () => {

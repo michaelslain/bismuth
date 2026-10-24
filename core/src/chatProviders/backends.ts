@@ -192,11 +192,12 @@ const claudeBackend = moduleBackend('claude', claude, {
  *  `opencode serve` shared across every opencode chat) falls back to the original one
  *  `opencode run --format json` subprocess per turn when the installed opencode can't serve.
  *  respondPermission is a real, live-verified server-mode surface (permissionPrompts:true) — see
- *  catalog.ts. No setPermissionMode/respondQuestion/setEffort: opencode has no drivable permission
- *  MODE switch (permissionModes stays false), no AskUserQuestion equivalent, and no per-turn effort
- *  control (opencode models report no effort levels either way). */
+ *  catalog.ts. setEffort picks an opencode 2 model's reasoning variant. No setPermissionMode/
+ *  respondQuestion: opencode has no drivable permission MODE switch (permissionModes stays false)
+ *  and no AskUserQuestion equivalent. */
 const opencodeBackend = moduleBackend('opencode', opencode, {
     respondPermission: opencode.respondPermission,
+    setEffort: opencode.setEffort,
 })
 
 /**

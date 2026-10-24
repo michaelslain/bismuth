@@ -16,8 +16,9 @@
 //     shared service.
 //   - `run` shell-quotes a message argument containing whitespace before sending it, so the
 //     model reads `"fix the bug"` with literal quotes; a message on stdin arrives verbatim.
-//   - `opencode serve` speaks a new HTTP API (under `/api`, behind a printed password) that
-//     @opencode-ai/sdk 1.x cannot drive, so server mode is v1-only (see opencodeServer.ts).
+//   - `opencode serve` speaks a new HTTP API (under `/api`, behind a password) that
+//     @opencode-ai/sdk 1.x cannot drive; server mode drives it through opencodeV2Client.ts. Everything
+//     below is the RUN-mode argv, which a v2 chat uses only in a restricted vault.
 
 /** The major version out of `opencode --version` stdout (`opencode v2.0.32`, `1.18.4`), or null
  *  when nothing version-shaped is there. Pure. */
