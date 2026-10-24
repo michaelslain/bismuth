@@ -4,7 +4,7 @@
 // degradations) without a real binary or touching ~/.bismuth.
 import { test, expect, afterEach } from 'bun:test'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { bismuthHome } from '../src/bismuthHome'
 import {
     lstatSync,
     readFileSync,
@@ -31,7 +31,7 @@ afterEach(() => {
 test('daemonBinPath honors BISMUTH_DAEMON_BIN, else ~/.bismuth/bin/bismuth-daemon', () => {
     delete process.env.BISMUTH_DAEMON_BIN
     expect(daemonBinPath()).toBe(
-        join(homedir(), '.bismuth', 'bin', 'bismuth-daemon'),
+        bismuthHome('bin', 'bismuth-daemon'),
     )
     process.env.BISMUTH_DAEMON_BIN = '/tmp/x/bismuth-daemon'
     expect(daemonBinPath()).toBe('/tmp/x/bismuth-daemon')

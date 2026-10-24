@@ -14,7 +14,8 @@ import {
     existsSync,
     symlinkSync,
 } from 'node:fs'
-import { tmpdir, homedir } from 'node:os'
+import { tmpdir } from 'node:os'
+import { bismuthHome } from '../src/bismuthHome'
 import { join } from 'node:path'
 import {
     listDevices,
@@ -246,7 +247,7 @@ test('registerVaultRoot never throws against a malformed vaults.json', () => {
 
 test('daemonMachineDir honors BISMUTH_DAEMON_DIR, else falls back to ~/.bismuth/daemon', () => {
     delete process.env.BISMUTH_DAEMON_DIR
-    expect(daemonMachineDir()).toBe(join(homedir(), '.bismuth', 'daemon'))
+    expect(daemonMachineDir()).toBe(join(bismuthHome(), 'daemon'))
     process.env.BISMUTH_DAEMON_DIR = '/custom/daemon/dir'
     expect(daemonMachineDir()).toBe('/custom/daemon/dir')
     delete process.env.BISMUTH_DAEMON_DIR

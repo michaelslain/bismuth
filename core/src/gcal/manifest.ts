@@ -9,8 +9,8 @@
 // calendars keeps a SEPARATE link map + sync token + calendar target per base — two
 // calendars can never clobber each other's links (which the old single-base manifest's
 // retarget-guard papered over by wiping links whenever the bound base changed).
-import { homedir } from 'node:os'
 import { join, resolve, posix } from 'node:path'
+import { bismuthHome } from '../bismuthHome'
 import {
     mkdirSync,
     readFileSync,
@@ -54,7 +54,9 @@ export interface SyncManifest {
 export function gcalDir(home?: string): string {
     if (home === undefined && process.env.BISMUTH_GCAL_DIR)
         return process.env.BISMUTH_GCAL_DIR
-    return join(home ?? homedir(), '.bismuth', 'gcal')
+    return home === undefined
+        ? bismuthHome('gcal')
+        : join(home, '.bismuth', 'gcal')
 }
 function manifestPath(home?: string): string {
     return join(gcalDir(home), 'sync.json')

@@ -4,6 +4,7 @@
 // preload does, which is why this lives here rather than in an individual test file (imports hoist).
 import { afterAll } from 'bun:test'
 import { sweepTempDirs, registerTempDir } from './tempDirs'
+import { inheritRuntimeEnv } from './spawnEnv'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -13,6 +14,22 @@ import { randomUUID } from 'node:crypto'
 const LAYOUT_CACHE_DIR = join(tmpdir(), `bismuth-layout-test-${randomUUID()}`)
 process.env.BISMUTH_LAYOUT_CACHE_DIR ||= LAYOUT_CACHE_DIR
 registerTempDir(LAYOUT_CACHE_DIR)
+
+// The machine-wide home, unconditionally private to this run. `~/.bismuth` holds the daemon's vault
+// registry (vaults.json), the run registry, gcal credentials, the chat model store and more, and
+// a test that boots a core or calls a bismuthHome() consumer without its own override would write
+// the throwaway vault it runs on straight into the user's real home (a realpath'd temp vault did, a
+// few times an hour, until this). BISMUTH_HOME replaces `~/.bismuth` for core/src/bismuthHome.ts and
+// its daemon copy; spawned children inherit it. Assigned even when the outer env already carries
+// one: an inherited BISMUTH_HOME could itself be the real home. Every per-dir override (BISMUTH_RUN_DIR,
+// BISMUTH_DAEMON_DIR, ...) still wins over it for its own dir. Guarded by
+// core/test/testHomeGuard.test.ts.
+const BISMUTH_HOME_DIR = join(tmpdir(), `bismuth-home-test-${randomUUID()}`)
+process.env.BISMUTH_HOME = BISMUTH_HOME_DIR
+registerTempDir(BISMUTH_HOME_DIR)
+
+// ...and the dirs above only reach a Bun.spawn child once the spawn default is fixed (spawnEnv.ts).
+inheritRuntimeEnv()
 
 // The run registry, unconditionally private to this run. Every in-process core a test boots
 // drops a record there (runRegistry.ts) naming its throwaway vault and this LIVE worker's pid, and

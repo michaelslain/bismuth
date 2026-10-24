@@ -14,8 +14,16 @@ import { existsSync, realpathSync } from 'node:fs'
 // workspace + separately-bundled binary, so it must not import across into @bismuth/core.
 // bismuthHome is likewise a deliberate literal duplicate of core/src/bismuthHome.ts.
 
-/** `~/.bismuth/<parts>`, evaluated per call. */
+/** `~/.bismuth/<parts>`, evaluated per call. `BISMUTH_HOME` replaces `~/.bismuth` (the test preload
+ *  sets it), and under `bun test` with no override this throws instead of resolving the real home.
+ *  A literal copy of core/src/bismuthHome.ts; core/test/testHomeGuard.test.ts pins the two. */
 export function bismuthHome(...parts: string[]): string {
+    const override = process.env.BISMUTH_HOME
+    if (override) return join(override, ...parts)
+    if (process.env.NODE_ENV === 'test')
+        throw new Error(
+            'refusing to resolve the real ~/.bismuth under test: BISMUTH_HOME is unset (run `bun test` from the repo root so bunfig.toml loads core/test/setup.ts)',
+        )
     return join(homedir(), '.bismuth', ...parts)
 }
 

@@ -217,6 +217,7 @@ Use `registerTempDir(dir)` for a directory a subsystem creates itself.
 
 The preload also points `BISMUTH_LAYOUT_CACHE_DIR` at a temp directory, so the suite never writes to the real layout cache under `~/.bismuth`.
 It points `BISMUTH_RUN_DIR` at a fresh temp directory (one per file under `--parallel`), so a core a test boots never registers in the real `~/.bismuth/run`, and a CLI a test spawns never sees another worker's cores.
+It also points `BISMUTH_HOME` at a fresh temp directory, which replaces `~/.bismuth` for everything that resolves the machine-wide home through `bismuthHome()` (the daemon's `vaults.json`, the run registry, gcal credentials, the notifier pointer, scratch files). Under `bun test` (`NODE_ENV=test`) `bismuthHome()` throws when `BISMUTH_HOME` is unset, so run `bun test` from the repo root, where `bunfig.toml` loads the preload. The preload also makes `Bun.spawn` and `Bun.spawnSync` pass the current `process.env` to a child that gets no `env` of its own, because Bun's default is the environment the process started with and would drop every override above. `core/test/testHomeGuard.test.ts` fails when a machine-wide path resolves into the real `~/.bismuth` or a temp vault can reach the real registry.
 
 ### A test that waits on the vault watcher
 
@@ -319,4 +320,4 @@ It strips git's repository-location variables (`sanitizeGitEnv`) from the childr
 `.githooks/pre-push` runs `scripts/check-docs.ts --pre-push`, which checks relative `.md` links, `page.md#heading` anchors, the history-word lint, the `bun run` scripts CLAUDE.md cites, and workspace parity, then warns when source changed without docs.
 Run `bun run scripts/check-docs.ts` by hand to check a docs change.
 
-Source: `scripts/gate.ts`, `scripts/fastTests.ts`, `scripts/check-docs.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `bunfig.toml`, `package.json`, `tsconfig.base.json`, `core/test/setup.ts`, `core/test/helpers.ts`, `core/test/tempDirs.ts`, `core/test/slowGate.ts`, `core/test/spawnBudget.ts`, `core/test/ports.ts`, `core/test/support/vaultEvents.ts`, `core/test/upgrade/`
+Source: `scripts/gate.ts`, `scripts/fastTests.ts`, `scripts/check-docs.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `bunfig.toml`, `package.json`, `tsconfig.base.json`, `core/test/setup.ts`, `core/test/testHomeGuard.test.ts`, `core/test/spawnEnv.ts`, `core/test/helpers.ts`, `core/test/tempDirs.ts`, `core/test/slowGate.ts`, `core/test/spawnBudget.ts`, `core/test/ports.ts`, `core/test/support/vaultEvents.ts`, `core/test/upgrade/`

@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { bismuthHome } from './bismuthPaths'
 import { spawnSync } from 'node:child_process'
 import { readFileSync, statSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -313,7 +314,7 @@ export function readDaemonPid(file: string = MACHINE_PID_FILE): number | null {
  *  app boot (core/src/notifierPointer.ts). A literal duplicate of that module's path, like
  *  bismuthHome in bismuthPaths.ts: the daemon must not import across into @bismuth/core. */
 export function notifierPointerPath(): string {
-    return join(homedir(), '.bismuth', 'notifier')
+    return bismuthHome('notifier')
 }
 
 /** The bismuth-notify helper to post through, or null when the app never recorded one or the
