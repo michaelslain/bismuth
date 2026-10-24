@@ -1197,6 +1197,10 @@ export async function dreamEnabled(root: string): Promise<boolean> {
     return daemonSwitchOn(root, 'dream')
 }
 
+/** The skip note a switched-off `dream` cron records, once per transition (see `fireJob`). */
+export const DREAM_OFF_NOTE =
+    'skipped: daemon.dream is off; set daemon.dream: true in .settings to run dream'
+
 /** True when a vault-level switch holds this cron off. Only the seeded `dream` cron has one; its own
  *  `enabled:` frontmatter still applies on top. */
 export async function cronSwitchedOff(
@@ -1265,6 +1269,12 @@ export async function notifyNewPages(
  * synchronously, then runs the session in the background. Callers should await
  * this to ensure .running.json is written before proceeding.
  *
+ * A cron held off by a vault switch ({@link cronSwitchedOff}: `dream` while `daemon.dream` is not
+ * `true`) starts nothing and is never marked running. It records {@link DREAM_OFF_NOTE} as a
+ * "skipped" `lastFired` entry, an activity line and a stdout line, once per transition: while
+ * `lastFired` already carries that note, a fire writes nothing, so a vault that leaves dream off gets
+ * one line, not one every hour.
+ *
  * `incremental` crons get an extra pre-fire gate (see incrementalCron.ts): the daemon diffs the
  * job's checkpoint ref against its repo BEFORE any of the running-state bookkeeping below, and
  * when there's nothing relevant to look at, returns immediately having only updated `lastFired`
@@ -1281,7 +1291,22 @@ async function fireJob(
     opts: { reason: FireReason; changedPaths?: string[] },
 ): Promise<void> {
     const tag = `[cron:${ctx.name}] "${job.name}"`
-    if (await cronSwitchedOff(ctx.root, job)) return
+    if (await cronSwitchedOff(ctx.root, job)) {
+        if (lastFired[job.name]?.detail !== DREAM_OFF_NOTE) {
+            lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
+                nextLastFired(prev, { result: 'skipped', detail: DREAM_OFF_NOTE }),
+            )
+            await logActivity(
+                ctx,
+                cronActivityEvent(job.name, {
+                    result: 'skipped',
+                    detail: DREAM_OFF_NOTE,
+                }),
+            )
+            console.log(`${tag} ${DREAM_OFF_NOTE}`)
+        }
+        return
+    }
     const triggerContext = opts.changedPaths?.join(', ')
     let promptOverride: string | undefined
     let checkpoint: IncrementalRunPlan | undefined

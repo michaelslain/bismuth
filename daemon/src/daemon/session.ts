@@ -196,6 +196,15 @@ export interface SendOptions {
 
 /** The bundled Bismuth tools available to a daemon session (undefined when the GUI app never
  *  installed them). Injected so buildQueryOptions is pure + unit-testable without touching disk. */
+/** Appended after the persona when the bismuth MCP server is wired: the stock crons name the memory
+ *  tools by their bare names, and Claude Code defers MCP tools, so a bare `remember` call fails
+ *  "No such tool available" until the session knows the id and loads its schema. */
+export const MEMORY_TOOLS_NOTE =
+    "Bismuth's memory tools are `mcp__bismuth__remember`, `mcp__bismuth__recall` and " +
+    '`mcp__bismuth__forget`; a prompt that says `remember`, `recall` or `forget` means these. ' +
+    'Before the first call, load them with ToolSearch ' +
+    '`select:mcp__bismuth__remember,mcp__bismuth__recall,mcp__bismuth__forget`.'
+
 export interface BismuthTools {
     mcp?: string
     cli?: string
@@ -249,7 +258,9 @@ export function buildQueryOptions(
         systemPrompt: {
             type: 'preset',
             preset: 'claude_code',
-            append: tools.persona,
+            append: tools.mcp
+                ? `${tools.persona}\n\n${MEMORY_TOOLS_NOTE}`
+                : tools.persona,
         },
         model: opts?.model ?? 'haiku',
     }

@@ -3,7 +3,14 @@
 // schedule-based cron parsing exactly as before while accepting the new `on: file-change` + `watch` shape. No sendMessage/session
 // plumbing is touched here — see fileWatch.test.ts for the debounce/matching harness.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import {
+    mkdtempSync,
+    rmSync,
+    writeFileSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -30,6 +37,7 @@ import {
     notificationsEnabled,
     dreamEnabled,
     cronSwitchedOff,
+    DREAM_OFF_NOTE,
     announcesNewPages,
     listPageSlugs,
     type FailureCause,
@@ -1172,6 +1180,7 @@ function switchCtx(root: string): VaultContext {
         cronsDir,
         runningFile: join(root, 'running.json'),
         lastFiredFile: join(root, 'last-fired.json'),
+        logsDir: join(root, 'logs'),
     } as unknown as VaultContext
 }
 
@@ -1200,13 +1209,25 @@ test('dream switch: a file named dream stays switched off whatever its frontmatt
     }
 })
 
-test('dream switch: fireFileChangeCron with no daemon.dream records nothing', async () => {
+test('dream switch: fireFileChangeCron with no daemon.dream records the skip once', async () => {
     const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
     try {
         const c = switchCtx(root)
         await fireFileChangeCron(c, dreamJob(), ['a.md'])
         expect((await loadRunning(c)).dream).toBeUndefined()
-        expect((await loadLastFired(c)).dream).toBeUndefined()
+        const first = (await loadLastFired(c)).dream
+        expect(first).toMatchObject({
+            result: 'skipped',
+            detail: DREAM_OFF_NOTE,
+        })
+        await new Promise(r => setTimeout(r, 5))
+        await fireFileChangeCron(c, dreamJob(), ['b.md'])
+        expect((await loadRunning(c)).dream).toBeUndefined()
+        expect((await loadLastFired(c)).dream?.timestamp).toBe(first?.timestamp)
+        const logged = readdirSync(join(root, 'logs'))
+            .map(f => readFileSync(join(root, 'logs', f), 'utf8'))
+            .join('')
+        expect(logged.split(DREAM_OFF_NOTE).length - 1).toBe(1)
     } finally {
         rmSync(root, { recursive: true, force: true })
     }

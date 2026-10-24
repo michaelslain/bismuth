@@ -8,6 +8,7 @@ import {
     resolveDaemonBackend,
     composeBackendRefusalNote,
     finalizeBotResponse,
+    MEMORY_TOOLS_NOTE,
 } from '../src/daemon/session.ts'
 import { DEFAULT_DAEMON_IDENTITY } from '../src/daemon/persona.ts'
 import { buildCodexEnv } from '../src/daemon/codexSession.ts'
@@ -30,6 +31,27 @@ test('buildQueryOptions delivers the persona through the SDK preset append, not 
         append: 'You are Atlas.',
     })
     expect('appendSystemPrompt' in o).toBe(false)
+})
+
+test('buildQueryOptions names the memory tool ids after the persona only when the bismuth MCP is wired', () => {
+    const select =
+        'select:mcp__bismuth__remember,mcp__bismuth__recall,mcp__bismuth__forget'
+    const wired = buildQueryOptions(ctx, undefined, undefined, {
+        persona: 'You are Atlas.',
+        mcp: '/home/me/.bismuth/bin/bismuth-mcp',
+    })
+    const append = (wired.systemPrompt as { append: string }).append
+    expect(append.startsWith('You are Atlas.')).toBe(true)
+    expect(append).toContain('mcp__bismuth__remember')
+    expect(append).toContain(select)
+    expect(append).toContain(MEMORY_TOOLS_NOTE)
+    const bare = buildQueryOptions(ctx, undefined, undefined, {
+        persona: 'You are Atlas.',
+    })
+    const bareAppend = (bare.systemPrompt as { append: string }).append
+    expect(bareAppend).toBe('You are Atlas.')
+    expect(bareAppend).not.toContain('mcp__bismuth__remember')
+    expect(bareAppend).not.toContain(select)
 })
 
 test('buildQueryOptions wires mcpServers.bismuth with vault-scoped env when the mcp binary exists', () => {
