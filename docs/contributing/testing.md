@@ -347,6 +347,7 @@ Several tests exist to fail when two things that must agree drift apart. If one 
 | `core/test/upgrade/schemaSnapshot.test.ts` | Any schema default, type, bound or enum changed without re-blessing |
 | `app/src/tokenRegistry.test.ts` | A `:root` token in `global.css` is not registered in `DESIGN_TOKENS`, or the registry and the projection disagree |
 | `core/test/theme/tokensDoc.test.ts` | `docs/settings/tokens.md` differs from the token registry |
+| `cli/test/startupImports.test.ts` | The CLI entry point statically imports a module listed in its `LOAD_ON_USE`, which then loads on every `bismuth` start; import it with `await import()` inside the command that uses it |
 | `app/src/keybindingCoverage.test.ts` | A file outside the allow-list hardcodes a key literal instead of reading a `KEYBINDING_CATALOG` id |
 | `app/src/cssLayering.test.ts` | A class emitted as a runtime string (`bismuth-`, `callout-`, `cm-`) is defined inside a CSS module, or `global.css`'s page-frame section gains more class rules than its pinned ceiling |
 | `app/src/cssComments.test.ts` | A CSS comment contains `*/` early and swallows the next rule |

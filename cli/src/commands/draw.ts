@@ -15,7 +15,6 @@ import { fileExists, resolveInVault } from '../../../core/src/files'
 import { inkSidecarFor, isCompanionable, isPdfPath } from '../../../core/src/fileKinds'
 import { getFileAccess } from '../../../core/src/fileAccess'
 import { readPdfHighlights } from '../../../core/src/drawing/pdfHighlights'
-import { pdfHighlightTexts } from '../../../core/src/drawing/pdfHighlightText'
 import { resolveHighlightColor } from '../../../core/src/drawing/pageHighlights'
 import {
     highlightIOFor,
@@ -23,10 +22,6 @@ import {
 } from '../../../core/src/pdfHighlightStore'
 import { agentDenyEntries, isDeniedPath } from '../../../core/src/visibilityFilter'
 import { createError } from '../../../core/src/error'
-import {
-    renderDocToPng,
-    renderDocToPdf,
-} from '../../../core/src/drawing/export'
 
 /** Validate --theme, render a parsed `.draw` file to PNG or PDF (by `pdf`), write it to --out
  *  or a computed default filename, and print "wrote <path>". Shared by `draw render` and
@@ -42,6 +37,8 @@ export async function renderDrawFile(
         fail(`--theme must be "dark" or "light": ${themeArg}`)
     const theme = themeArg as 'dark' | 'light'
     const doc = parseDocOrEmpty(readFileSync(file, 'utf8'))
+    // Loaded on use, like the pdf text below: the renderer adds ~0.1s to every CLI start.
+    const { renderDocToPdf, renderDocToPng } = await import('../../../core/src/drawing/export')
     const bytes = pdf
         ? await renderDocToPdf(doc, theme)
         : await renderDocToPng(doc, theme)
@@ -107,6 +104,7 @@ async function highlights(args: string[]): Promise<void> {
         const bytes = await io.readBinary(source)
         if (bytes) {
             const read = await readPdfHighlights(bytes)
+            const { pdfHighlightTexts } = await import('../../../core/src/drawing/pdfHighlightText')
             const texts = await pdfHighlightTexts(bytes, read.pages)
             read.pages.forEach((hs, i) =>
                 hs.forEach((h, j) =>

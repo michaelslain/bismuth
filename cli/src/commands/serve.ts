@@ -1,14 +1,15 @@
 import type { CommandMap } from '../types'
 import { flag, requireVault, memoryDir, out } from '../args'
-import { createServer } from '../../../core/src/server'
 import { commitVault, snapshotMessage } from '../../../core/src/backup'
 
 export const commands: CommandMap = {
     serve: {
         summary: 'Run the core HTTP server (graph + vault API + SSE).',
         usage: '[--port N]',
-        run(args) {
+        async run(args) {
             const portArg = flag(args, 'port')
+            // Loaded on use: the server adds ~0.05s to every CLI start.
+            const { createServer } = await import('../../../core/src/server')
             const s = createServer({
                 vault: requireVault(args),
                 memory: memoryDir(args),

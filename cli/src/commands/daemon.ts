@@ -39,7 +39,6 @@ import {
     initEmailConfig,
     readEmailConfig,
 } from '../../../daemon/src/lib/emailConfig'
-import { verifyMailAccount } from '../../../daemon/src/daemon/emailTransport'
 
 /** `daemon setup` — `daemon update` reuses it (same body, its own summary). */
 const daemonSetup: CommandMap[string] = {
@@ -277,6 +276,8 @@ export const commands: CommandMap = {
             const read = await readEmailConfig()
             if ('error' in read) fail(read.error)
             try {
+                // Loaded on use: the mail client adds ~0.05s to every CLI start.
+                const { verifyMailAccount } = await import('../../../daemon/src/daemon/emailTransport')
                 await verifyMailAccount(read.config)
                 out({ ok: true, smtp: 'ok', imap: 'ok' }, args)
             } catch (e) {
