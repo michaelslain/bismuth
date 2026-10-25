@@ -1,37 +1,27 @@
 // app/src/ui/barDropLevels.test.ts
 //
-// WHY THIS EXISTS. The view bar's collapse ladder is a set of attribute-selector tiers in ViewBar.module.css
-// (`[data-bar-drop='4']` at 650px, '3' at 570, '2' at 500, '1' at 465) and a set of `data-bar-drop`
-// attributes on controls. NOTHING connects them. Tag a control with a level the ladder does not
-// define and the attribute lands on the DOM, matches no rule, and the control never collapses —
-// no typecheck error, no failing test, no warning. The bar simply overflows at a width nobody
-// tested. ViewBar.module.css's own ladder comment states the hole ("nothing typechecks a `data-` attribute");
-// this closes it.
+// WHY THIS EXISTS. A trail control opts into the view bar's fit-driven drop with a `data-bar-drop`
+// attribute (1-4, 4 drops first; see ui/barFit.ts). ViewBar.tsx stamps `data-bar-hidden` on what does
+// not fit and ViewBar.module.css has the one rule that hides it. NOTHING typechecks a `data-`
+// attribute: tag a control `data-bar-drop="5"` and it lands on the DOM and never drops, no error and
+// no warning. This pins the three strings that have to agree: the levels call sites write, the
+// levels barFit.ts defines, and the stylesheet's `[data-bar-hidden]` rule. It also pins that no
+// stylesheet rule hides a `data-bar-drop` element by a fixed container width any more, which would
+// fight the fit.
 //
 // It is the same family as bench/moduleClassCheck.ts (a hashed class name that still compiles as a
-// literal) and icons/iconCallSites.test.ts (an icon name that still renders, as a placeholder).
-// All three are "the string is valid, the referent is missing" bugs, which are invisible to every
-// other gate this repo has.
+// literal) and icons/iconCallSites.test.ts: "the string is valid, the referent is missing".
 //
-// WHAT IT CANNOT SEE, stated so a green run is not over-read: a level built at runtime
-// (`data-bar-drop={cond ? '2' : '3'}`) is invisible to a regex — no call site does that today and
-// none should, since the level names a MEASURED WIDTH, so choosing one conditionally is already a
-// design error. WRITE accepts the realistic literal shapes a formatter or a different author could
-// produce (double- or single-quoted, bare or braced), but that is not exhaustive: a shape none of
-// those four cover — a space inside the braces, a template literal, an attribute a future formatter
-// splits awkwardly across lines — still drops out of `writes` silently while the other real call
-// sites keep the total comfortably positive, so the anti-vacuity check below would NOT catch that
-// case. Forcing run 3 (see the task report) can only ever demonstrate TOTAL vacuity by construction
-// — it zeroes every call site at once — and is not, and cannot be, proof that PARTIAL drift is
-// caught.
+// WHAT IT CANNOT SEE: a level built at runtime (`data-bar-drop={cond ? '2' : '3'}`) has no literal
+// for the regex below. WRITE accepts the realistic literal shapes (double- or single-quoted, bare or
+// braced); a template literal or an awkwardly split attribute drops out of `writes` silently while
+// the other call sites keep the total positive, so the anti-vacuity check would not catch it.
 import { test, expect } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { BAR_DROP_LEVELS } from './barFit'
 
 const SRC = join(import.meta.dir, '..')
-// The ladder moved from ui.css to ViewBar.module.css (design-system sweep, one-global-stylesheet
-// task 2) — this constant follows it. Only the path changed; the DEFINE/stripComments logic below
-// still reads whatever file this points at.
 const UI_CSS = join(import.meta.dir, 'ViewBar.module.css')
 
 /** The JSX attribute. Accepts the realistic shapes a formatter or a different author could write —
@@ -40,8 +30,6 @@ const UI_CSS = join(import.meta.dir, 'ViewBar.module.css')
  *  match. A genuinely dynamic braced expression (`data-bar-drop={cond ? '2' : '3'}`) has no literal
  *  digit directly against a quote and stays invisible; see the header note above. */
 const WRITE = /data-bar-drop=\{?(?<quote>["'])(?<level>\d+)\k<quote>\}?/g
-/** The ladder's subjects, which ViewBar.module.css writes SINGLE-quoted inside attribute selectors. */
-const DEFINE = /\[data-bar-drop='(\d+)'\]/g
 
 /** Strip comments before matching, on BOTH sides. Several scanned files DISCUSS the attribute in
  *  prose — ui/BarLabel.stories.tsx, ui/ViewBar.stories.tsx, bases/BaseView.stories.tsx,
@@ -64,11 +52,8 @@ const walk = (dir: string): string[] =>
         return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(e) ? [p] : []
     })
 
-test('every data-bar-drop level written in app/src is defined by the ViewBar.module.css ladder', () => {
-    const defined = new Set(
-        [...stripComments(readFileSync(UI_CSS, 'utf8')).matchAll(DEFINE)].map(m => m[1]),
-    )
-
+test('every data-bar-drop level written in app/src is one barFit.ts defines', () => {
+    const defined = new Set(BAR_DROP_LEVELS.map(String))
     const writes: { file: string; level: string }[] = []
     for (const f of walk(SRC)) {
         for (const m of stripComments(readFileSync(f, 'utf8')).matchAll(WRITE)) {
@@ -76,23 +61,31 @@ test('every data-bar-drop level written in app/src is defined by the ViewBar.mod
         }
     }
 
-    // ANTI-VACUITY, and the more important of the two halves: if the attribute is ever written in a
-    // shape this regex misses, `writes` goes empty and the check below passes while testing nothing.
+    // ANTI-VACUITY: if the attribute is ever written in a shape this regex misses, `writes` goes
+    // empty and the check below passes while testing nothing.
     expect(
         writes.length,
         'found no data-bar-drop call sites at all — the matcher has drifted from how the attribute ' +
             'is written, so this test is passing vacuously',
     ).toBeGreaterThan(0)
-    expect(
-        defined.size,
-        'found no data-bar-drop tiers in ui.css — the ladder moved or was restructured',
-    ).toBeGreaterThan(0)
 
     const orphans = writes.filter(w => !defined.has(w.level))
     expect(
         orphans.map(o => `${o.file}: data-bar-drop="${o.level}"`),
-        `ViewBar.module.css defines levels {${[...defined].sort().join(', ')}}. A level it does not define is a ` +
-            `SILENT no-op: the attribute lands on the DOM, no rule matches, the control never drops. ` +
-            `Measure your own bar and add a tier, or use the level whose measured width matches.`,
+        `barFit.ts defines levels {${[...defined].sort().join(', ')}}. A level it does not define is a ` +
+            `SILENT no-op: the attribute lands on the DOM and the control never drops.`,
     ).toEqual([])
+})
+
+test('ViewBar.module.css hides [data-bar-hidden] and hides nothing by data-bar-drop', () => {
+    const css = stripComments(readFileSync(UI_CSS, 'utf8'))
+    expect(css).toMatch(/\.viewbar \[data-bar-hidden\]\s*\{\s*display:\s*none/)
+    // A fixed-width tier hiding a `data-bar-drop` element would drop it whether or not it fits.
+    expect(css).not.toMatch(/\[data-bar-drop=/)
+})
+
+test('ViewBar.tsx stamps data-bar-hidden and reads data-bar-menu-label', () => {
+    const tsx = stripComments(readFileSync(join(import.meta.dir, 'ViewBar.tsx'), 'utf8'))
+    expect(tsx).toContain('data-bar-hidden')
+    expect(tsx).toContain('data-bar-menu-label')
 })

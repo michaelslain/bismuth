@@ -33,6 +33,9 @@ export type IconButtonProps = {
      *  same unpainted `[ ]` an off toggle does, so both have one footprint and the row's gaps do
      *  not depend on which kind of icon sits where. Paints nothing. */
     bracketRoom?: boolean
+    /** A command icon (undo, import) in a row of toggles: rests at --text-muted like its neighbours,
+     *  hover unchanged. Mirrors TextButton's `quiet`; ignored on a selected button. */
+    quiet?: boolean
     /** Icon pixel size. Defaults to the enclosing IconBar's, else the app's one icon size (ui/iconSize.ts); app code never passes it. */
     iconSize?: number
     /** The catalog keybinding that does what this button does; TooltipHost shows its live combo. */

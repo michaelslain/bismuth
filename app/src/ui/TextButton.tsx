@@ -2,6 +2,7 @@ import { splitProps, createEffect, type JSX } from 'solid-js'
 import { Button } from './Button'
 import type { ButtonState } from './buttonClass'
 import { warnLabelCase } from './devWarn'
+import styles from './TextButton.module.css'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
 export type TextButtonVariant = ButtonState
@@ -16,6 +17,11 @@ export type TextButtonProps = {
     primary?: boolean
     /** Colour for the selected state (a `var(--…)` token) — pre-registered for bracket-toggles Task 1. */
     accent?: string
+    /** A one-shot command in a bar (`fit`, the dock's `reset`): muted ink at rest like the bar's
+     *  icons, its `[ ]` reserved but unpainted, brackets + paper ink under hover / keyboard focus.
+     *  Never combined with `variant="selected"` (a selected toggle already paints its brackets, so
+     *  `quiet` is ignored there). */
+    quiet?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -28,11 +34,19 @@ export type TextButtonProps = {
  *    layout (flex/margin/position) via `style`, never colors/borders/padding.
  */
 function TextButton(props: TextButtonProps) {
-    const [local, rest] = splitProps(props, ['variant'])
+    const [local, rest] = splitProps(props, ['variant', 'quiet', 'class'])
+    const quiet = () => local.quiet && local.variant !== 'selected'
     if (import.meta.env?.DEV) {
         createEffect(() => warnLabelCase('TextButton', rest.children))
     }
-    return <Button kind="text" state={local.variant ?? 'normal'} {...rest} />
+    return (
+        <Button
+            kind="text"
+            state={local.variant ?? 'normal'}
+            class={[quiet() ? styles.quiet : '', local.class].filter(Boolean).join(' ')}
+            {...rest}
+        />
+    )
 }
 
 export default TextButton

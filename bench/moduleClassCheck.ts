@@ -110,6 +110,7 @@ const ALLOW = new Set<string>([
     'ui/Button.module.css:btn--bracket-room',
     'ui/Button.module.css:btn--pick-one',
     'ui/Button.module.css:btn--primary',
+    'ui/Button.module.css:btn--quiet',
     'ui/Button.module.css:btn--selected',
     'ui/Button.module.css:btn--sm',
     'ui/Button.module.css:btn--text',

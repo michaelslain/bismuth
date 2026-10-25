@@ -51,6 +51,8 @@ export function buttonClass(
         pickOne?: boolean
         /** A `normal` icon reserving an off toggle's bracket space — see the header. Icon kind only. */
         bracketRoom?: boolean
+        /** Muted ink at rest for a `normal` icon (a command in a row of toggles). Icon kind only. */
+        quiet?: boolean
         class?: string
     },
     cls: ButtonClassMap,
@@ -71,6 +73,9 @@ export function buttonClass(
         opts.primary ? cls['btn--primary'] : '',
         opts.pickOne && kind === 'icon' ? cls['btn--pick-one'] : '',
         opts.bracketRoom && kind === 'icon' ? cls['btn--bracket-room'] : '',
+        opts.quiet && kind === 'icon' && (opts.state ?? 'normal') === 'normal'
+            ? cls['btn--quiet']
+            : '',
         opts.class,
     )
 }

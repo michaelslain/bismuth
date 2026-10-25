@@ -84,7 +84,7 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
 
     return (
         <div class={`${styles.bar} ${props.class ?? ''}`} data-chart-config-bar>
-            <div class={styles.field} data-bar-drop="1">
+            <div class={styles.field} data-bar-drop="1" data-bar-menu-label="x">
                 <Label tone="muted" class={styles.label}>x</Label>
                 <Select
                     value={xValue()}
@@ -94,7 +94,7 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
                 />
             </div>
             <Show when={!hasStats()}>
-                <div class={styles.field} data-bar-drop="2">
+                <div class={styles.field} data-bar-drop="2" data-bar-menu-label="y">
                     <Label tone="muted" class={styles.label}>y</Label>
                     <Select
                         value={yValue()}
@@ -103,7 +103,7 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
                         class={styles.select}
                     />
                 </div>
-                <div class={styles.field} data-bar-drop="3">
+                <div class={styles.field} data-bar-drop="3" data-bar-menu-label="agg">
                     <Label tone="muted" class={styles.label}>agg</Label>
                     <Select
                         value={aggregateValue()}
@@ -114,7 +114,7 @@ const ChartConfigBar: Component<ChartConfigBarProps> = props => {
                 </div>
             </Show>
             <Show when={!isHeatmap()}>
-                <div class={styles.field} data-bar-drop="4">
+                <div class={styles.field} data-bar-drop="4" data-bar-menu-label="bin">
                     <Label tone="muted" class={styles.label}>bin</Label>
                     <Select
                         value={binValue()}

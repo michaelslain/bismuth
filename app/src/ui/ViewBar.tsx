@@ -4,11 +4,13 @@
 // (readouts · config · actions), composed through NAMED SLOTS rather than positional
 // children. Replaces per-view bespoke `.viewbar` markup so every header is
 // structurally identical.
-import { children, createSignal, type JSX, onCleanup, onMount, Show } from 'solid-js'
+import { children, createEffect, createSignal, type JSX, on, onCleanup, onMount, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Band from './Band'
 import leadOverflow from './leadOverflow'
 import { usePaneChrome } from './paneChrome'
+import BarOverflow, { type BarOverflowItem } from './BarOverflow'
+import { BAR_DROP_LEVELS, dropsToFit, type BarDropLevel } from './barFit'
 import styles from './ViewBar.module.css'
 import CloseButton from './CloseButton'
 
@@ -16,6 +18,35 @@ import CloseButton from './CloseButton'
  *  `parts` merge pattern every region and primitive here takes. */
 const cx = (base: string, extra?: string): string =>
     extra ? `${base} ${extra}` : base
+
+const levelOf = (el: HTMLElement): BarDropLevel | undefined => {
+    const n = Number(el.getAttribute('data-bar-drop'))
+    return (BAR_DROP_LEVELS as readonly number[]).includes(n) ? (n as BarDropLevel) : undefined
+}
+
+/** The panel row label for a dropped element: `data-bar-menu-label`, else its first control's
+ *  `aria-label` (never `title`), lowercased. Empty means no panel row. */
+const menuLabel = (el: HTMLElement): string => {
+    const named = el.getAttribute('data-bar-menu-label')
+    if (named) return named
+    const src =
+        el.getAttribute('aria-label') ??
+        el.querySelector('[aria-label]')?.getAttribute('aria-label') ??
+        ''
+    return src.toLowerCase()
+}
+
+/** A trail region is hidden with its elements when nothing visible is left in it. A region holding
+ *  text, or no element at all, is never hidden. */
+const regionEmpty = (region: HTMLElement): boolean => {
+    const kids = [...region.childNodes].filter(
+        n => n.nodeType === 1 || (n.nodeType === 3 && n.textContent?.trim()),
+    )
+    return (
+        kids.length > 0 &&
+        kids.every(k => k.nodeType === 1 && (k as HTMLElement).hasAttribute('data-bar-hidden'))
+    )
+}
 
 /** The six regions a view bar has. A control's region is decided by the QUESTION it answers, not
  *  by its shape:
@@ -148,6 +179,139 @@ function ViewBar(props: ViewBarProps) {
         })
     })
 
+    // FIT-DRIVEN DROP (ui/barFit.ts). The bar is measured with every droppable element shown, the
+    // pure `dropsToFit` picks the levels to hide, and ViewBar stamps `data-bar-hidden` on those
+    // elements. Widths are natural (measured shown), so un-hiding is stable: a width always maps to
+    // the same result and nothing flip-flops at a threshold. [≡] (BarOverflow) exists only while
+    // something is hidden. Skipped while the panel is open, because the dropped elements are then
+    // living inside it.
+    let trail!: HTMLDivElement
+    const [panelOpen, setPanelOpen] = createSignal(false)
+    const [dropped, setDropped] = createSignal<BarOverflowItem[]>([])
+    const [probing, setProbing] = createSignal(false)
+    let triggerWidth: number | undefined
+    let refit = () => {}
+    onMount(() => {
+        const bar = lead.parentElement as HTMLElement
+        const px = (v: string) => parseFloat(v) || 0
+        let disposed = false
+        // 0 width means no layout (display:none ancestor): not a measurement, so never cached.
+        const measureTrigger = (gap: number) => {
+            const t = trail.querySelector<HTMLElement>(':scope > [data-bar-overflow]')
+            const w = t?.getBoundingClientRect().width ?? 0
+            return w > 0 ? w + gap : undefined
+        }
+        /** The lead at its natural width, minus how far its crumb titles can still shrink: a title
+         *  keeps 7ch, everything else in the lead is rigid. */
+        const leadMinimum = () => {
+            const prev = lead.style.flex
+            lead.style.flex = '0 0 auto'
+            const titles = [...lead.querySelectorAll<HTMLElement>('[data-bar-title]')]
+            const saved = titles.map(b => b.style.cssText)
+            for (const b of titles)
+                b.style.cssText += ';max-width:7ch;min-width:0;flex:0 0 auto;overflow:hidden'
+            const w = lead.getBoundingClientRect().width
+            titles.forEach((b, i) => (b.style.cssText = saved[i]!))
+            lead.style.flex = prev
+            return Math.max(w, parseFloat(getComputedStyle(lead).minWidth) || 0)
+        }
+        const fit = () => {
+            if (disposed || panelOpen()) return
+            // No layout (the bar sits in a display:none ancestor): every width reads 0, which would
+            // hide everything and cache a bogus trigger width. The ResizeObserver refits on show.
+            if (!bar.clientWidth) return
+            // Droppables live in the lead (locus, facet) as well as the trail.
+            const els = [...bar.querySelectorAll<HTMLElement>('[data-bar-drop]')].filter(levelOf)
+            const regions = [
+                ...lead.querySelectorAll<HTMLElement>(':scope > [data-bar-region]'),
+                ...trail.querySelectorAll<HTMLElement>(':scope > [data-bar-region]'),
+            ]
+            const apply = (hidden: number[]) => {
+                for (const el of els)
+                    el.toggleAttribute('data-bar-hidden', hidden.includes(levelOf(el)!))
+                for (const r of regions) r.removeAttribute('data-bar-hidden')
+                for (const r of regions) r.toggleAttribute('data-bar-hidden', regionEmpty(r))
+            }
+            const cs = getComputedStyle(bar)
+            const gap = px(getComputedStyle(trail).columnGap)
+            const colGap = px(cs.columnGap)
+            const available = bar.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight)
+            const trailWidth = () => trail.getBoundingClientRect().width
+            // What the bar needs: the lead's minimum plus the trail, at the current hiding.
+            const needed = () => leadMinimum() + colGap + trailWidth()
+            // The trigger is taken out of every measurement, then put back untouched (it keeps focus).
+            const trig = trail.querySelector<HTMLElement>(':scope > [data-bar-overflow]')
+            let trigW = measureTrigger(gap) ?? triggerWidth
+            if (trig) trig.style.display = 'none'
+            apply([])
+            const all = needed()
+            let hidden: number[] = []
+            if (all > available) {
+                if (trigW === undefined) {
+                    setProbing(true)
+                    trigW = measureTrigger(gap)
+                    setProbing(false)
+                }
+                if (trigW !== undefined) triggerWidth = trigW
+                const widths = [all]
+                const cumulative: number[] = []
+                for (const level of BAR_DROP_LEVELS) {
+                    cumulative.push(level)
+                    apply(cumulative)
+                    widths.push(needed())
+                }
+                hidden = dropsToFit({
+                    available,
+                    fixed: widths[widths.length - 1]!,
+                    groups: BAR_DROP_LEVELS.map((level, i) => ({
+                        level,
+                        width: widths[i]! - widths[i + 1]!,
+                    })),
+                    trigger: trigW ?? 30,
+                }).hiddenLevels
+            }
+            apply(hidden)
+            if (trig) trig.style.display = ''
+            setDropped(
+                els
+                    .filter(el => hidden.includes(levelOf(el)!))
+                    .map(el => ({ el, label: menuLabel(el) }))
+                    .filter(i => i.label),
+            )
+        }
+        let queued = false
+        refit = () => {
+            if (queued) return
+            queued = true
+            queueMicrotask(() => {
+                queued = false
+                if (disposed) return
+                fit()
+                mutation.takeRecords() // our own probe/trigger churn is not a content change
+            })
+        }
+        const resize = new ResizeObserver(() => {
+            // The bar changed width: the panel closes (its anchor and its fit are stale), then refit.
+            if (disposed) return
+            if (panelOpen()) setPanelOpen(false)
+            fit()
+            mutation.takeRecords()
+        })
+        const mutation = new MutationObserver(refit)
+        resize.observe(bar)
+        mutation.observe(trail, { childList: true, subtree: true, characterData: true })
+        mutation.observe(lead, { childList: true, subtree: true, characterData: true })
+        document.fonts?.ready.then(() => {
+            if (!disposed) refit()
+        })
+        onCleanup(() => {
+            disposed = true
+            resize.disconnect()
+            mutation.disconnect()
+        })
+    })
+    createEffect(on(panelOpen, open => open || refit(), { defer: true }))
+
     // Every region wrapper below carries `styles.vbRegion` in addition to its own slot class —
     // purely so the collapse ladder (ViewBar.module.css) can find "any of the six regions" without
     // a `[class^='vb-']` prefix match, which breaks the moment these classes are hashed (a hashed
@@ -172,6 +336,7 @@ function ViewBar(props: ViewBarProps) {
                     <div
                         class={`${styles.vbRegion} ${cx(styles['vb-identity'], props.parts?.identity)}`}
                         data-testid="vb-identity"
+                        data-bar-region
                     >
                         {identity()}
                     </div>
@@ -180,6 +345,7 @@ function ViewBar(props: ViewBarProps) {
                     <div
                         class={`${styles.vbRegion} ${cx(styles['vb-locus'], props.parts?.locus)}`}
                         data-testid="vb-locus"
+                        data-bar-region
                     >
                         {locus()}
                     </div>
@@ -188,12 +354,14 @@ function ViewBar(props: ViewBarProps) {
                     <div
                         class={`${styles.vbRegion} ${cx(styles['vb-facet'], props.parts?.facet)}`}
                         data-testid="vb-facet"
+                        data-bar-region
                     >
                         {facet()}
                     </div>
                 </Show>
             </div>
             <div
+                ref={trail}
                 class={cx(styles['vb-trail'], props.parts?.trail)}
                 data-testid="vb-trail"
             >
@@ -201,6 +369,7 @@ function ViewBar(props: ViewBarProps) {
                     <div
                         class={`${styles.vbRegion} ${cx(styles['vb-readouts'], props.parts?.readouts)}`}
                         data-testid="vb-readouts"
+                        data-bar-region
                     >
                         {readouts()}
                     </div>
@@ -209,6 +378,7 @@ function ViewBar(props: ViewBarProps) {
                     <div
                         class={`${styles.vbRegion} ${cx(styles['vb-config'], props.parts?.config)}`}
                         data-testid="vb-config"
+                        data-bar-region
                     >
                         {config()}
                     </div>
@@ -217,9 +387,15 @@ function ViewBar(props: ViewBarProps) {
                     <div
                         class={`${styles.vbRegion} ${cx(styles['vb-actions'], props.parts?.actions)}`}
                         data-testid="vb-actions"
+                        data-bar-region
                     >
                         {actions()}
                     </div>
+                </Show>
+                {/* [≡]: only while a droppable element is hidden (or being measured). Before the pane's
+                    [×], which stays the trail's outermost control. */}
+                <Show when={dropped().length > 0 || probing()}>
+                    <BarOverflow items={dropped()} open={panelOpen()} onOpenChange={setPanelOpen} />
                 </Show>
                 {/* The pane's [×]: last in the trail, after the primary action, and never on the
                     collapse ladder (no data-bar-drop, no vbRegion) — it is the only close a split
@@ -261,7 +437,7 @@ export function Crumb(props: {
             <Show when={props.icon}>
                 {i => <Icon value={i()} size={props.iconSize} />}
             </Show>
-            <b data-testid="crumb-title">{props.children}</b>
+            <b data-testid="crumb-title" data-bar-title>{props.children}</b>
         </span>
     )
 }

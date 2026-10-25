@@ -44,4 +44,14 @@ describe('computeAnchorRect', () => {
         expect(result.placement).toBe('below')
         expect(result.top).toBe(20) // viewport.height(300) - panel.height(280)
     })
+
+    test("align end: the panel's right edge meets the anchor's right edge, clamped", () => {
+        const anchor = { top: 10, bottom: 30, left: 330, right: 350, width: 20 } as DOMRect
+        const end = computeAnchorRect(anchor, { width: 150, height: 40 }, VIEWPORT, 'below', 4, 'end')
+        expect(end.left).toBe(200)
+        const start = computeAnchorRect(anchor, { width: 150, height: 40 }, VIEWPORT, 'below')
+        expect(start.left).toBe(VIEWPORT.width - 150)
+        const near = { top: 10, bottom: 30, left: 0, right: 20, width: 20 } as DOMRect
+        expect(computeAnchorRect(near, { width: 150, height: 40 }, VIEWPORT, 'below', 4, 'end').left).toBe(0)
+    })
 })

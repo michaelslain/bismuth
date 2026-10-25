@@ -33,6 +33,8 @@ export type ButtonProps = {
      *  off toggle reserves (IconBrackets `reserved`), so the two share one footprint. Icon kind
      *  only — see buttonClass.ts. */
     bracketRoom?: boolean
+    /** A `normal` icon rests at --text-muted (hover unchanged). Icon kind only; ignored when selected. */
+    quiet?: boolean
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -52,6 +54,7 @@ function Button(props: ButtonProps) {
         'accent',
         'pickOne',
         'bracketRoom',
+        'quiet',
         'class',
         'type',
         'style',
@@ -99,6 +102,7 @@ function Button(props: ButtonProps) {
                     primary: local.primary,
                     pickOne: local.pickOne,
                     bracketRoom: local.bracketRoom,
+                    quiet: local.quiet,
                     class: local.class,
                 },
                 styles,

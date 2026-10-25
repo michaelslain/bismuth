@@ -4,7 +4,7 @@
 // ChatControls.stories.tsx instead. The crumb width cap rides the header's own root
 // (ChatHeader.module.css), so a story needs no host wrapper class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import ChatHeader from './ChatHeader'
 import { makeStubChatSession } from './_stubChatSession'
 import { chatOriginIcon } from './chatOrigin'
@@ -181,6 +181,28 @@ export const Narrow460McpDown: Story = {
             '[data-testid="chat-context"]',
         )!
         expect(context.getBoundingClientRect().right).toBeLessThanOrEqual(
+            bar.getBoundingClientRect().right + 1,
+        )
+    },
+}
+
+/** BELOW the floor tier the title is rigid and wider than its capped crumb, so the lead's measured
+ *  minimum must be the clamped lead itself. At 330px with a server down the lead keeps 7ch of
+ *  title and the overflow trigger [≡] exists. */
+export const Narrow330McpDown: Story = {
+    render: () => <InPane width={330} mcpConnected={1} />,
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        const lead = bar.firstElementChild as HTMLElement
+        const probe = document.createElement('i')
+        probe.style.cssText = 'position:absolute;visibility:hidden;width:7ch'
+        lead.appendChild(probe)
+        const sevenCh = probe.getBoundingClientRect().width
+        probe.remove()
+        await waitFor(() => expect(lead.clientWidth).toBeGreaterThanOrEqual(sevenCh))
+        expect(bar.querySelector('[data-bar-overflow]')).not.toBeNull()
+        const trail = bar.querySelector<HTMLElement>('[data-bar-overflow]')!
+        expect(trail.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right + 1,
         )
     },

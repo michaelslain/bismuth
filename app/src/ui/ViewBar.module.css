@@ -22,8 +22,8 @@
    class string. Hashing breaks that prefix (a hashed local no longer starts with "vb-"), so every
    region wrapper now also carries a shared `.vbRegion` class purely for the ladder to match
    against — see the six wrapper `<div>`s in ViewBar.tsx.
-   app/src/ui/barDropLevels.test.ts is unaffected: it reads the ladder's `[data-bar-drop='N']`
-   attribute selectors here, which stayed literal throughout. */
+   app/src/ui/barDropLevels.test.ts pins that no rule here hides a `data-bar-drop` element by a
+   fixed container width: the one hiding rule keys on `[data-bar-hidden]`. */
 /* ── Shared view bar (named regions, two groups) ───────────────────────────────
    The 36px (2×--row-h) header most content views start with — graph header + base
    ViewBar rows both route through this class: a leading group (identity · locus ·
@@ -184,75 +184,36 @@
    worth: TODAY's word is 14px and the Categories button plus its region gap is 36px. Spacing them
    further apart would fire them before they are needed, which is exactly as wrong as never firing.
 
-   EIGHT TIERS NOW, WRITTEN IN DESCENDING WIDTH ORDER — the order a pane actually narrows through,
-   so reading down this file is reading what happens as the user drags the splitter. The word tiers
-   and the control tiers interleave, which is why each block is headed by WHAT it does rather than
-   by a step number: an ordinal would have to be renumbered every time a bar declares a new drop.
+   THE WIDTH TIERS BELOW ARE THE WORD TIERS AND THE FLOOR TIERS, WRITTEN IN DESCENDING WIDTH ORDER —
+   the order a pane actually narrows through, so reading down this file is reading what happens as
+   the user drags the splitter. Each block is headed by WHAT it does rather than by a step number.
+   `data-bar-drop` controls are not among them: they leave by fit, below.
 
-   ── `data-bar-drop`: FOUR LEVELS, COUNTED UP FROM THE FLOOR ───────────────────────────────────
-   The number is not a priority and not an order of importance. **It indexes the drop tiers from
-   the floor upward: 1 is the LAST control to go, the highest number the FIRST.** A higher number
-   therefore means "gives up sooner", and the widths rise with it:
+   ── `data-bar-drop`: FIT-DRIVEN, NOT WIDTH-DRIVEN ──────────────────────────────────────────────
+   A trail element tagged `data-bar-drop="1|2|3|4"` is DROPPABLE, and nothing here decides when it
+   goes. ui/ViewBar.tsx measures the bar and ui/barFit.ts (`dropsToFit`) picks the levels to hide:
+   4 first, then 3, 2, 1, cumulatively, only when what is left would not otherwise fit. ViewBar sets
+   `data-bar-hidden` on every element (and on a trail region left holding only hidden elements) and
+   the one rule below hides it. A hidden element is reachable through the [≡] panel (ui/BarOverflow),
+   which appears only while something is hidden. The number is an ORDER, not a width: 4 is the first
+   control a bar is willing to lose, 1 the last. An unmarked element never drops.
 
-       level   fires at   who declares it              what it is
-         4        650      chat  · tools + MCP counts   two glyph+number readouts, 84px the pair
-         3        570      chat  · effort Select        68px
-                           calendar · Today             `[▣ today]` + its gap, 74px — see below
-         2        500      chat  · provider Select      119px
-         1        465      calendar · Categories        a panel toggle, 36px with its region gap
+   Before this the levels were fixed container widths (650/570/500/465) measured against the chat and
+   calendar bars, so a bar with spare room still lost controls and a bar with more controls than the
+   table assumed overflowed. Nothing hides by a fixed width any more; the word tiers (`BarLabel`,
+   `BarTwin`) and the floor tiers below are unchanged and still keyed on width.
 
-   THIS DIRECTION IS WHY THE CALENDAR DID NOT HAVE TO BE RENUMBERED when the chat bar arrived and
-   needed three drops, all of them EARLIER than 465. Numbering downward from 1 would have made the
-   chat's first drop a "level 0"; counting up from the floor keeps every existing tag correct and
-   every number monotonic in width. It also matches how a bar is actually authored: you measure the
-   full state, find the first thing you are willing to lose, and that is the widest tier.
-
-   SO A LEVEL NAMES A MEASURED WIDTH, NOT A RANK — DO NOT REUSE ONE YOU HAVE NOT MEASURED YOUR OWN
-   BAR AGAINST. Before these levels existed, tagging a control with an undefined one was a silent
-   no-op: the attribute landed on the DOM, no rule matched, nothing happened. Now it hides that
-   control at a width somebody else measured against a bar with different contents — a louder
-   failure, but still a silent one at authoring time, since nothing typechecks a `data-` attribute.
-   Reaching for `data-bar-drop='2'` because "it is the second thing I would drop" is exactly the
-   mistake: 2 means 500px here. Measure, then pick the level whose width matches, and add a level if
-   none does.
-
-   ── MEASURED against the chat bar, 2026-09-01, same method as the tiers above ──────────────────
-   The chat header is the densest bar in the app — 13 controls — and it had no collapse at all, so
-   below ~650px it simply overflowed and New chat was clipped off the right edge. Its `.vb-trail` is
-   `flex: 0 0 auto` and the crumb is the only elastic thing in the row, so nothing absorbs a trail
-   that is wider than the bar; there is no ellipsis to fall back on once the title is gone.
-
-   TWO COLUMNS, the way the month/day pair was cut above: the app's own default title ("Chat") and a
-   daemon persona name ("Bismuth", the longer of the two shapes a fresh chat can show). Each tier
-   takes the WIDER, rounded UP to a multiple of 5 so the state above a tier always fits before that
-   tier fires — the calendar's rows round down and accept a 3px band of overflow; there was no
-   reason to inherit that.
-
-       state                        "Chat"   "Bismuth"   tier set at
-       full                           629       650          650
-       + tools + MCP counts gone      545       566          570
-       + effort gone                  477       498          500
-       + provider gone                358       379          (the 430 floor already covers it)
-
-   The opencode shape is NARROWER at every step (459/375/375/278) — it declares neither
-   permissionModes nor sessionPicker, so two controls are simply absent — which is why the claude
-   column governs.
-
-   WIDER SHAPES ARE ABSORBED, NOT GIVEN TIERS, exactly as for the calendar: a long session title, or
-   a resolved model id long enough to reach `.chat-model-select`'s 220px cap (+123px on the trail),
-   is answered by that cap plus the crumb's ellipsis. The failure mode stays a shortened title,
-   never a control pushed out of the band.
-
-   THREE THINGS ARE NEVER TAGGED, at any level, and this is a design constraint rather than an
-   omission. The permission-mode `Select`, because its armed tint is the only indication that the
-   agent is writing to the vault unconfirmed and a control that disappears takes that signal with
-   it. The context percentage, because it is the only warning before a turn starts failing. And New
-   chat, because a bar with no way to start a chat is not a narrower bar, it is a broken one. */
+   THREE THINGS ARE NEVER TAGGED in the chat bar, and this stays a design constraint: the
+   permission-mode `Select` (its armed tint is the only sign the agent is writing to the vault
+   unconfirmed), the context percentage (the only warning before a turn fails), and New chat. */
+/* THE ONE HIDING RULE for the fit-driven drop. Scoped to the bar, so an element ViewBar moved into
+   the overflow panel (outside `.viewbar`) shows. */
+.viewbar [data-bar-hidden] { display: none !important; }
 /* ── RE-MEASURED FOR BRACKETS, 2026-09-24 (one-button fix) — the calendar day bar, content box ──
    Every control now carries `[`/`]` and every sibling pair sits --sp-4 apart, so the table above
-   (taken against bare glyphs at a 0px gap) under-states each state by 60-100px. The tiers were NOT
-   moved — the chat bar shares them and the calendar's Narrow* stories pin which state each width is
-   in. Instead the calendar sheds more per tier: TODAY is a BarTwin (drop="late"), worded `[today]`
+   (taken against bare glyphs at a 0px gap) under-states each state by 60-100px. The word and floor
+   tiers were NOT moved — the chat bar shares them and the calendar's Narrow* stories pin which
+   state each width is in. Instead the calendar sheds more per tier: TODAY is a BarTwin (drop="late"), worded `[today]`
    above the 480px late tier and the bare Calendar icon below it, so it never leaves the bar; the
    late tier also drops the crumb's icon and
    tightens the region seams. Measured, container widths:
@@ -278,33 +239,6 @@
   .viewbar [data-bar-twin='early'] > [data-bar-twin-half='full'] { display: none; }
   .viewbar [data-bar-twin='early'] > [data-bar-twin-half='icon'] { display: inline-flex; }
 }
-@container viewbar (max-width: 650px) {
-  /* DROP 4 — the first whole control to go anywhere in the app. The chat bar's tool and MCP counts:
-     curiosities that say how the session is equipped, not how it is doing. The context percentage
-     beside them is NOT tagged and survives every tier.
-
-     THE REGION RULE IS `:not(:has(> :not(...)))`, NOT `:only-child`. `.vb-trail` puts
-     --bar-crumb-gap either side of every region, so a region left standing over children that are
-     all hidden still charges the bar 12px for controls that are not there — and the readouts region
-     holds TWO tagged children plus a context readout that is absent before the first `context`
-     frame, which `:only-child` cannot see. This form asks the real question: is every child of this
-     region one that this tier just hid? It is cumulative, so each tier below names every level at
-     or above its own.
-
-     `:has(> *)` IS NOT DECORATION — it is what stops the predicate being VACUOUS. `:has(> :not(X))`
-     cannot match an element with no ELEMENT children, so `:not(:has(> :not(X)))` is trivially true
-     for an empty region and for a region holding only TEXT. Without the guard, `readouts={"12
-     items"}` — a perfectly ordinary slot — disappears below 650px with no error, no warning and no
-     failing test, and `.vb-lead`, which ViewBar renders unconditionally and which is the `flex: 1 1
-     auto` spacer `space-between` depends on, disappears the moment a bar has no leading slot,
-     snapping the whole trailing group to the left edge. The `:only-child` form this replaced
-     required a child, so it could never do either; generalizing the rule is what created the hazard
-     and this token is what pays for it. Guarded by ui/ViewBar.stories.tsx's
-     TextOnlyRegionSurvivesTheTiers and EmptyLeadKeepsTheTrailPinnedRight, both of which go red if
-     it is removed. */
-  .viewbar [data-bar-drop='4'] { display: none; }
-  .viewbar .vbRegion:has(> *):not(:has(> :not([data-bar-drop='4']))) { display: none; }
-}
 @container viewbar (max-width: 640px) {
   /* ABBREVIATE — long labels swap for their abbreviations. THE `:has()` IS THE WHOLE RULE: only a label that
         actually OFFERED a `short` may lose its `long`. Without it this tier hides the full text of
@@ -315,21 +249,6 @@
         ties at two classes and wins on load order otherwise. */
   .viewbar [data-bar-label]:has([data-bar-abbr='short']) [data-bar-abbr='long'] { display: none; }
   .viewbar [data-bar-label] [data-bar-abbr='short'] { display: inline; }
-}
-@container viewbar (max-width: 570px) {
-  /* DROP 3 — the chat's reasoning-effort picker. It goes before the provider because it is the more
-     derived of the two: effort is a property OF the selected model (it is populated from the
-     `models` frame and disappears entirely for a model with no levels), whereas the provider names
-     which CLI is answering at all. */
-  .viewbar [data-bar-drop='3'] { display: none; }
-  .viewbar .vbRegion:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3']))) { display: none; }
-}
-@container viewbar (max-width: 500px) {
-  /* DROP 2 — the chat's provider picker, the widest single control in that bar at 119px. Losing it
-     leaves the model picker, which is the one that says what is answering; a chat's provider is
-     also the setting a user changes least, and switching it starts a fresh session either way. */
-  .viewbar [data-bar-drop='2'] { display: none; }
-  .viewbar .vbRegion:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2']))) { display: none; }
 }
 @container viewbar (max-width: 480px) {
   /* WORDS, LATE — the late words go, the ones whose icon does not say what they say. */
@@ -349,13 +268,6 @@
   /* …and the seams between regions tighten from --sp-5 to the --sp-4 every sibling pair of bracket
      buttons already keeps. 4px a seam, but the calendar's 510px story needs every one of them. */
   .viewbar .vb-lead, .viewbar .vb-trail { gap: var(--bar-icon-gap); }
-}
-@container viewbar (max-width: 465px) {
-  /* DROP 1 — the LAST whole control goes, because there are no words left to shed. The region wrapper
-        goes with it when nothing else is left standing in it — see DROP 4's comment for why the
-        rule asks that as `:not(:has(> :not(…)))` rather than as `:only-child`. */
-  .viewbar [data-bar-drop='1'] { display: none; }
-  .viewbar .vbRegion:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2'],[data-bar-drop='1']))) { display: none; }
 }
 @container viewbar (max-width: 430px) {
   /* BELOW THE FLOOR. A pane has no minimum width (PaneTree.module.css sets only `min-width: 0`), so

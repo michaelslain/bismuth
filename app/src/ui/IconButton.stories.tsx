@@ -64,6 +64,27 @@ export const States: Story = {
     ),
 }
 
+/** `quiet`: a command icon resting at --text-muted like the toggles beside it (hover still lifts it
+ *  to --accent). Compared against a plain `normal` icon at --fg and an unselected toggle member. */
+export const Quiet: Story = {
+    render: () => (
+        <Row wrap={false} gap="var(--bar-icon-gap)">
+            <IconButton icon="Undo2" label="Undo (plain)" />
+            <IconButton icon="Undo2" label="Undo (quiet)" quiet />
+            <IconButton icon="Star" label="Star (unselected)" variant="unselected" />
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const colour = (l: string) =>
+            getComputedStyle(canvasElement.querySelector(`[aria-label="${l}"]`)!).color
+        expect(colour('Undo (quiet)')).toBe(colour('Star (unselected)'))
+        expect(colour('Undo (quiet)')).not.toBe(colour('Undo (plain)'))
+        expect(
+            canvasElement.querySelector('[aria-label="Undo (quiet)"]')!.hasAttribute('aria-pressed'),
+        ).toBe(false)
+    },
+}
+
 /** Sizes (shares Button's sm/md/lg scale). */
 export const Sizes: Story = {
     render: () => (

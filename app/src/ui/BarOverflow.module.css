@@ -1,0 +1,46 @@
+/* app/src/ui/BarOverflow.module.css — the rows of the [≡] panel only. The box is <Popover>, the
+   anchoring is <AnchoredPopover>, the trigger is <IconButton>; this file is the row layout.
+
+   A ROW READS LIKE THE BAR. The panel renders outside `.viewbar`, so the rules ui/ViewBar.module.css
+   keys on `.viewbar` (icon box, bracket register) do not reach the controls moved into it; the
+   slot below re-states the same box from the same tokens, keyed on Button's data hooks (never a
+   class). The distance BETWEEN controls inside a dropped element is that element's own (its group
+   class travels with it); the distance between two dropped elements is a row gap.
+   ONE COLUMN: the rows are one grid, label column then controls column, so every control starts at
+   the same x whatever its label's length. */
+.rows {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    column-gap: var(--sp-6);
+    row-gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5);
+}
+.row {
+    display: contents;
+}
+/* The slot holds the dropped element itself, moved here for as long as the panel is open. */
+.slot {
+    display: flex;
+    align-items: center;
+    gap: var(--bar-icon-gap);
+    justify-self: start;
+    min-height: var(--h-control);
+}
+/* The bar's icon box and bracket register (ViewBar.module.css `.viewbar [data-kind='icon'][data-size='sm']`
+   and `.viewbar button[data-kind='icon']`), from the same tokens. */
+.rows:focus {
+    outline: none;
+}
+/* A plain icon rests muted, as in the bar (a moved control loses its bar ancestor's muting rule). */
+.slot [data-kind='icon'][data-state='normal']:not(:hover):not(:disabled) {
+    color: var(--text-muted);
+}
+.slot [data-kind='icon'][data-size='sm'] {
+    min-width: var(--iconbar-width, var(--bar-icon-size));
+    height: var(--bar-icon-size);
+}
+.slot button[data-kind='icon'] {
+    padding: 0;
+    font-size: var(--iconbar-glyph, var(--fs-ui));
+}

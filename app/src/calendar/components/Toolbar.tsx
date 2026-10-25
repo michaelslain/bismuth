@@ -71,17 +71,21 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                 {/* data-bar-yields-identity: the bar drops its crumb title at the floor tier
                     (ViewBar.module.css) so these segments keep the room. display: contents, so layout is unchanged. */}
                 <div data-bar-yields-identity class={styles.yields}>
-                    <SegmentedToggle
-                        class={styles.views}
-                        value={nav.view.value}
-                        onChange={id => (nav.view.value = id)}
-                        size="sm"
-                        options={VIEWS.map(v => ({
-                            id: v.id,
-                            title: v.label,
-                            label: <BarLabel long={v.label} short={v.short} />,
-                        }))}
-                    />
+                    {/* The droppable is an inner element: the yield marker above must stay in the
+                        bar while the toggle sits in the [≡] panel, or the crumb comes back. */}
+                    <div data-bar-drop="3" data-bar-menu-label="view" class={styles.yields}>
+                        <SegmentedToggle
+                            class={styles.views}
+                            value={nav.view.value}
+                            onChange={id => (nav.view.value = id)}
+                            size="sm"
+                            options={VIEWS.map(v => ({
+                                id: v.id,
+                                title: v.label,
+                                label: <BarLabel long={v.label} short={v.short} />,
+                            }))}
+                        />
+                    </div>
                 </div>
             </CalendarNavContext.Provider>
         ),
@@ -98,7 +102,8 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
             <Show when={!ctx?.isTasks}>
                 {/* A worded/icon twin (ui/BarTwin.tsx): below the viewbar tier where the word goes, the
                     bare icon takes over, so an OFF toggle never draws icon-only brackets. The wrapper
-                    carries data-bar-drop, so the floor hides the whole pair. */}
+                    carries data-bar-drop, so the pair leaves the bar together, and only when the bar
+                    cannot hold it (it stays reachable from the `[≡]` menu). */}
                 <Text as="span" inherit data-bar-drop="1">
                     <BarTwin
                         drop="early"

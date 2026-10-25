@@ -8,8 +8,8 @@
 //   config    [− 100% + fit]   [highlight draw scratch]   [dark]   pdf  ·  [− 100% + fit] [draw] on an image
 //   actions   [to markdown] [bookmarks]  [open-externally reveal]   pdf only · file actions Tauri
 //
-// GROUPS ARE SPACING, NOT DIVIDERS, and the bar has exactly two visible distances, ink to ink:
-// ~16.5px between neighbours inside a group, ~24.5px across a group seam. Every icon carries the same
+// ONE DISTANCE: every pair of neighbouring controls sits ~16.5px apart, ink to ink, inside a group
+// and between groups alike; the groups exist for the drop ladder, not as visible gaps. Every icon carries the same
 // unpainted bracket room (a plain icon passes IconButton `bracketRoom`, reserving `[ ]` exactly as an
 // off toggle does), so the distance never depends on which kind of icon sits where; two adjacent ON
 // toggles (e.g. DRAW + SCRATCH) keep ~7px bracket to bracket, never a fused frame. Text (readouts, `fit`) has no bracket room, so its gaps
@@ -21,11 +21,11 @@
 // it already says whether the page is at fit width. A freshly opened PDF therefore has no control
 // in its selected state at all.
 //
-// NARROW PANES use the shared collapse ladder only (`data-bar-drop`, ui/ViewBar.module.css): the
-// file actions, the zoom steps and DARK at 4 (650px; the `.settings` default and its palette
-// command still set it), the page readout at 2 (500px). FIT, the mode
-// toggles and BOOKMARKS never drop — they are the only way into what they open. There is no second
-// row.
+// NARROW PANES use the shared fit-driven drop only (`data-bar-drop`, ui/ViewBar.tsx): the file
+// actions, the zoom steps and DARK are tagged 4 and the page readout 2, and a tagged control leaves
+// the bar only when the bar cannot hold it, then lives in the bar's `[≡]` menu (the `.settings`
+// default and the palette command still set DARK). FIT, the mode toggles and BOOKMARKS never drop —
+// they are the only way into what they open. There is no second row.
 import { createSignal, type JSX, Show } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
@@ -116,7 +116,11 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                         {/* The least essential thing in the trail: a reading position is worth
                             less than the controls that edit the page. The wrapper carries the tag
                             because PageReadout's props are its interface, not a pass-through. */}
-                        <div class={styles.group} data-bar-drop="2">
+                        <div
+                            class={styles.group}
+                            data-bar-drop="2"
+                            data-bar-menu-label="page"
+                        >
                             <PageReadout
                                 current={() => props.currentPage?.() ?? 0}
                                 count={() => props.pageCount?.() ?? 0}
@@ -148,8 +152,12 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                     </Show>
                     <Show when={props.kind() === 'image' && props.imageSize?.()}>
                         {size => (
-                            <div class={styles.group} data-bar-drop="2">
-                                <Label tone="muted" class={styles.readout}>
+                            <div
+                                class={styles.group}
+                                data-bar-drop="2"
+                                data-bar-menu-label="size"
+                            >
+                                <Label tone="muted">
                                     {`${size().w} × ${size().h}`}
                                 </Label>
                             </div>
@@ -231,7 +239,11 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                     {/* How the page is shown, not what is done to it, so its own group after
                         the annotate tools. */}
                     <Show when={pdf()}>
-                        <div class={styles.tools} data-bar-drop="4">
+                        <div
+                            class={styles.tools}
+                            data-bar-drop="4"
+                            data-bar-menu-label="dark mode"
+                        >
                             <IconButton
                                 icon="Moon"
                                 label="Dark mode"
@@ -269,6 +281,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 disabled={props.converting?.() ?? false}
                                 data-testid="preview-convert"
                                 data-bar-drop="4"
+                                data-bar-menu-label="file"
                                 onClick={() => props.onConvert?.()}
                             />
                             <IconButton
@@ -290,6 +303,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                         <div
                             class={styles.tools}
                             data-bar-drop="4"
+                            data-bar-menu-label="file"
                             data-testid="preview-file-actions"
                         >
                             <IconButton

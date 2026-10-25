@@ -42,6 +42,8 @@ export type AnchoredPopoverProps = {
     /** Merged onto the panel (root positioned element), alongside the module's own class. */
     class?: string
     placement?: 'below' | 'above'
+    /** Which anchor edge the panel lines up with: `start` its left (default), `end` its right. */
+    align?: 'start' | 'end'
     /** Extra class merged onto the backdrop, alongside the module's own class — Select's
      *  `.ui-select-backdrop` carries no styling of its own anymore, but bases/PropertyValueEditor.tsx
      *  still needs a stable element to attribute-select (see `backdropAttrs`). */
@@ -69,6 +71,8 @@ const AnchoredPopover: Component<AnchoredPopoverProps> = props => {
             { width: panelRect.width, height: panelRect.height },
             { width: window.innerWidth, height: window.innerHeight },
             props.placement ?? 'below',
+            undefined,
+            props.align ?? 'start',
         )
         setPos({ top, left })
     }

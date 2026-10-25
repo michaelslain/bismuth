@@ -74,7 +74,6 @@ import {
     barItems,
     median,
     probeBar,
-    SEAM_DESIGN_INK_GAP,
     WITHIN_INK_GAP,
 } from './ui/_previewBarAssertions'
 import TextButton from './ui/TextButton'
@@ -2226,8 +2225,8 @@ function chPx(el: HTMLElement): number {
 /** The PDF bar (preview/PreviewBar) at narrow panes, WITH the desktop app's native actions
  *  (`showNativeActions`). ONE ROW, ALWAYS: the bar is the only `[data-viewbar]` in the pane, 36px
  *  tall, and every painted control lies whole inside it, on one centre line, with no overlap. Only
- *  the shared ladder sheds controls — −, % and + plus the file actions at its 650px tier, the page
- *  readout at 500px — while FIT, highlight draw scratch and bookmarks stay at every width tested.
+ *  the FIT rule sheds controls (an element drops only when it does not fit; the rest sit behind
+ *  `More controls`) — −, % and + plus the file actions first — while FIT, highlight draw scratch and bookmarks stay at every width tested.
  *  The gaps between controls are only the bar's two spacing tokens, and the filename keeps ≥ 6ch,
  *  ellipsized. The error state below shows its single action centred under the message. */
 export const PdfViewBarNarrow: Story = {
@@ -2261,6 +2260,14 @@ export const PdfViewBarNarrow: Story = {
             const bars = frame.querySelectorAll('[data-viewbar]')
             expect(bars.length, `${w}px: one bar, no second row`).toBe(1)
             const bar = bars[0] as HTMLElement
+            // The fit rule measures after layout (a ResizeObserver): wait until the bar has settled
+            // into the state its width calls for before measuring anything.
+            await waitFor(() =>
+                expect(
+                    bar.querySelector('[data-testid="pdf-zoom-steps"]')!.hasAttribute('data-bar-hidden'),
+                    `${w}px: fit settled`,
+                ).toBe(w <= 480),
+            )
             const b = bar.getBoundingClientRect()
             expect(b.width).toBeCloseTo(w, 0)
             expect(b.height, `${w}px: bar height`).toBeCloseTo(36, 0)
@@ -2268,7 +2275,7 @@ export const PdfViewBarNarrow: Story = {
             const p = probeBar(bar)
             expect(
                 p.strayGaps,
-                `${w}px: ink gaps ${JSON.stringify(p.inkGaps)}: within ${JSON.stringify(p.withinGaps)}, seams ${JSON.stringify(p.seamGaps)}, seam margin ${p.seamMargin}`,
+                `${w}px: ink gaps ${JSON.stringify(p.inkGaps)}: within ${JSON.stringify(p.withinGaps)}, seams ${JSON.stringify(p.seamGaps)}`,
             ).toEqual([])
             expect(p.outside, `${w}px: controls outside the bar`).toEqual([])
             expect(p.overlaps, `${w}px: overlapping controls`).toEqual([])
@@ -2285,18 +2292,28 @@ export const PdfViewBarNarrow: Story = {
             ).toBeGreaterThanOrEqual(6 * ch)
             expect(getComputedStyle(title).textOverflow).toBe('ellipsis')
 
-            // The ladder, on the bar's CONTENT box (18px padding a side).
-            const content = w - 36
+            // The FIT rule, not fixed breakpoints: an element drops only when it does not fit beside
+            // the filename's 7ch, cumulatively level 4 (zoom steps, file actions) first. Measured in
+            // this story (the PDF here never loads, so there is no page readout to drop): the full
+            // trail fits at 520px and wider, level 4 is hidden at 480px and below. A hidden element
+            // is behind [≡].
+            const level4Hidden = w <= 480
+            const hidden = (el: Element) => el.hasAttribute('data-bar-hidden')
             const steps = bar.querySelector('[data-testid="pdf-zoom-steps"]') as HTMLElement
-            expect(getComputedStyle(steps).display === 'none', `${w}px: zoom steps dropped`).toBe(
-                content <= 650,
+            expect(hidden(steps), `${w}px: zoom steps hidden`).toBe(level4Hidden)
+            expect(getComputedStyle(steps).display === 'none', `${w}px: zoom steps display`).toBe(
+                level4Hidden,
             )
             for (const label of ['Open in default app', 'Reveal in file manager']) {
                 const btn = within(bar).getByLabelText(label)
                 expect(btn.getClientRects().length === 0, `${w}px: ${label} dropped`).toBe(
-                    content <= 650,
+                    level4Hidden,
                 )
             }
+            expect(
+                !!bar.querySelector('[data-bar-overflow]'),
+                `${w}px: [≡] present exactly when something dropped`,
+            ).toBe(level4Hidden)
             for (const label of ['Fit width', 'Highlight text', 'Draw', 'Scratch paper', 'Bookmarks']) {
                 expect(
                     within(bar).getByLabelText(label).getClientRects().length,
@@ -2395,16 +2412,15 @@ export const PdfViewBarLayout: Story = {
         const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
         await waitFor(() => expect(drawBtn.disabled).toBe(false))
 
-        // Two ink-to-ink spacings (~16.5px inside a group, ~24.5px across a seam), five group seams, two annotate within-group gaps (highlight/draw/
+        // One ink-to-ink spacing (~16.5px) between every pair of controls, no wider gaps, two annotate gaps (highlight/draw/
         // scratch), one glyph size, one icon box, zero frames at rest.
         const rest = probeBar(bar)
         expect(
             rest.strayGaps,
-            `ink gaps ${JSON.stringify(rest.inkGaps)}: within ${JSON.stringify(rest.withinGaps)}, seams ${JSON.stringify(rest.seamGaps)}, seam margin ${rest.seamMargin}`,
+            `ink gaps ${JSON.stringify(rest.inkGaps)}: within ${JSON.stringify(rest.withinGaps)}, seams ${JSON.stringify(rest.seamGaps)}`,
         ).toEqual([])
         expect(median(rest.withinGaps), `within ink gaps ${JSON.stringify(rest.withinGaps)}`).toBeCloseTo(WITHIN_INK_GAP, 0)
-        expect(median(rest.seamGaps), `seam ink gaps ${JSON.stringify(rest.seamGaps)}`).toBeCloseTo(SEAM_DESIGN_INK_GAP, 0)
-        expect(rest.groupBoundaries, `group seams in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(5)
+        expect(rest.groupBoundaries, `wide gaps in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(0)
         expect(rest.annotateGaps, `annotate within-group gaps in ink gaps ${JSON.stringify(rest.inkGaps)}`).toBe(2)
         expect(rest.glyphSizes).toEqual(['12x12'])
         expect(rest.iconHeights, 'icon-only heights').toHaveLength(1)

@@ -11,7 +11,7 @@
 // ladder itself reads `data-bar-label` / `data-bar-abbr` / `data-bar-drop`, which are runtime
 // hooks — the two forms mean different things and are not interchangeable.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import type { JSX } from 'solid-js'
 import ViewBar, { Crumb } from './ViewBar'
 import { IconTextButton } from './IconTextButton'
@@ -167,21 +167,44 @@ export const LabelsAbbreviated: Story = {
     },
 }
 
-/** TIER 3 — the late word finally goes, and TIER 4 takes the whole `data-bar-drop="1"` control
- *  with its region, so the bar stops paying a region gap for a control that is not there. */
+/** TIER 3 — the late word finally goes, and the `data-bar-drop="1"` control leaves with its region
+ *  once it genuinely does not fit: a control drops by FIT, not at a fixed width, so the frame is
+ *  the width where the lead's rigid part plus the never-dropping action leaves no room for it
+ *  (measured: it still fits at 170px, is hidden at 160px). It moves into the [≡] panel, so the bar
+ *  stops paying a region gap for a control that is not there. */
 export const LateLabelAndControlDropped: Story = {
-    render: () => <Bar width={470} />,
+    render: () => <Bar width={150} />,
     play: async ({ canvasElement }) => {
         const r = canvasElement
+        // The fit rule measures after layout (a ResizeObserver), so wait for it to settle.
+        await waitFor(() =>
+            expect(shown(r.querySelector('[data-testid="drop1-btn"]')), 'drop1 hidden').toBe(false),
+        )
         // `today` swaps to its bare twin: the word is gone and no off-icon brackets are painted.
         expect(halfKind(r, 'late-btn')).toBe('icon')
         expect(bracketSpans(twinHalf(r, 'late-btn')!)).toHaveLength(0)
-        expect(shown(r.querySelector('[data-testid="drop1-btn"]'))).toBe(false)
         // The region wrapper goes too — otherwise `.vb-trail`'s gap survives its only child.
-        expect(shown(r.querySelector('[data-testid="vb-config"]'))).toBe(false)
+        expect(shown(r.querySelector('[data-testid="vb-config"]')), 'config region hidden').toBe(false)
+        // The dropped control is reachable: [≡] is present.
+        expect(r.querySelector('[data-bar-overflow]'), '[≡] present').not.toBeNull()
         // What must NEVER drop: navigation and the primary action.
         expect(twinHalf(r, 'late-btn')).not.toBeNull()
         expect(twinHalf(r, 'action-btn')).not.toBeNull()
+    },
+}
+
+/** The same bar at 260px: the labels have collapsed (tiers 1 and 2) but the `data-bar-drop="1"`
+ *  control still FITS, so it stays and there is no [≡]. Hiding is by fit, never by tier. */
+export const ControlKeptWhereItFits: Story = {
+    render: () => <Bar width={260} />,
+    play: async ({ canvasElement }) => {
+        const r = canvasElement
+        // The fit pass runs from a ResizeObserver, which fires before the frame after mount paints:
+        // two animation frames (and the fonts) are the settle point for an assertion that nothing hid.
+        await document.fonts.ready
+        for (let i = 0; i < 2; i++) await new Promise(res => requestAnimationFrame(res))
+        expect(shown(r.querySelector('[data-testid="drop1-btn"]'))).toBe(true)
+        expect(r.querySelector('[data-bar-overflow]')).toBeNull()
     },
 }
 

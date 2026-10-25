@@ -117,6 +117,76 @@ export const Full: Story = {
             '[aria-label="Reset zoom"]',
         )!
         expect(resetZoom).not.toBeNull()
+        // The dock is the bar's language: no shadow, and no divider rule on any group (spacing alone
+        // groups them).
+        const dock = canvasElement.querySelector<HTMLElement>('[data-draw-toolbar]')!
+        expect(getComputedStyle(dock).boxShadow, 'dock box-shadow').toBe('none')
+        for (const g of dock.children) {
+            expect(
+                parseFloat(getComputedStyle(g).borderRightWidth),
+                `group border-right (${g.getAttribute('class')})`,
+            ).toBe(0)
+        }
+        // The zoom group's ink gaps (`−` `100%` `+` `reset`) match the tool group's, glyph art to
+        // glyph art: an svg's art is its getBBox mapped to the screen, a label's is its canvas ink.
+        const art = (el: Element) => {
+            const svg = el.querySelector('svg')
+            if (svg && el.tagName === 'BUTTON') {
+                const b = (svg as SVGSVGElement).getBBox()
+                const r = svg.getBoundingClientRect()
+                const k = r.width / (svg as SVGSVGElement).viewBox.baseVal.width
+                return [r.left + b.x * k, r.left + (b.x + b.width) * k]
+            }
+            const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+            const t = w.nextNode() as Text
+            const range = document.createRange()
+            range.selectNodeContents(t)
+            const left = range.getBoundingClientRect().left
+            const cs = getComputedStyle(t.parentElement!)
+            const ctx = document.createElement('canvas').getContext('2d')!
+            ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+            const m = ctx.measureText(t.textContent!.trim())
+            return [left - m.actualBoundingBoxLeft, left + m.actualBoundingBoxRight]
+        }
+        const gapsOf = (els: Element[]) =>
+            els.slice(1).map((e, i) => art(e)[0]! - art(els[i]!)[1]!)
+        const label = [...steps.querySelectorAll('span')].find(
+            e => !e.childElementCount && /%$/.test(e.textContent!),
+        )!
+        const zoomGaps = gapsOf([
+            canvasElement.querySelector('[aria-label="Zoom out"]')!,
+            label,
+            canvasElement.querySelector('[aria-label="Zoom in"]')!,
+            resetZoom,
+        ])
+        const toolGaps = gapsOf(
+            ['Pen', 'Highlighter', 'Eraser'].map(
+                n => canvasElement.querySelector(`[aria-label="${n}"]`)!,
+            ),
+        )
+        const toolMedian = [...toolGaps].sort((a, b) => a - b)[1]!
+        for (const g of zoomGaps) {
+            expect(
+                Math.abs(g - toolMedian),
+                `zoom ink gaps ${JSON.stringify(zoomGaps)} vs tool gaps ${JSON.stringify(toolGaps)}`,
+            ).toBeLessThanOrEqual(1)
+        }
+        // The size dots: dot art to dot art, the group's mean ink gap matches the tool group's mean.
+        const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+        const dots = sizeButtons.map(b => b.querySelector('circle')!.getBoundingClientRect())
+        const dotGaps = dots.slice(1).map((r, i) => r.left - dots[i]!.right)
+        expect(
+            Math.abs(mean(dotGaps) - mean(toolGaps)),
+            `size dot ink gaps ${JSON.stringify(dotGaps)} vs tool gaps ${JSON.stringify(toolGaps)}`,
+        ).toBeLessThanOrEqual(1)
+        // Import, undo and redo are commands resting at the same muted ink as the (unselected) tool
+        // icons beside them, not at full --text.
+        const restColor = (sel: string) =>
+            getComputedStyle(canvasElement.querySelector(sel)!).color
+        const toolRest = restColor('[aria-label="Highlighter"]')
+        for (const l of ['Import image', 'Undo', 'Redo']) {
+            expect(restColor(`[aria-label="${l}"]`), `${l} resting colour`).toBe(toolRest)
+        }
     },
 }
 

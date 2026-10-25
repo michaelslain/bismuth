@@ -166,28 +166,16 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
             </div>
         ),
         readouts: (
-            /* LAST TO GO (see the level note below), and the only thing here tagged at all. It is the widest control in the
-               bar (~173px), it is a recap rather than something you act on, and every number in it
-               is still on screen at the end of the session. Level 1 is the NARROWEST tier and so
-               the LAST to go — the ladder counts up from the floor, and a level names a measured
-               WIDTH, not a rank. Do not reuse a level you have not measured this bar against: the
-               numbers 2-4 were measured against the CHAT bar, and nothing typechecks a `data-`
-               attribute, so a wrong one drops this control at someone else's width in silence.
-
-               IT ALSO ABBREVIATES ON THE WAY DOWN, and that is what saves this bar from needing a
-               tier of its own. Whole and un-abbreviated the tally is ~173px — by far the largest
-               single thing in the row — and measuring the states the way the ladder's comment
-               prescribes puts "everything present, late words gone" at 457px of content, i.e. 8px
-               under the drop-1 tier at 465. The bar technically FITS there and still reads wrong:
-               `justify-content: space-between` has ~9px left to separate the two groups, which is
-               less than the 12px gap INSIDE each of them, so the count and the tally fuse into one
-               string ("1 / 3 HARD 0"). No numeric probe saw that; the screenshot did. Abbreviating
-               at the existing 640 tier takes the tally to ~62px and the same state to 410px, which
-               clears 465 by 55px — so the shared ladder absorbs this bar with no near-duplicate
-               tier bolted on 4px from an existing one. */
+            /* Drops when the bar cannot hold it, reachable from [≡]. It is the widest control in the
+               bar (~173px) and a recap rather than something you act on: every number in it is
+               still on screen at the end of the session. Level 1 is the narrowest tier and so the
+               last to go. It also abbreviates on the way down (BarLabel), taking the tally from
+               ~173px to ~62px, so the count and the tally keep a gap wider than the 12px inside
+               each group instead of fusing into one string. */
             <div
                 class={styles['tally']}
                 data-bar-drop="1"
+                data-bar-menu-label="tally"
                 data-testid="fc-tally"
             >
                 <Text as="span" inherit class={styles['a']}>

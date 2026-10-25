@@ -5,40 +5,35 @@
  * that used to need the bare literal class now read the `data-draw-toolbar` attribute Toolbar.tsx's
  * root always carries instead, so this rule no longer needs `:global()` to stay reachable from
  * elsewhere — Toolbar.tsx is this class's one real owner either way. */
-/* `width: max-content` under the `max-width` cap, AND a row that may wrap. The two go together and
-   neither closes the bug alone, which is worth saying because the first is the obvious half:
-   `max-content` sizes the box to the row it actually contains, but `max-width` still clamps it
-   against a narrow surface, and a row that cannot wrap then keeps going past that clamp — which is
-   exactly what shipped: the pen toggle, the first colour and undo/redo painted OUTSIDE their own
-   border and the smoothing zigzag was clipped (`preview-pageink--pdf-ink-on-second-page-only`).
-   With `.draw-row` allowed to wrap, the clamp makes the groups fall onto a second line instead and
-   the box always contains what is in it. Wide surfaces are unchanged — one row, hugging. */
+/* The ink dock in the PDF view bar's language. It still FLOATS (absolute, bottom-centre), but it
+   reads as the same toolbar: the bar's ground (--bg) edged by the bar's own hairline (--rule-soft),
+   square corners, no shadow. One row at band height; a surface too narrow for it wraps whole groups
+   onto further rows (never a group split, never a control outside the edge). `width: max-content`
+   under the `max-width` cap hugs the row on a wide surface and lets the groups wrap on a narrow one.
+   Every control sits the same distance from its neighbour (--bar-icon-gap, inside a group and
+   between groups alike, the view bar's one gap), and there are no divider rules. Resting icons are --text-muted; the selected tool, colour, size,
+   smoothing and paper take Button's own accent-bracket state, identical to the bar's ON toggle. */
 .draw-toolbar {
   position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
-  display: flex; flex-direction: column; gap: var(--sp-2); align-items: center; padding: var(--sp-4) var(--sp-4);
+  display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center;
+  column-gap: var(--bar-icon-gap); row-gap: 0;
+  box-sizing: border-box; min-height: var(--h-band); padding: 0 var(--sp-5);
   width: max-content; max-width: calc(100% - 24px);
-  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0);
-  box-shadow: var(--lift);
+  background: var(--bg); border: var(--rule-soft); border-radius: var(--r-0);
+  color: var(--text-muted);
 }
-/* One row of groups while there is room for one; on a surface too narrow for the dock's own width
-   the groups wrap rather than spilling out of the border (see the box note above). */
-.draw-row { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); align-items: center; }
-/* Group dividers are hairline rules matching the design's .ddiv. Sibling bracket buttons inside
-   a group sit `--sp-4` apart, same as everywhere else (DESIGN.md: no exception for icon runs). */
-.draw-group { display: flex; gap: var(--sp-4); align-items: center; padding-right: var(--sp-4); margin-right: var(--sp-2); border-right: 1px solid var(--border-soft); }
-/* Drop the trailing divider on the last group of each row. */
-.draw-group:last-child { border-right: none; padding-right: 0; margin-right: 0; }
-/* A 2-row column inside a group (colors/sizes, smooth/paper, undo-redo/zoom). Both rows
-   left-align and share the same gap so segments line up into a tidy grid and the dock
-   stays half as wide as a single long row. */
-.draw-vstack { display: flex; flex-direction: column; gap: var(--sp-2); }
-/* Passed to each vstack toggle's own `class` prop (SegmentedToggle.tsx merges it onto its root
-   alongside its own hashed `.segmented` class) — no more descendant reach into another
-   primitive's internals. */
-.draw-vstack-seg { gap: var(--sp-4); justify-content: flex-start; }
-/* The zoom group's own row — `ui/ZoomSteps` (`− 100% +`, the PDF zoom's shape) and a `[reset]`
-   TextButton, inside `ui/IconBar bare` (that primitive IS the flex + `--bar-icon-gap` row, so there
-   is no local rule to keep). Undo/redo above it are two bare IconButtons in the same IconBar.
+/* The dock holds two rows split by meaning: the pen row (tools, colour, size, smoothing) and the page
+   row (paper, undo/redo, zoom). Wide, they share one line; narrow, the dock breaks between them and
+   each row wraps its own groups, all left-aligned so group edges line up. `max-width: 100%` lets a
+   row wrap inside the dock instead of overflowing it. */
+.draw-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; column-gap: var(--bar-icon-gap); flex: 0 0 auto; max-width: 100%; }
+/* One group: its controls --bar-icon-gap apart. Groups are at least a band row tall (minus the
+   dock's 2px hairline) so a wrapped second row keeps the band rhythm. */
+.draw-group { --ink-inset: 0px; display: flex; align-items: center; gap: calc(var(--bar-icon-gap) - 2 * var(--ink-inset)); margin-inline: calc(-1 * var(--ink-inset)); flex: 0 0 auto; min-height: calc(var(--h-band) - 2px); }
+/* Segmented rows sit --sp-4 apart by default, which is --bar-icon-gap; stated through the group's
+   own token anyway so the two cannot drift. */
+.draw-group > [data-segmented] { gap: calc(var(--bar-icon-gap) - 2 * var(--ink-inset)); }
+/* Undo/redo and the zoom run are plain IconButtons/ZoomSteps inside `.draw-group`.
 
    The colour options compose `ui/Swatch static` instead of a hand-rolled <svg><rect>. The square
    is a 16px square, and `dotIcon` next to it draws in a 16px box too, so the colour row and the
@@ -48,3 +43,27 @@
    at all. The ring is `--rule` (the `--border` hairline), not `--border-soft`: this square has to
    survive sitting on its own near-black fill. */
 .draw-swatch { width: 16px; height: 16px; border: var(--rule); }
+
+/* INK COMPENSATION. A group's controls are laid out --bar-icon-gap apart, but the whitespace a glyph
+   keeps inside its own box is not the same for every glyph: library icons keep ~1.2px of air inside
+   their 12px box each side, and a colour swatch's brackets are drawn at a 16px box by ui/IconBrackets'
+   own `:not(:has(svg))` recipe (1.9px wider each side than the icon recipe). `--ink-inset` is that
+   extra air; the group closes it up (gap shrinks by two insets, and the group's outer edges trim one
+   inset each) so glyph ink lands the same distance apart in every group: --bar-icon-gap + bracket room
+   between every neighbour pair, groups included. The paper, smoothing and lasso glyphs are drawn
+   cropped to their ink, and the size dots are measured by their 16px box, so those groups carry none. */
+.draw-group-icons { --ink-inset: 1.2px; }
+.draw-group-swatch { --ink-inset: 1.9px; }
+/* The size dots sit in 16px boxes but the dot art is 5-15px across, so the box holds up to ~5px of
+   air each side; closing it by 4px puts the dot-to-dot ink gap on the dock's ~17px rhythm. */
+.draw-group-size { --ink-inset: 4px; }
+
+/* The zoom group: `−` `100%` `+` `reset`. ui/ZoomSteps steps its internal gap up to --sp-5 inside a
+   bar whose icons carry unpainted bracket room, which `--ink-inset` (the air an icon keeps inside
+   its own box) does not reach, so the run read ~2.4px wider ink to ink than the other groups. The
+   run and the `reset` beside it close up by the same two insets the group formula takes off
+   --bar-icon-gap, from --sp-5: `−` `100%` `+` `reset` then sit the groups' ~16.5px apart.
+   `.draw-group .draw-zoom` is two classes so it outranks ZoomSteps' own `.wide` gap whatever the
+   stylesheet order. */
+.draw-group-zoom { gap: calc(var(--sp-5) - 2 * var(--ink-inset)); }
+.draw-group .draw-zoom { gap: calc(var(--sp-5) - 2 * var(--ink-inset)); }

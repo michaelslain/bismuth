@@ -353,7 +353,7 @@ Several tests exist to fail when two things that must agree drift apart. If one 
 | `app/src/cssComments.test.ts` | A CSS comment contains `*/` early and swallows the next rule |
 | `app/src/ui/oneButton.test.ts` | Production code renders a raw `<button>` or imports `ui/Button` directly |
 | `app/src/ui/uiLint.test.ts` | The lowercase-label and icon-name lint helpers for `TextButton` and `IconButton` regress |
-| `app/src/ui/barDropLevels.test.ts` | A `data-bar-drop` tag on a view-bar control is not in the collapse ladder |
+| `app/src/ui/barDropLevels.test.ts` | A `data-bar-drop` level is not one `barFit.ts` defines, or the view bar hides controls by width instead of by fit |
 | `core/test/guides.test.ts` | A Bases authoring page is missing for a view kind, lacks its three fixed sections, or cites a missing docs page |
 | `cli/test/guideCommands.test.ts` | A `bismuth …` command shown in a guide is not a real CLI command |
 | `cli/test/mcpParity.test.ts` | An MCP tool has no CLI twin in `CLI_TWINS`, or a twin names a missing command |

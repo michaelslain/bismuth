@@ -10,7 +10,7 @@
 // `Narrow*` story pins a real width instead. The widths sit just inside each measured tier — see
 // the ladder's own comment in global.css's `ui/ui.css` section for the measurement.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { calendarSlots, Toolbar, type CalendarSlotsCtx } from './Toolbar'
 import ViewBar, { Crumb } from '../../ui/ViewBar'
@@ -62,6 +62,12 @@ function InBaseBar(props: { width: number }) {
     )
 }
 
+/** Two frames: the bar's fit runs from a ResizeObserver, after the first layout. */
+const settled = () =>
+    new Promise(r =>
+        requestAnimationFrame(() => requestAnimationFrame(() => r(null))),
+    )
+
 const shown = (el: Element | null) =>
     !!el && !!(el as HTMLElement).getClientRects().length
 
@@ -102,6 +108,10 @@ const state = (root: Element) => ({
     todayWord: todayText(root),
     categoriesShown: categoryTwins(root).some(shown),
 })
+
+/** The [≡] overflow trigger (ui/BarOverflow): present only while a droppable control is hidden. */
+const overflowTrigger = (root: Element) =>
+    root.querySelector('[aria-label="More controls"]')
 
 /** The shipping shape at a comfortable width. Time nav and the date sit left, the period switcher
  *  beside them, and the base's own name keeps its full label on the far left. */
@@ -205,6 +215,10 @@ export const Narrow620: Story = {
             todayWord: 'today',
             categoriesShown: true,
         })
+        // Everything fits at this width, so nothing is hidden and there is no [≡].
+        await settled()
+        expect(overflowTrigger(canvasElement)).toBeNull()
+        expect(canvasElement.querySelector('[data-bar-hidden]')).toBeNull()
     },
 }
 
@@ -228,9 +242,9 @@ export const Narrow510: Story = {
 
 /** TIER 4 — 480px (a 444px container), the late-word tier: the narrowest pane where every remaining
  *  control still fits and the crumb and date are still whole. 430, one tier down, is the actual
- *  floor — that is where `.vb-lead` starts scrolling and gains a fade mask. Categories drops out
- *  entirely here — it toggles a side panel that has no room to render at this width either — and
- *  its region goes with it, so the bar stops paying a gap for a control that is not there.
+ *  floor — that is where `.vb-lead` starts scrolling and gains a fade mask. Categories is droppable
+ *  but it still FITS here (the bar drops by fit, not by a fixed width), so it stays and there is no
+ *  [≡]; Narrow365ViewToggleWhole is the narrowest width it fits whole.
  *  This story is why the tiers were re-cut against the DAY label rather than the month one: at 460
  *  the crumb read "Calend…" and the date "Mon 12 J…" while every numeric check still passed, since
  *  the regions were correctly sized and it was their children being eaten. */
@@ -244,9 +258,10 @@ export const Narrow480LateWords: Story = {
             actionWords: '',
             viewName: 'm',
             todayWord: '',
-            categoriesShown: false,
+            categoriesShown: true,
         })
-        expect(shown(canvasElement.querySelector('[data-testid="vb-config"]'))).toBe(false)
+        expect(shown(canvasElement.querySelector('[data-testid="vb-config"]'))).toBe(true)
+        expect(overflowTrigger(canvasElement)).toBeNull()
         // Nothing clipped at this tier: the leading group still fits its own box.
         const lead = canvasElement.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
         expect(lead.scrollWidth).toBeLessThanOrEqual(lead.clientWidth + 1)
@@ -271,7 +286,7 @@ export const Narrow480LateWords: Story = {
     },
 }
 
-/** BELOW THE FLOOR — 260px (the segments fit whole down to 340, see Narrow340ViewToggleWhole; the
+/** BELOW THE FLOOR — 260px (the segments fit whole down to 365, see Narrow365ViewToggleWhole; the
  *  identity crumb goes first). A pane has no minimum width, so this state is always reachable and has
  *  to be designed rather than avoided: the leading group scrolls, and its right edge fades so the
  *  cut reads as "more this way" instead of as a sliced button. The date never scrolls away first,
@@ -296,18 +311,24 @@ export const Narrow340BelowFloor: Story = {
     },
 }
 
-/** 340px WITH THE VIEW TOGGLE WHOLE. Before BarTwin the today control was `[today]` down to the
- *  drop-3 tier and then nothing, and the 340px bar drew its toggle as `[m] [w] [` — the lead
- *  scrolled and the last two segments were cut off. Today is a twin now (ui/BarTwin.tsx): below the
- *  late tier it is the bare `Calendar` icon, which is what buys the room. Asserts the
- *  rendered geometry, not the markup: every segment's box lies inside the lead's visible box (a
- *  segment clipped to its first glyph fails this), and the today control is the icon half. */
-export const Narrow340ViewToggleWhole: Story = {
+/** THE VIEW TOGGLE WHOLE at the narrowest width the calendar bar still fits — 365px (a 341px
+ *  container). Before BarTwin the today control was `[today]` down to the drop-3 tier and then
+ *  nothing, and the bar drew its toggle as `[m] [w] [` — the lead scrolled and the last two
+ *  segments were cut off. Today is a twin now (ui/BarTwin.tsx): below the late tier it is the bare
+ *  `Calendar` icon, which is what buys the room. Asserts the rendered geometry, not the markup:
+ *  every segment's box lies inside the lead's visible box (a segment clipped to its first glyph
+ *  fails this), and the today control is the icon half. */
+export const Narrow365ViewToggleWhole: Story = {
     render: () => {
         setState(new Date(2026, 0, 12), 'day', false)
-        return <InBaseBar width={340} />
+        return <InBaseBar width={365} />
     },
     play: async ({ canvasElement }) => {
+        await settled()
+        // Fits whole: nothing is hidden, so there is no [≡].
+        expect(overflowTrigger(canvasElement)).toBeNull()
+        expect(canvasElement.querySelector('[data-bar-hidden]')).toBeNull()
+        expect(categoryTwins(canvasElement).some(shown)).toBe(true)
         const today = [
             ...canvasElement.querySelectorAll<HTMLElement>(
                 '[title="Today"], [data-tooltip="Today"]',
@@ -333,6 +354,87 @@ export const Narrow340ViewToggleWhole: Story = {
             expect(r.left).toBeGreaterThanOrEqual(box.left - 0.5)
             expect(r.right).toBeLessThanOrEqual(box.right + 0.5)
         }
+    },
+}
+
+/** The bar with the view toggle hidden by the fit rule: [≡] is the trail's last control, the
+ *  toggle's four segments sit in the panel row `view` and work, and no segment is clipped anywhere. */
+async function expectViewInPanel(root: HTMLElement) {
+    await settled()
+    const bar = root.querySelector<HTMLElement>('[data-viewbar]')!
+    const toggle = bar.querySelector<HTMLElement>('[data-bar-menu-label="view"]')!
+    expect(toggle.hasAttribute('data-bar-hidden')).toBe(true)
+    expect(shown(toggle)).toBe(false)
+    const lead = bar.querySelector<HTMLElement>('[data-testid="vb-lead"]')!
+    const clipCheck = (when: string) => {
+        for (const b of lead.querySelectorAll<HTMLElement>('button')) {
+            if (!shown(b)) continue
+            expect(
+                b.getBoundingClientRect().right,
+                `${when}: ${b.getAttribute('title') ?? b.getAttribute('aria-label')} lead ${lead.getBoundingClientRect().right}`,
+            ).toBeLessThanOrEqual(lead.getBoundingClientRect().right + 0.5)
+        }
+    }
+    clipCheck('closed')
+    const trigger = overflowTrigger(root) as HTMLElement
+    const tw = () => bar.querySelector<HTMLElement>('[data-testid="vb-trail"]')!.getBoundingClientRect().width
+    const lw = () => lead.getBoundingClientRect().width
+    const before = [tw(), lw(), lead.scrollWidth]
+    expect(trigger).toBeTruthy()
+    expect(bar.querySelector('[data-testid="vb-trail"]')!.lastElementChild).toBe(trigger)
+    trigger.click()
+    const panel = await waitFor(() => {
+        const p = document.body.querySelector<HTMLElement>('[data-popover]')
+        expect(p).toBeTruthy()
+        return p!
+    })
+    expect(within(panel).getByText('view')).toBeTruthy()
+    const segs = [...panel.querySelectorAll<HTMLElement>('[data-segmented] button')]
+    expect(segs.length).toBe(4)
+    // Every segment is whole inside the panel, and the panel stays inside the bar's right edge
+    // whenever it is narrower than the bar (a panel wider than the pane pins to the window's left).
+    const barRect = bar.getBoundingClientRect()
+    const panelRect = panel.getBoundingClientRect()
+    for (const seg of segs) {
+        const r = seg.getBoundingClientRect()
+        expect(r.width).toBeGreaterThan(0)
+        expect(r.left).toBeGreaterThanOrEqual(panelRect.left - 0.5)
+        expect(r.right).toBeLessThanOrEqual(panelRect.right + 0.5)
+    }
+    if (panelRect.width <= barRect.width) {
+        expect(panelRect.right).toBeLessThanOrEqual(barRect.right + 1)
+    } else {
+        expect(panelRect.left).toBeGreaterThanOrEqual(0)
+    }
+    expect([tw(), lw(), lead.scrollWidth], `opening the panel must not reflow the bar (closed ${JSON.stringify(before)})`).toEqual(before)
+    clipCheck('open')
+    // The segments work: pressing `w` in the panel switches the calendar to week.
+    segs[1]!.click()
+    await waitFor(() => expect(currentView.value).toBe('week'))
+}
+
+/** 340px, JUST BELOW WHAT FITS. The view toggle (drop level 3) is the control that frees the room,
+ *  so the fit rule hides it: [≡] opens a panel whose `view` row holds the four working segments.
+ *  Categories frees less than [≡] costs, so it stays in the trail. */
+export const Narrow340ViewInPanel: Story = {
+    render: () => {
+        setState(new Date(2026, 0, 12), 'day', false)
+        return <InBaseBar width={340} />
+    },
+    play: async ({ canvasElement }) => {
+        await expectViewInPanel(canvasElement)
+        expect(categoryTwins(canvasElement).some(shown)).toBe(true)
+    },
+}
+
+/** 260px: the same drop, narrower. The view toggle lives in the panel; the date nav stays. */
+export const Narrow260ViewInPanel: Story = {
+    render: () => {
+        setState(new Date(2026, 0, 12), 'day', false)
+        return <InBaseBar width={260} />
+    },
+    play: async ({ canvasElement }) => {
+        await expectViewInPanel(canvasElement)
     },
 }
 
@@ -386,9 +488,9 @@ export const CalendarBaseWithTwoViews: Story = {
         // The period switcher follows DateNav inside `locus`, not the other way round.
         const locus = bar.querySelector('[data-testid="vb-locus"]')!
         const kids = [...locus.children]
-        // (the toggle sits inside Toolbar's own `display: contents` wrapper, so look through it)
+        // (the toggle sits inside Toolbar's own `display: contents` wrappers, so look through them)
         const last = kids[kids.length - 1] as HTMLElement
-        expect(last.hasAttribute('data-segmented') || last.querySelector(':scope > [data-segmented]') !== null).toBe(true)
+        expect(last.hasAttribute('data-segmented') || last.querySelector('[data-segmented]') !== null).toBe(true)
     },
 }
 

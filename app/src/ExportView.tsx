@@ -570,7 +570,7 @@ export function ExportView(props: {
                 }
                 locus={
                     // The first thing the bar sheds: the rail's "from" field names the file too.
-                    <div data-bar-drop="4">
+                    <div data-bar-drop="4" data-bar-menu-label="source">
                         <Readout parts={[srcPath()]} />
                     </div>
                 }

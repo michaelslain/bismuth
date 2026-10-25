@@ -32,7 +32,7 @@ $$\theta_{t+1} = \theta_t - \eta \nabla_{\theta} L(\theta_t)$$
 
 The PDF bar's convert-to-markdown button (a page glyph beside the bookmarks button) starts the conversion. While it runs, the button is disabled and the bar reads `// converting to markdown [ cancel ]` after the page number. When it finishes, the new note opens in its own tab and a `converted to <name>.md` toast offers `open`. A long PDF takes minutes; close the PDF meanwhile and the toast still arrives when it is done.
 
-The button hides in a pane narrower than 650px, together with the file actions. On iPad and iPhone, conversion is unavailable and the button reports an error, because the engines run on a desktop.
+In a pane too narrow for the whole bar, the button moves with the file actions into the bar's `[≡]` menu, which appears only while something does not fit. On iPad and iPhone, conversion is unavailable and the button reports an error, because the engines run on a desktop.
 
 ## Cancel a conversion
 

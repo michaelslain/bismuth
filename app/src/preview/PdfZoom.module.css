@@ -9,5 +9,7 @@
 /* `wide`: inside a bar whose icons carry unpainted bracket room, one step up keeps `−` `100%` `+`
    `fit` at the same glyph-to-glyph distance as the icon pairs beside them. */
 .wide {
-  gap: var(--sp-5);
+  /* Same ink compensation as ui/ZoomSteps `.wide`, so `+` and `fit` sit as far apart as `−` `100%`. */
+  --ink-inset: 0.7px;
+  gap: calc(var(--sp-5) - 2 * var(--ink-inset));
 }

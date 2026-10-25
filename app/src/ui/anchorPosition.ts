@@ -14,13 +14,14 @@ export type AnchorRect = { top: number; left: number; placement: 'below' | 'abov
  *  `placement` is the PREFERRED side; it flips only when that side has no room and the other
  *  does. When neither side fits, the preferred side wins and the result is clamped inside the
  *  viewport (a panel taller than the viewport pins to the top edge). Horizontal position always
- *  starts at the anchor's left edge and clamps inside the viewport's width. */
+ *  starts at the anchor's left edge (`align: 'end'`: the panel's right edge meets the anchor's right edge) and clamps inside the viewport's width. */
 export function computeAnchorRect(
-    anchor: Pick<DOMRect, 'top' | 'bottom' | 'left' | 'width'>,
+    anchor: Pick<DOMRect, 'top' | 'bottom' | 'left' | 'right' | 'width'>,
     panel: { width: number; height: number },
     viewport: { width: number; height: number },
     placement: 'below' | 'above' = 'below',
     gap = 4,
+    align: 'start' | 'end' = 'start',
 ): AnchorRect {
     const fitsBelow = anchor.bottom + gap + panel.height <= viewport.height
     const fitsAbove = anchor.top - gap - panel.height >= 0
@@ -32,7 +33,8 @@ export function computeAnchorRect(
     const top = resolved === 'below' ? anchor.bottom + gap : anchor.top - gap - panel.height
 
     const clampedTop = clamp(top, 0, viewport.height - panel.height)
-    const left = clamp(anchor.left, 0, viewport.width - panel.width)
+    const edge = align === 'end' ? anchor.right - panel.width : anchor.left
+    const left = clamp(edge, 0, viewport.width - panel.width)
 
     return { top: clampedTop, left, placement: resolved }
 }

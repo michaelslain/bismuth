@@ -1,0 +1,34 @@
+/* app/src/ui/TextButton.module.css — TextButton.tsx's own stylesheet (TextButton.tsx ONLY).
+   `quiet`: a one-shot command inside a bar (`fit`, the dock's `reset`). At rest it reads like the
+   bar's icons: muted ink, its `[ ]` laid out but unpainted (the off-toggle footprint, so hovering
+   moves nothing). Under the pointer or keyboard focus the brackets paint and the ink lifts to paper.
+   Button.module.css owns every other text-button rule; the selectors below are state-qualified
+   through Button's `data-kind`/`data-state` hooks so they outrank `.btn--text.btn--normal`'s ink
+   whatever the stylesheet order, and `:not(:disabled)` leaves the disabled recipe (--faint) alone. */
+
+.quiet[data-kind][data-state]:not(:disabled) {
+  color: var(--text-muted);
+}
+.quiet::before,
+.quiet::after {
+  visibility: hidden;
+}
+/* The unpainted `[ ]` still hold room: the label's ink sits one bracket room (the `[` advance, 1ch,
+   less the 0.175em edge bearing Button pulls in) further from each neighbour than the button's box
+   edge. Pulling both margins in by exactly that room puts the label where the box edge used to be,
+   so a quiet button's ink distance to its neighbours matches every other pair in the bar; hover
+   paints the brackets into the room that was given back. `ch` and `em` resolve in the button's own
+   font, which is the one the brackets are set in. */
+.quiet {
+  margin-inline: calc(0px - (1ch - 0.175em));
+}
+.quiet[data-kind][data-state]:hover:not(:disabled),
+.quiet[data-kind][data-state]:focus-visible:not(:disabled) {
+  color: var(--fg);
+}
+.quiet:hover:not(:disabled)::before,
+.quiet:hover:not(:disabled)::after,
+.quiet:focus-visible:not(:disabled)::before,
+.quiet:focus-visible:not(:disabled)::after {
+  visibility: visible;
+}

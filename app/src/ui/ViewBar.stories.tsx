@@ -4,7 +4,7 @@
 // compose it exactly as call sites do (see GraphView.tsx / bases/BaseView.tsx) rather than
 // rendering each piece in isolation.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { createSignal, Show, type JSX } from 'solid-js'
 import ViewBar, { Crumb } from './ViewBar'
 import { SegmentedToggle } from './SegmentedToggle'
@@ -528,4 +528,385 @@ export const Flush: Story = {
             <ViewBar flush identity={<Crumb icon="Share2">flush</Crumb>} />
         </Frame>
     ),
+}
+
+
+// ---- fit-driven drop + the [≡] overflow panel ----------------------------------------------
+// A trail element tagged `data-bar-drop` drops only when the bar genuinely cannot hold it (see
+// ui/barFit.ts), and [≡] exists only while something is hidden.
+
+const shown = (el: Element | null) =>
+    !!el && !!(el as HTMLElement).getClientRects().length
+
+/** A PDF-shaped bar: a never-dropping page readout, then three droppable groups (dark 4, zoom 3,
+ *  file 2). The dark group holds a `<Show>` so node identity can be proved while it sits in the
+ *  panel. */
+function ManyControlsBar(props: { w: string; sm?: boolean }) {
+    const size = () => (props.sm ? ('sm' as const) : undefined)
+    const [dark, setDark] = createSignal(false)
+    return (
+        <Frame w={props.w}>
+            <ViewBar
+                identity={<Crumb icon="FileText">annotated.pdf</Crumb>}
+                readouts={<Text tone="muted">p. 2 / 4</Text>}
+                config={
+                    <>
+                        <div
+                            data-bar-drop="3"
+                            data-bar-menu-label="zoom"
+                        >
+                            <div style={{ display: 'flex', 'align-items': 'center' }}>
+                            <IconButton icon="Minus" label="Zoom out" size={size()} />
+                            <Text tone="muted">100%</Text>
+                            <IconButton icon="Plus" label="Zoom in" size={size()} />
+                            </div>
+                        </div>
+                        <div
+                            data-bar-drop="4"
+                            data-bar-menu-label="dark mode"
+                        >
+                            <div style={{ display: 'flex', 'align-items': 'center' }}>
+                            <IconButton
+                                icon="Moon"
+                                label="Dark"
+                                size={size()}
+                                variant={dark() ? 'selected' : 'unselected'}
+                                onClick={() => setDark(v => !v)}
+                            />
+                            <Show when={dark()}>
+                                <Text as="span" tone="muted">on</Text>
+                            </Show>
+                            </div>
+                        </div>
+                    </>
+                }
+                actions={
+                    <div
+                        data-bar-drop="2"
+                        data-bar-menu-label="file"
+                    >
+                        <div style={{ display: 'flex', 'align-items': 'center' }}>
+                        <TextButton>to-markdown</TextButton>
+                        <TextButton>open</TextButton>
+                        <TextButton>reveal</TextButton>
+                        </div>
+                    </div>
+                }
+            />
+        </Frame>
+    )
+}
+
+/** Plenty of room: every droppable control is in the bar, nothing carries `data-bar-hidden`, and
+ *  there is no [≡]. */
+export const ManyControlsWide: Story = {
+    render: () => <ManyControlsBar w="900px" />,
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        await new Promise(r =>
+            requestAnimationFrame(() => requestAnimationFrame(() => r(null))),
+        )
+        expect(bar.querySelectorAll('[data-bar-hidden]').length).toBe(0)
+        expect(bar.querySelectorAll('[data-bar-drop]').length).toBe(3)
+        for (const el of bar.querySelectorAll('[data-bar-drop]')) expect(shown(el)).toBe(true)
+        expect(within(bar).queryByLabelText('More controls')).toBeNull()
+    },
+}
+
+/** Not enough room: the dark group (level 4) is hidden from the bar and [≡] is the trail's last
+ *  control. The panel lists the dropped groups with their LIVE controls: pressing dark inside the
+ *  panel toggles the real state (same node, selected), a `<Show>` inside it still reacts, and Escape,
+ *  an outside press and a resize each close the panel and put the element back where it was. */
+export const ManyControlsNarrowOverflow: Story = {
+    render: () => <ManyControlsBar w="380px" />,
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        const trail = bar.querySelector<HTMLElement>('[data-testid="vb-trail"]')!
+        const dark = bar.querySelector<HTMLElement>('[data-bar-menu-label="dark mode"]')!
+        const home = dark.parentElement!
+        const trigger = await waitFor(() => {
+            const t = within(bar).getByLabelText('More controls')
+            expect(t).toBeTruthy()
+            return t
+        })
+        expect(trail.lastElementChild).toBe(trigger)
+        expect(dark.hasAttribute('data-bar-hidden')).toBe(true)
+        expect(shown(dark)).toBe(false)
+        const darkButton = within(dark).getByLabelText('Dark')
+
+        const open = async () => {
+            await userEvent.click(trigger)
+            return await waitFor(() => {
+                const p = document.body.querySelector<HTMLElement>('[data-popover]')
+                expect(p).toBeTruthy()
+                return p!
+            })
+        }
+
+        // OPEN: the same element now lives in the panel, labelled, and shown.
+        let panel = await open()
+        expect(panel.contains(dark)).toBe(true)
+        expect(bar.contains(dark)).toBe(false)
+        expect(within(panel).getByText('dark mode')).toBeTruthy()
+        expect(shown(dark)).toBe(true)
+        expect(trigger.getAttribute('aria-expanded')).toBe('true')
+        // The panel hangs inside the bar's right edge (end-aligned), with no tooltip over it.
+        expect(panel.getBoundingClientRect().right).toBeLessThanOrEqual(bar.getBoundingClientRect().right + 1)
+        expect(document.querySelector('[data-tooltip-bubble]')).toBeNull()
+
+        // PRESS the dropped toggle inside the panel: it is the real control.
+        await userEvent.click(darkButton)
+        expect(within(panel).getByLabelText('Dark')).toBe(darkButton)
+        expect(darkButton.getAttribute('aria-pressed')).toBe('true')
+        expect(within(dark).getByText('on')).toBeTruthy() // the <Show> inside still reacts
+
+        // ESCAPE closes, the element is back in its bar position, focus is on the trigger.
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(document.body.querySelector('[data-popover]')).toBeNull())
+        expect(dark.parentElement).toBe(home)
+        expect(bar.contains(dark)).toBe(true)
+        expect(darkButton.getAttribute('aria-pressed')).toBe('true')
+        expect(shown(dark)).toBe(false) // still dropped from the bar
+        expect(document.activeElement).toBe(trigger)
+
+        // OUTSIDE PRESS closes.
+        panel = await open()
+        await userEvent.click(document.body)
+        await waitFor(() => expect(document.body.querySelector('[data-popover]')).toBeNull())
+        expect(dark.parentElement).toBe(home)
+
+        // RESIZE closes.
+        panel = await open()
+        window.dispatchEvent(new Event('resize'))
+        await waitFor(() => expect(document.body.querySelector('[data-popover]')).toBeNull())
+        expect(dark.parentElement).toBe(home)
+        expect(bar.contains(dark)).toBe(true)
+    },
+}
+
+/** A small bar at an ordinary narrow width: everything fits, so no [≡]. */
+export const SmallBarNarrowFits: Story = {
+    render: () => (
+        <Frame w="400px">
+            <ViewBar
+                identity={<Crumb icon="Table">Reading List</Crumb>}
+                config={
+                    <>
+                        <IconButton data-bar-drop="4" icon="PanelRight" label="Categories" />
+                        <IconButton data-bar-drop="3" icon="Settings" label="Options" />
+                    </>
+                }
+                actions={<IconButton icon="Plus" label="New" />}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        await new Promise(r =>
+            requestAnimationFrame(() => requestAnimationFrame(() => r(null))),
+        )
+        expect(bar.querySelectorAll('[data-bar-hidden]').length).toBe(0)
+        expect(within(bar).queryByLabelText('More controls')).toBeNull()
+        expect(shown(within(bar).getByLabelText('Categories'))).toBe(true)
+        expect(shown(within(bar).getByLabelText('Options'))).toBe(true)
+    },
+}
+
+/** The same small bar truly squeezed: its droppable control cannot fit, so it is hidden and [≡]
+ *  appears. */
+export const SmallBarSqueezed: Story = {
+    render: () => (
+        <Frame w="100px">
+            <ViewBar
+                identity={<Crumb icon="Table">Reading List</Crumb>}
+                config={
+                    <>
+                        <IconButton data-bar-drop="4" icon="PanelRight" label="Categories" />
+                        <IconButton data-bar-drop="3" icon="Settings" label="Options" />
+                    </>
+                }
+                actions={<IconButton icon="Plus" label="New" />}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        const trigger = await waitFor(() => within(bar).getByLabelText('More controls'))
+        expect(shown(trigger)).toBe(true)
+        expect(bar.querySelectorAll('[data-bar-hidden]').length).toBeGreaterThan(0)
+        expect(shown(within(bar).getByLabelText('Categories'))).toBe(false)
+        await userEvent.click(trigger)
+        const panel = await waitFor(() => {
+            const p = document.body.querySelector<HTMLElement>('[data-popover]')
+            expect(p).toBeTruthy()
+            return p!
+        })
+        expect(shown(within(panel).getByLabelText('Categories'))).toBe(true)
+        await userEvent.keyboard('{Escape}')
+    },
+}
+
+/** The [≡] panel LEFT OPEN, for the eye and for measurement: each row is a muted lowercase label on
+ *  the left and the live control on the right, all controls starting on ONE column, icons at the
+ *  bar's icon box (same height as a bar icon) and the panel padded on the spacing tokens. */
+export const ManyControlsNarrowPanelOpen: Story = {
+    render: () => <ManyControlsBar w="300px" sm />,
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        const trigger = await waitFor(() => within(bar).getByLabelText('More controls'))
+        await userEvent.click(trigger)
+        const panel = await waitFor(() => {
+            const p = document.body.querySelector<HTMLElement>('[data-popover]')
+            expect(p).toBeTruthy()
+            return p!
+        })
+        const rows = [...panel.querySelectorAll<HTMLElement>('[data-bar-menu-label]')]
+        expect(rows.length, 'dropped elements in the panel').toBeGreaterThan(1)
+        // One column: every dropped element starts at the same x.
+        const lefts = rows.map(r => Math.round(r.getBoundingClientRect().left))
+        expect(new Set(lefts).size, `controls column ${JSON.stringify(lefts)}`).toBe(1)
+        // Labels are one column too, left of the controls, muted, lowercase.
+        const labels = rows.map(r => within(panel).getByText(r.getAttribute('data-bar-menu-label')!))
+        const labelLefts = labels.map(l => Math.round(l.getBoundingClientRect().left))
+        expect(new Set(labelLefts).size, `labels column ${JSON.stringify(labelLefts)}`).toBe(1)
+        expect(labelLefts[0]!).toBeLessThan(lefts[0]!)
+        for (const l of labels) expect(l.textContent).toBe(l.textContent!.toLowerCase())
+        // Icons at the bar's icon box: a bar icon's height is the panel icon's height.
+        const dark = within(panel).getByLabelText('Dark')
+        const barIcon = within(bar).getByLabelText('More controls')
+        expect(dark.getBoundingClientRect().height).toBeCloseTo(barIcon.getBoundingClientRect().height, 0)
+        expect(getComputedStyle(dark).fontSize).toBe(getComputedStyle(barIcon).fontSize)
+        // Padding on the spacing tokens: --sp-4 above/below, --sp-5 left/right.
+        const rowsBox = rows[0]!.parentElement!.parentElement!.parentElement! // slot > row > rows
+        const cs = getComputedStyle(rowsBox)
+        const probe = document.createElement('i')
+        probe.style.cssText = 'position:absolute;visibility:hidden;width:var(--sp-5);height:var(--sp-4)'
+        document.body.appendChild(probe)
+        const sp5 = probe.getBoundingClientRect().width
+        const sp4 = probe.getBoundingClientRect().height
+        probe.remove()
+        expect(parseFloat(cs.paddingLeft)).toBeCloseTo(sp5, 1)
+        expect(parseFloat(cs.paddingTop)).toBeCloseTo(sp4, 1)
+    },
+}
+
+/** SAFETY: a dropped element's owner may remove it (its `<Show>` flips false) while it sits in the
+ *  open panel. Nothing throws, the panel's row empties out, and after close the bar holds no ghost
+ *  of the removed control; when the owner shows it again the bar has exactly one. */
+function UnmountBar() {
+    const [on, setOn] = createSignal(true)
+    return (
+        <Frame w="260px">
+            <ViewBar
+                identity={<Crumb icon="FileText">annotated.pdf</Crumb>}
+                readouts={<Text tone="muted">p. 2 / 4</Text>}
+                config={
+                    <>
+                        <Show when={on()}>
+                            <div
+                                data-bar-drop="4"
+                                data-bar-menu-label="dark mode"
+                                data-testid="owned"
+                            >
+                                <div style={{ display: 'flex', 'align-items': 'center' }}>
+                                <IconButton icon="Moon" label="Dark" />
+                                </div>
+                            </div>
+                        </Show>
+                        <div
+                            data-bar-drop="3"
+                            data-bar-menu-label="zoom"
+                        >
+                            <div style={{ display: 'flex', 'align-items': 'center' }}>
+                            <IconButton icon="Minus" label="Zoom out" />
+                            <IconButton icon="Plus" label="Zoom in" />
+                            </div>
+                        </div>
+                    </>
+                }
+                actions={
+                    <TextButton data-testid="unmount-toggle" onClick={() => setOn(v => !v)}>
+                        toggle
+                    </TextButton>
+                }
+            />
+        </Frame>
+    )
+}
+
+export const DroppedElementUnmountsWhileOpen: Story = {
+    render: () => <UnmountBar />,
+    play: async ({ canvasElement }) => {
+        const errors: string[] = []
+        // "ResizeObserver loop completed…" is the browser's benign notice that a layout pass queued
+        // another observation; it is not a thrown error and the fit pass causes it by design.
+        const onError = (e: ErrorEvent) => {
+            if (!e.message.startsWith('ResizeObserver loop')) errors.push(e.message)
+        }
+        window.addEventListener('error', onError)
+        try {
+            const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+            const trigger = await waitFor(() => within(bar).getByLabelText('More controls'))
+            await userEvent.click(trigger)
+            const panel = await waitFor(() => {
+                const p = document.body.querySelector<HTMLElement>('[data-popover]')
+                expect(p).toBeTruthy()
+                expect(within(p!).getByLabelText('Dark')).toBeTruthy()
+                return p!
+            })
+            // The owner removes the element while it is in the panel. The press is a plain click on a
+            // control outside the panel, dispatched without closing the panel.
+            const toggle = within(bar).getByTestId('unmount-toggle') as HTMLElement
+            toggle.click()
+            await waitFor(() => expect(within(panel).queryByLabelText('Dark')).toBeNull())
+            expect(errors, `no error thrown: ${JSON.stringify(errors)}`).toEqual([])
+            // Close, then: the removed control is nowhere in the document.
+            await userEvent.keyboard('{Escape}')
+            await waitFor(() => expect(document.body.querySelector('[data-popover]')).toBeNull())
+            expect(canvasElement.querySelector('[data-testid="owned"]'), 'no ghost in the bar').toBeNull()
+            expect(within(document.body).queryByLabelText('Dark')).toBeNull()
+            // Shown again: exactly one, and the bar refits around it.
+            toggle.click()
+            await waitFor(() =>
+                expect(canvasElement.querySelectorAll('[data-testid="owned"]').length).toBe(1),
+            )
+            expect(errors).toEqual([])
+        } finally {
+            window.removeEventListener('error', onError)
+        }
+    },
+}
+
+/** The drop is a pure function of width: resizing the frame across the threshold and back
+ *  (900 → 380 → 900 → 380) lands on the same hidden set each time it revisits a width, with no
+ *  state left over from the previous visit. */
+export const ResizeAcrossTheThresholdIsStable: Story = {
+    render: () => <ManyControlsBar w="900px" />,
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('[data-viewbar]')!
+        const frame = bar.parentElement!
+        const read = () => ({
+            hidden: [...bar.querySelectorAll('[data-bar-hidden]')]
+                .map(e => e.getAttribute('data-bar-menu-label') ?? 'region')
+                .sort()
+                .join(','),
+            overflow: !!bar.querySelector('[data-bar-overflow]'),
+        })
+        const settle = async (w: number, wantOverflow: boolean) => {
+            frame.style.width = `${w}px`
+            await waitFor(() => expect(!!bar.querySelector('[data-bar-overflow]'), `${w}px`).toBe(wantOverflow))
+            // one more frame so hidden marks written in the same fit pass are in place
+            await new Promise(r => requestAnimationFrame(() => r(null)))
+            return read()
+        }
+        const wide1 = await settle(900, false)
+        const narrow1 = await settle(380, true)
+        const wide2 = await settle(900, false)
+        const narrow2 = await settle(380, true)
+        expect(wide1.hidden, 'nothing hidden at 900px').toBe('')
+        expect(narrow1.hidden, 'something hidden at 380px').not.toBe('')
+        expect(wide2, '900px revisited').toEqual(wide1)
+        expect(narrow2, '380px revisited').toEqual(narrow1)
+        expect(bar.querySelectorAll('[data-bar-hidden]').length).toBeGreaterThan(0)
+    },
 }

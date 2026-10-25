@@ -1,9 +1,10 @@
 // app/src/ui/ZoomSteps.tsx
 // The one zoom-step shape `− 100% +`: two bare icon buttons around a muted percentage. The preview
 // zoom (preview/PdfZoom) and the drawing dock's zoom (drawing/Toolbar) both compose it, so every
-// surface zooms with the same controls. The run carries `data-bar-drop="4"`: inside a ViewBar the
-// collapse ladder hides it on a narrow pane while a pinch or ctrl/cmd+wheel still zooms. Outside a
-// ViewBar the attribute does nothing.
+// surface zooms with the same controls. The run carries `data-bar-drop="4"`: inside a ViewBar it leaves
+// the bar only when the bar cannot hold it (reachable from the `[≡]` menu), while a pinch or
+// ctrl/cmd+wheel still zooms. Outside a ViewBar the attribute does nothing; `data-bar-menu-label="zoom"` names the run's row in the
+// overflow panel. The glyphs rest in --text-muted and the percentage shares the readouts' x-height line.
 import type { Component } from 'solid-js'
 import type { ButtonSize } from './buttonClass'
 import IconButton from './IconButton'
@@ -34,10 +35,12 @@ const ZoomSteps: Component<ZoomStepsProps> = props => {
         <div
             class={`${styles.group} ${props.wide ? styles.wide : ''} ${props.class ?? ''}`}
             data-bar-drop="4"
+            data-bar-menu-label="zoom"
             data-testid={props['data-testid'] ?? 'pdf-zoom-steps'}
         >
             <IconButton
                 icon="Minus"
+                class={styles.step}
                 size={props.size}
                 bracketRoom={props.wide}
                 label="Zoom out"
@@ -50,6 +53,7 @@ const ZoomSteps: Component<ZoomStepsProps> = props => {
             </Label>
             <IconButton
                 icon="Plus"
+                class={styles.step}
                 size={props.size}
                 bracketRoom={props.wide}
                 label="Zoom in"

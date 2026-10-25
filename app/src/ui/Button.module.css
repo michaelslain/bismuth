@@ -196,6 +196,9 @@
 /* selected — the only state whose brackets paint; they inherit the icon's own tone (--accent).
    No focus-visible treatment — see .btn:focus/.btn:focus-visible above: no button paints a focus
    indicator, on any kind, mouse or keyboard. */
+/* quiet — a command icon resting muted like the toggles beside it; declared BEFORE the hover rule
+   (same specificity) so hover still lifts it to --accent. */
+.btn--icon.btn--normal.btn--quiet:not(:disabled) { color: var(--text-muted); }
 /* normal — standalone, full opacity; hover lifts the bare glyph to --accent (no brackets to light) */
 .btn--icon.btn--normal:hover:not(:disabled) { color: var(--accent); }
 /* None of the icon variants sets `opacity`: they used to say `opacity: 1`, which at two classes

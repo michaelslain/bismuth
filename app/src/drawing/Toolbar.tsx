@@ -4,7 +4,6 @@ import type { PaperBg } from '../../../core/src/drawing/model'
 import type { ToolState } from './DrawingCanvas'
 import { ZOOM_MIN, ZOOM_MAX } from './DrawingPage'
 import { IconButton } from '../ui/IconButton'
-import IconBar from '../ui/IconBar'
 import Swatch from '../ui/Swatch'
 import { TextButton } from '../ui/TextButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
@@ -26,7 +25,7 @@ const TOOLS: { id: ToolState['tool']; icon: string; title: string }[] = [
 // builds one DOM node, so two note panes each showing an ink toolbar would fight over the same
 // <svg> and it would disappear from whichever rendered first.
 const lassoMark = () => (
-    <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
+    <svg width="15.2" height="16" viewBox="2.8 0 15.2 16" aria-hidden="true">
         <rect
             x="3.5"
             y="2.5"
@@ -65,7 +64,7 @@ const colorSwatch = (fill: string) => (
     <Swatch static color={fill} class={styles['draw-swatch']} />
 )
 const smoothIcon = (d: string) => (
-    <svg width="24" height="16" viewBox="0 0 24 16" aria-hidden="true">
+    <svg width="21.6" height="16" viewBox="1.2 0 21.6 16" aria-hidden="true">
         <path
             d={d}
             fill="none"
@@ -86,7 +85,12 @@ const paperIcon = (bg: PaperBg): JSX.Element => {
     } as const
     if (bg === 'blank')
         return (
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <svg
+                width="12.4"
+                height="18"
+                viewBox="2.8 0 12.4 18"
+                aria-hidden="true"
+            >
                 <rect
                     x="3.5"
                     y="2.5"
@@ -99,7 +103,12 @@ const paperIcon = (bg: PaperBg): JSX.Element => {
         )
     if (bg === 'lines')
         return (
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <svg
+                width="13.4"
+                height="18"
+                viewBox="2.3 0 13.4 18"
+                aria-hidden="true"
+            >
                 <g {...stroke}>
                     <line x1="3" y1="6" x2="15" y2="6" />
                     <line x1="3" y1="9" x2="15" y2="9" />
@@ -109,7 +118,12 @@ const paperIcon = (bg: PaperBg): JSX.Element => {
         )
     if (bg === 'grid')
         return (
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <svg
+                width="13.2"
+                height="18"
+                viewBox="2.4 0 13.2 18"
+                aria-hidden="true"
+            >
                 <g {...stroke} stroke-width="1.2">
                     <line x1="3" y1="7" x2="15" y2="7" />
                     <line x1="3" y1="11" x2="15" y2="11" />
@@ -119,7 +133,7 @@ const paperIcon = (bg: PaperBg): JSX.Element => {
             </svg>
         )
     return (
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <svg width="10" height="18" viewBox="4 0 10 18" aria-hidden="true">
             <g fill="currentColor">
                 {[5, 9, 13].flatMap(y =>
                     [5, 9, 13].map(x => <circle cx={x} cy={y} r="1" />),
@@ -237,18 +251,20 @@ export function Toolbar(props: {
         // this task's file list, InkOverlay.module.css and PageInk.module.css all select on the
         // attribute, not the class — so `.draw-toolbar` itself is free to be a plain hashed
         // local, same as any other component's own root class.
+        //
+        // ONE ROW OF GROUPS in the view bar's language: no divider rules, one gap
+        // (--bar-icon-gap) between every pair of controls, groups included, every icon reserving the same
+        // bracket footprint (no `pickOne`, `bracketRoom` on the plain icons). On a narrow surface
+        // the groups wrap whole.
         <div class={styles['draw-toolbar']} data-draw-toolbar>
-            {/* Two-row dock: most groups stack into a 2-row column to keep the bar narrow.
-          tools | colors/sizes | smooth/paper | undo-redo/zoom. */}
+            {/* Pen row: what the pen does. Page row: the page itself. Two rows so a wrapped dock breaks
+                between meanings and both rows share one left edge. */}
             <div class={styles['draw-row']}>
-                <div class={styles['draw-group']}>
-                    {/* pickOne: a single row (no stacked partner to keep columns with), so the
-                        off tools draw no bracket space and the gaps stay even. The stacked rows
-                        below keep their reserved space — their columns line up row to row. */}
+                <div
+                    class={`${styles['draw-group']} ${styles['draw-group-icons']}`}
+                >
                     <SegmentedToggle
                         look="icon"
-                        size="sm"
-                        pickOne
                         options={toolOpts()}
                         value={t().tool}
                         onChange={id => props.setTools({ tool: id })}
@@ -258,109 +274,108 @@ export function Toolbar(props: {
                         <IconButton
                             icon="ImagePlus"
                             label="Import image"
-                            size="sm"
+                            bracketRoom
+                            quiet
                             onClick={() => props.onImportImage!()}
                         />
                     </Show>
                 </div>
-                {/* Colors on top, line-weight directly below — same box size + spacing. */}
+                <div
+                    class={`${styles['draw-group']} ${styles['draw-group-swatch']}`}
+                >
+                    <SegmentedToggle
+                        look="icon"
+                        options={colorOpts()}
+                        value={t().color}
+                        onChange={c => props.setTools({ color: c })}
+                    />
+                </div>
+                <div
+                    class={`${styles['draw-group']} ${styles['draw-group-size']}`}
+                >
+                    <SegmentedToggle
+                        look="icon"
+                        options={sizeOpts}
+                        value={t().size}
+                        onChange={s => props.setTools({ size: s })}
+                    />
+                </div>
+                {/* Smoothing. */}
                 <div class={styles['draw-group']}>
-                    <div class={styles['draw-vstack']}>
+                    <SegmentedToggle
+                        look="icon"
+                        options={smoothOpts}
+                        value={t().smoothMode}
+                        onChange={v => props.setTools({ smoothMode: v })}
+                    />
+                </div>
+            </div>
+            <div class={styles['draw-row']}>
+                <Show when={props.bg && props.setBackground}>
+                    <div class={styles['draw-group']}>
                         <SegmentedToggle
                             look="icon"
-                            size="sm"
-                            options={colorOpts()}
-                            value={t().color}
-                            onChange={c => props.setTools({ color: c })}
-                        />
-                        <SegmentedToggle
-                            look="icon"
-                            size="sm"
-                            options={sizeOpts}
-                            value={t().size}
-                            onChange={s => props.setTools({ size: s })}
-                            class={styles['draw-vstack-seg']}
+                            options={paperOpts}
+                            value={props.bg!()}
+                            onChange={id => props.setBackground!(id)}
                         />
                     </div>
+                </Show>
+                {/* Undo/redo are two independent commands, not a toggle: plain icons that reserve the
+                bracket room, no painted brackets (brackets mean ON). */}
+                <div
+                    class={`${styles['draw-group']} ${styles['draw-group-icons']}`}
+                >
+                    <IconButton
+                        icon="Undo2"
+                        label="Undo"
+                        keybinding={props.inkKeys ? 'ink-undo' : undefined}
+                        bracketRoom
+                        quiet
+                        onClick={() => props.onUndo()}
+                    />
+                    <IconButton
+                        icon="Redo2"
+                        label="Redo"
+                        keybinding={props.inkKeys ? 'ink-redo' : undefined}
+                        bracketRoom
+                        quiet
+                        onClick={() => props.onRedo()}
+                    />
                 </div>
-                {/* Smoothing on top, paper below (paper only when the surface has one — not note ink). */}
-                <div class={styles['draw-group']}>
-                    <div class={styles['draw-vstack']}>
-                        {/* pickOne when there is no paper row under it to keep columns with. */}
-                        <SegmentedToggle
-                            look="icon"
-                            size="sm"
-                            pickOne={!(props.bg && props.setBackground)}
-                            options={smoothOpts}
-                            value={t().smoothMode}
-                            onChange={v => props.setTools({ smoothMode: v })}
-                            class={styles['draw-vstack-seg']}
+                <Show
+                    when={
+                        props.zoom &&
+                        props.onZoomIn &&
+                        props.onZoomOut &&
+                        props.onResetZoom
+                    }
+                >
+                    {/* The same `− 100% +` run the PDF zoom draws, plus a bracket command for the way
+                    back (PdfZoom's `[fit]`; here it resets to 100%). */}
+                    <div
+                        class={`${styles['draw-group']} ${styles['draw-group-icons']} ${styles['draw-group-zoom']}`}
+                    >
+                        <ZoomSteps
+                            wide
+                            class={styles['draw-zoom']}
+                            zoom={props.zoom!}
+                            onZoomOut={() => props.onZoomOut!()}
+                            onZoomIn={() => props.onZoomIn!()}
+                            zoomOutDisabled={props.zoom!() <= ZOOM_MIN}
+                            zoomInDisabled={props.zoom!() >= ZOOM_MAX}
+                            data-testid="draw-zoom-steps"
                         />
-                        <Show when={props.bg && props.setBackground}>
-                            <SegmentedToggle
-                                look="icon"
-                                size="sm"
-                                options={paperOpts}
-                                value={props.bg!()}
-                                onChange={id => props.setBackground!(id)}
-                                class={styles['draw-vstack-seg']}
-                            />
-                        </Show>
-                    </div>
-                </div>
-                {/* Undo/redo on top, zoom below. */}
-                <div class={styles['draw-group']}>
-                    <div class={styles['draw-vstack']}>
-                        {/* Undo/redo are two independent commands, not a toggle: bare `normal`
-                            icons in a bare IconBar, no brackets (brackets mean ON). */}
-                        <IconBar bare>
-                            <IconButton
-                                icon="Undo2"
-                                label="Undo"
-                                keybinding={props.inkKeys ? 'ink-undo' : undefined}
-                                size="sm"
-                                onClick={() => props.onUndo()}
-                            />
-                            <IconButton
-                                icon="Redo2"
-                                label="Redo"
-                                keybinding={props.inkKeys ? 'ink-redo' : undefined}
-                                size="sm"
-                                onClick={() => props.onRedo()}
-                            />
-                        </IconBar>
-                        <Show
-                            when={
-                                props.zoom &&
-                                props.onZoomIn &&
-                                props.onZoomOut &&
-                                props.onResetZoom
-                            }
+                        <TextButton
+                            quiet
+                            title="Reset zoom"
+                            aria-label="Reset zoom"
+                            onClick={() => props.onResetZoom!()}
                         >
-                            {/* The same `− 100% +` run the PDF zoom draws, plus a bracket
-                                command for the way back (PdfZoom's `[fit]`; here it resets to
-                                100%). */}
-                            <IconBar bare>
-                                <ZoomSteps
-                                    zoom={props.zoom!}
-                                    onZoomOut={() => props.onZoomOut!()}
-                                    onZoomIn={() => props.onZoomIn!()}
-                                    zoomOutDisabled={props.zoom!() <= ZOOM_MIN}
-                                    zoomInDisabled={props.zoom!() >= ZOOM_MAX}
-                                    size="sm"
-                                    data-testid="draw-zoom-steps"
-                                />
-                                <TextButton
-                                    title="Reset zoom"
-                                    aria-label="Reset zoom"
-                                    onClick={() => props.onResetZoom!()}
-                                >
-                                    reset
-                                </TextButton>
-                            </IconBar>
-                        </Show>
+                            reset
+                        </TextButton>
                     </div>
-                </div>
+                </Show>
             </div>
         </div>
     )

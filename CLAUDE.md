@@ -86,8 +86,9 @@ They override framework habits, and most violations compile, render and pass tes
 - **Variants are props; accept an optional `className`** merged onto the root.
 - **`ViewBar` is the one view header** (graph, bases, calendar, flashcards, chat), with six named
   slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. A Bases view kind
-  returns `ViewBarSlots` instead of stacking its own bar. Collapse is opted into with
-  `data-bar-drop` or `<BarLabel long short drop>` (`ui/barDropLevels.test.ts`).
+  returns `ViewBarSlots` instead of stacking its own bar. A control drops only when the bar
+  cannot hold it, into the bar's `[≡]` panel: opt in with `data-bar-drop` + `data-bar-menu-label`;
+  words shorten with `<BarLabel long short drop>` (`ui/barDropLevels.test.ts`).
 - **Pure logic lives in plain `.ts` modules** with no framework imports.
 - **Every component added or changed gets a story.** The design-system gate checks components,
   stories and tokens against `DESIGN.md`; exceptions are a `design-system-ignore <check-id>: <reason>`

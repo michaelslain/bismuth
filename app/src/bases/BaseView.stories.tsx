@@ -599,38 +599,30 @@ export const FlashcardsCramOnTight: Story = {
     },
 }
 
-/** 480px pane = 444px content box: past drop-1 (465), still above the floor (430). The tally goes,
- *  and its REGION goes with it — `.vb-trail` gaps every region, so one left standing over a hidden
- *  only child still charges the bar 12px for a control that is not there. What hides it is
- *  ViewBar.module.css's `.vbRegion:has(> *):not(:has(> :not([data-bar-drop='N'])))` — one copy per tier.
- *  It hides a region whose every element child is dropping at this tier, so the tally does NOT have
- *  to be the only thing in `readouts`; it has to be the only thing not dropping. (The earlier
- *  `:only-child` form did require that, and this comment used to say so. The `:has(> *)` guard is
- *  separate: without it the rule is vacuously true for a region with NO element children and would
- *  hide an empty one — including a slot holding only text.)
+/** 320px pane = 296px content box: too narrow for the tally beside the rest of the bar, so ViewBar
+ *  hides it and [≡] reaches it. Its REGION goes with it — `.vb-trail` gaps every region, so one left
+ *  standing over a hidden only child would still charge the bar 12px for a control that is not there.
+ *  ViewBar hides a region whose every element child is hidden, so the tally does NOT have to be the
+ *  only thing in `readouts`; it has to be the only thing not dropping.
  *
  *  The progress meter is not that second child and never was — it lives outside the bar entirely,
  *  as FlashcardsView's own first child (`.fcmeter` in FlashcardsView.module.css, restored 2026-09-02
  *  in place of the `.fcprogress` hairline that used to hold this spot), so it neither participates
  *  in this rule nor sheds with the tally. That is the whole point of the deviation.
  *
- *  THIS IS THE STORY THAT PROVES THE TAG IS LIVE. A control tagged with a level that has no rule
- *  keeps its attribute, keeps rendering, and fails NOTHING — no typecheck error, no test failure,
- *  because nothing typechecks a `data-` attribute.
- *
- *  RETAG THE TALLY `"5"` — NOT `"2"`. The ladder defines 1-4 (465 / 500 / 570 / 650), and levels are
- *  WIDTHS counted up from the floor, so every level's range CONTAINS every lower one. At this story's
- *  444px content box all four fire, and retagging to 2, 3 or 4 would still hide the tally and still
- *  pass. Widening the story does not rescue the proof either: above 465 the tally stops dropping at
- *  all and the story's own primary assertion fails. Only an UNDEFINED level isolates the tag, which
- *  is why this says 5. (It said "2" until 2026-09-02, when task 6 added levels 2-4 and silently
- *  killed this proof — the two tasks shared no file, so only the merge could see it.) */
+ *  THIS IS THE STORY THAT PROVES THE TAG IS LIVE. The tally drops only because it is tagged
+ *  `data-bar-drop` with a level ui/barFit.ts defines (1-4) AND the bar genuinely cannot hold it:
+ *  ViewBar measures, hides it with `data-bar-hidden`, and [≡] reaches it. A control tagged with an
+ *  undefined level (`"5"`) is never dropped and fails NOTHING at typecheck, which is the case this
+ *  story's primary assertion catches. The width is chosen so the tally does NOT fit (the bar drops by
+ *  fit, so a wider pane keeps it, and 480px, which used to drop it by a fixed width, now fits). */
 export const FlashcardsFloor: Story = {
-    render: () => <FlashcardsPane w="480px" path="decks/vocab-floor.md" />,
+    render: () => <FlashcardsPane w="320px" path="decks/vocab-floor.md" />,
     play: async ({ canvasElement }) => {
         await expectOneBar(canvasElement)
         const canvas = within(canvasElement)
-        expect(isLaidOut(canvas.getByTestId('fc-tally'))).toBe(false)
+        await waitFor(() => expect(isLaidOut(canvas.getByTestId('fc-tally'))).toBe(false))
+        expect(canvasElement.querySelector('[aria-label="More controls"]')).not.toBeNull()
         // The region wrapper too, not just its contents: `.vb-trail` gaps every region, so one
         // left standing over a hidden only child still charges the bar 12px for nothing.
         const region = canvasElement.querySelector('[data-testid="vb-readouts"]')

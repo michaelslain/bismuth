@@ -5,7 +5,7 @@
 // supplies via `style`. `size`/`bracket` are deprecated and ignored.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
-import { expect, within } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import { TextButton } from './TextButton'
 
 const meta = {
@@ -19,6 +19,7 @@ const meta = {
         },
         danger: { control: 'boolean' },
         primary: { control: 'boolean' },
+        quiet: { control: 'boolean' },
         disabled: { control: 'boolean' },
         children: { control: 'text' },
     },
@@ -26,6 +27,7 @@ const meta = {
         variant: 'normal',
         danger: false,
         primary: false,
+        quiet: false,
         disabled: false,
         children: 'cancel',
     },
@@ -128,5 +130,50 @@ export const Accent: Story = {
         const canvas = within(canvasElement)
         const btn = canvas.getByRole('button', { name: 'personal' })
         expect(getComputedStyle(btn).color).toBe('rgb(163, 190, 140)')
+    },
+}
+
+/** `quiet`: a one-shot command in a bar. At rest it is muted ink (the icons' tone) with `[ ]` laid
+ *  out but unpainted; hover paints the brackets and lifts the ink to paper; it never changes width.
+ *  A disabled quiet button keeps the --faint recipe, and `quiet` beside `selected` is ignored. */
+export const Quiet: Story = {
+    render: () => (
+        <Row>
+            <TextButton>normal</TextButton>
+            <TextButton>fit</TextButton>
+            <TextButton quiet>fit</TextButton>
+            <TextButton quiet disabled>
+                reset
+            </TextButton>
+            <TextButton quiet variant="selected">
+                on
+            </TextButton>
+        </Row>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const color = (css: string) => {
+            const probe = document.createElement('span')
+            probe.style.color = css
+            canvasElement.appendChild(probe)
+            const c = getComputedStyle(probe).color
+            probe.remove()
+            return c
+        }
+        const [plain, quiet] = canvas.getAllByRole('button', { name: 'fit' })
+        expect(getComputedStyle(quiet).color).toBe(color('var(--text-muted)'))
+        expect(getComputedStyle(quiet, '::before').visibility).toBe('hidden')
+        expect(getComputedStyle(quiet, '::after').visibility).toBe('hidden')
+        // the bracket room is still laid out: hovering paints the brackets and moves nothing
+        expect(getComputedStyle(quiet, '::before').content).toContain('[')
+        const rest = quiet.getBoundingClientRect().width
+        expect(rest).toBe(plain.getBoundingClientRect().width)
+        await userEvent.hover(quiet)
+        expect(quiet.getBoundingClientRect().width).toBe(rest)
+        const reset = canvas.getByRole('button', { name: 'reset' })
+        expect(getComputedStyle(reset).color).toBe(color('var(--faint)'))
+        const on = canvas.getByRole('button', { name: 'on' })
+        expect(getComputedStyle(on).color).toBe(color('var(--accent)'))
+        expect(getComputedStyle(on, '::before').visibility).toBe('visible')
     },
 }

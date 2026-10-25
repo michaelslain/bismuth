@@ -28,6 +28,16 @@ export function barItems(bar: HTMLElement): HTMLElement[] {
 export const tokenPx = (el: HTMLElement, name: string) =>
     parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0
 
+/** `--text-muted` as the browser serialises a computed colour: the bar's one resting ink. */
+export function mutedColor(el: HTMLElement): string {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--text-muted)'
+    el.appendChild(probe)
+    const c = getComputedStyle(probe).color
+    probe.remove()
+    return c
+}
+
 /** `--accent` as the browser serialises a computed colour, so it compares against borderColor. */
 export function accentColor(el: HTMLElement): string {
     const probe = document.createElement('span')
@@ -50,37 +60,89 @@ const isIconButton = (el: HTMLElement) => el.tagName === 'BUTTON' && el.dataset.
  *  bracket bearing in, so its box edge is its `[` / `]` ink edge). */
 export function inkRect(el: HTMLElement): DOMRect {
     const svg = el.querySelector('svg')
-    if (svg && isIconButton(el)) return svg.getBoundingClientRect()
-    if (el.tagName !== 'BUTTON') {
-        const range = document.createRange()
-        range.selectNodeContents(el)
-        return range.getBoundingClientRect()
+    if (svg && isIconButton(el)) {
+        // The svg BOX is wider than the painted glyph (a library icon keeps ~1.2px of air inside its
+        // 12px box each side, and each glyph a different amount), so a box-to-box gap reads short of
+        // what a person, or a screenshot's outermost non-background pixel columns, measures. The
+        // union of the drawn shapes' own boxes is the glyph's real horizontal extent.
+        const shapes = Array.from(
+            svg.querySelectorAll<SVGGraphicsElement>('path, circle, rect, line, polyline, polygon, ellipse'),
+        ).map(n => n.getBoundingClientRect()).filter(r => r.width > 0 || r.height > 0)
+        const box = svg.getBoundingClientRect()
+        if (!shapes.length) return box
+        const left = Math.min(...shapes.map(r => r.left))
+        const right = Math.max(...shapes.map(r => r.right))
+        return new DOMRect(left, box.top, right - left, box.height)
     }
+    // A QUIET text button (`fit`) paints no brackets at rest (its `::before` is hidden), so its ink is the label alone.
+    if (el.tagName !== 'BUTTON' || getComputedStyle(el, '::before').visibility === 'hidden') return textRange(el).getBoundingClientRect()
     return el.getBoundingClientRect()
 }
 
-/** An ink gap at or above this is a group seam; below it, a neighbour inside a group. The bar's two
- *  distances are ~16.5px and ~24.5px, so the cut sits between them. */
+/** A Range over the element's own text nodes (never its `::before`/`::after` brackets). */
+function textRange(el: HTMLElement): Range {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    let first: Text | null = null
+    let last: Text | null = null
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!(n.textContent ?? '').trim()) continue
+        first ??= n as Text
+        last = n as Text
+    }
+    const range = document.createRange()
+    if (first && last) {
+        range.setStart(first, 0)
+        range.setEnd(last, last.textContent!.length)
+    } else {
+        range.selectNodeContents(el)
+    }
+    return range
+}
+
+let measureCtx: CanvasRenderingContext2D | null = null
+
+/** The vertical centre a person reads a control on: an icon's glyph centre, or a text run's
+ *  x-height box centre (baseline minus half the x-height, from the run's own font metrics). One
+ *  optical line means every control's centre sits within OPTICAL_LINE_TOLERANCE of the others. */
+export function opticalCentre(el: HTMLElement): number {
+    const svg = el.querySelector('svg')
+    if (svg && isIconButton(el)) {
+        const r = svg.getBoundingClientRect()
+        return (r.top + r.bottom) / 2
+    }
+    const range = textRange(el)
+    const r = range.getBoundingClientRect()
+    const host = (range.startContainer.nodeType === 3 ? range.startContainer.parentElement : el) ?? el
+    const cs = getComputedStyle(host)
+    measureCtx ??= document.createElement('canvas').getContext('2d')
+    const ctx = measureCtx!
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+    const m = ctx.measureText('x')
+    return r.top + m.fontBoundingBoxAscent - m.actualBoundingBoxAscent / 2
+}
+
+/** Every control's optical centre must sit within this many px of every other's. */
+export const OPTICAL_LINE_TOLERANCE = 1
+
+/** An ink gap at or above this is a seam the bar must not have: every control sits one distance
+ *  (~16.5px, ink to ink) from its neighbour, so a gap this wide is a stray wider gap. */
 export const SEAM_INK_GAP = 22
 
-/** Every within-group gap must sit this close to the median within-group gap (likewise seams). */
+/** Every ink gap must sit this close to the median gap. */
 export const INK_GAP_TOLERANCE = 1
 
-/** How much wider a seam must read than a within-group gap, ink to ink. */
-export const SEAM_MARGIN = 5
-
-/** The bar's design distances, ink to ink: neighbours inside a group, and across a group seam.
- *  Not whole pixels, because every icon's unpainted bracket room is ui/IconBrackets' recipe in em
- *  (a `[` advance less its 0.145em bearing and 0.1em pull, ~4.3px a side at the bar's 11.5px icon
- *  font): icon to icon is --bar-icon-gap (8) + two rooms = ~16.7, icon to text is one room +
- *  ZoomSteps' `wide` --sp-5 (12) = ~16.3; a seam adds --sp-6 (16) in place of the 8 = ~24.5. Stories
- *  compare a median with `toBeCloseTo(x, 0)`, so both kinds of pair land within its ±0.5. */
+/** The bar's one design distance, ink to ink, between every pair of neighbouring controls. Not a
+ *  whole pixel, because every icon's unpainted bracket room is ui/IconBrackets' recipe in em (~4.3px
+ *  a side at the bar's 11.5px icon font): icon to icon is --bar-icon-gap (8) + two rooms, less the
+ *  `.tools` ink inset. Measured from screenshot pixels (outermost non-background columns of each
+ *  glyph or text run): 15.5-17.5, the same distance as the drawing dock. */
 export const WITHIN_INK_GAP = 16.5
-export const SEAM_DESIGN_INK_GAP = 24.5
 
 export const median = (xs: number[]) => {
     const s = [...xs].sort((a, b) => a - b)
-    return s.length ? s[Math.floor((s.length - 1) / 2)]! : 0
+    if (!s.length) return 0
+    const mid = (s.length - 1) / 2
+    return (s[Math.floor(mid)]! + s[Math.ceil(mid)]!) / 2
 }
 
 export type BarProbe = {
@@ -89,21 +151,15 @@ export type BarProbe = {
     gaps: number[]
     /** Horizontal distance between the visible ink of each pair of adjacent controls. */
     inkGaps: number[]
-    /** Ink gaps below SEAM_INK_GAP: neighbours inside a group. */
+    /** Ink gaps below SEAM_INK_GAP: every neighbour pair, when the bar is right. */
     withinGaps: number[]
-    /** Ink gaps at or above SEAM_INK_GAP: one per group boundary. */
+    /** Ink gaps at or above SEAM_INK_GAP: stray wide gaps. Want none. */
     seamGaps: number[]
-    /** Within-group ink gaps farther than INK_GAP_TOLERANCE from their median. Want none. */
+    /** Ink gaps farther than INK_GAP_TOLERANCE from their median. Want none. */
     unevenWithin: number[]
-    /** Seam ink gaps farther than INK_GAP_TOLERANCE from their median. Want none. */
-    unevenSeams: number[]
-    /** Narrowest seam minus widest within-group gap, ink to ink; Infinity when either is absent.
-     *  Want at least SEAM_MARGIN. */
-    seamMargin: number
-    /** Gaps the bar's rule rejects, as one list: uneven within, uneven seams, and a seam that does
-     *  not stand clear of the within-group gaps. Want []. */
+    /** Gaps the bar's rule rejects, as one list: uneven gaps and stray wide ones. Want []. */
     strayGaps: number[]
-    /** Seam count. */
+    /** Stray wide-gap count. Want 0. */
     groupBoundaries: number
     /** Adjacent-control pairs INSIDE the annotate group (highlight/draw/scratch) — found
      *  structurally (painted buttons under `[data-testid="preview-annotate"]`, not by gap value: its internal
@@ -134,6 +190,12 @@ export type BarProbe = {
     /** Largest |control centre − bar centre| on the y axis. */
     maxCentreOffset: number
     crumbWidth: number
+    /** Distinct resting ink colours of the bar's controls that are not selected and not disabled.
+     *  The bar is one tone family at rest, so want exactly one (--text-muted). */
+    restTones: string[]
+    /** Largest minus smallest optical centre across the controls (icon glyph centre, text x-height
+     *  centre). Want at most OPTICAL_LINE_TOLERANCE. */
+    lineSpread: number
 }
 
 const nameOf = (el: HTMLElement) =>
@@ -154,15 +216,9 @@ export function probeBar(bar: HTMLElement): BarProbe {
         return xs.filter(g => Math.abs(g - m) > INK_GAP_TOLERANCE)
     }
     const unevenWithin = uneven(withinGaps)
-    const unevenSeams = uneven(seamGaps)
-    const seamMargin =
-        withinGaps.length && seamGaps.length
-            ? Math.min(...seamGaps) - Math.max(...withinGaps)
-            : Infinity
     const strayGaps = [
         ...unevenWithin,
-        ...unevenSeams,
-        ...(seamMargin < SEAM_MARGIN ? [seamMargin] : []),
+        ...seamGaps,
     ]
     const accent = accentColor(bar)
     const frames = Array.from(bar.querySelectorAll<HTMLElement>('*')).filter(el => {
@@ -233,14 +289,18 @@ export function probeBar(bar: HTMLElement): BarProbe {
     const annotateButtons = annotate
         ? Array.from(annotate.querySelectorAll<HTMLElement>('button')).filter(painted)
         : []
+    const resting = items.filter(el => el.dataset.state !== 'selected' && !(el as HTMLButtonElement).disabled)
+    const restTones = [...new Set(resting.map(el => getComputedStyle(el).color))]
+    const centres = items.map(opticalCentre)
+    const lineSpread = centres.length ? Math.max(...centres) - Math.min(...centres) : 0
     return {
+        restTones,
+        lineSpread,
         gaps,
         inkGaps,
         withinGaps,
         seamGaps,
         unevenWithin,
-        unevenSeams,
-        seamMargin,
         strayGaps,
         groupBoundaries: seamGaps.length,
         annotateGaps: Math.max(0, annotateButtons.length - 1),

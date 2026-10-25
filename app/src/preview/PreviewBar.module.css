@@ -13,12 +13,12 @@
    is the one override left on a button element, and it only flips the inner svg glyph (placement of
    the icon, not the button's look). */
 
-/* ── Two distances, ink to ink ─────────────────────────────────────────────────────────────────
-   ~16.5px between neighbours inside a group, ~24.5px across a group seam (measured glyph to glyph).
+/* ── One distance, ink to ink ──────────────────────────────────────────────────────────────────
+   ~16.5px between every pair of neighbouring controls (measured glyph to glyph), inside a group and
+   between groups alike: the groups are a structure for the drop ladder, never a visible gap.
    `.group` is a readout group (text); `.tools` an icon group. Where two groups share a region
    (config: zoom · annotate; actions: bookmarks · file actions) and between regions, the gap is
-   --sp-6, and a group the ladder hides (`display: none`) takes its gap with it. Only DIRECT
-   children of those regions are groups, so nothing else is respaced. */
+   --bar-icon-gap, and a group the ladder hides takes its gap with it. */
 .group {
   display: inline-flex;
   align-items: center;
@@ -34,7 +34,7 @@
 }
 .config,
 .actions {
-  gap: var(--sp-6);
+  gap: var(--bar-icon-gap);
 }
 
 /* ── One footprint for every icon ──────────────────────────────────────────────────────────────
@@ -49,24 +49,49 @@
    pixel) as `−` `100%` `+` `fit` (PdfZoom `wide`) and the text readouts, and two ON toggles keep
    ~7px bracket to bracket rather than fusing into one frame. */
 .tools {
+  /* INK COMPENSATION, the dock's recipe (drawing/Toolbar.module.css `.draw-group-icons`): a library
+     glyph keeps ~1.2px of air inside its own 12px box each side, so boxes --bar-icon-gap apart read
+     ~2.4px wider glyph to glyph than the gap says. The group closes that up (gap shrinks by two
+     insets) and trims one inset off each outer edge, so between groups the air is not counted twice.
+     Measured from screenshot pixels: ~15.5-17.5 between every neighbour pair. */
+  --ink-inset: 1.2px;
   display: inline-flex;
   align-items: center;
-  gap: var(--bar-icon-gap);
+  gap: calc(var(--bar-icon-gap) - 2 * var(--ink-inset));
+  /* a quarter pixel past the inset each side: the moon and bookmark glyphs keep more air than the
+     highlighter, and this centres the group-to-group gaps on the same ~16.5px */
+  margin-inline: calc(-1 * (var(--ink-inset) + 0.25px));
   flex: 0 0 auto;
 }
 
 /* A group whose left neighbour ends in text (a readout, `fit`) rather than an icon: text has no
-   bracket room, so the seam would read narrower than an icon-to-icon seam. This adds back the
-   difference, so every group seam in the bar measures the same. */
+   bracket room, so the gap would read narrower than an icon-to-icon gap. This adds back the
+   difference, so every gap in the bar measures the same. */
 .afterText {
-  margin-inline-start: var(--sp-2);
+  /* Half a pixel under --sp-2: the glyphs after text differ in their own air (the highlighter fills
+     its box, the moon keeps ~1.5px), so this centres the pixel-measured gaps on ~16.5px. */
+  margin-inline-start: calc(var(--sp-2) - 0.5px);
+}
+/* The zoom run (`− 100% + fit`) after the readout: its glyphs are not in a `.tools` group, so there
+   is no outer-edge trim, and the gap read ~1.5px wider than the icon gaps. Keyed on the run's own
+   `data-bar-menu-label`, a data hook, never a foreign class. */
+.afterText:has([data-bar-menu-label='zoom']) {
+  margin-inline-start: calc(var(--sp-2) - 1px);
+}
+/* The ladder hid the steps (ui/ViewBar moves a hidden control out of the bar, so the run is gone from
+   the group): the group's first child is then `fit`, a text button, where a run with steps leads with
+   the steps' wrapper and an icon group with an icon button. TextButton `.quiet` pulls `fit` toward
+   the readout, so the two read as one phrase; add that pull back to the bar's one gap. */
+.afterText:has(> [data-kind='text']:first-child) {
+  margin-inline-start: calc(var(--sp-2) + 3px);
 }
 
-/* The image's `W × H` readout: digits carry no descenders, so the line reads high beside the icons;
-   the same 1px drop `Button.module.css` gives a button label (and PdfZoom gives its `%`). */
-.readout {
-  position: relative;
-  top: 1px;
+/* A plain icon (to markdown, open, reveal) rests in the bar's one muted ink, like an off toggle:
+   Button paints a `normal` icon --fg. Hover keeps Button's own accent, and a disabled icon keeps the
+   --faint recipe. Keyed on Button's `data-kind`/`data-state` hooks, never a class. The zoom steps
+   carry the same rule in ui/ZoomSteps.module.css. */
+.tools [data-kind='icon'][data-state='normal']:not(:hover):not(:disabled) {
+  color: var(--text-muted);
 }
 
 /* BOOKMARKS: PanelRight resolves to Phosphor's `sidebar-simple`, drawn with the panel on the LEFT —
@@ -97,12 +122,23 @@
    already keeps") — right for a bar whose trailing controls are meant to read as one continuous
    bracket run once nothing else is left to shed (the chat bar, the calendar). Wrong here: this
    bar's groups (zoom · annotate · bookmarks · file actions) must stay visibly grouped at every
-   width, narrow included — the whole point of the wider seam. `.bar .trail` (two classes) ties
+   width, narrow included, at the bar's one gap. `.bar .trail` (two classes) ties
    `.viewbar .vb-trail`'s specificity at the floor tier; PreviewBar.module.css loads after
    ViewBar.module.css (PreviewBar.tsx imports ViewBar first), so this wins the tie outright,
    the same trick `.bar .lead` uses above for the mask-image override. */
 .bar .trail {
-  gap: var(--sp-6);
+  gap: var(--bar-icon-gap);
+}
+/* The [≡] overflow trigger is an `IconButton size="sm"`, which ui/ViewBar.module.css boxes at the
+   bar icon size (18px) — right for bars of `sm` icons, but this bar's icons are the default
+   --h-control (24px) box, so the trigger would be the one shorter icon. Same box as its siblings
+   (width is already the shared bracket footprint). Keyed on Button's data hooks and the
+   trigger's own `data-bar-overflow`; four-term specificity beats `.viewbar [data-kind][data-size]`. */
+.trail [data-bar-overflow][data-kind='icon'][data-size='sm'] {
+  /* The trigger is a plain icon box with no ink-inset trim of its own, so its gap off the last
+     `.tools` group read ~1px wider than the others. */
+  margin-inline-start: calc(-1 * var(--ink-air, 1px));
+  height: var(--h-control);
 }
 .lead {
   flex-shrink: 1000;

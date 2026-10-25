@@ -376,8 +376,10 @@ rail right; when both choose the same edge the sidebar is outermost and the rail
 and the editor.
 
 **`ViewBar` is the one view header** (graph, Bases, calendar, flashcards, chat), with six named
-slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. When it narrows,
-controls drop in a single shared ladder that a control opts into with `data-bar-drop`.
+slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. A control opts into dropping with `data-bar-drop`
+(level 4 goes first, 1 last); it drops only when the bar cannot hold it, and a dropped control moves
+into the bar's `[≡]` panel under its `data-bar-menu-label`. The `[≡]` shows only while something is
+dropped, and only when dropping frees more room than the `[≡]` itself takes.
 
 ### The intro frame
 The first-run intro lays every slide out in one frame, identical on all of them: a hero box 96 cells wide by 16 rows tall on the graph's cell grid, scaled up 1.5x (`--intro-glyph-scale`, three quarters of that on windows 800px tall or less), a text slot under it, and the nav pinned to the bottom, so the headline, the body and the nav sit at the same y on every slide. The `hero` variant holds glyph art (`GlyphArt`), or nothing over the graph; the `setup` variant holds the slide's own control.

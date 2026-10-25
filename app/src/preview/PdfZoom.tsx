@@ -1,9 +1,10 @@
 // app/src/preview/PdfZoom.tsx
 // The preview zoom group `− 100% + fit`: shared by the preview tab's bar (preview/PreviewBar — a
 // PDF or an image) and the in-note PDF embed's header (editor/PdfEmbed), so every surface zooms the
-// same way with the same controls (the steps are ui/ZoomSteps). Only the steps carry `data-bar-drop="4"` — inside a ViewBar the
-// collapse ladder hides them on a narrow pane while a pinch or ctrl/cmd+wheel still zooms and `fit` stays as the one-click way back. Outside
-// a ViewBar the attribute does nothing.
+// same way with the same controls (the steps are ui/ZoomSteps). Only the steps carry `data-bar-drop="4"` — inside a ViewBar they leave
+// the bar only when it cannot hold them (reachable from its `[≡]` menu), while a pinch or
+// ctrl/cmd+wheel still zooms and `fit` stays as the one-click way back. Outside a ViewBar the
+// attribute does nothing.
 import TextButton from '../ui/TextButton'
 import ZoomSteps from '../ui/ZoomSteps'
 import styles from './PdfZoom.module.css'
@@ -36,6 +37,7 @@ function PdfZoom(props: PdfZoomProps) {
                 onZoomIn={() => props.onZoomBy(ZOOM_STEP)}
             />
             <TextButton
+                quiet
                 title="Fit width"
                 aria-label="Fit width"
                 onClick={() => props.onFit()}
