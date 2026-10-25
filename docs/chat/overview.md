@@ -80,7 +80,7 @@ The composer is a small markdown editor: live preview, `[[wikilink]]`, `#tag` an
 
 - Send and stop: `Enter` (or `Mod+Enter`) sends, `Shift+Enter` adds a newline, and `Escape` stops a streaming reply. `Up` and `Down` at the draft's first or last line recall earlier messages, like a shell.
   The keys are rebindable as `chat-send`, `chat-stop`, `chat-history-prev` and `chat-history-next` in [keybindings](../settings/keybindings.md).
-- Slash commands. Type `/` for the commands the backend reports; the agent runs them as it would in its own TUI. `/mcp` is answered by Bismuth itself and lists connected, failed and needs-auth MCP servers.
+- Slash commands. Type `/` for the commands the backend reports; `Enter` or `Tab` fills the highlighted one, and the agent runs it as it would in its own TUI. `/mcp` is answered by Bismuth itself and lists connected, failed and needs-auth MCP servers.
   `/rename <name>` titles the tab (empty reverts to the automatic title), and `/color <swatch|hex|clear>` tints the pane; both stay in the app and never reach the model.
 - Mention a note. Type `@` to search vault files, or drag a note from the file tree onto the chat pane. A referenced file is listed in the message's context for that one send.
 - Attach images. Drop or paste an image. PNG, JPEG, GIF and WebP up to 10 MB each, about 12 MB per message, are sent to the model as images. A slash command cannot carry an image; if one is staged, the send is refused with an inline error.

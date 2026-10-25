@@ -135,6 +135,13 @@
     .rest > * {
         flex: none;
     }
+    /* global.css puts `overscroll-behavior: none` on every element (no rubber-band), which also
+       stops a wheel at any box that clips without scrolling (ellipsized text, an empty transcript
+       list) — so a wheel over the hub or the boxes never reached this scrolling stage. Inside it,
+       scrolling chains up to the stage; the stage itself keeps `none`, so nothing bounces. */
+    .stage * {
+        overscroll-behavior: auto;
+    }
     .hub {
         order: 0;
     }
@@ -149,6 +156,10 @@
         grid-template-rows: minmax(220px, 1fr);
         padding-block: var(--sp-4);
         overflow-y: auto;
+    }
+    /* The short stage scrolls too: same chaining fix as the narrow one above. */
+    .stage * {
+        overscroll-behavior: auto;
     }
     .opened {
         inset: var(--sp-4) var(--sp-5);

@@ -34,7 +34,7 @@ import { matchesKeybinding } from '../keybindings'
 
 export type ComposerKeyAction =
     | 'slash-nav' // Arrow/Escape while the slash-command popover is open → move/close the menu
-    | 'slash-select' // Enter while the slash popover is open → pick the highlighted command
+    | 'slash-select' // Enter or Tab while the slash popover is open → fill the highlighted command
     | 'stop' // chat-stop while a turn streams → interrupt it (TUI parity)
     | 'send' // chat-send → send or stage the message
     | 'history-up' // chat-history-prev at the composer's top boundary → recall an older sent message
@@ -119,7 +119,10 @@ export function classifyComposerKey(
     if (state.slashOpen) {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Escape')
             return 'slash-nav'
-        if (e.key === 'Enter' && !e.shiftKey) return 'slash-select'
+        // Tab fills like Enter (shell/IDE completion habit); without this branch Tab moved focus out
+        // of the composer to the send button.
+        if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey)
+            return 'slash-select'
     }
     const evt = toMatchable(e)
     // chat-stop interrupts an in-flight turn (only when the slash popover isn't open — handled above).

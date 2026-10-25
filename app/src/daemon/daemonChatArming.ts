@@ -20,8 +20,15 @@
 /** The minimal event shape the arming rule reads (a DOM Event satisfies it). */
 export type ArmingEvent = { type: string; isTrusted: boolean }
 
-/** The gestures that arm the chat: a press on the composer, or keyboard focus landing in it. */
-export const ARMING_EVENT_TYPES: readonly string[] = ['pointerdown', 'focusin']
+/** The gestures that arm the chat: a press on the composer, keyboard focus landing in it, or the
+ *  pointer moving onto the controls row under it (ChatComposerBar's `.below`). The row is `inert`
+ *  until armed, so arming on the way in is what lets the first press on a control work. A real
+ *  pointer move is as unforgeable from app control as a press. */
+export const ARMING_EVENT_TYPES: readonly string[] = [
+    'pointerdown',
+    'focusin',
+    'pointerover',
+]
 
 /** True only for a user-generated (trusted) press or focus. Synthetic events never arm. */
 export function isArmingGesture(e: ArmingEvent): boolean {

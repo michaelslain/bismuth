@@ -210,6 +210,8 @@ import {
     daemonChatArmed,
     disarmDaemonChat,
     armDaemonChatForDrop,
+    resumeDaemonChat,
+    clearDaemonChatResume,
 } from './daemon/daemonChatArm'
 import { stayArmed } from './daemon/daemonChatArming'
 import {
@@ -593,6 +595,7 @@ export default function App() {
             enabled: settings.daemon.enabled,
         }
         if (daemonChatArmed() && !stayArmed(true, ctx)) disarmDaemonChat()
+        if (!ctx.daemonOpen) clearDaemonChatResume()
     })
 
     // Every content id open as a tab or pane, across all tabs — the "you" hub in the knowledge
@@ -1774,10 +1777,18 @@ export default function App() {
     // closing one pane of a split does NOT (that's a pane close, not a tab close). Session-only.
     const CLOSED_TABS_CAP = 25
     const closedTabs: Tab[] = []
+    const closedWithDaemonChat = new WeakSet<Tab>()
     // Close one tab by id (its whole pane tree goes with it), recording it for reopen.
     const closeTabById = (id: string) => {
         const closing = tabs().find(t => t.id === id)
         if (closing) {
+            // Closing the tab that holds an armed daemon chat: Reopen Closed Tab brings that
+            // conversation back (daemonChatArm.ts resumeDaemonChat), not a fresh one.
+            if (
+                daemonChatArmed() &&
+                leaves(closing.root).some(l => l.content === DAEMON_TAB)
+            )
+                closedWithDaemonChat.add(closing)
             closedTabs.push(closing)
             if (closedTabs.length > CLOSED_TABS_CAP) closedTabs.shift()
         }
@@ -1801,7 +1812,7 @@ export default function App() {
     }
     // Reopen the most recently closed tab, revived with fresh ids (via the persistence
     // round-trip so no id collides with a live pane), and focus it.
-    const reopenClosedTab = () => {
+    const reopenClosedTab = (e?: Event) => {
         const last = closedTabs.pop()
         if (last) {
             const { tabs: revived } = deserializeTabs(
@@ -1813,6 +1824,8 @@ export default function App() {
             // A reopened tab keeps its pinned flag, so re-normalize the partition after appending.
             setTabs(ts => sortPinned([...ts, tab]))
             setActiveTabId(tab.id)
+            // After setTabs, so the daemon page is already open when the resume mark lands.
+            if (closedWithDaemonChat.has(last)) resumeDaemonChat(e)
             // Carry the closed tab's navigation history across the id-reviving round-trip so Cmd+[ /
             // Cmd+] still walk it. The revive assigns fresh leaf ids, but closeTabById never deleted the
             // old leaves' history entries — so map old→new leaf (leaves() walks in the same stable order
@@ -2780,7 +2793,7 @@ export default function App() {
         // Reopen the most recently closed tab (default Mod+Shift+T).
         if (matchesKeybinding(e, kb['reopen-tab'])) {
             e.preventDefault()
-            reopenClosedTab()
+            reopenClosedTab(e)
             return
         }
         // Walk the focused pane's navigation history (default Mod+[ back / Mod+] forward).

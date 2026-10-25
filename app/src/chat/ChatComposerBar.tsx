@@ -357,7 +357,12 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                 </Show>
             </div>
             <Show when={below()}>
-                <div class={styles.below}>{below()}</div>
+                {/* The controls row is `inert` until the daemon chat is armed, so a press on it
+                    would land on nothing. A trusted pointer entering the row arms it first
+                    (daemon/daemonChatArming.ts), so the press that follows reaches a live control. */}
+                <div class={styles.below} onPointerOver={onGesture}>
+                    {below()}
+                </div>
             </Show>
         </div>
     )

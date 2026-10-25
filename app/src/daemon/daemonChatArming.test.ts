@@ -2,11 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { isArmingGesture, stayArmed } from './daemonChatArming'
 
 describe('isArmingGesture', () => {
-    test('a trusted pointerdown or focusin arms', () => {
+    test('a trusted pointerdown, focusin or pointerover arms', () => {
         expect(isArmingGesture({ type: 'pointerdown', isTrusted: true })).toBe(
             true,
         )
         expect(isArmingGesture({ type: 'focusin', isTrusted: true })).toBe(true)
+        expect(isArmingGesture({ type: 'pointerover', isTrusted: true })).toBe(
+            true,
+        )
     })
 
     test('a synthetic event never arms, whatever its type', () => {
@@ -14,6 +17,9 @@ describe('isArmingGesture', () => {
             false,
         )
         expect(isArmingGesture({ type: 'focusin', isTrusted: false })).toBe(
+            false,
+        )
+        expect(isArmingGesture({ type: 'pointerover', isTrusted: false })).toBe(
             false,
         )
     })

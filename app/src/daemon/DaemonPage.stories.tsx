@@ -1072,6 +1072,10 @@ export const Narrow: Story = {
             '[data-testid="vb-trail"]',
         )!
         await expect(trail.scrollWidth).toBeLessThanOrEqual(trail.clientWidth)
+        // The stage scrolls here, so a wheel over the hub has to chain up to it: inside the stage
+        // nothing may carry global.css's `overscroll-behavior: none`, which stops the chain at
+        // every box that clips without scrolling.
+        await expect(getComputedStyle(hub).overscrollBehaviorY).toBe('auto')
     },
 }
 

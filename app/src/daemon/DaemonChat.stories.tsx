@@ -233,6 +233,19 @@ export const UntrustedPressDoesNotArm: Story = {
         // … but nothing it provoked would arm the chat, and the composer never took focus.
         await expect(untrustedArmings.includes(true)).toBe(false)
         await expect(composer.contains(document.activeElement)).toBe(false)
+
+        // The controls row under the box arms on a pointer entering it (so the first press on a
+        // control reaches a live one). A synthetic pointerover reaches onGesture but never arms.
+        const before = untrustedArmings.length
+        const model = composer.querySelector<HTMLElement>(
+            '[data-testid="chat-model"]',
+        )!
+        await expect(model.closest('[inert]')).not.toBeNull()
+        model.closest('[inert]')!.parentElement!.dispatchEvent(
+            new PointerEvent('pointerover', { bubbles: true }),
+        )
+        await expect(untrustedArmings.length).toBeGreaterThan(before)
+        await expect(untrustedArmings.includes(true)).toBe(false)
     },
 }
 

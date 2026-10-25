@@ -133,6 +133,16 @@ describe('classifyComposerKey', () => {
                 classifyComposerKey({ key: 'Enter', shiftKey: false }, slash),
             ).toBe('slash-select')
         })
+        it('Tab fills the highlighted command like Enter', () => {
+            expect(
+                classifyComposerKey({ key: 'Tab', shiftKey: false }, slash),
+            ).toBe('slash-select')
+        })
+        it('Tab with the popover closed passes (focus moves as usual)', () => {
+            expect(
+                classifyComposerKey({ key: 'Tab', shiftKey: false }, idle),
+            ).toBe('pass')
+        })
         it('Shift+Enter still passes (newline) even with the popover open', () => {
             expect(
                 classifyComposerKey({ key: 'Enter', shiftKey: true }, slash),
