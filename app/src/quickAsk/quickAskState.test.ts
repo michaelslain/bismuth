@@ -10,6 +10,8 @@ import {
     openQuickAsk,
     quickAskChatId,
     quickAskOpen,
+    quickAskPendingSend,
+    takeQuickAskSend,
 } from './quickAskState'
 
 // Bun's test env has no localStorage; the session store reads the global.
@@ -89,5 +91,30 @@ describe('quickAskState', () => {
         setChatInstruction(id2, 'answer only')
         handOffQuickAsk()
         expect(getChatInstruction(id2)).toBeNull()
+    })
+})
+
+describe('quickAskState pending send', () => {
+    test('opening with send queues it; taking it clears it', () => {
+        openQuickAsk(pane('a.md'), { send: 'hello' })
+        expect(quickAskPendingSend()).toBe('hello')
+        expect(takeQuickAskSend()).toBe('hello')
+        expect(quickAskPendingSend()).toBeNull()
+        expect(takeQuickAskSend()).toBeNull()
+    })
+
+    test('opening without send queues nothing and replaces a stale one', () => {
+        openQuickAsk(pane('a.md'), { send: 'old' })
+        openQuickAsk(pane('a.md'))
+        expect(quickAskPendingSend()).toBeNull()
+    })
+
+    test('close and hand-off drop an unsent message', () => {
+        openQuickAsk(pane('a.md'), { send: 'x' })
+        closeQuickAsk()
+        expect(quickAskPendingSend()).toBeNull()
+        openQuickAsk(pane('a.md'), { send: 'y' })
+        handOffQuickAsk()
+        expect(quickAskPendingSend()).toBeNull()
     })
 })

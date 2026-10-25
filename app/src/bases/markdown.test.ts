@@ -314,3 +314,79 @@ describe('image embeds', () => {
         expect(renderMarkdown('![[Photo.JPG]]')).toContain('<img')
     })
 })
+
+// ```button fences become a placeholder div holding the inert row; the live row is mounted over it
+// by the assistant chat bubble only. Every other fence renders as before.
+describe('renderNoteBody — button fences', () => {
+    const fence = (body: string) => '```button\n' + body + '\n```'
+    const attr = (html: string) =>
+        /data-bismuth-buttons="([^"]*)"/.exec(html)?.[1] ?? ''
+    const decode = (s: string) =>
+        s.replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)))
+            .replace(/&quot;/g, '"')
+            .replace(/&lt;/g, '<')
+            .replace(/&amp;/g, '&')
+
+    test('emits the placeholder with the escaped body and inert [label] text', () => {
+        const body = '- label: Summarize\n  prompt: do it\n- label: Open Daemon\n  command: open-daemon'
+        const html = renderNoteBody(`before\n\n${fence(body)}\n\nafter`)
+        expect(html).toContain('data-bismuth-buttons="')
+        expect(decode(attr(html))).toBe(body)
+        expect(html).toContain('>[summarize] [open daemon]</div>')
+        expect(html).not.toContain('<pre')
+        expect(html).toContain('before')
+        expect(html).toContain('after')
+    })
+
+    test('primary moves last in the inert row', () => {
+        const body =
+            '- label: Go\n  kind: primary\n  send: hi\n- label: Other\n  send: yo'
+        expect(renderNoteBody(fence(body))).toContain('>[other] [go]</div>')
+    })
+
+    test('an invalid fence reads button // <error>', () => {
+        const html = renderNoteBody(fence('label: x'))
+        expect(html).toContain('>button // needs exactly one of prompt, send, command</div>')
+    })
+
+    test('the body is never linkified or tag-spanned', () => {
+        const body = 'label: See [[Note]] #tag\nsend: hello #urgent [[Other]]'
+        const html = renderNoteBody(fence(body))
+        expect(html).not.toContain('bismuth-wikilink')
+        expect(html).not.toContain('bismuth-tag')
+        expect(decode(attr(html))).toBe(body)
+    })
+
+    test('a body with markup characters round-trips through the attribute', () => {
+        const body = 'label: a "quoted" <b> & $x$\nsend: ![[pic.png]] <!-- pagebreak -->'
+        const html = renderNoteBody(fence(body))
+        expect(html).not.toContain('<b>')
+        expect(html).not.toContain('<img')
+        expect(decode(attr(html))).toBe(body)
+    })
+
+    test('a literal > before the word bismuth stays inside the attribute', () => {
+        const body = 'label: Go\nsend: a > b open bismuth'
+        const html = renderNoteBody(fence(body))
+        expect(attr(html)).not.toContain('bismuth-word')
+        expect(decode(attr(html))).toBe(body)
+    })
+
+    test('other fences render byte-identically', () => {
+        for (const src of [
+            '```sh\nbun test\n```',
+            '```\nplain #tag [[x]]\n```',
+            '```buttons\nnot a button\n```',
+            '~~~ts\nconst a = 1\n~~~',
+        ])
+            expect(renderNoteBody(src)).toBe(renderMarkdown(src))
+        expect(renderNoteBody('```sh\nbun test\n```')).not.toContain(
+            'data-bismuth-buttons',
+        )
+    })
+
+    test('a button fence quoted inside a longer fence stays code', () => {
+        const src = '````md\n```button\nlabel: x\nsend: y\n```\n````'
+        expect(renderNoteBody(src)).not.toContain('data-bismuth-buttons')
+    })
+})

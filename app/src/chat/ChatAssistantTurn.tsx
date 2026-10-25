@@ -31,6 +31,9 @@ export type ChatAssistantTurnProps = {
     ) => void
     /** Right-click a prose bubble → Reply/Copy — the transcript owns the actual menu. */
     onBubbleContextMenu: (e: MouseEvent, text: string) => void
+    /** The conversation, and where a button's `send` goes — see ChatTextBubble. */
+    chatId?: string
+    onSend?: (text: string) => void
     class?: string
 }
 
@@ -46,6 +49,8 @@ const ChatAssistantTurn: Component<ChatAssistantTurnProps> = props => {
                                 <ChatTextBubble
                                     text={part.text}
                                     role="assistant"
+                                    chatId={props.chatId}
+                                    onSend={props.onSend}
                                     onContextMenu={e =>
                                         props.onBubbleContextMenu(e, part.text)
                                     }

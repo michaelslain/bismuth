@@ -55,7 +55,8 @@ export type ChatSessionBodyProps = {
     tagNames: () => string[]
     /** Trusted-gesture hook for arming: forwarded to ChatComposerBar. */
     onGesture?: (e: PointerEvent | FocusEvent) => void
-    /** The chat id ChatControls seeds its disabled (no-session) row from. */
+    /** The chat id ChatControls seeds its disabled (no-session) row from, and the host id an
+     *  assistant message's button fences press under (a host without one keeps them inert). */
     chatId?: string
     /** Show ChatControls (model // mode // history // new chat) under the composer. Default true;
      *  a single-purpose chat (the feedback interview) turns it off. */
@@ -85,6 +86,8 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
             onAnswerPermission={s.answerPermission}
             onAnswerQuestion={s.answerQuestion}
             onCancelQueued={s.cancelQueued}
+            chatId={props.chatId}
+            onSend={s.sendText}
             onReply={s.quoteReply}
             subscribeAppend={s.onAppend}
         />

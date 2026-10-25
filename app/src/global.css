@@ -2438,3 +2438,12 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 .bismuth-sheet svg.univerjs-icon-fx-icon > *{display:none!important}
 
 
+
+/* ── Button fence placeholder ────────────────────────────────────────────────
+   renderNoteBody writes `<div data-bismuth-buttons>` into a runtime-generated HTML string (a hashed
+   module class cannot be written there). On every surface that does not mount a live row (cards,
+   transclusion, export, user bubbles) its text is the inert `[label]` row: plain muted text. */
+[data-bismuth-buttons] {
+  color: var(--text-muted);
+  margin: 0 0 0.55em;
+}

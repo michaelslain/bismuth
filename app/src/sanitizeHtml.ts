@@ -19,8 +19,10 @@ const CONFIG = {
     // path/circle SVGs; DOMPurify's svg profile keeps those elements + their geometry attrs
     // while still stripping <script>/<foreignObject>/event-handler XSS vectors.
     USE_PROFILES: { html: true, mathMl: true, svg: true },
-    // Allow `<a target="_blank">` (DOMPurify drops unknown attrs otherwise).
-    ADD_ATTR: ['target'],
+    // Allow `<a target="_blank">` (DOMPurify drops unknown attrs otherwise). `data-bismuth-buttons`
+    // is the ```button placeholder renderNoteBody emits (chat bubbles mount a live row over it);
+    // data-* is allowed by default, listed so the dependency is explicit.
+    ADD_ATTR: ['target', 'data-bismuth-buttons'],
 }
 
 // DOMPurify's default export is a ready instance in the browser (window present

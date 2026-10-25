@@ -118,6 +118,10 @@ The popover never covers the caret line, so the text you asked about stays visib
 - **`[ open in chat ]`** moves the conversation into a chat tab and keeps streaming; that note's next `Mod+K` starts a fresh quick ask. **`[ esc ]`** closes the popover.
 - **Only you can open it.** Opening starts or resumes an agent session, so an agent cannot open the popover through app control.
 
+## What are the buttons in a reply?
+
+An agent's reply can end with a row of bracket chips such as `[open daemon] [summarize this week]`, written as a ` ```button ` fence. Pressing a `send` chip sends its text as your next message in the same conversation; a `prompt` chip runs a background job on the daemon and shows its status under the row; a `command` chip runs an app command. A fence in a message you wrote stays plain text. The syntax and every status are on the [buttons](../editor/buttons.md) page.
+
 ## How do I resume a past conversation?
 
 Click `history` to open a dialog over the chat. It lists existing Claude Code sessions for the vault, terminal and in-app, newest first, grouped under `today`, `yesterday`, `past 7 days`, `past 30 days` and `older`. Type to search message text and titles instead.

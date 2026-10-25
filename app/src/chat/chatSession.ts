@@ -228,6 +228,8 @@ export type ChatSession = {
     historyEntries: Accessor<string[]>
     persona: Accessor<string>
     send: () => void
+    /** Send a bare string as the user's next message; draft and attachments stay as they are. */
+    sendText: (text: string) => void
     stop: () => void
     answerPermission: (
         id: string,
@@ -1031,6 +1033,16 @@ export function createChatSession(
             )
             return
         }
+        if (deliver(text, atts)) {
+            setDraft('')
+            setAttachments([])
+        }
+    }
+
+    /** Put `text` on the wire as a user message — editor context preamble, queued while a reply
+     *  streams. Shared by `send` (draft + attachments) and `sendText` (a bare string). False = the
+     *  socket is down; the caller keeps whatever it was sending. */
+    const deliver = (text: string, atts: ChatAttachment[]): boolean => {
         // Editor context rides the WIRE only; skipped for slash commands (a preamble breaks them).
         const preamble = text.startsWith('/')
             ? ''
@@ -1063,7 +1075,7 @@ export function createChatSession(
                 setTurnError(
                     'Not connected to the backend — message not sent. Reconnecting…',
                 )
-                return
+                return false
             }
             undelivered = [...undelivered, messageId]
             setTranscript(
@@ -1080,11 +1092,9 @@ export function createChatSession(
                         }),
                 ),
             )
-            setDraft('')
-            setAttachments([])
             clearChatReferences(chatId)
             emitAppend(true)
-            return
+            return true
         }
         // Mid-turn: STAGE the message with its context captured now; `done` dispatches it.
         if (streaming()) {
@@ -1104,11 +1114,9 @@ export function createChatSession(
                         }),
                 ),
             )
-            setDraft('')
-            setAttachments([])
             clearChatReferences(chatId)
             emitAppend(true)
-            return
+            return true
         }
         if (
             !sendJson({
@@ -1123,7 +1131,7 @@ export function createChatSession(
             setTurnError(
                 'Not connected to the backend — message not sent. Reconnecting…',
             )
-            return
+            return false
         }
         setTurnError(null)
         if (messageId) undelivered = [...undelivered, messageId]
@@ -1137,11 +1145,18 @@ export function createChatSession(
                     }),
             ),
         )
-        setDraft('')
-        setAttachments([])
         clearChatReferences(chatId)
         setStreaming(true)
         emitAppend(true) // sending always re-pins to the bottom
+        return true
+    }
+
+    /** Send `text` as the user's next message without touching the draft or attachments (a chat
+     *  button's `send`). Same gates as `send`; a slash command is not interpreted. */
+    const sendText = (text: string) => {
+        const t = text.trim()
+        if (!t || setupError() || gateRefusal()) return
+        deliver(t, [])
     }
 
     const stop = () => {
@@ -1668,6 +1683,7 @@ export function createChatSession(
         historyEntries,
         persona,
         send,
+        sendText,
         stop,
         answerPermission,
         answerQuestion,

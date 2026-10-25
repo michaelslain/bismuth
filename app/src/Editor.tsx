@@ -51,6 +51,7 @@ import { foldBlocks } from './editor/foldBlocks'
 import { queryBlock, queryScrollPinActive } from './editor/queryBlock'
 import { blockHeightRecorder } from './editor/blockHeightRecorder'
 import { graphBlock } from './editor/graphBlock'
+import { buttonBlock } from './editor/buttonBlock'
 import { drawBlockExtension } from './editor/drawBlock'
 import {
     CONTENT_PAD_BOTTOM,
@@ -1679,6 +1680,7 @@ export function Editor(props: {
                   // re-creates blocks off-screen keeps the scroller's extent right (blockHeights.ts).
                   blockHeightRecorder,
                   graphBlock(),
+                  buttonBlock(),
                   drawBlockExtension(),
                   embedBlock(props.noteNames),
                   yamlSchema({

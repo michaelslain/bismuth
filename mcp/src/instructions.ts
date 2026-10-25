@@ -14,6 +14,7 @@ export const SERVER_INSTRUCTIONS =
     'first read guides/converting-obsidian-to-bismuth.md or ' +
     'guides/converting-bismuth-to-obsidian.md. ' +
     'Making or changing a colour theme: first read guides/custom-themes.md. ' +
+    'Adding a button: first read editor/buttons.md. ' +
     'Asked about a past conversation ("yesterday", "last time", "what we talked about"): run ' +
     '`bismuth history [words] --on <date>` first; memory holds distilled facts, not what was ' +
     'said, and session logs are not in the vault or .daemon/logs. ' +

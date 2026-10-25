@@ -28,6 +28,8 @@ import {
     type CreatePageInput,
 } from '../daemonPages'
 import { installStatus, runSetup } from '../daemonInstall'
+import { pressButton, readButtonStates } from '../buttons/buttonState'
+import type { PressRequest } from '../buttons/buttonTypes'
 import { ok, error, type Handler, type RouteContext } from './context'
 
 export default function daemonRoutes(
@@ -265,6 +267,51 @@ export default function daemonRoutes(
             }
             if (!path || !text) return error('missing path/text', 400)
             return ok(replyToPage(cfg.vault, path, text, 'app'))
+        },
+
+        // Press a ```button fence's prompt button: core validates it, writes the sidecar to
+        // "working" and drops the trigger the daemon's processButtonTriggers polls
+        // (core/src/buttons/buttonState.ts). Refusals are a 200 `{ ok: false, reason }`. Owner-gated:
+        // CORS is `*`, and a press runs a daemon prompt. Like /daemon/pages/resolve it writes only
+        // under .daemon, so it rides the READ table.
+        'POST /buttons/press': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const b = (await req.json()) as Partial<PressRequest> | null
+            const host = b?.host
+            const validHost =
+                host &&
+                ((host.kind === 'note' &&
+                    typeof host.path === 'string' &&
+                    host.path) ||
+                    (host.kind === 'chat' &&
+                        typeof host.chatId === 'string' &&
+                        host.chatId))
+            if (
+                !validHost ||
+                typeof b?.body !== 'string' ||
+                !Number.isInteger(b.index)
+            )
+                return error('missing host/body/index', 400)
+            return ok(
+                pressButton(cfg.vault, {
+                    host: host!,
+                    body: b.body,
+                    index: b.index!,
+                }),
+            )
+        },
+
+        // The stored states of buttons by key (`{ [key]: ButtonState }`; idle keys are absent).
+        // A read, polled by the button rows. Owner-gated: it returns prompts and daemon results.
+        'POST /buttons/states': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const { keys } = (await req.json()) as { keys?: unknown }
+            if (
+                !Array.isArray(keys) ||
+                !keys.every(k => typeof k === 'string')
+            )
+                return error('missing keys', 400)
+            return ok(readButtonStates(cfg.vault, keys as string[]))
         },
 
         // Belt-and-suspenders client escape hatch (plan §5): force the sidecar to "failed" with no

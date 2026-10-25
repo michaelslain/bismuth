@@ -155,6 +155,8 @@ import {
     type UiTabsSnapshot,
 } from './uiControlClient'
 import { UI_CONTROL_BLOCKLIST } from '../../core/src/commands'
+import { setButtonRuntime } from './buttons/buttonRuntime'
+import { appButtonRuntime } from './buttons/appButtonRuntime'
 import {
     findScroller,
     targetTop,
@@ -1876,6 +1878,15 @@ export default function App() {
     // app-control actions (list/open/close/focus/rename/pin/reorder tabs, scroll a pane, run-command) to App state;
     // the blocklist + chat exclusion are enforced here (and again on the server) so opening a live
     // recursive Agent-SDK chat stays off the app-control surface.
+    onMount(() =>
+        setButtonRuntime(
+            appButtonRuntime({
+                getCommand: id => commands().get(id),
+                daemonEnabled: () => settings.daemon.enabled,
+            }),
+        ),
+    )
+
     onMount(() => {
         const handle = connectUiControl(resolveWindowId(), {
             listTabs: () => listTabsSnapshot(),

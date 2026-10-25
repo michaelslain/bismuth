@@ -11,6 +11,7 @@ import {
 } from './brainReport'
 import { atomicWriteJson } from '../lib/atomicJson.ts'
 import { processPageTriggers } from './pages'
+import { processButtonTriggers } from './buttons'
 import {
     resolveIncrementalRun,
     advanceIncrementalCheckpoints,
@@ -1782,6 +1783,8 @@ async function processAllTriggers(): Promise<void> {
         // 5s cadence, but fire a one-shot isolated session per approved page rather than a
         // recurring cron job — see pages.ts. Runs after crons so a cron doesn't wait on it.
         await processPageTriggers(ctx)
+        // ```button prompt jobs (core/src/buttons): same contract, see buttons.ts.
+        await processButtonTriggers(ctx)
     }
 }
 

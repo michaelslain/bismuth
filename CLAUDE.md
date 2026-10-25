@@ -187,6 +187,7 @@ They override framework habits, and most violations compile, render and pass tes
 | vault semantic search, embeddings switch | `docs/vault/semantic-search.md` |
 | OCR of PDFs and images, `bismuth ocr`, the `ocr` MCP tool | `docs/vault/ocr.md` |
 | PDF → markdown note, `bismuth pdf md`, the `pdf_to_markdown` MCP tool, the PDF bar's button | `docs/vault/pdf-to-markdown.md` |
+| ` ```button ` fences in notes and chat replies, `bismuth button`, `.daemon/buttons/` | `docs/editor/buttons.md` |
 | mobile | `docs/mobile/overview.md` |
 | on-disk layout | `docs/overview/storage.md` |
 

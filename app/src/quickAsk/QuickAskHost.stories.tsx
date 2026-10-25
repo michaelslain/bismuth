@@ -26,6 +26,7 @@ import {
     openQuickAsk,
     quickAskChatId,
     quickAskOpen,
+    quickAskPendingSend,
     type QuickAskAnchor,
 } from './quickAskState'
 
@@ -75,9 +76,13 @@ type Fake = {
     ask: (text: string) => void
     token: (text: string) => void
     done: () => void
+    /** Connect: the manifest lands (null until then, like a socket still opening). */
+    connect: () => void
+    /** Every sendText the host made, with whether the manifest had landed. */
+    texts: { text: string; connected: boolean }[]
 }
 
-function makeFake(id: string, auto: boolean): Fake {
+function makeFake(id: string, auto: boolean, connected = true): Fake {
     const [transcript, setTranscript] = createStore<TurnItem[]>([])
     const [streaming, setStreaming] = createSignal(false)
     const [awaitingReply, setAwaitingReply] = createSignal(false)
@@ -89,6 +94,10 @@ function makeFake(id: string, auto: boolean): Fake {
         displayModelValue: 'opus',
     })
     const order: string[] = []
+    const texts: Fake['texts'] = []
+    const [manifest, setManifest] = createSignal<ChatManifest | null>(
+        connected ? MANIFEST : null,
+    )
     const [mode, setMode] = createSignal('bypassPermissions')
     const ask = (text: string): void => {
         setTranscript(produce(t => void t.push({ role: 'user', text })))
@@ -112,6 +121,9 @@ function makeFake(id: string, auto: boolean): Fake {
             streaming,
             awaitingReply,
             permMode: mode,
+            manifest,
+            sendText: text =>
+                void texts.push({ text, connected: !!manifest() }),
             setPermissionModeLocal: m => {
                 setMode(m)
                 order.push(`mode:${m}`)
@@ -137,6 +149,8 @@ function makeFake(id: string, auto: boolean): Fake {
         ask,
         token,
         done,
+        connect: () => setManifest(MANIFEST),
+        texts,
     }
 }
 
@@ -163,7 +177,9 @@ function closeLikeHost(): void {
     closeQuickAsk({ forget: empty })
 }
 
-function stage(opts: { trusted?: boolean; auto?: boolean } = {}): JSX.Element {
+function stage(
+    opts: { trusted?: boolean; auto?: boolean; connected?: boolean } = {},
+): JSX.Element {
     fakes.clear()
     const [note, setNote] = createSignal<NotePath>('notes/fox.md')
     const [mounted, setMounted] = createSignal(false)
@@ -250,7 +266,10 @@ function stage(opts: { trusted?: boolean; auto?: boolean } = {}): JSX.Element {
                 tagNames={() => []}
                 sessionFor={id => {
                     if (!fakes.has(id))
-                        fakes.set(id, makeFake(id, opts.auto ?? true))
+                        fakes.set(
+                            id,
+                            makeFake(id, opts.auto ?? true, opts.connected),
+                        )
                     return fakes.get(id)!.session
                 }}
                 isTrusted={opts.trusted ? () => true : undefined}
@@ -425,5 +444,34 @@ export const OpenInChat: Story = {
         cmdK()
         await waitFor(() => expect(quickAskChatId()).not.toBeNull())
         await expect(quickAskChatId()).not.toBe(id)
+    },
+}
+
+/** A note's button queues a send while the chat is still connecting (no manifest yet). The host
+ *  holds it, sends it exactly once after the manifest lands, and leaves the typed draft alone.
+ *  Ends open, the text sent. */
+export const PendingSendWaitsForConnection: Story = {
+    name: 'pending send waits for connection',
+    render: () => stage({ connected: false }),
+    play: async ({ canvasElement }) => {
+        await mounted(canvasElement)
+        showNote!('notes/fox.md')
+        openQuickAsk(caret('notes/fox.md'), { send: 'summarise this note' })
+        await waitFor(() => expect(fake()).toBeDefined())
+        fake().session.setDraft('half-typed thought')
+        await new Promise(r => setTimeout(r, 150))
+        await expect(fake().texts).toEqual([])
+        await expect(quickAskPendingSend()).toBe('summarise this note')
+
+        fake().connect()
+        await waitFor(() => expect(fake().texts.length).toBe(1))
+        await expect(fake().texts[0]).toEqual({
+            text: 'summarise this note',
+            connected: true,
+        })
+        await expect(quickAskPendingSend()).toBeNull()
+        await expect(fake().session.draft()).toBe('half-typed thought')
+        await new Promise(r => setTimeout(r, 150))
+        await expect(fake().texts.length).toBe(1)
     },
 }

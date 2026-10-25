@@ -11,7 +11,7 @@
 // start or resume a session through it. `closeQuickAsk` releases the session (App's retention
 // disposes it) and keeps the remembered chat unless asked to forget it; `handOffQuickAsk` gives the
 // chat to a chat tab, which owns it from then on.
-import { createSignal } from 'solid-js'
+import { batch, createSignal } from 'solid-js'
 import type { EditorView } from '@codemirror/view'
 import { setChatInstruction } from '../chat/chatContext'
 import { forgetChatSession } from '../chat/chatSessionStore'
@@ -55,6 +55,17 @@ const writeEntries = (list: QuickChatEntry[]): void => {
 
 const [open, setOpen] = createSignal<QuickAskAnchor | null>(null)
 const [chatId, setChatId] = createSignal<string | null>(null)
+const [pending, setPending] = createSignal<string | null>(null)
+
+/** Reactive: text queued by `openQuickAsk(anchor, { send })` that the host has not sent yet. */
+export const quickAskPendingSend = pending
+
+/** Take the queued send: returns it once and clears it, so it can never go out twice. */
+export function takeQuickAskSend(): string | null {
+    const text = pending()
+    if (text !== null) setPending(null)
+    return text
+}
 
 /** Reactive: the open popover's anchor, or null when closed. */
 export const quickAskOpen = open
@@ -77,8 +88,12 @@ function forgetQuickChat(id: string): void {
 }
 
 /** Open the popover at `anchor` on the chat remembered for its key, or a fresh one. Re-opening
- *  while open re-anchors (and switches chat when the key differs). */
-export function openQuickAsk(anchor: QuickAskAnchor): string {
+ *  while open re-anchors (and switches chat when the key differs). `opts.send` queues a message
+ *  QuickAskHost sends once, as soon as the session can take it (a button block's send action). */
+export function openQuickAsk(
+    anchor: QuickAskAnchor,
+    opts: { send?: string } = {},
+): string {
     const prev = chatId()
     const remembered =
         anchor.key === null ? null : quickChatFor(readEntries(), anchor.key)
@@ -93,8 +108,12 @@ export function openQuickAsk(anchor: QuickAskAnchor): string {
         for (const gone of evicted) forgetQuickChat(gone)
     }
     if (prev && prev !== id) setChatInstruction(prev, null)
-    setChatId(id)
-    setOpen(anchor)
+    // One batch: the host effect must never see the new pending with the old chat.
+    batch(() => {
+        setPending(opts.send ?? null)
+        setChatId(id)
+        setOpen(anchor)
+    })
     return id
 }
 
@@ -107,6 +126,7 @@ export function closeQuickAsk(opts: { forget?: boolean } = {}): void {
         if (opts.forget || !keyed) forgetQuickChat(prev)
         else setChatInstruction(prev, null)
     }
+    setPending(null)
     setChatId(null)
     setOpen(null)
 }
@@ -120,6 +140,7 @@ export function handOffQuickAsk(): string | null {
         setChatInstruction(id, null)
         writeEntries(forgetQuickChatEntry(readEntries(), id))
     }
+    setPending(null)
     setChatId(null)
     setOpen(null)
     return id

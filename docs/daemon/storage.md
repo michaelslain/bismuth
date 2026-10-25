@@ -9,7 +9,7 @@ The daemon keeps its state in two places: one machine directory shared by every 
 
 <vault>/.daemon/                   one per vault
   identity.md  PAGES.md
-  crons/  processes/  pages/  memory/  logs/
+  crons/  processes/  pages/  buttons/  memory/  logs/
   session-id  session-ids
 ```
 
@@ -51,6 +51,8 @@ The service definition itself lives outside this directory: see [the service fil
 | `pages/.state/<slug>.json` | JSON | A page's status, kept apart from the page so an edit cannot clobber it |
 | `pages/.triggers/<slug>` | empty file | A pending "run the approved action" request |
 | `pages/.email/state.json` | JSON | Which pages the email bridge mailed, under which Message-ID. See [inbox by email](email.md#how-it-works) |
+| `buttons/.state/<key>.json` | JSON | A prompt button's job status, keyed by the button's 16-character key. See [buttons](../editor/buttons.md) |
+| `buttons/.triggers/<key>` | empty file | A pending "run this pressed button" request |
 | `memory/<name>.md`, `memory/<folder>/<name>.md` | markdown | The memory graph. See [memory](memory.md) |
 | `logs/activity-YYYY-MM-DD.jsonl` | JSON lines | The activity log, below |
 | `logs/<process>.{stdout,stderr}.log` | text | A background process's output, appended |
@@ -139,9 +141,9 @@ Bismuth's local git snapshots of a vault (`vault.backupOnSave`) track `identity.
 - Two keys per cron or process. The file name (the slug) identifies it everywhere in memory, in trigger files and pid files, and in the HTTP, CLI and MCP surfaces. The display name (`name:` in the frontmatter, else the slug) keys `.last-fired.json`, `.running.json` and the activity log. Editing `name:` by hand therefore orphans a cron's history, and a catch-up-eligible cron fires again on the next tick.
 - Disable pauses. Turning a vault's daemon off, or dropping it from `vaults.json`, stops its processes and watchers and deletes nothing.
 - Memory has no index. The graph is recomputed from the markdown on every read. The daemon passes `<vault>/.daemon/memory` explicitly, and tools read it from `BISMUTH_MEMORY_DIR`.
-- Core writes only control files. Bismuth writes `owner.json`, a cron or process's `enabled` frontmatter, trigger files, pages and their sidecars, and the vault registry. Every reader in core tolerates a missing or malformed file and returns an empty value.
+- Core writes only control files. Bismuth writes `owner.json`, a cron or process's `enabled` frontmatter, trigger files, pages and their sidecars, button states, and the vault registry. Every reader in core tolerates a missing or malformed file and returns an empty value.
 - Core appends `doctor` events. The doctor runs in core and the CLI, not in the daemon, so `appendActivity` in core writes them: to the vault the doctor ran with, or to every vault in `vaults.json` when it ran with none, and only to a vault whose `.daemon` folder exists. Each event is one whole-line append, the same discipline the daemon's writer keeps.
 - Transcripts are found by id, not by path. `archiveSessionTranscript` in `daemon/src/lib/sessionArchive.ts` searches every directory under `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) for `<id>.jsonl`, so it never re-derives Claude Code's encoding of the vault path. `sendMessage` in `daemon/src/daemon/session.ts` calls it in the `finally` of each turn; the copy is overwritten each time, since a resumed transcript only grows. `retainActivityLogs` in `activityLog.ts` skips the prune when `keepLogs` is on.
 - Writes to state files are queued. Writes to `.last-fired.json`, `.running.json` and the activity log go through a per-file queue in `daemon/src/lib/writeQueue.ts`, so concurrent runs do not lose updates.
 
-Source: `daemon/src/lib/{config,device,owner,registry,activityLog,sessionArchive,writeQueue}.ts`, `daemon/src/daemon/{index,cron,process,seeds,sessionIds,pages}.ts`, `core/src/{daemon,daemonState,daemonGraph,daemonActivity,daemonPages,backup,chatDaemonLegacy}.ts`
+Source: `daemon/src/lib/{config,device,owner,registry,activityLog,sessionArchive,writeQueue}.ts`, `daemon/src/daemon/{index,cron,process,seeds,sessionIds,pages,buttons}.ts`, `core/src/{daemon,daemonState,daemonGraph,daemonActivity,daemonPages,backup,chatDaemonLegacy}.ts`, `core/src/buttons/buttonState.ts`

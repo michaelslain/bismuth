@@ -17,6 +17,7 @@ import { extractFrontmatterBoundary } from './frontmatterUtils'
 import { type TableBlock, groupTableBlocks } from './tableModel'
 import { scanHtmlBlocks } from './htmlPreview'
 import { scanCallouts, type CalloutHeader } from './callout'
+import { BUTTON_FENCE_LANG } from '../../../core/src/buttons/buttonBlock'
 import {
     drawFenceKind,
     scanDrawBlocks,
@@ -145,7 +146,7 @@ export function computeBlockRegions(doc: Text): BlockRegions {
                     j++
                 }
                 if (j <= doc.lines) {
-                    // ```query is owned by queryBlock.ts, ```graph by graphBlock.ts, and ```draw
+                    // ```query is owned by queryBlock.ts, ```graph by graphBlock.ts, ```button by buttonBlock.ts, and ```draw
                     // by drawBlock.ts — each replaces its whole fence with the rendered view. Skip
                     // them here so livePreview doesn't ALSO render them as code blocks (which would
                     // collide with that block replace and leak the raw source).
@@ -154,6 +155,7 @@ export function computeBlockRegions(doc: Text): BlockRegions {
                     if (
                         lang === 'query' ||
                         lang === 'graph' ||
+                        lang === BUTTON_FENCE_LANG ||
                         drawFenceKind(lang) !== null
                     ) {
                         i = j + 1

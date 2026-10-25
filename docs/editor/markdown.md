@@ -32,6 +32,7 @@ Read this page to learn what each markdown construct looks like in the editor an
 | `<div>...</div>` | The HTML, rendered | Click it, or move the caret into it |
 | `![[image.png]]` | The image, PDF, audio, video or note, inline; see [attachments](../vault/attachments.md) | Move the caret into the embed |
 | ` ```query `, ` ```graph `, ` ```draw ` | A live view, graph or drawing; see [query blocks](../bases/query-block.md), [graph block](graph-block.md) and [ink](ink.md) | The block's own source button |
+| ` ```button ` | A row of buttons; see [buttons](buttons.md) | Double-click it |
 
 Outside code, math and links, the word "bismuth" is drawn with the app's iridescent gradient.
 

@@ -60,6 +60,7 @@ bun run build:app
 - [Tables](editor/tables.md) — editing GFM tables cell by cell: rows, columns, merge, reorder
 - [Autocomplete](editor/autocomplete.md) — every completion trigger: links, tags, tasks, slash menu, emoji, settings
 - [Note ink](editor/ink.md) — draw over any note in draw mode; strokes live in ` ```draw ` fences
+- [Buttons](editor/buttons.md) — a ` ```button ` fence: chips that run a daemon job, send a message or run a command
 - [The graph block](editor/graph-block.md) — a ` ```graph ` fence that renders an editable graph inside a note
 - [Template tokens and daily notes](templates/syntax.md) — `{{date}}`-style tokens, templates, and the daily note
 

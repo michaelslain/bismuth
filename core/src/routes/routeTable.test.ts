@@ -56,6 +56,8 @@ const EXPECTED = [
     'POST /asset/fetch',
     'POST /backup',
     'POST /bismuth/install',
+    'POST /buttons/press',
+    'POST /buttons/states',
     'POST /cards/review',
     'POST /chat/delete',
     'POST /chat/restore',

@@ -242,6 +242,8 @@ const PATH_SCOPED_COMMANDS = new Set([
     'highlights',
     // `pdf md` reads one PDF and writes `<name>.md` beside it.
     'pdf',
+    // `button` reads one note's ```button fences and presses a prompt button in it.
+    'button',
 ])
 
 /** Tier B2 — lists, searches or aggregates vault content, so it cannot be judged from argv alone,

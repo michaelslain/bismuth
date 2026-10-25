@@ -386,6 +386,8 @@ Concepts are in the [daemon docs](../daemon/setup.md).
 | `POST /daemon/pages/reply` | `{path, text}` | `{status, alreadyResolved}` | open; none |
 | `POST /daemon/pages/mark-failed` | `{path}` | `{ok: true}` | open; none |
 | `POST /daemon/pages/archive` | `{path}` | `{ok: true}` | owner only; none |
+| `POST /buttons/press` | `{host, body, index}` | `{ok: true, key, state}`, or `{ok: false, reason, message}` with `reason` one of `running`, `not-found`, `invalid`, `daemon-off` | owner only; writes the button's state file and a trigger under `.daemon/buttons/` |
+| `POST /buttons/states` | `{keys}` | An object of `ButtonState` by key; a key with no stored state is absent | owner only; none |
 
 `GET /daemon/status` reports `running` when `daemon.pid` exists and the process is alive. `name` is the display name from the vault's daemon identity.
 
@@ -431,6 +433,9 @@ Errors: `400 missing path/actionId`, `404 page not found: <path>`, `400 unknown 
 A page already `done`, `dismissed` or `working` returns its status with `alreadyResolved: true`. Errors: `400 missing path/text`, `400 empty reply` (whitespace only), `404 page not found: <path>`.
 
 `POST /daemon/pages/mark-failed` sets a stuck `working` page to `failed`; it leaves a page already `done`, `failed` or `dismissed` unchanged. `POST /daemon/pages/archive` deletes the page and its sidecar whatever its status, and answers `409` while the page is `working`.
+
+`POST /buttons/press` presses a prompt button in a ` ```button ` fence: `host` is `{kind: 'note', path}` or `{kind: 'chat', chatId}`, `body` is the fence body and `index` the button's position in it.
+A note press is refused `not-found` unless the note on disk holds a fence with exactly that body; a press on a button still `working` within its timeout plus a minute is refused `running`. Both button routes answer `403` without the owner token. See [buttons](../editor/buttons.md).
 
 ## Memory recall
 

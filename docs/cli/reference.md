@@ -87,7 +87,7 @@ Channel `chat` hides notes marked `hidden`; channel `daemon` hides `hidden` and 
 | Tier | Commands | Behaviour |
 |---|---|---|
 | Always allowed | `backends`, `backup`, `daemon`, `docs`, `doctor`, `folder-icon`, `install`, `memory`, `page`, `uninstall`, `app`, `settings get`, `settings schema`, `settings deny-list`, `checkpoint advance`, `checkpoint ref` | Cannot print a note body. |
-| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render`, `ocr`, `highlights`, `pdf` | Refused when an argument names a restricted note or folder. |
+| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render`, `ocr`, `highlights`, `pdf`, `button` | Refused when an argument names a restricted note or folder. |
 | Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `map`, `brain`, `checkpoint diff`, `prop check` | Run, with restricted notes dropped before any count, group or summary. |
 | Refused | `api`, `serve`, `export`, `chat`, `update`, `settings set`, `settings status-bar`, `folder-visibility`, any unlisted command | Exit non-zero with a reason. |
 
@@ -188,6 +188,17 @@ bismuth base migrate --all --vault <vault>
 `base validate` reads the raw config (frontmatter or line 1), because the normal parser silently turns an unknown `view:` into `table`. It also reports a YAML comment that truncated a value (`#` after a space starts a comment inside a plain scalar) and a base that lists more than one view.
 
 A hidden `--of` base answers like a missing one: no rows, no refusal. `base migrate-queries` and `--dry-run` print `{changed, files, unconvertible, degraded, skipped}`; blocks that already carry their own `where:` or `sort:` are left alone and counted under `unconvertible`.
+
+## button
+
+Lists and presses the buttons of a note's ` ```button ` fences, headless like `page`. Button syntax and statuses are in [buttons](../editor/buttons.md). The note path is vault-relative.
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `button list` | `<note> [--vault <dir>] [--pretty]` | Prints `[{fence, index, label, type, key, status}]`. `status` is `idle` until a prompt button is pressed. An invalid fence is one entry with `error`. | no |
+| `button press` | `<note> <label> [--vault <dir>] [--pretty]` | Presses the prompt button with that label, matched without regard to case, and prints the result. Exits `1` when the press is refused. | no |
+
+`button press` refuses an ambiguous label, a label that matches nothing, and a `send` or `command` button, which runs in the app. A refused press prints `{ok: false, reason, message}` where `reason` is `running`, `not-found`, `invalid` or `daemon-off`.
 
 ## calendar
 

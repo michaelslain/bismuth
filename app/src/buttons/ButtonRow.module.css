@@ -1,0 +1,35 @@
+/* app/src/buttons/ButtonRow.module.css
+   A button fence's row: chips, then one status or confirm line. Left-aligned to whatever column
+   the host sets; owns no width of its own. */
+.button-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.line {
+  min-width: 0;
+}
+.ask {
+  min-width: 0;
+}
+/* the whole text, never clipped mid-line: scrolls once it passes six lines */
+.body {
+  max-height: calc(var(--lh-ui) * 6em);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}

@@ -7,6 +7,7 @@ import { renderNoteBody } from '../bases/markdown'
 import ChatCopyButton from './ChatCopyButton'
 import { createTypedTables } from '../ui/table/typeTables'
 import { createCodeFences } from '../ui/codeFences'
+import { createButtonBlocks } from '../buttons/createButtonBlocks'
 import styles from './ChatTextBubble.module.css'
 
 export type ChatTextBubbleProps = {
@@ -18,6 +19,11 @@ export type ChatTextBubbleProps = {
     muted?: boolean
     /** Right-click → Reply/Copy menu, wired by the transcript (which owns the ContextMenu). */
     onContextMenu?: (e: MouseEvent) => void
+    /** The conversation this bubble sits in. With `onSend`, an ASSISTANT bubble's ```button fences
+     *  are live; without either (or in a user bubble) they stay the inert `[label]` row. */
+    chatId?: string
+    /** A button's `send` text becomes the user's next message in `chatId` (ChatSession.sendText). */
+    onSend?: (text: string) => void
     class?: string
 }
 
@@ -46,6 +52,17 @@ const ChatTextBubble: Component<ChatTextBubbleProps> = props => {
     createCodeFences(
         () => el,
         () => props.text,
+    )
+    // ```button fences: renderNoteBody leaves an inert placeholder; adopt it into a live row for an
+    // assistant message only. Same ordering as the tables above.
+    createButtonBlocks(
+        () => el,
+        () => props.text,
+        () =>
+            props.role === 'assistant' && props.chatId
+                ? { kind: 'chat', chatId: props.chatId }
+                : undefined,
+        () => props.onSend,
     )
     return (
         <Show when={props.text.trim()}>

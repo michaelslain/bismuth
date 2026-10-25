@@ -136,6 +136,7 @@ import type { PdfMarkdownJob, PdfMarkdownStart } from '../../core/src/pdfMarkdow
 import type { DaemonSnapshot } from '../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../core/src/daemonActivity'
 import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
+import type { ButtonState, PressRequest, PressResult } from '../../core/src/buttons/buttonTypes'
 import type { MigrationReport } from '../../core/src/taskMigrateRun'
 import type { TaskPatch } from '../../core/src/taskEdit'
 import type { StatusSegment } from '../../core/src/statusBarEval'
@@ -807,6 +808,11 @@ export const api = {
         postJson<ResolveResult>('/daemon/pages/resolve', { path, actionId }),
     replyToDaemonPage: (path: string, text: string) =>
         postJson<ResolveResult>('/daemon/pages/reply', { path, text }),
+    // Daemon buttons (```button fences): press a prompt button, poll the stored states by key.
+    pressButton: (req: PressRequest) =>
+        postJson<PressResult>('/buttons/press', req),
+    buttonStates: (keys: string[]) =>
+        postJson<Record<string, ButtonState>>('/buttons/states', { keys }),
     markDaemonPageFailed: (path: string) =>
         post('/daemon/pages/mark-failed', { path }).then(() => {}),
     // Archive = delete the page (and its sidecar) outright, whatever its state — refused (409)

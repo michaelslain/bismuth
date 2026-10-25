@@ -103,6 +103,7 @@ export function ChatView(props: ChatViewProps): JSX.Element {
             <ChatSessionBody
                 variant="pane"
                 session={session()}
+                chatId={props.chatId}
                 placeholder={`Message ${persona()}`}
                 persona={persona()}
                 avatarMood={avatarMood()}

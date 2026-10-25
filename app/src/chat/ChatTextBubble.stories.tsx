@@ -7,6 +7,8 @@ import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/tes
 import ChatTextBubble from './ChatTextBubble'
 import { stubClipboard } from '../ui/_clipboardStub'
 import { ToastHost } from '../ui/ToastHost'
+import { parseButtonBlock, buttonKey } from '../../../core/src/buttons/buttonBlock'
+import { setButtonRuntime } from '../buttons/buttonRuntime'
 
 const meta = {
     title: 'Chat/ChatTextBubble',
@@ -392,5 +394,86 @@ export const ContextMenu: Story = {
         const bubble = canvas.getByText('Right-click me.')
         await fireEvent.contextMenu(bubble)
         await expect(args.onContextMenu).toHaveBeenCalled()
+    },
+}
+
+const buttonText = [
+    'I can take this further. Pick one:',
+    '',
+    '```button',
+    '- label: Summarize this week',
+    '  kind: primary',
+    '  prompt: Summarize what changed in the vault this week.',
+    '- label: Open daemon',
+    '  command: open-daemon',
+    '- label: Show open tasks',
+    '  send: What tasks are still open?',
+    '```',
+    '',
+    'Or tell me what you need.',
+].join('\n')
+
+/** An assistant message's ```button fence is a live row inside the bubble, in the prose column; a
+ *  `send` chip hands its text to `onSend` (the session's next user message). */
+export const ButtonsAssistant: Story = {
+    beforeEach: () => {
+        setButtonRuntime({
+            parse: parseButtonBlock,
+            key: buttonKey,
+            press: async () => ({
+                ok: false,
+                reason: 'invalid',
+                message: 'story runtime',
+            }),
+            states: async () => ({}),
+            runCommand: async () => {},
+            commandLabel: id => (id === 'open-daemon' ? 'Open daemon' : undefined),
+            daemonEnabled: () => true,
+            notOwner: () => false,
+            isTrusted: () => true,
+            trust: () => {},
+        })
+    },
+    args: { onSend: fn() },
+    render: args => (
+        <div style={{ width: '600px' }}>
+            <ChatTextBubble
+                text={buttonText}
+                role="assistant"
+                chatId="story-chat"
+                onSend={args.onSend}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement, args }) => {
+        const canvas = within(canvasElement)
+        const send = await canvas.findByRole('button', { name: /show open tasks/ })
+        await expect(canvas.getByRole('button', { name: /summarize this week/ })).toBeInTheDocument()
+        await fireEvent.click(send)
+        await waitFor(() =>
+            expect(args.onSend).toHaveBeenCalledWith('What tasks are still open?'),
+        )
+    },
+}
+
+/** The same fence in a USER message stays inert muted text: `[label]` per button, primary last. */
+export const ButtonsUser: Story = {
+    render: args => (
+        <div style={{ width: '600px' }}>
+            <ChatTextBubble
+                text={buttonText}
+                role="user"
+                chatId="story-chat"
+                onSend={args.onSend}
+            />
+        </div>
+    ),
+    args: { onSend: fn() },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.queryAllByRole('button', { name: /open daemon/ })).toHaveLength(0)
+        await expect(
+            canvasElement.querySelector('[data-bismuth-buttons]')?.textContent,
+        ).toBe('[open daemon] [show open tasks] [summarize this week]')
     },
 }

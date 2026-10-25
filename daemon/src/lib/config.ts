@@ -76,6 +76,11 @@ export interface VaultContext {
     pagesDir: string
     pageStateDir: string
     pageTriggerDir: string
+    /** <root>/.daemon/buttons — ```button jobs: core writes `.state/<key>.json` + drops
+     *  `.triggers/<key>`; this runtime only reads the sidecar and writes done/failed. */
+    buttonsDir: string
+    buttonStateDir: string
+    buttonTriggerDir: string
     /** <root>/.daemon/pages/.email/state.json — which pages were mailed under which Message-ID. */
     emailStateFile: string
 }
@@ -92,6 +97,7 @@ export function vaultPaths(
     const cronsDir = join(daemonDir, 'crons')
     const processesDir = join(daemonDir, 'processes')
     const pagesDir = join(daemonDir, 'pages')
+    const buttonsDir = join(daemonDir, 'buttons')
     return {
         root,
         name: name.trim() || 'daemon',
@@ -115,6 +121,9 @@ export function vaultPaths(
         pagesDir,
         pageStateDir: join(pagesDir, '.state'),
         pageTriggerDir: join(pagesDir, '.triggers'),
+        buttonsDir,
+        buttonStateDir: join(buttonsDir, '.state'),
+        buttonTriggerDir: join(buttonsDir, '.triggers'),
         emailStateFile: join(pagesDir, '.email', 'state.json'),
     }
 }

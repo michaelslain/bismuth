@@ -20,6 +20,7 @@ import * as exportCmd from './commands/export'
 import * as api from './commands/api'
 import * as app from './commands/app'
 import * as page from './commands/page'
+import * as button from './commands/button'
 import * as install from './commands/install'
 import * as backends from './commands/backends'
 import * as doctor from './commands/doctor'
@@ -57,6 +58,7 @@ const GROUPS: { commands: CommandMap }[] = [
     api,
     app,
     page,
+    button,
     install,
     backends,
     doctor,

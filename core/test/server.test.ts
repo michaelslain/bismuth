@@ -3838,3 +3838,47 @@ test('with an SSE client connected, a structural edit rebuilds the graph once fo
         server.stop(true)
     }
 }, WATCH_TEST_TIMEOUT_MS)
+
+test('POST /buttons/press + /buttons/states round-trip end-to-end', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(vault, '.settings', 'daemon:\n  enabled: true\n')
+    const body = 'label: go\nprompt: do it'
+    await writeNote(vault, 'btn.md', `# b\n\n\`\`\`button\n${body}\n\`\`\`\n`)
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const token = readRunRecords().find(r => r.vault === vault)?.token
+        expect(token).toBeTruthy()
+        const post = (path: string, payload: unknown, withToken = true) =>
+            fetch(`${base}${path}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(withToken ? { 'X-Bismuth-Token': token! } : {}),
+                },
+                body: JSON.stringify(payload),
+            })
+        const req = { host: { kind: 'note', path: 'btn.md' }, body, index: 0 }
+        const pressed = await (await post('/buttons/press', req)).json()
+        expect(pressed.ok).toBe(true)
+        expect(pressed.state.status).toBe('working')
+
+        const states = await (
+            await post('/buttons/states', { keys: [pressed.key, 'ffffffffffffffff'] })
+        ).json()
+        expect(Object.keys(states)).toEqual([pressed.key])
+
+        const again = await (await post('/buttons/press', req)).json()
+        expect(again).toMatchObject({ ok: false, reason: 'running' })
+
+        expect((await post('/buttons/press', req, false)).status).toBe(403)
+        expect(
+            (await post('/buttons/states', { keys: [pressed.key] }, false))
+                .status,
+        ).toBe(403)
+        expect((await post('/buttons/press', { body })).status).toBe(400)
+        expect((await post('/buttons/states', { keys: 'x' })).status).toBe(400)
+    } finally {
+        server.stop(true)
+    }
+}, WATCH_TEST_TIMEOUT_MS)

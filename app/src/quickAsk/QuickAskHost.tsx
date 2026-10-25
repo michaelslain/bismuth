@@ -23,6 +23,8 @@ import {
     handOffQuickAsk,
     quickAskChatId,
     quickAskOpen,
+    quickAskPendingSend,
+    takeQuickAskSend,
     type QuickAskAnchor,
 } from './quickAskState'
 
@@ -59,6 +61,25 @@ const QuickAskHost: Component<QuickAskHostProps> = props => {
             untrack(() => s.setPermissionModeLocal('default'))
         }),
     )
+
+    // A queued send (a note's button block) goes out once, when the session is idle and connected.
+    // sendText leaves the composer's draft and attachments alone.
+    createEffect(() => {
+        const s = session()
+        // manifest lands only after the socket opened and the backend spawned (chatSession.ts onopen)
+        if (
+            !s ||
+            quickAskPendingSend() === null ||
+            s.streaming() ||
+            !s.manifest()
+        )
+            return
+        const text = takeQuickAskSend()
+        // A microtask later: the session's first-manifest handler sets the permission mode,
+        // effort and model right after publishing the manifest, and those must reach the
+        // backend before this turn does.
+        if (text !== null) queueMicrotask(() => s.sendText(text))
+    })
 
     // An apply leaves the session in acceptEdits only for its own turn: back to `default` when it
     // ends, so a follow-up asks again rather than editing.

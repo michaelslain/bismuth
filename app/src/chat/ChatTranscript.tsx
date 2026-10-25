@@ -57,6 +57,10 @@ export type ChatTranscriptProps = {
         answers: Record<string, string> | null,
     ) => void
     onCancelQueued: (queueId: string) => void
+    /** The conversation this transcript shows, and where a button's `send` goes (the session's
+     *  sendText). Together they make an assistant message's ```button fences live. */
+    chatId?: string
+    onSend?: (text: string) => void
     /** Selection-reply button + bubble context menu "Reply". */
     onReply: (text: string) => void
     /** Subscribe to appends (pass session.onAppend). Follow-bottom + "Latest" pill live here. */
@@ -231,6 +235,8 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                                     }
                                     onAnswerQuestion={props.onAnswerQuestion}
                                     onBubbleContextMenu={onBubbleContextMenu}
+                                    chatId={props.chatId}
+                                    onSend={props.onSend}
                                 />
                             )
                         return (

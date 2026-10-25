@@ -13,6 +13,11 @@ import { BISMUTH_SCAN_RE, iridescentBismuthWith } from '../editor/bismuthWord'
 import { renderCellListHtml } from '../editor/cellList'
 import { specForWikiEmbed } from '../editor/embedSpec'
 import { api } from '../api'
+import {
+    BUTTON_FENCE_LANG,
+    parseButtonBlock,
+    scanButtonFences,
+} from '../../../core/src/buttons/buttonBlock'
 
 // GFM + single-newline line breaks. marked passes raw HTML in the markdown
 // straight through (Obsidian-style passthrough), so the result is sanitized
@@ -366,9 +371,50 @@ function memoryRefsToAnchors(src: string): string {
     )
 }
 
+// ── ```button fences ───────────────────────────────────────────────────────────────────────
+// A button fence is not code to show: it becomes a placeholder `<div data-bismuth-buttons="<body>">`
+// whose text is the INERT row (`[label]` per button, primary moved last, one space apart; an invalid
+// fence reads `button // <error>`). Cards, transclusion, export and user bubbles show that text as
+// is; an assistant bubble mounts the live ButtonBlockView over the placeholder (ChatTextBubble).
+// The swap happens in linkifyOutsideCode AFTER the wikilink/tag passes, because the masked fence is
+// restored from `codes`: the body is never linkified or tag-spanned, and the attribute is encoded
+// so no later source pass (math, images, page breaks, bismuth) can match inside it.
+function encodeButtonBody(body: string): string {
+    // `#` first: the entities below contain one.
+    return escapeAttr(body)
+        .replace(/#/g, '&#35;')
+        .replace(/>/g, '&#62;')
+        .replace(/\n/g, '&#10;')
+        .replace(/\r/g, '&#13;')
+        .replace(/\[/g, '&#91;')
+        .replace(/\$/g, '&#36;')
+}
+
+function inertButtonText(body: string): string {
+    const { buttons, error } = parseButtonBlock(body)
+    if (error) return `button // ${error}`
+    const row = [
+        ...buttons.filter(b => b.kind !== 'primary'),
+        ...buttons.filter(b => b.kind === 'primary'),
+    ]
+    return row.map(b => `[${b.label.toLowerCase()}]`).join(' ')
+}
+
+/** The placeholder block for a masked code entry that is a whole ```button fence, else null. */
+function buttonFenceHtml(code: string): string | null {
+    if (!code.includes(BUTTON_FENCE_LANG)) return null
+    const fences = scanButtonFences(code)
+    if (fences.length !== 1 || fences[0]!.from !== 0 || fences[0]!.to !== code.length)
+        return null
+    const body = fences[0]!.body
+    return `\n\n<div data-bismuth-buttons="${encodeButtonBody(body)}">${escapeHtml(inertButtonText(body))}</div>\n\n`
+}
+
 /** Resolve `[[wikilinks]]`, `??memory-refs` + `#tags` on the source while leaving code untouched. */
 function linkifyOutsideCode(src: string): string {
     const { masked, codes } = maskCode(src)
+    for (let i = 0; i < codes.length; i++)
+        codes[i] = buttonFenceHtml(codes[i]!) ?? codes[i]!
     // Memory refs BEFORE tags: a slug can contain `/` and `-` but never `#`, so the two can't
     // overlap — but ordering after wikilinksToAnchors keeps a `??x` inside an injected anchor's
     // attributes (there are none today) out of reach, matching the tag pass's placement.

@@ -219,6 +219,7 @@ export function makeStubChatSession(
         historyEntries,
         persona,
         send: () => log('send')(),
+        sendText: text => log('sendText')(text),
         stop: () => log('stop')(),
         answerPermission: (id, behavior, always) =>
             log('answerPermission')(id, behavior, always),
