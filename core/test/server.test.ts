@@ -3215,7 +3215,7 @@ test('app control: run-command blocklist + open-tab chat exclusion are enforced 
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
                 action: 'run-command',
-                args: { id: 'new-claude-chat' },
+                args: { id: 'new-chat' },
             }),
         })
         expect(blocked.status).toBe(403)

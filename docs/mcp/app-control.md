@@ -92,7 +92,7 @@ An ordinary command replies `{ "ok": true }`. Read `result.interactive` to tell 
 
 | Refused | Why |
 |---|---|
-| `app run` with `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` or `quick-ask` | Heavy or system-level actions, or a live agent session, that an unattended caller should not fire blindly. A quick ask opens a live agent session |
+| `app run` with `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-chat` or `quick-ask` | Heavy or system-level actions, or a live agent session, that an unattended caller should not fire blindly. A quick ask opens a live agent session |
 | `app open` with any `::chat:` content | A chat is a live agent session, a different trust boundary from opening a note |
 | `app open` with a path that names no file in the vault (404) | A tab for a missing file opens blank, and the caller would read the reply as success |
 

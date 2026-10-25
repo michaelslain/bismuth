@@ -3050,7 +3050,7 @@
     "max": null,
     "required": false
   },
-  "keybindings.new-claude-chat": {
+  "keybindings.new-chat": {
     "type": "keybind",
     "default": "Mod+Shift+C",
     "min": null,

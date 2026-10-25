@@ -99,8 +99,8 @@ export interface CommandHandlers {
     // caret. The always-visible home for the full library, kept OUT of the `:emoji` completion popup
     // so a real match (`:rocket` → 🚀) is always the top result (#67).
     openEmojiLibrary: () => void | Promise<void>
-    // Open a fresh Claude Code chat session in its own tab.
-    newClaudeChat: () => void
+    // Open a fresh chat session (whichever backend is configured) in its own tab.
+    newChat: () => void
     // Open the Cmd+K quick-ask popover at the caret (focused editor) or the focused pane's top.
     // Opening creates no chat session — only a trusted Enter in the popover does.
     quickAsk: () => void
@@ -156,7 +156,7 @@ export function bindCommands(
         'new-base': h.newBase,
         'new-spreadsheet': h.newSpreadsheet,
         'new-drawing': h.newDrawing,
-        'new-claude-chat': h.newClaudeChat,
+        'new-chat': h.newChat,
         'quick-ask': h.quickAsk,
         export: h.exportActive,
         'archive-tasks': h.archiveTasks,

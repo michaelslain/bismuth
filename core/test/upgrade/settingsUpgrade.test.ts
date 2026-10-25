@@ -539,3 +539,41 @@ describe('upgrade resilience — a damaged or hostile old file must not make thi
         rmSync(vault, { recursive: true, force: true })
     })
 })
+
+describe('new-claude-chat renamed to new-chat', () => {
+    test('the keybinding key and every bar button naming the old id are rewritten, keeping comments', async () => {
+        const vault = emptyVault()
+        writeFileSync(
+            join(vault, SETTINGS_FILE),
+            [
+                'keybindings:',
+                '  # my chat key',
+                '  new-claude-chat: Mod+Alt+C',
+                'toolbar:',
+                '  - command: new-claude-chat # chat button',
+                '    icon: MessageSquare',
+                'tabBar:',
+                '  - commands: [new-tab, new-claude-chat]',
+                '    icon: SquarePlus',
+                'statusBar:',
+                '  - text: chat',
+                '    command: new-claude-chat',
+                '',
+            ].join('\n'),
+        )
+
+        await reconcileSettings(vault)
+        const text = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+        const lines = text.split('\n')
+        const idx = lines.findIndex(l => /^\s*new-chat:/.test(l))
+
+        expect(text).not.toContain('new-claude-chat')
+        expect(lines[idx]).toContain('Mod+Alt+C')
+        expect(lines[idx - 1]).toContain('# my chat key')
+        expect(text).toContain('command: new-chat # chat button')
+        expect(text).toContain('[new-tab, new-chat]')
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.toolbar).toEqual([{ command: 'new-chat', icon: 'MessageSquare' }])
+        rmSync(vault, { recursive: true, force: true })
+    })
+})

@@ -16,7 +16,7 @@ describe('keybindingForCommand', () => {
                 'focus-pane-up',
                 'history-back',
                 'history-forward',
-                'new-claude-chat',
+                'new-chat',
                 'new-tab',
                 'new-window',
                 'open-folder',

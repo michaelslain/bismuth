@@ -531,7 +531,42 @@ function carryComment(
 const RENAMED_KEYS: readonly { from: readonly string[]; to: string }[] = [
     { from: ['appearance', 'sidebarIconFontSize'], to: 'iconSize' },
     { from: ['appearance', 'toolbarIconSize'], to: 'iconSize' },
+    // A keybinding key is a command id, so a renamed command renames its keybinding key too.
+    { from: ['keybindings', 'new-claude-chat'], to: 'new-chat' },
 ]
+
+// Command ids renamed since an older Bismuth, OLD -> NEW. renameCommandRefs rewrites them wherever a
+// `.settings` list names a command (each COMMAND_BAR_SECTIONS item's `command:` and `commands:`),
+// since the schema validates those against today's catalog and an old id would fail. The matching
+// `keybindings` key is a RENAMED_KEYS entry above.
+const RENAMED_COMMANDS: Readonly<Record<string, string>> = {
+    'new-claude-chat': 'new-chat',
+}
+const COMMAND_BAR_SECTIONS = ['toolbar', 'tabBar', 'statusBar'] as const
+
+/** Rewrite RENAMED_COMMANDS ids in place (the scalar's value only, so comments and quoting stay).
+ *  Returns true if anything was rewritten. */
+function renameCommandRefs(doc: Document): boolean {
+    let mutated = false
+    const rename = (node: unknown) => {
+        if (!isScalar(node) || typeof node.value !== 'string') return
+        const next = RENAMED_COMMANDS[node.value]
+        if (next === undefined) return
+        node.value = next
+        mutated = true
+    }
+    for (const section of COMMAND_BAR_SECTIONS) {
+        const list = doc.getIn([section], true)
+        if (!isSeq(list)) continue
+        for (const item of list.items) {
+            if (!isMap(item)) continue
+            rename(item.get('command', true))
+            const commands = item.get('commands', true)
+            if (isSeq(commands)) for (const c of commands.items) rename(c)
+        }
+    }
+    return mutated
+}
 
 /**
  * Rename any RENAMED_KEYS pair still present under its old name, in place. When only the old key
@@ -785,6 +820,7 @@ export async function reconcileSettings(vault: string): Promise<boolean> {
     if (!isMap(doc.contents)) return false // empty/scalar/corrupt — leave alone
     const renamed = renameKeys(doc) // first, so everything after sees current key names
     const moved = moveKeys(doc) // same ordering constraint as renameKeys
+    const renamedCommands = renameCommandRefs(doc)
     const migrated = migrateDaemonConfig(doc)
     const migratedAppearance = migrateLegacyAppearance(doc)
     const pruned = pruneRetiredKeys(doc)
@@ -792,6 +828,7 @@ export async function reconcileSettings(vault: string): Promise<boolean> {
     if (
         renamed ||
         moved ||
+        renamedCommands ||
         migrated ||
         migratedAppearance ||
         pruned ||

@@ -1477,7 +1477,7 @@ export default function App() {
         })
         pushCmd('new-spreadsheet')
         pushCmd('new-drawing')
-        pushCmd('new-claude-chat')
+        pushCmd('new-chat')
         const hadStatic = items.length > 0
         // Separator before the FIRST daily note that actually resolves (not the first
         // config — some may not bind, e.g. a config with a blank id is skipped).
@@ -1510,9 +1510,9 @@ export default function App() {
     // Deduped (inflight.ts): mount, the SSE-triggered refresh and the poll interval below can all
     // want a /daemon/pages round trip within the same tick at boot — share one in-flight request.
     const refreshInbox = dedupeInflight(() => refreshDaemonPages(openDaemon))
-    // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
+    // Open a fresh chat session in its own tab (a new uuid each time, so every
     // invocation is a distinct conversation rather than re-focusing an old one).
-    const newClaudeChat = () => openTool(CHAT_PREFIX + crypto.randomUUID())
+    const newChat = () => openTool(CHAT_PREFIX + crypto.randomUUID())
     // Cmd+K quick ask: anchored at the caret when the focus is inside a CodeMirror note editor,
     // else at the top of the focused pane. Already open → focus its composer instead of a second one.
     const quickAsk = () => {
@@ -1667,7 +1667,7 @@ export default function App() {
                 gcalConnect: openGcalConnect,
                 gcalSync,
                 gcalDisconnect,
-                newClaudeChat,
+                newChat,
                 quickAsk,
                 openEmojiLibrary,
                 zoomIn,
@@ -2773,8 +2773,8 @@ export default function App() {
         }
         // New chat (default Mod+Shift+C): open a fresh chat session tab. Don't hijack the
         // chord while typing in a form field (palette/search inputs).
-        if (matchesKeybinding(e, kb['new-claude-chat'])) {
-            runUnlessEditableTarget(e, newClaudeChat)
+        if (matchesKeybinding(e, kb['new-chat'])) {
+            runUnlessEditableTarget(e, newChat)
             return
         }
         // Reopen the most recently closed tab (default Mod+Shift+T).

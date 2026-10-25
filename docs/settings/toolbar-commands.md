@@ -98,7 +98,7 @@ These are the built-in commands, grouped by area. `COMMAND_CATALOG` in `core/src
 | `new-base` | New base | `Database` |  |
 | `new-spreadsheet` | New spreadsheet | `Table` |  |
 | `new-drawing` | New drawing | `PenTool` |  |
-| `new-claude-chat` | New chat | `MessageSquare` |  |
+| `new-chat` | New chat | `MessageSquare` |  |
 
 ### Notes and tasks
 
@@ -199,7 +199,7 @@ Notes on individual commands:
 `bismuth app run <id>` (and the matching MCP tool) runs a command in an open window. `bismuth app commands` lists the ids it accepts. [App control](../mcp/app-control.md) covers the routes and tools.
 
 - Dialog commands stay runnable. An agent can open the Google Calendar connect dialog to show you how. The reply says `interactive: true` with a note that a person needs to finish it, instead of implying the task is done.
-- Some commands are refused. `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` and `quick-ask` return `command "<id>" is not allowed via app control`.
+- Some commands are refused. `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-chat` and `quick-ask` return `command "<id>" is not allowed via app control`.
   They are heavyweight, or open a live agent session or a quick ask, and an unattended caller should not trigger them blindly. Everything else in the catalog is allowed.
 
 ## How it works

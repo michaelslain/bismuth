@@ -935,8 +935,8 @@ describe('toolbar serialization', () => {
     })
 
     it('a user tabBar SHORTER than the default is honored as-is, not index-padded with the default', async () => {
-        // Regression: removing the terminal button (default is [new-tab, terminal, new-claude-chat])
-        // used to leave the default's trailing new-claude-chat at index 2 — rendering [+][💬][💬].
+        // Regression: removing the terminal button (default is [new-tab, terminal, new-chat])
+        // used to leave the default's trailing new-chat at index 2 — rendering [+][💬][💬].
         const vault = freshVault()
         await Bun.write(
             join(vault, SETTINGS_FILE),
@@ -944,14 +944,14 @@ describe('toolbar serialization', () => {
                 'tabBar:',
                 '  - command: new-tab',
                 '    icon: SquarePlus',
-                '  - command: new-claude-chat',
+                '  - command: new-chat',
                 '    icon: MessageSquare',
             ].join('\n'),
         )
         const out = await serializeSettingsForFrontend(vault)
         expect(out.tabBar).toEqual([
             { command: 'new-tab', icon: 'SquarePlus' },
-            { command: 'new-claude-chat', icon: 'MessageSquare' },
+            { command: 'new-chat', icon: 'MessageSquare' },
         ])
     })
 

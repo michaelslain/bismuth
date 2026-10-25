@@ -15,7 +15,7 @@ const COMMAND_KEYBINDINGS: Record<string, KeybindingId> = {
     'new-window': 'new-window',
     'open-folder': 'open-folder',
     export: 'export',
-    'new-claude-chat': 'new-claude-chat',
+    'new-chat': 'new-chat',
     'quick-ask': 'quick-ask',
     'equalize-panes': 'equalize-panes',
     'split-right': 'split-right',

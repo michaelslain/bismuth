@@ -160,7 +160,7 @@ export const KEYBINDING_CATALOG = [
         doc: 'Move focus to the pane below.',
     },
     {
-        id: 'new-claude-chat',
+        id: 'new-chat',
         label: 'New chat',
         default: 'Mod+Shift+C',
         doc: 'Open a new chat session in its own tab.',

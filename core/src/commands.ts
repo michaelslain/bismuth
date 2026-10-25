@@ -45,7 +45,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'new-base', label: 'New base', icon: 'Database' },
     { id: 'new-spreadsheet', label: 'New spreadsheet', icon: 'Table' },
     { id: 'new-drawing', label: 'New drawing', icon: 'PenTool' },
-    { id: 'new-claude-chat', label: 'New chat', icon: 'MessageSquare' },
+    { id: 'new-chat', label: 'New chat', icon: 'MessageSquare' },
     { id: 'export', label: 'Export current file…', icon: 'Download' },
     {
         id: 'archive-tasks',
@@ -151,7 +151,7 @@ export const COMMAND_IDS: string[] = COMMAND_CATALOG.map(c => c.id)
  * Commands that MUST NOT be fired via the app-control channel (`bismuth app run …` → POST
  * /ui/command → run-command). Two classes: heavyweight/system verbs an unattended CLI or daemon
  * caller shouldn't trigger blindly (spawning a window/backend, updating the app/daemon), and
- * opening a Claude chat — a live, RECURSIVE Agent-SDK session, a materially different trust boundary
+ * opening a chat — a live, RECURSIVE agent session, a materially different trust boundary
  * than opening a note. Enforced authoritatively by the POST /ui/command route AND mirrored in the
  * frontend dispatch (app/src/uiControlClient.ts) as defense in depth. Auditable + reversible: one
  * list. (Opening a chat TAB is additionally blocked by open-tab rejecting a `::chat:` content.)
@@ -167,7 +167,7 @@ export const UI_CONTROL_BLOCKLIST: string[] = [
     'open-folder',
     'update-app',
     'daemon-update',
-    'new-claude-chat',
+    'new-chat',
     'quick-ask',
 ]
 
