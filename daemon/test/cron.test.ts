@@ -24,6 +24,7 @@ import {
     shouldCatchUp,
     shouldFire,
     shouldFireOnTick,
+    missedTickSince,
     isBackingOff,
     classifyFailure,
     nextLastFired,
@@ -570,7 +571,7 @@ test('a garbage .last-fired.json value is inert — it must never CAUSE a fire',
     const job = await scheduleJob('dream', HOURLY)
     const notAtScheduledMinute = new Date(Date.UTC(2026, 0, 15, 12, 37, 0))
     expect(shouldFire(job.cron, notAtScheduledMinute)).toBe(false)
-    expect(shouldFireOnTick(job, {}, notAtScheduledMinute)).toBe(true) // what DROPPING the key does
+    expect(shouldFireOnTick(job, {}, notAtScheduledMinute)).toBe('catch-up') // what DROPPING the key does
 
     const lastFiredFile = join(cronsDir, '.last-fired.json')
     writeFileSync(
@@ -602,7 +603,7 @@ test('a garbage .last-fired.json value is inert — it must never CAUSE a fire',
     expect(isBackingOff(job, loaded, notAtScheduledMinute.getTime())).toBe(
         false,
     )
-    expect(shouldFireOnTick(job, loaded, notAtScheduledMinute)).toBe(false)
+    expect(shouldFireOnTick(job, loaded, notAtScheduledMinute)).toBe(null)
 
     // ...and it does not SUPPRESS the schedule either: the cron still fires at its scheduled minute.
     expect(
@@ -611,7 +612,7 @@ test('a garbage .last-fired.json value is inert — it must never CAUSE a fire',
             loaded,
             new Date(Date.UTC(2026, 0, 15, 13, 0, 0)),
         ),
-    ).toBe(true)
+    ).toBe('schedule')
 })
 
 test('an entry-shaped object with a NON-STRING timestamp is inert too', async () => {
@@ -645,7 +646,7 @@ test('an entry-shaped object with a NON-STRING timestamp is inert too', async ()
     expect(shouldCatchUp(job, loaded, notAtScheduledMinute.getTime())).toBe(
         false,
     )
-    expect(shouldFireOnTick(job, loaded, notAtScheduledMinute)).toBe(false)
+    expect(shouldFireOnTick(job, loaded, notAtScheduledMinute)).toBe(null)
     // Still fires on schedule — inert must not mean suppressed.
     expect(
         shouldFireOnTick(
@@ -653,7 +654,7 @@ test('an entry-shaped object with a NON-STRING timestamp is inert too', async ()
             loaded,
             new Date(Date.UTC(2026, 0, 15, 13, 0, 0)),
         ),
-    ).toBe(true)
+    ).toBe('schedule')
 
     // A STRING timestamp is of course still honored — this is the contrast that proves the guard
     // discriminates on type rather than just zeroing everything out.
@@ -834,7 +835,7 @@ test('INVARIANT stated structurally: when the schedule matches, the tick fires i
                         catchup,
                         state,
                         minutesAgo,
-                        fires: true,
+                        fires: 'schedule',
                     })
                 }
             }
@@ -1277,4 +1278,48 @@ test('loadCronJobs reads a `tier` key as a trimmed string, and an absent one sta
     const jobs = await loadCronJobs(ctx)
     expect(jobs.find(j => j.file === 'tiered')!.tier).toBe('balanced')
     expect(jobs.find(j => j.file === 'plain')!.tier).toBeUndefined()
+})
+
+// ── A missed tick after a late run ───────────────────────────────────────────
+
+const WEEKLY_SUNDAY_7 = '0 7 * * 0'
+// Local time throughout: shouldFire reads local fields. 2026-10-20 is a Tuesday.
+const TUE_2337 = new Date(2026, 9, 20, 23, 37, 58)
+const SAT_1308 = new Date(2026, 9, 24, 13, 8, 0)
+const SUN_1308 = new Date(2026, 9, 25, 13, 8, 0)
+
+const succeededAt = (name: string, at: Date): Record<string, LastFiredEntry> => ({
+    [name]: { timestamp: at.toISOString(), result: 'success' },
+})
+
+test('a weekly cron whose Sunday tick passed after a late Tuesday run catches up on wake', async () => {
+    const job = await scheduleJob('weekly-reflection', WEEKLY_SUNDAY_7)
+    const last = succeededAt(job.name, TUE_2337)
+    expect(shouldCatchUp(job, last, SUN_1308.getTime())).toBe(true)
+    expect(shouldCatchUp(job, last, SAT_1308.getTime())).toBe(false)
+})
+
+test('a daily cron that already ran today is not caught up later that day', async () => {
+    const job = await scheduleJob('daily-digest', '0 3 * * *')
+    const last = succeededAt(job.name, new Date(2026, 9, 20, 3, 1, 0))
+    expect(shouldCatchUp(job, last, new Date(2026, 9, 20, 23, 0, 0).getTime())).toBe(false)
+})
+
+test('missedTickSince excludes the last run minute and the current minute', async () => {
+    const job = await scheduleJob('weekly-edge', WEEKLY_SUNDAY_7)
+    const tick = new Date(2026, 9, 25, 7, 0, 0)
+    // A run that finished inside the tick minute already covered it.
+    expect(missedTickSince(job.cron, tick.getTime() + 30_000, tick.getTime() + 10 * MIN)).toBe(false)
+    // The tick is the current minute: shouldFire owns it, not catch-up.
+    expect(missedTickSince(job.cron, TUE_2337.getTime(), tick.getTime() + 30_000)).toBe(false)
+    // One minute later it has passed unfired.
+    expect(missedTickSince(job.cron, TUE_2337.getTime(), tick.getTime() + 60_000)).toBe(true)
+})
+
+test('the tick names a catch-up fire as catch-up and a matching minute as schedule', async () => {
+    const job = await scheduleJob('weekly-reason', WEEKLY_SUNDAY_7)
+    const last = succeededAt(job.name, TUE_2337)
+    expect(shouldFireOnTick(job, last, SUN_1308)).toBe('catch-up')
+    expect(shouldFireOnTick(job, last, new Date(2026, 9, 25, 7, 0, 0))).toBe('schedule')
+    expect(shouldFireOnTick(job, last, SAT_1308)).toBe(null)
 })

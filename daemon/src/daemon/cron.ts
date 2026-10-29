@@ -828,7 +828,48 @@ export function shouldCatchUp(
     // Successful (or unknown) runs: missed if more than 1.01x the interval
     // has passed. Tight multiplier because this runs on a laptop that sleeps —
     // a daily cron at midnight needs to fire on wake, not wait hours.
-    return elapsed > interval * 1.01
+    // ...or if a scheduled tick passed since the last run without firing. A run that was itself
+    // late (a catch-up, a manual trigger) would otherwise push the next catch-up a whole interval
+    // past it, so a weekly tick the machine slept through waited days.
+    return (
+        elapsed > interval * 1.01 ||
+        missedTickSince(job.cron, new Date(last.timestamp).getTime(), now)
+    )
+}
+
+/**
+ * Whether a minute matched by `cron` lies in `(sinceMs, nowMs - 60 s]`: a scheduled tick passed
+ * after the last run and was not fired. The current minute is excluded, since `shouldFire` owns it.
+ * The walk is bounded by 1.01 intervals past `since` (beyond that the elapsed rule already holds)
+ * and skips whole days and hours whose fields cannot match.
+ */
+export function missedTickSince(
+    cron: CronExpression,
+    sinceMs: number,
+    nowMs: number,
+): boolean {
+    if (!Number.isFinite(sinceMs)) return false
+    const end = Math.min(nowMs - 60_000, sinceMs + getIntervalMs(cron) * 1.01)
+    const t = new Date(sinceMs)
+    t.setSeconds(0, 0)
+    t.setMinutes(t.getMinutes() + 1)
+    while (t.getTime() <= end) {
+        if (
+            !matchesField(cron.dayOfMonth, t.getDate()) ||
+            !matchesField(cron.month, t.getMonth() + 1) ||
+            !matchesField(cron.dayOfWeek, t.getDay())
+        ) {
+            t.setHours(24, 0, 0, 0)
+            continue
+        }
+        if (!matchesField(cron.hour, t.getHours())) {
+            t.setMinutes(60, 0, 0)
+            continue
+        }
+        if (shouldFire(cron, t)) return true
+        t.setMinutes(t.getMinutes() + 1, 0, 0)
+    }
+    return false
 }
 
 /**
@@ -863,15 +904,15 @@ export function shouldFireOnTick(
     job: CronJob,
     lastFired: Record<string, LastFiredEntry>,
     now: Date,
-): boolean {
+): 'schedule' | 'catch-up' | null {
     // file-change crons never fire off the tick — fileWatch.ts's per-vault watcher fires them
     // directly (via fireFileChangeCron) when their watched path actually changes.
-    if (job.on === 'file-change') return false
+    if (job.on === 'file-change') return null
     // The schedule floor. Ungated, unconditionally.
-    if (shouldFire(job.cron, now)) return true
+    if (shouldFire(job.cron, now)) return 'schedule'
     // ...and the throttled extra: without this, a missed/failed/killed run would wait until the next
-    // daemon restart to be retried.
-    return shouldCatchUp(job, lastFired, now.getTime())
+    // daemon restart to be retried. Returned as its own reason so the activity log says so.
+    return shouldCatchUp(job, lastFired, now.getTime()) ? 'catch-up' : null
 }
 
 const CRON_RESULT_INSTRUCTION = `\n\nIMPORTANT: When you are done, print exactly [CRON_RESULT:SUCCESS] if the task completed successfully, or [CRON_RESULT:FAILURE] <one plain sentence saying what failed> if it failed. This must be the last thing you print.`
@@ -1701,11 +1742,8 @@ export function startCronScheduler(): void {
                         // Fire on schedule OR when overdue (catchup). The whole decision — including where the
                         // backoff is and, crucially, is NOT applied — lives in shouldFireOnTick, which the replay
                         // tests drive directly; do not re-add gates here.
-                        if (shouldFireOnTick(job, lastFired, now)) {
-                            fireJob(ctx, job, lastFired, {
-                                reason: 'schedule',
-                            })
-                        }
+                        const reason = shouldFireOnTick(job, lastFired, now)
+                        if (reason) fireJob(ctx, job, lastFired, { reason })
                     }
                 }
             }),

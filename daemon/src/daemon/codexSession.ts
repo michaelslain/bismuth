@@ -8,6 +8,7 @@ import { parseFrontmatter } from '../lib/frontmatter.ts'
 import { buildDaemonPersona, DEFAULT_DAEMON_IDENTITY } from './persona.ts'
 import type { DenyEntry } from '../lib/visibility.ts'
 import type { BotResponse, SendOptions } from './session.ts'
+import { startAwakeTimeout } from './awakeTimeout.ts'
 
 /**
  * The Codex daemon backend: runs a vault's brain on OpenAI's Codex CLI, spawned DIRECTLY
@@ -333,14 +334,15 @@ export async function sendCodexMessage(
     const env = buildCodexEnv(ctx, codexHome)
 
     const ac = opts?.abortController
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    // Awake time, not wall time: a run the machine slept through is not killed on wake.
+    let stopTimeout: (() => void) | undefined
     if (ac && opts?.timeoutSecs && opts.timeoutSecs > 0) {
-        timeoutId = setTimeout(() => {
+        stopTimeout = startAwakeTimeout(opts.timeoutSecs * 1000, () => {
             console.log(
                 `[codexSession:${ctx.name}] Timeout reached (${opts.timeoutSecs}s), aborting session`,
             )
             ac.abort()
-        }, opts.timeoutSecs * 1000)
+        })
     }
 
     let latestThreadId = existingThreadId ?? 'unknown'
@@ -408,6 +410,6 @@ export async function sendCodexMessage(
         }
         return { result: result.resultText, sessionId: latestThreadId }
     } finally {
-        if (timeoutId) clearTimeout(timeoutId)
+        stopTimeout?.()
     }
 }

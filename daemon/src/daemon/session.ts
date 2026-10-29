@@ -20,6 +20,7 @@ import { archiveSessionTranscript } from '../lib/sessionArchive.ts'
 import { sendCodexMessage } from './codexSession.ts'
 import { resolveTier } from './tier.ts'
 import { buildDaemonPersona, DAEMON_PERSONA_CHANNELS } from './persona.ts'
+import { startAwakeTimeout } from './awakeTimeout.ts'
 
 // The compiled daemon binary doesn't bundle the Agent SDK's native CLI, and runs under launchd with
 // a minimal PATH, so the SDK can't find `claude` on its own — resolve the user's real binary once
@@ -474,14 +475,15 @@ export async function sendMessage(
         opts?.abortController ?? (needsAc ? new AbortController() : undefined)
     if (ac) options.abortController = ac
 
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    // Awake time, not wall time: a run the machine slept through is not killed on wake.
+    let stopTimeout: (() => void) | undefined
     if (ac && opts?.timeoutSecs && opts.timeoutSecs > 0) {
-        timeoutId = setTimeout(() => {
+        stopTimeout = startAwakeTimeout(opts.timeoutSecs * 1000, () => {
             console.log(
                 `[session:${ctx.name}] Timeout reached (${opts.timeoutSecs}s), aborting session`,
             )
             ac.abort()
-        }, opts.timeoutSecs * 1000)
+        })
     }
 
     let latestSessionId = existingSessionId ?? 'unknown'
@@ -500,7 +502,7 @@ export async function sendMessage(
             }
         }
     } finally {
-        if (timeoutId) clearTimeout(timeoutId)
+        stopTimeout?.()
         // In the finally so a timed-out or failed run is archived too: those are the ones to debug.
         if (latestSessionId !== 'unknown')
             await archiveSessionTranscript(ctx, latestSessionId)

@@ -44,7 +44,7 @@ restart: on-failure
 | `model` | model name | `haiku` | The session's model |
 | `effort` | `low`, `high`, any other value | the SDK default | `low` and `high` pass through; any other value becomes `medium` |
 | `tier` | `fast`, `balanced`, `deep` | none | Picks the model and effort for the vault's backend. An explicit `model` or `effort` in the same file wins over the tier |
-| `timeout` | seconds, `none` or `0` | 300 | Aborts the session when exceeded; `none` or `0` means no limit |
+| `timeout` | seconds, `none` or `0` | 300 | Aborts the session when exceeded; counts only time the machine is awake, so a run is not killed on wake from sleep; `none` or `0` means no limit |
 | `waitFor` | a `pgrep -f` pattern | none | After the session ends, wait for matching processes to exit, within `timeout` |
 | `incremental` | `true` | off | Skip runs when nothing relevant changed; see below |
 | `checkpointDirs` | `vault`, `memory`, or both comma-separated | `vault` | Which areas an incremental cron checks. `checkpointDir` takes a single value |
@@ -135,7 +135,7 @@ A failed or killed cron with `catchup` on is retried before its next scheduled t
 
 The cooldown holds back only the extra retry. A scheduled fire is never suppressed, so a failing hourly cron still fires every hour. A success, an unknown result or a skip resets the count.
 
-A schedule cron is overdue, and fires late, when it has never run or its last non-failed run is more than 1.01 periods old. The period is estimated from the schedule's shape: `*/N` minutes or hours, then weekly, monthly, daily and hourly patterns. A laptop that sleeps through a daily 3:00 cron therefore runs it on wake.
+A schedule cron is overdue, and fires late, when it has never run, when a minute its schedule matches has passed since its last non-failed run ended without firing it, or when that run is more than 1.01 periods old. The period is estimated from the schedule's shape: `*/N` minutes or hours, then weekly, monthly, daily and hourly patterns. A laptop that sleeps through a daily 3:00 cron or a Sunday 7:00 cron therefore runs it on wake, even when the last run was itself late. A late fire from the scheduler's minute tick is logged as `catching up on a missed run`, not `on schedule`.
 
 If the daemon dies while a cron runs, the cron stays in `.running.json` and the next boot re-fires it.
 
@@ -196,7 +196,7 @@ Crons and processes are read by `daemon/src/lib/frontmatter.ts`, which is not a 
 1. When the body contains `{{brainReport}}`, build the report and its agenda fingerprint (`resolveBrainAgenda` in `daemon/src/daemon/brainReport.ts`). For an incremental cron, resolve the checkpoint plan, passing whether the agenda is pending (`agendaPending`). A skip records the result and returns before any bookkeeping.
 2. Add the job to the in-memory running set, write it to `.running.json`, and log `started` with `cronStartDetail`'s line: the caller's `FireReason` and the cron's model.
 3. Snapshot the cron's own file and the processes folder, and list the existing inbox pages.
-4. Replace `{{brainReport}}` in the body with the report built in step 1, build the prompt with `buildCronPrompt`, and call `sendMessage` with `newSession: true`, the cron's `model`, `effort`, `tier` and `timeout`.
+4. Replace `{{brainReport}}` in the body with the report built in step 1, build the prompt with `buildCronPrompt`, and call `sendMessage` with `newSession: true`, the cron's `model`, `effort`, `tier` and `timeout`. The session measures `timeout` with `startAwakeTimeout` (`daemon/src/daemon/awakeTimeout.ts`), which polls every 5 seconds and counts a gap longer than the poll plus 30 seconds as a suspend that adds nothing.
 5. If `waitFor` is set, poll `pgrep -f` every 5 seconds until it stops matching or the time runs out.
 6. Parse the last result marker with `parseCronResult` (a `FAILURE` marker's same-line text is the reason), write `.last-fired.json` with the agenda fingerprint, log `finished` with the report line (`lastReportLine`) and `cronResultDetail`'s reason, advance the incremental bookmarks on success, and send the `notify` notification.
 7. A timeout or shutdown abort records `killed`; any other error records `failed` with its classified cause.
@@ -204,7 +204,7 @@ Crons and processes are read by `daemon/src/lib/frontmatter.ts`, which is not a 
 
 ### Scheduler, triggers and keys
 
-One scheduler tick every 60 seconds visits each enabled vault when this device is the owner. It skips a disabled or running job and a file-change job, and fires any other job whose schedule matches now or that is overdue. The same process polls trigger files every 5 seconds: it runs cron triggers, then page triggers, for each enabled vault. A device that is not the owner heartbeats but fires nothing, and deletes triggers unread.
+One scheduler tick every 60 seconds visits each enabled vault when this device is the owner. It skips a disabled or running job and a file-change job, and fires any other job whose schedule matches now or that is overdue. `shouldFireOnTick` returns the reason, `schedule` or `catch-up`, that `fireJob` logs; `missedTickSince` finds a matched minute between the last run's end and the previous minute. The same process polls trigger files every 5 seconds: it runs cron triggers, then page triggers, for each enabled vault. A device that is not the owner heartbeats but fires nothing, and deletes triggers unread.
 
 In-memory state is keyed `<vault root>::<file slug>`, so two vaults can each have a cron of the same name. `.last-fired.json`, `.running.json` and the activity log are keyed by display name instead. Editing `name:` by hand changes the key and orphans the cron's history, which can make an overdue-looking cron fire again at the next tick.
 
@@ -216,4 +216,4 @@ Each vault has one recursive `fs.watch` (`daemon/src/daemon/fileWatch.ts`), neve
 
 The upgrade rule depends on `PRIOR_SEED_HASHES` in `daemon/src/daemon/seeds.ts`, an append-only list of the SHA-256 of every earlier stock body of each default cron. A hash missing from the list does not raise an error: the daemon treats that stock file as customized and never upgrades it. To change `dream`, append the SHA-256 of the outgoing body to `PRIOR_SEED_HASHES.dream`, then edit `defaultCrons.ts`. Never list the current body. `bun test daemon` walks the git history of `defaultCrons.ts` and fails, naming the hash to add, if any shipped body is neither current nor listed.
 
-Source: `daemon/src/daemon/{cron,fileWatch,incrementalCron,brainReport,process,defaultCrons,seeds,pages}.ts`, `daemon/src/lib/{frontmatter,checkpointRef,config,drainTriggers,activityLog}.ts`, `core/src/daemon.ts`, `core/src/schema/cronSchema.ts`
+Source: `daemon/src/daemon/{cron,awakeTimeout,fileWatch,incrementalCron,brainReport,process,defaultCrons,seeds,pages}.ts`, `daemon/src/lib/{frontmatter,checkpointRef,config,drainTriggers,activityLog}.ts`, `core/src/daemon.ts`, `core/src/schema/cronSchema.ts`
