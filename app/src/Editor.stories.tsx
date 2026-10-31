@@ -3095,3 +3095,92 @@ export const NamedSchemaFromFrontmatter: Story = {
         )
     },
 }
+
+const inkedEditor = (path: string, text: string) => () => {
+    setTransport(fakeTransport({ files: { [path]: text } }))
+    return (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <Editor
+                {...{ path }}
+                initialText={text}
+                onSaved={noop}
+                noteNames={() => NOTE_NAMES}
+                memoryNames={() => MEMORY_NAMES}
+                tagNames={() => TAG_NAMES}
+            />
+        </div>
+    )
+}
+
+/** Entering draw mode drops the text selection: the range collapses to its head, so exiting
+ *  puts the caret where the selection ended and nothing stays highlighted under the ink. */
+export const DrawModeClearsSelection: Story = {
+    render: inkedEditor('Long.md', A_LOT_OF_PROSE),
+    play: async ({ canvasElement }) => {
+        const view = viewOf(canvasElement)
+        view.focus()
+        view.dispatch({ selection: { anchor: 2, head: 40 } })
+        await expect(view.state.selection.main.empty).toBe(false)
+
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(true))
+        await expect(view.state.selection.main.empty).toBe(true)
+        await expect(view.state.selection.main.head).toBe(40)
+        await expect(window.getSelection()?.isCollapsed ?? true).toBe(true)
+
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(false))
+        await expect(view.state.selection.main.empty).toBe(true)
+    },
+}
+
+/** Leaving draw mode mid-stroke cancels that stroke. The note already holds ink, so the live
+ *  canvas stays mounted after the exit and the pen's pointerup still reaches it — the case where
+ *  a half-drawn stroke used to be committed into the note after draw mode was off. */
+export const DrawModeExitCancelsStroke: Story = {
+    render: inkedEditor('Inked.md', LONG_INKED_NOTE),
+    play: async ({ canvasElement }) => {
+        const view = viewOf(canvasElement)
+        await new Promise(r => setTimeout(r, 300))
+        const before = view.state.doc.toString()
+
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(true))
+        const live =
+            canvasElement.querySelectorAll<HTMLCanvasElement>('canvas')[1]
+        await expect(live).toBeDefined()
+        const r = live.getBoundingClientRect()
+        const y = r.top + Math.min(r.height * 0.5, 300)
+        const send = (type: string, x: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 7,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', r.left + r.width * 0.3)
+        for (let i = 1; i <= 8; i++) {
+            send('pointermove', r.left + r.width * (0.3 + i * 0.03))
+        }
+
+        // Out of draw mode with the pen still down, then the pen lifts.
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(false))
+        await expect(live.isConnected).toBe(true) // the pointerup really has a target
+        send('pointermove', r.left + r.width * 0.6)
+        send('pointerup', r.left + r.width * 0.6)
+
+        // Well past the commit debounce: the note is exactly what it was.
+        await new Promise(r => setTimeout(r, 1200))
+        await expect(view.state.doc.toString()).toBe(before)
+        const blocks = scanDrawBlocks(view.state.doc.toString())
+        await expect(blocks).toHaveLength(1)
+        await expect(blocks[0].strokes).toHaveLength(INK.length)
+    },
+}

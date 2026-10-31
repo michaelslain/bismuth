@@ -1202,6 +1202,9 @@ export function InkOverlay(props: {
             queueMicrotask(() => host()?.focus())
             return
         }
+        // A stroke still under the pen is abandoned, not committed: leaving draw mode is a
+        // cancel for the gesture in flight. Done before the flush so it never reaches the doc.
+        cancelGesture()
         flushNow()
         resetSession()
     })
@@ -1250,6 +1253,29 @@ export function InkOverlay(props: {
         holdTimer: ReturnType<typeof setTimeout> | undefined
     let lastRaw = { x: 0, y: 0, t: 0 }
     let current: Stroke | null = null
+    let capturedPointer: number | null = null
+
+    /** Drop the gesture in flight — a half-drawn stroke, a lasso, a move or scale preview —
+     *  without committing any of it. The pointerup that eventually arrives finds `drawing`
+     *  false and does nothing. Eraser hits already landed stay (each is its own op). */
+    function cancelGesture() {
+        clearTimeout(holdTimer)
+        if (!drawing) return
+        drawing = false
+        current = null
+        lassoGesture = null
+        lassoPath = null
+        setPreview(null)
+        if (capturedPointer !== null) {
+            try {
+                live.releasePointerCapture(capturedPointer)
+            } catch {
+                /* already released */
+            }
+            capturedPointer = null
+        }
+        paintLive()
+    }
 
     const toLogical = (e: PointerEvent) => {
         const v = props.view()!
@@ -1337,6 +1363,7 @@ export function InkOverlay(props: {
         sessionView = v
         // A synthetic PointerEvent (a story, a test harness) carries no live pointer, so the
         // capture throws NotFoundError. Losing capture only costs tracking outside the canvas.
+        capturedPointer = e.pointerId
         try {
             live.setPointerCapture(e.pointerId)
         } catch {
@@ -1406,6 +1433,7 @@ export function InkOverlay(props: {
     const onUp = () => {
         if (!drawing) return
         drawing = false
+        capturedPointer = null
         clearTimeout(holdTimer)
         if (lassoGesture) {
             endLasso()

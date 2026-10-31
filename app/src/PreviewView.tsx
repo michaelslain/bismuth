@@ -330,6 +330,12 @@ export function PreviewView(props: {
     const [imageSize, setImageSize] = createSignal<{ w: number; h: number }>()
     const enterDraw = () => {
         setHighlightArmed(false)
+        // Entering draw mode drops a text selection made on this preview's pages — the pen owns
+        // the page now. A selection anywhere else (another pane, an input) is left alone.
+        const sel = window.getSelection()
+        if (sel && sel.rangeCount && rootRef?.contains(sel.anchorNode)) {
+            sel.removeAllRanges()
+        }
         setDrawMode(true)
     }
     const toggleDraw = () => (drawMode() ? exitDraw() : enterDraw())

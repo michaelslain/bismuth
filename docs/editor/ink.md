@@ -22,9 +22,9 @@ The editor hides both fences and paints their strokes instead.
 
 ## Draw on a note
 
-1. Open a `.md` note in the editor and press the `toggle-draw-mode` keybinding (default `Mod+Shift+I`). A drawing toolbar appears and the text stops accepting keystrokes.
+1. Open a `.md` note in the editor and press the `toggle-draw-mode` keybinding (default `Mod+Shift+I`). A drawing toolbar appears, any selected text is deselected (the caret stays where the selection ended), and the text stops accepting keystrokes.
 2. Draw with the pen. The toolbar also offers a highlighter, a stroke eraser, a lasso to select, move and resize ink, and the color, size and smoothing controls the [drawing page](../drawing/overview.md) describes.
-3. Press `Escape` (the `exit-draw-mode` keybinding) or the toggle key to leave draw mode. The ink stays visible while you type.
+3. Press `Escape` (the `exit-draw-mode` keybinding) or the toggle key to leave draw mode. The ink stays visible while you type. Leaving draw mode with the pen still down cancels that stroke: it is never saved.
 
 Draw mode gives you endless scroll space below the last line, so there is always fresh page to draw on. That space is not saved in the note.
 
@@ -98,7 +98,7 @@ The payload is `[version byte][deflated JSON header][deflated point stream]`, ba
 
 ### Draw mode and the editor
 
-Entering draw mode reconfigures an `EditorView.editable` compartment to `false`. It is never `readOnly`, so programmatic dispatches such as the reload after an external file change and the autosave normalizer keep working. It also blurs the editor and turns on the overlay's live canvas, so a click cannot place a caret. A second compartment adds the scroll space. Toggling does not rebuild the editor view.
+Entering draw mode reconfigures an `EditorView.editable` compartment to `false`. It is never `readOnly`, so programmatic dispatches such as the reload after an external file change and the autosave normalizer keep working. It also blurs the editor and turns on the overlay's live canvas, so a click cannot place a caret. A second compartment adds the scroll space. Entering draw mode also collapses the selection to its head in the same dispatch and clears a native selection inside the pane. Toggling does not rebuild the editor view. Leaving draw mode calls the overlay's `cancelGesture` before the session flush, which drops the stroke, lasso or move preview in flight and releases pointer capture, so the pointerup that follows commits nothing.
 
 Strokes are captured by the same state machine as a `.draw` page: pressure or velocity width, hold-to-straighten, smoothing on release. `drawStroke` in `core/src/drawing/render2d.ts` paints them.
 

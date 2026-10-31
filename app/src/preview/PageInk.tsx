@@ -212,6 +212,9 @@ function PageInk(props: PageInkProps) {
             queueMicrotask(() => host()?.focus({ preventScroll: true }))
             return
         }
+        // A stroke still under the pen is abandoned, not committed: leaving draw mode cancels
+        // the gesture in flight, and the pointerup that follows finds no page and does nothing.
+        cancelGesture()
         // store.flush() already catches its own save failures (toasts, then resolves) — see
         // createAnnotationStore.ts.
         store.flush()
@@ -339,6 +342,15 @@ function PageInk(props: PageInkProps) {
     let lastRaw = { x: 0, y: 0, t: 0 }
     let current: Stroke | null = null
     const liveCanvases = new Map<number, HTMLCanvasElement>()
+
+    function cancelGesture() {
+        clearTimeout(holdTimer)
+        const page = drawingPage
+        if (page === null) return
+        drawingPage = null
+        current = null
+        paintLive(page)
+    }
 
     const canDraw = () =>
         untrack(props.active) && untrack(store.loadState) === 'ready'

@@ -865,6 +865,10 @@ export function Editor(props: {
                 editableCompartment.reconfigure(EditorView.editable.of(!on && !props.readOnly)),
                 drawSpaceCompartment.reconfigure(on ? drawScrollSpace : []),
             ],
+            // Entering draw mode drops whatever text was selected: the pen owns the page, and a
+            // highlighted range left under the ink reads as something the drawing will act on.
+            // Collapsed to the main cursor so exiting puts the caret back where it was.
+            ...(on ? { selection: { anchor: v.state.selection.main.head } } : {}),
         })
         if (on) {
             // The toggle usually fires while the editor has focus — drop it so keystrokes can't
@@ -872,6 +876,12 @@ export function Editor(props: {
             // its own host, which keeps ALL draw-mode keys (toggle/Escape/undo) scoped to this
             // pane's wrapper — no global listeners.
             v.contentDOM.blur()
+            // The native selection outlives the blur (a drag across a widget, a rendered table),
+            // so clear it too — but only one that sits in this pane.
+            const sel = window.getSelection()
+            if (sel && sel.rangeCount && wrapper.contains(sel.anchorNode)) {
+                sel.removeAllRanges()
+            }
         } else {
             const ae = document.activeElement
             // Exiting: focus went to the ink host (or fell to body). Give it back to the editor so

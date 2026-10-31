@@ -3395,3 +3395,129 @@ export const PdfHighlightSaveBatchesAndUndoes: Story = {
         await expect(pdfId.startsWith('pdf-')).toBe(true)
     },
 }
+
+/** Pressing Draw drops a text selection made on the PDF's pages: the pen owns the page, so
+ *  nothing stays highlighted under it. */
+export const PdfDrawClearsSelection: Story = {
+    render: () => {
+        sidecarPuts = []
+        setTransport(recordingTransport({}))
+        return (
+            <div style={{ height: '100vh', width: '900px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(
+            () => {
+                const spans = canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-pdf-page="0"] span',
+                )
+                expect(spans.length).toBeGreaterThanOrEqual(1)
+                expect(spans[0]!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
+        await waitFor(() => expect(drawBtn.disabled).toBe(false))
+        const span = canvasElement.querySelector<HTMLElement>(
+            '[data-pdf-page="0"] span',
+        )!
+        selectSpan(span)
+        await expect(window.getSelection()?.isCollapsed).toBe(false)
+
+        await fireEvent.click(drawBtn)
+        await waitFor(() => expect(pressedOf(drawBtn)).toBe('true'))
+        await expect(window.getSelection()?.isCollapsed ?? true).toBe(true)
+    },
+}
+
+let measuredSidecarPuts = 0
+/** Leaving draw mode with the pen still down cancels that stroke. The image already holds ink, so
+ *  its live canvas stays mounted after the exit and the pen's pointerup still reaches it — the
+ *  case where a half-drawn stroke used to be saved after draw mode was off. */
+export const ImageDrawExitCancelsStroke: Story = {
+    render: () => {
+        measuredSidecarPuts = 0
+        const t = fakeTransport({
+            files: {
+                [inkSidecarFor(MEASURED_IMAGE_PATH)]: serializeDoc(
+                    measuredImageDoc(),
+                ),
+            },
+        })
+        setTransport({
+            ...t,
+            put: async (path, body) => {
+                const b = body as { path?: string }
+                if (
+                    path === '/file' &&
+                    b.path === inkSidecarFor(MEASURED_IMAGE_PATH)
+                )
+                    measuredSidecarPuts++
+                return t.put(path, body)
+            },
+        })
+        return (
+            <div style={{ width: '900px', height: '260px' }}>
+                <PreviewView
+                    path={MEASURED_IMAGE_PATH}
+                    tagNames={NO_TAGS}
+                    imageSrc={measuredPhotoPng}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await canvas.findByAltText('measured.png')
+        const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
+        await waitFor(() => expect(drawBtn.disabled).toBe(false), {
+            timeout: 5000,
+        })
+        await fireEvent.click(drawBtn)
+        await waitFor(() => expect(pressedOf(drawBtn)).toBe('true'))
+        const liveCanvas = () =>
+            canvasElement.querySelector<HTMLCanvasElement>(
+                '[data-testid="ink-page-0"] [data-testid="ink-canvas-live"]',
+            )
+        await waitFor(() =>
+            expect(getComputedStyle(liveCanvas()!).pointerEvents).toBe('auto'),
+        )
+        const live = liveCanvas()!
+        const r = live.getBoundingClientRect()
+        const y = r.top + r.height * 0.5
+        const send = (type: string, x: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 7,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', r.left + r.width * 0.2)
+        for (let i = 1; i <= 8; i++) {
+            send('pointermove', r.left + r.width * (0.2 + i * 0.05))
+        }
+
+        await fireEvent.click(drawBtn)
+        await waitFor(() => expect(pressedOf(drawBtn)).toBe('false'))
+        await expect(live.isConnected).toBe(true) // the pointerup really has a target
+        send('pointerup', r.left + r.width * 0.7)
+
+        // Well past the save debounce: nothing was written.
+        await new Promise(res => setTimeout(res, 1500))
+        await expect(measuredSidecarPuts).toBe(0)
+    },
+}

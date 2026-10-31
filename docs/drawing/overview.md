@@ -46,7 +46,7 @@ Add a picture three ways: the **Import image** button, pasting an image from the
 
 ## Ink on images and PDFs in place
 
-An image or PDF opens in a preview tab, and you draw on it right there. Press Mod+Shift+I (the `toggle-draw-mode` keybinding, Escape to leave) or the **Draw** button in the preview bar. The drawing toolbar docks at the bottom of the visible area with the pen, highlighter, eraser, colour, size, smoothing and undo controls.
+An image or PDF opens in a preview tab, and you draw on it right there. Press Mod+Shift+I (the `toggle-draw-mode` keybinding, Escape to leave) or the **Draw** button in the preview bar. The drawing toolbar docks at the bottom of the visible area with the pen, highlighter, eraser, colour, size, smoothing and undo controls. Entering draw mode deselects any text selected on the PDF's pages, and leaving it with the pen still down cancels that stroke.
 
 Your marks save to a sidecar named after the file with `.draw` added: `photo.png` becomes `photo.png.draw`, `report.pdf` becomes `report.pdf.draw`. The file tree hides the sidecar while its image or PDF exists, and the sidecar moves with it. Nothing is written until you draw something.
 
