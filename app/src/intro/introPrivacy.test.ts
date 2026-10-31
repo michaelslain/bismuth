@@ -43,7 +43,12 @@ describe('introPrivacy', () => {
 
     test('writes are seven false entries in option order', () => {
         const writes = privacyWrites(DEFAULT_PRIVACY)
-        expect(writes).toEqual(PRIVACY_OPTIONS.map(o => ({ path: o.path, value: false })))
+        expect(writes).toEqual(
+            PRIVACY_OPTIONS.map(o =>
+                o.cron ? { cron: o.cron, value: false } : { path: o.path, value: false },
+            ),
+        )
+        expect(writes).toContainEqual({ cron: 'dream', value: false })
         expect(writes).toHaveLength(7)
     })
 
@@ -53,6 +58,7 @@ describe('introPrivacy', () => {
 
     test('every option path resolves in DEFAULTS to a boolean that is false', () => {
         for (const o of PRIVACY_OPTIONS) {
+            if (!o.path) continue
             let v: unknown = DEFAULTS
             for (const k of o.path) v = (v as Record<string, unknown>)?.[k]
             expect(typeof v).toBe('boolean')

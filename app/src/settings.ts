@@ -140,7 +140,6 @@ export interface Settings {
         keepLogs: boolean // keep the daemon's activity log forever + archive each daemon session transcript into .daemon/logs/sessions (off: 30-day activity log)
         notifications: boolean // desktop notification per new inbox page + per notify:true cron run (off by default: none for this vault)
         saveSessions: boolean // save each finished agent session (Bismuth terminal) and in-app chat as a memory note (off by default)
-        dream: boolean // hourly cron folding changed notes and saved sessions into memory (off by default)
         backend: string // which agent CLI runs this vault's brain: "claude" (default) | "codex" — a REQUEST; resolveDaemonBackend gates it on the vault's visibility settings
         inheritUserMcp: boolean // daemon sessions also get the machine's own user-scope MCP servers + plugins (off: bismuth only)
         email: {

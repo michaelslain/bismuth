@@ -289,7 +289,6 @@ When `enabled` is off the daemon is dormant: its state stays on disk and the `.d
 | `keepLogs` | boolean | `false` | | Keep every daemon log: the activity log is never pruned, and each Claude daemon session's transcript is copied into `.daemon/logs/sessions/`. See [keep every log](../daemon/storage.md#keep-every-log-with-daemonkeeplogs). |
 | `notifications` | boolean | `false` | | A desktop notification per new inbox page and per `notify: true` cron run. On macOS it shows Bismuth's name and icon. |
 | `saveSessions` | boolean | `false` | | Save each finished agent session from a Bismuth terminal, and each in-app chat, as a memory note. Needs `daemon.enabled`. |
-| `dream` | boolean | `false` | | The hourly cron that folds changed notes and saved sessions into memory. Needs `daemon.enabled`. |
 | `backend` | enum | `claude` | `claude`, `codex` | Agent CLI that runs the daemon's brain. |
 | `inheritUserMcp` | boolean | `false` | | Let daemon sessions use the MCP servers and plugins of your own `claude` CLI. |
 | `recall.enabled` | boolean | `false` | | Master switch for automatic memory injection into agent sessions. Needs `daemon.enabled`. |

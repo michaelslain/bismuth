@@ -421,9 +421,9 @@ test('dream still carries the {{changedSinceLastRun}} placeholder the daemon sub
     expect(DREAM).toContain('{{changedSinceLastRun}}')
 })
 
-test('dream keeps its fused incremental frontmatter contract intact (two checkpoint areas, no notify)', () => {
+test('dream keeps its fused incremental frontmatter contract intact (two checkpoint areas, no notify, ships off)', () => {
     expect(DREAM).toStartWith(
-        '---\nname: dream\nschedule: 0 * * * *\ntimeout: 1800\ncatchup: true\nincremental: true\ncheckpointDirs: vault, memory\ntier: balanced\neffort: high\n---\n',
+        '---\nname: dream\nschedule: 0 * * * *\ntimeout: 1800\ncatchup: true\nincremental: true\ncheckpointDirs: vault, memory\ntier: balanced\neffort: high\nenabled: false\n---\n',
     )
     expect(DREAM.split('\n---\n')[0]).not.toContain('model:')
     // The run report goes to the activity log; an OS notification fires only for a filed inbox page.

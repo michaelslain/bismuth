@@ -46,6 +46,9 @@ const fakeApi = () => {
             calls.push('freeAgentInstall')
             return { phase: 'ready' }
         },
+        setCronEnabled: async (name: string, enabled: boolean) => {
+            calls.push(`setCronEnabled:${name}:${enabled}`)
+        },
         setDaemonName: async (name: string) => {
             calls.push(`setDaemonName:${name}`)
             return { name }
@@ -217,7 +220,7 @@ describe('runFirstRunHandoff', () => {
 describe('runFirstRunHandoff privacy', () => {
     const writes = [
         { path: ['daemon', 'recall', 'enabled'], value: true },
-        { path: ['daemon', 'dream'], value: false },
+        { cron: 'dream', value: true },
     ]
     test('writes each entry once after daemon.enabled and removes the key', async () => {
         const r = run({
@@ -229,8 +232,16 @@ describe('runFirstRunHandoff privacy', () => {
         expect(r.settings).toEqual([
             [['daemon', 'enabled'], true],
             [writes[0].path, true],
-            [writes[1].path, false],
         ])
+        expect(r.calls).toContain('setCronEnabled:dream:true')
+    })
+    test('a daemon.dream path from an older intro flips the dream cron, not .settings', async () => {
+        const r = run({
+            [FIRST_RUN_PRIVACY_KEY]: JSON.stringify([{ path: ['daemon', 'dream'], value: true }]),
+        })
+        await settle()
+        expect(r.settings).toEqual([])
+        expect(r.calls).toEqual(['setCronEnabled:dream:true'])
     })
     test('malformed json writes nothing and still removes the key', async () => {
         for (const bad of ['{nope', '{"a":1}', '[{"path":"x","value":true}]']) {

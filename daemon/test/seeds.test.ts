@@ -35,6 +35,12 @@ import {
 import { vaultPaths, type VaultContext } from '../src/lib/config.ts'
 import { DEFAULT_CRONS, type DefaultCron } from '../src/daemon/defaultCrons.ts'
 import {
+    SEEDED_CRONS,
+    PENDING_ENABLED_FILE,
+    setPendingEnabled,
+    withEnabled,
+} from '../../core/src/seededCronSwitch.ts'
+import {
     DREAM_V2_CONTENT,
     DREAM_V2_HASH,
     VAULT_REVIEW_V2_CONTENT,
@@ -281,8 +287,9 @@ test('a CUSTOMIZED dream.md retires nothing: vault-review keeps running beside i
     const result = await reconcileSeeds(ctx)
     expect(result.retired).toEqual([])
     expect(result.customized).toContain(join(ctx.cronsDir, 'dream.md'))
+    // Only the switch line is added (no daemon.dream in .settings → off); the rest is the user's.
     expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
-        mineDream,
+        withEnabled(mineDream, false),
     )
     expect(readFileSync(join(ctx.cronsDir, 'vault-review.md'), 'utf-8')).toBe(
         'review',
@@ -310,8 +317,8 @@ test('a user-customized dream.md (matches NO stock version, v1 through v4) is le
     expect(result.refreshed).toEqual([])
     expect(result.customized).toContain(join(ctx.cronsDir, 'dream.md'))
     expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
-        customized,
-    ) // byte-identical, untouched
+        withEnabled(customized, false),
+    ) // untouched but for the switch line daemon.dream's absence implies
 })
 
 test('a dream.md the user wrote from scratch (unrelated content) is also left untouched, not treated as customized-from-nothing', async () => {
@@ -322,7 +329,9 @@ test('a dream.md the user wrote from scratch (unrelated content) is also left un
 
     const result = await reconcileSeeds(ctx)
     expect(result.customized).toContain(join(ctx.cronsDir, 'dream.md'))
-    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(scratch)
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
+        withEnabled(scratch, false),
+    )
 })
 
 test('a dream.md already on the CURRENT (incremental) version is a no-op — not written, refreshed, or flagged customized', async () => {
@@ -389,4 +398,92 @@ test('a name the first-run intro wrote through core survives the daemon seeding 
     const res = await reconcileSeeds(ctx)
     expect(res.written).not.toContain(ctx.identityFile)
     expect(readFileSync(ctx.identityFile, 'utf-8')).toBe(identitySeed('ada'))
+})
+
+// The dream cron's on/off is its own `enabled:` line (core/src/seededCronSwitch.ts): the stock
+// seed ships it off, the stock-version match ignores it, an upgrade keeps it, a switch flipped
+// before the file existed is applied when it is written, and a vault's old daemon.dream setting is
+// carried into it once.
+
+test('the seeded crons core knows are the daemon\'s default crons', () => {
+    expect([...SEEDED_CRONS]).toEqual(DEFAULT_CRONS.map(c => c.name))
+})
+
+test('a fresh vault gets dream switched off', async () => {
+    await reconcileSeeds(ctx)
+    const md = readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')
+    expect(md).toBe(CURRENT_DREAM)
+    expect(md).toContain('\nenabled: false\n')
+})
+
+test('a dream switched on in the cron menu still counts as stock: no-op now, upgraded later with the switch kept', async () => {
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    const on = withEnabled(CURRENT_DREAM, true)
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), on, 'utf-8')
+    const now = await reconcileSeeds(ctx)
+    expect(now.customized).toEqual([])
+    expect(now.refreshed).toEqual([])
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(on)
+
+    // A prior stock body the user switched on through the menu (textual line) is upgraded, still on.
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), withEnabled(DREAM_V2_CONTENT, true), 'utf-8')
+    const later = await reconcileSeeds(ctx)
+    expect(later.refreshed).toContain(join(ctx.cronsDir, 'dream.md'))
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(on)
+})
+
+test('a vault with daemon.dream: true and a stock dream.md is upgraded with dream on', async () => {
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    writeFileSync(join(root, '.settings'), 'daemon:\n  dream: true\n', 'utf-8')
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), DREAM_V2_CONTENT, 'utf-8')
+    const result = await reconcileSeeds(ctx)
+    expect(result.refreshed).toContain(join(ctx.cronsDir, 'dream.md'))
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
+        withEnabled(CURRENT_DREAM, true),
+    )
+})
+
+test('a vault with no daemon.dream and a stock dream.md is upgraded with dream off', async () => {
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), DREAM_V2_CONTENT, 'utf-8')
+    await reconcileSeeds(ctx)
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(CURRENT_DREAM)
+})
+
+test('daemon.dream: true and a customized dream.md with no switch line gets enabled: true', async () => {
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    writeFileSync(join(root, '.settings'), 'daemon:\n  dream: true\n', 'utf-8')
+    const mine = '---\nname: dream\nschedule: 0 3 * * *\n---\n\nmy own dream\n'
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), mine, 'utf-8')
+    await reconcileSeeds(ctx)
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
+        '---\nname: dream\nschedule: 0 3 * * *\nenabled: true\n---\n\nmy own dream\n',
+    )
+})
+
+test('a dream.md that already has a switch line keeps it, whatever daemon.dream says', async () => {
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    writeFileSync(join(root, '.settings'), 'daemon:\n  dream: true\n', 'utf-8')
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), CURRENT_DREAM, 'utf-8')
+    await reconcileSeeds(ctx)
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(CURRENT_DREAM)
+})
+
+test('a switch saved before dream.md existed is applied when the daemon writes it, then cleared', async () => {
+    setPendingEnabled(ctx.daemonDir, 'dream', true)
+    await reconcileSeeds(ctx)
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
+        withEnabled(CURRENT_DREAM, true),
+    )
+    expect(
+        JSON.parse(readFileSync(join(ctx.cronsDir, PENDING_ENABLED_FILE), 'utf-8')),
+    ).toEqual({})
+})
+
+test('daemon.dream: true with no dream.md yet seeds dream on', async () => {
+    writeFileSync(join(root, '.settings'), 'daemon:\n  dream: true\n', 'utf-8')
+    await reconcileSeeds(ctx)
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
+        withEnabled(CURRENT_DREAM, true),
+    )
 })

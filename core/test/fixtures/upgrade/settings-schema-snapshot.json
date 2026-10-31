@@ -2398,13 +2398,6 @@
     "max": null,
     "required": false
   },
-  "daemon.dream": {
-    "type": "boolean",
-    "default": false,
-    "min": null,
-    "max": null,
-    "required": false
-  },
   "daemon.email": {
     "type": {
       "kind": "object"

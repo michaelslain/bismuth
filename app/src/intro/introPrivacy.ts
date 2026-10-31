@@ -1,8 +1,13 @@
 export type PrivacyId = 'recall' | 'midTurn' | 'saveSessions' | 'dream' | 'notifications' | 'inheritUserMcp' | 'email'
 
-export type PrivacyOption = {
+/** Where a switch is saved: a `.settings` key, or a daemon cron's own `enabled:` line (the switch
+ *  the daemon page's cron menu shows). */
+export type PrivacyTarget = { path: string[]; cron?: never } | { cron: string; path?: never }
+
+export type PrivacyWrite = PrivacyTarget & { value: boolean }
+
+export type PrivacyOption = PrivacyTarget & {
     id: PrivacyId
-    path: string[]
     icon: string
     name: string
     desc: string
@@ -34,7 +39,7 @@ export const PRIVACY_OPTIONS: PrivacyOption[] = [
     },
     {
         id: 'dream',
-        path: ['daemon', 'dream'],
+        cron: 'dream',
         icon: 'Moon',
         name: 'dream',
         desc: 'Hourly, changed notes are folded into memory.',
@@ -109,6 +114,10 @@ export function togglePrivacy(values: PrivacyValues, id: PrivacyId): PrivacyValu
     return next
 }
 
-export function privacyWrites(values: PrivacyValues): { path: string[]; value: boolean }[] {
-    return PRIVACY_OPTIONS.map(o => ({ path: o.path, value: values[o.id] }))
+export function privacyWrites(values: PrivacyValues): PrivacyWrite[] {
+    return PRIVACY_OPTIONS.map(o =>
+        o.cron === undefined
+            ? { path: o.path, value: values[o.id] }
+            : { cron: o.cron, value: values[o.id] },
+    )
 }

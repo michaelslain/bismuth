@@ -1,4 +1,5 @@
 import { bismuthHome } from './bismuthHome'
+import { SEEDED_CRONS, setPendingEnabled, withEnabled } from './seededCronSwitch'
 // core/src/daemon.ts
 // Bismuth's read/write window onto the daemon's MACHINE-LEVEL identity state files.
 // Machine-level identity (device-id, devices.json, owner.json, daemon.pid) now lives
@@ -863,20 +864,32 @@ function setEnabled(
         throw new AppError('ENOENT', `${what} "${name}" not found`, 404)
     }
     const file = join(dir, `${base}.md`)
+    const md = readFileSync(file, 'utf8')
+    // A cron's line is edited textually so a seeded cron (dream) still hashes as stock afterwards.
     writeFileSync(
         file,
-        setFrontmatterKey(readFileSync(file, 'utf8'), 'enabled', enabled),
+        subdir === 'crons'
+            ? withEnabled(md, enabled)
+            : setFrontmatterKey(md, 'enabled', enabled),
     )
     return base
 }
 
 /** Enable/disable a cron by editing its `enabled` frontmatter. The daemon re-reads
- *  every cron file on its next scheduler tick, so no trigger is needed for crons. */
+ *  every cron file on its next scheduler tick, so no trigger is needed for crons. A seeded cron
+ *  (dream) the daemon has not written yet keeps the choice for the daemon to apply when it does. */
 export function setCronEnabled(
     name: string,
     enabled: boolean,
     home: string,
 ): void {
+    if (
+        SEEDED_CRONS.includes(name) &&
+        !resolveDaemonFile(join(home, 'crons'), name)
+    ) {
+        setPendingEnabled(home, name, enabled)
+        return
+    }
     setEnabled('crons', name, enabled, home)
 }
 

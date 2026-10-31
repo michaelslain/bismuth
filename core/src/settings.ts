@@ -24,6 +24,7 @@ import {
     isSeq,
 } from 'yaml'
 import { readNote, writeNote } from './files'
+import { migrateDreamSwitch } from './seededCronSwitch'
 import { loadRegistry, BUILTIN_PROPERTIES } from './schema/registry'
 import { loadSchemaSet, type PropertySchemaSet } from './schema/namedSchemas'
 import { SETTINGS_SCHEMA, DEFAULTS } from './schema/settingsSchema'
@@ -484,6 +485,9 @@ const RETIRED_KEYS: readonly (readonly string[])[] = [
     // and editor.lineHeight. Its cursor keys are moved to `appearance` by renameKeys, which runs
     // before this prune.
     ['terminal'],
+    // `daemon.dream` held the dream cron off on top of its own `enabled:` line; the cron's line is
+    // now the one switch. reconcileSettings copies the value into dream.md before this prune.
+    ['daemon', 'dream'],
 ]
 
 /** The pair for `key` in `map`, or undefined. */
@@ -823,6 +827,8 @@ export async function reconcileSettings(vault: string): Promise<boolean> {
     const renamedCommands = renameCommandRefs(doc)
     const migrated = migrateDaemonConfig(doc)
     const migratedAppearance = migrateLegacyAppearance(doc)
+    // Before the prune drops daemon.dream: its value moves into the dream cron's own switch.
+    migrateDreamSwitch(join(vault, '.daemon'), doc.getIn(['daemon', 'dream']) === true)
     const pruned = pruneRetiredKeys(doc)
     const stripped = stripMaterializedDefaults(doc) // last: counts the migrated values as they now are
     if (

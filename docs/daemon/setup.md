@@ -10,7 +10,7 @@ daemon:
 
 ## What turning it on does
 
-- Crons run in the background on the schedule in each `.daemon/crons/<name>.md` file. A new vault gets one, `dream`, which folds your notes into memory every hour once `daemon.dream` is `true`. See [crons and processes](crons-and-processes.md).
+- Crons run in the background on the schedule in each `.daemon/crons/<name>.md` file. A new vault gets one, `dream`, which folds your notes into memory every hour once you turn it on in the daemon page's cron menu. See [crons and processes](crons-and-processes.md).
 - Memory becomes available: agents in the app's terminal tabs and chat can use the `remember`, `recall` and `forget` tools; with `daemon.recall.enabled` on, agents also get relevant notes automatically. See [memory](memory.md).
 - Inbox pages appear on the daemon page when the daemon wants you to approve or dismiss something. See [pages](pages.md).
 - The `.daemon` folder shows in the file tree under the daemon's name. With the daemon off it is hidden.

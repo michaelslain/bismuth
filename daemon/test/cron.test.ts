@@ -8,18 +8,12 @@ import {
     rmSync,
     writeFileSync,
     mkdirSync,
-    readdirSync,
-    readFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
     loadCronJobs,
     loadLastFired,
-    loadRunning,
-    fireFileChangeCron,
-    recoverInterruptedCrons,
-    type FileChangeCronJob,
     normalizeLastFired,
     shouldCatchUp,
     shouldFire,
@@ -36,9 +30,6 @@ import {
     lastReportLine,
     notifyNewPages,
     notificationsEnabled,
-    dreamEnabled,
-    cronSwitchedOff,
-    DREAM_OFF_NOTE,
     announcesNewPages,
     listPageSlugs,
     type FailureCause,
@@ -1136,115 +1127,6 @@ test('notificationsEnabled: on only for an explicit daemon.notifications: true',
         expect(await notificationsEnabled(root)).toBe(false)
         writeFileSync(join(root, '.settings'), 'daemon:\n  notifications: true\n')
         expect(await notificationsEnabled(root)).toBe(true)
-    } finally {
-        rmSync(root, { recursive: true, force: true })
-    }
-})
-
-test('dream switch: the dream cron runs only with daemon.dream: true; other crons are unaffected', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
-    try {
-        expect(await dreamEnabled(root)).toBe(false)
-        expect(await cronSwitchedOff(root, { name: 'dream', file: 'dream' })).toBe(true)
-        expect(await cronSwitchedOff(root, { name: 'other', file: 'other' })).toBe(false)
-        writeFileSync(join(root, '.settings'), 'daemon:\n  dream: true\n')
-        expect(await cronSwitchedOff(root, { name: 'dream', file: 'dream' })).toBe(false)
-        expect(await cronSwitchedOff(root, { name: 'other', file: 'other' })).toBe(false)
-        writeFileSync(join(root, '.settings'), 'daemon:\n  dream: false\n')
-        expect(await cronSwitchedOff(root, { name: 'dream', file: 'dream' })).toBe(true)
-    } finally {
-        rmSync(root, { recursive: true, force: true })
-    }
-})
-
-function dreamJob(over: Partial<FileChangeCronJob> = {}): FileChangeCronJob {
-    return {
-        name: 'dream',
-        file: 'dream',
-        prompt: 'dream',
-        enabled: true,
-        notify: false,
-        timeout: 5,
-        incremental: false,
-        checkpointDirs: ['vault'],
-        on: 'file-change',
-        watch: 'a.md',
-        catchup: false,
-        ...over,
-    } as FileChangeCronJob
-}
-
-function switchCtx(root: string): VaultContext {
-    return {
-        root,
-        name: 'm',
-        cronsDir,
-        runningFile: join(root, 'running.json'),
-        lastFiredFile: join(root, 'last-fired.json'),
-        logsDir: join(root, 'logs'),
-    } as unknown as VaultContext
-}
-
-test('dream switch: daemon.dream true switches the gate off for both the file and a renamed job', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
-    try {
-        writeFileSync(join(root, '.settings'), 'daemon:\n  dream: true\n')
-        const job = dreamJob()
-        expect(await cronSwitchedOff(root, job)).toBe(false)
-        expect(await cronSwitchedOff(root, { ...job, name: 'other' })).toBe(
-            false,
-        )
-    } finally {
-        rmSync(root, { recursive: true, force: true })
-    }
-})
-
-test('dream switch: a file named dream stays switched off whatever its frontmatter name says', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
-    try {
-        expect(
-            await cronSwitchedOff(root, { name: 'other', file: 'dream' }),
-        ).toBe(true)
-    } finally {
-        rmSync(root, { recursive: true, force: true })
-    }
-})
-
-test('dream switch: fireFileChangeCron with no daemon.dream records the skip once', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
-    try {
-        const c = switchCtx(root)
-        await fireFileChangeCron(c, dreamJob(), ['a.md'])
-        expect((await loadRunning(c)).dream).toBeUndefined()
-        const first = (await loadLastFired(c)).dream
-        expect(first).toMatchObject({
-            result: 'skipped',
-            detail: DREAM_OFF_NOTE,
-        })
-        await new Promise(r => setTimeout(r, 5))
-        await fireFileChangeCron(c, dreamJob(), ['b.md'])
-        expect((await loadRunning(c)).dream).toBeUndefined()
-        expect((await loadLastFired(c)).dream?.timestamp).toBe(first?.timestamp)
-        const logged = readdirSync(join(root, 'logs'))
-            .map(f => readFileSync(join(root, 'logs', f), 'utf8'))
-            .join('')
-        expect(logged.split(DREAM_OFF_NOTE).length - 1).toBe(1)
-    } finally {
-        rmSync(root, { recursive: true, force: true })
-    }
-})
-
-test('dream switch: recovery clears a stale running entry for a switched-off dream', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'bismuth-dream-'))
-    try {
-        const c = switchCtx(root)
-        cronFile('dream', 'name: dream\nschedule: 0 * * * *')
-        writeFileSync(
-            c.runningFile,
-            JSON.stringify({ dream: { startedAt: new Date().toISOString() } }),
-        )
-        await recoverInterruptedCrons(c)
-        expect((await loadRunning(c)).dream).toBeUndefined()
     } finally {
         rmSync(root, { recursive: true, force: true })
     }

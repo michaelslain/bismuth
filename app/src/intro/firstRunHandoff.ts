@@ -1,5 +1,6 @@
 import { completeFreeAgentSetup, type FreeAgentApi } from '../chat/freeAgentClient'
 import type { ConvertJob } from './introEnterVault'
+import type { PrivacyWrite } from './introPrivacy'
 import { providerLabel, sanitizeChatProvider } from '../chat/chatProvider'
 import {
     FIRST_RUN_AGENT_KEY,
@@ -18,6 +19,7 @@ export type FirstRunApi = FreeAgentApi & {
     daemonSetup: () => Promise<{ ok: boolean }>
     bismuthInstall: () => Promise<{ action?: string }>
     setDaemonName: (name: string) => Promise<{ name: string }>
+    setCronEnabled: (name: string, enabled: boolean) => Promise<unknown>
 }
 
 export type FirstRunHandoffDeps = {
@@ -73,8 +75,10 @@ export function runFirstRunHandoff(deps: FirstRunHandoffDeps): void {
     handoffConvert(deps, delayMs, Promise.all([agentReady, mcpReady]))
 }
 
-// The privacy slide's switches: `{path, value}[]` JSON, written to .settings one at a time after the
-// daemon.enabled write above. Malformed JSON or a malformed entry writes nothing.
+// The privacy slide's switches: `{path, value}` (a .settings key) or `{cron, value}` (a daemon cron's
+// own `enabled:` line; core saves it for the daemon when the cron file is not written yet) entries in
+// a JSON array, written one at a time after the daemon.enabled write above. A `daemon.dream` path
+// from an older intro is the dream cron's switch. Malformed JSON or a malformed entry writes nothing.
 function handoffPrivacy(deps: FirstRunHandoffDeps): void {
     const { api, storage, pushToast } = deps
     const raw = storage.getItem(FIRST_RUN_PRIVACY_KEY)
@@ -88,15 +92,23 @@ function handoffPrivacy(deps: FirstRunHandoffDeps): void {
     }
     if (!Array.isArray(parsed)) return
     const writes = parsed.filter(
-        (w): w is { path: string[]; value: boolean } =>
-            Array.isArray(w?.path) &&
-            w.path.length > 0 &&
-            w.path.every((k: unknown) => typeof k === 'string') &&
-            typeof w.value === 'boolean',
+        (w): w is PrivacyWrite =>
+            typeof w?.value === 'boolean' &&
+            ((typeof w.cron === 'string' && w.cron.length > 0) ||
+                (Array.isArray(w?.path) &&
+                    w.path.length > 0 &&
+                    w.path.every((k: unknown) => typeof k === 'string'))),
     )
+    const write = (w: PrivacyWrite) => {
+        const cron =
+            w.cron ?? (w.path?.join('.') === 'daemon.dream' ? 'dream' : undefined)
+        return cron === undefined
+            ? api.setSetting(w.path!, w.value)
+            : api.setCronEnabled(cron, w.value)
+    }
     void writes
         .reduce(
-            (chain, w) => chain.then(() => api.setSetting(w.path, w.value)),
+            (chain, w) => chain.then(() => write(w)),
             Promise.resolve<unknown>(undefined),
         )
         .catch(e =>

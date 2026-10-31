@@ -20,6 +20,14 @@ import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import type { VaultContext } from '../lib/config.ts'
 import { identitySeed } from '../../../core/src/daemonIdentity.ts'
+import {
+    enabledLine,
+    migrateDreamSwitch,
+    stripEnabled,
+    takePendingEnabled,
+    withEnabled,
+} from '../../../core/src/seededCronSwitch.ts'
+import { readVaultSettingsDoc } from '../lib/vaultSettings.ts'
 import { DEFAULT_CRONS, RETIRED_CRONS } from './defaultCrons.ts'
 import { logActivity } from '../lib/activityLog.ts'
 import { PAGES_GUIDE } from './pagesGuide.ts'
@@ -39,6 +47,13 @@ export interface Seed {
 
 function sha256(content: string): string {
     return createHash('sha256').update(content, 'utf-8').digest('hex')
+}
+
+/** The hash a refreshable seed is compared by: its bytes without the frontmatter `enabled:` line,
+ *  which is the cron's on/off switch (core/src/seededCronSwitch.ts), so flipping it never makes a
+ *  stock file read as user-edited. */
+function stockHash(content: string): string {
+    return sha256(stripEnabled(content))
 }
 
 /**
@@ -88,6 +103,7 @@ export const PRIOR_SEED_HASHES: Record<string, string[]> = {
         '5fef4988438511e18e68a349854cfb57745d0ad7cdfc2d4c207398383fed2f75', // v10 — the brain-report dream, before the unavailable-report + duplicate-bullet fixes
         'de6bc04ca72d56fc9fd8f482c751106ad56f92640165244d878354dd769479fd', // v11 — the brain-report dream, before the healthy-graph line named Steps 4 to 7
         'd2ae8fa42283822856b94d1ed9eafa3d678217521bee9fa77b8700b4d21338c3', // v12 — the brain-report dream, before effort: high and the work-to-12 agenda wording
+        '34e7549d6f78c472f72a328f1d63388d797049ebf3f57b4a01348d4aee3c7a63', // v13 — the last dream with no `enabled:` line, gated by daemon.dream in .settings
     ],
     'vault-review': [
         '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39', // v1 — 2026-06-28 (unchanged through f48076b)
@@ -153,13 +169,31 @@ export async function reconcileSeeds(
         customized: [],
         retired: [],
     }
+    // A vault from before dream's switch moved into dream.md still carries it as daemon.dream in
+    // .settings; core may not have opened the vault since, so the daemon carries it over too.
+    try {
+        const doc = (await readVaultSettingsDoc(ctx.root)) as {
+            daemon?: Record<string, unknown>
+        } | null
+        migrateDreamSwitch(ctx.daemonDir, doc?.daemon?.dream === true)
+    } catch {
+        // best-effort: retried on the next brain-start
+    }
     for (const seed of seedsFor(ctx)) {
         try {
             if (!existsSync(seed.path)) {
                 await mkdir(dirname(seed.path), { recursive: true })
+                // A switch flipped before the file existed (the first-run intro) is applied now.
+                const pending = seed.refreshKey
+                    ? takePendingEnabled(ctx.daemonDir, seed.refreshKey)
+                    : undefined
+                const content =
+                    pending === undefined
+                        ? seed.content
+                        : withEnabled(seed.content, pending)
                 // Exclusive create: core can write identity.md at the same moment (the first-run
                 // rename, core/src/daemonIdentity.ts), and a seed must never replace that file.
-                const created = await writeFile(seed.path, seed.content, {
+                const created = await writeFile(seed.path, content, {
                     encoding: 'utf-8',
                     flag: 'wx',
                 }).then(
@@ -178,10 +212,16 @@ export async function reconcileSeeds(
             if (!priorHashes || priorHashes.length === 0) continue // no known history to upgrade from
 
             const onDisk = await readFile(seed.path, 'utf-8')
-            if (onDisk === seed.content) continue // already current, nothing to do
+            if (stripEnabled(onDisk) === stripEnabled(seed.content)) continue // already current
 
-            if (priorHashes.includes(sha256(onDisk))) {
-                await writeFile(seed.path, seed.content, 'utf-8')
+            if (priorHashes.includes(stockHash(onDisk))) {
+                // The upgrade keeps the file's own switch; a file with none takes the stock one.
+                const on = enabledLine(onDisk)
+                await writeFile(
+                    seed.path,
+                    on === undefined ? seed.content : withEnabled(seed.content, on),
+                    'utf-8',
+                )
                 result.refreshed.push(seed.path)
                 console.log(
                     `[seeds] upgraded "${seed.path}" (matched a known stock version)`,
@@ -219,7 +259,7 @@ async function retireMergedCrons(
     if (!dream || RETIRED_CRONS.length === 0) return
     try {
         const onDisk = await readFile(join(ctx.cronsDir, 'dream.md'), 'utf-8')
-        if (onDisk !== dream.content) return
+        if (stripEnabled(onDisk) !== stripEnabled(dream.content)) return
     } catch {
         return
     }

@@ -613,11 +613,6 @@ export const SETTINGS_SCHEMA: Schema = {
             default: false,
             doc: 'Save each finished agent session from a Bismuth terminal, and each in-app chat, as a memory note in this vault so the daemon can recall it later. On means the text of your conversations with agents is written into the vault. Off is the default: no session is saved.',
         },
-        dream: {
-            type: 'boolean',
-            default: false,
-            doc: "The hourly cron that folds changed notes and saved sessions into memory. On means the daemon runs an agent over your changed notes every hour. Off is the default: the cron does not run and memory only changes when an agent calls the remember/forget tools.",
-        },
         backend: {
             type: enumType(DAEMON_BACKEND_IDS),
             default: DEFAULT_BACKEND,
