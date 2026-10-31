@@ -38,7 +38,8 @@ export const Empty: Story = {
     },
 }
 
-/** Filled, and a long path: the input shrinks (min-width 0), the button never does. */
+/** Filled, and a long path: the input shrinks (min-width 0), the button never does. The path ends
+ *  in an ellipsis and stops a full bracket gap short of `[browse]`. */
 export const LongPath: Story = {
     render: () => {
         const [v, setV] = createSignal(
@@ -54,6 +55,14 @@ export const LongPath: Story = {
                 />
             </Frame>
         )
+    },
+    play: async ({ canvasElement }) => {
+        const input = within(canvasElement).getByLabelText('input path') as HTMLInputElement
+        const button = within(canvasElement).getByRole('button', { name: /browse/ })
+        expect(getComputedStyle(input).textOverflow).toBe('ellipsis')
+        expect(input.scrollWidth).toBeGreaterThan(input.clientWidth)
+        const gap = button.getBoundingClientRect().left - input.getBoundingClientRect().right
+        expect(gap).toBeGreaterThanOrEqual(8)
     },
 }
 

@@ -499,3 +499,73 @@ export const KeepsPlaceOnRerender: Story = {
         expect(canvas.getByText('include')).toBe(rail)
     },
 }
+
+const LONG_PATH = 'school/fall 2026/cs 161 operating systems/week 07 - virtual memory.md'
+
+/** The bar at three pane widths with a long source path: wide enough to show it, narrow enough
+ *  that it moves into [≡], and below the bar's floor. At no width does the path run under the
+ *  format toggle: it shows whole, cuts off with an ellipsis, or is gone from the bar. */
+export const NarrowLongPath: Story = {
+    render: () => {
+        fresh()
+        setTransport(fakeTransport({ files: { [LONG_PATH]: NOTE_BODY } }))
+        return (
+            <div style={{ display: 'grid', gap: '16px' }}>
+                {[1100, 820, 520].map(w => (
+                    <div
+                        data-testid={`frame-${w}`}
+                        style={{ width: `${w}px`, height: '220px', overflow: 'hidden' }}
+                    >
+                        <ExportView path={LONG_PATH} htmlToPdf={twoPagePdf} />
+                    </div>
+                ))}
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const frame = (w: number) =>
+            canvasElement.querySelector<HTMLElement>(`[data-testid="frame-${w}"]`)!
+        const box = (el: Element | null) => el?.getBoundingClientRect()
+        await waitFor(() => {
+            for (const w of [1100, 820, 520])
+                expect(frame(w).querySelector('[data-testid="vb-facet"]')).toBeTruthy()
+        })
+        await document.fonts.ready
+        await waitFor(() => {
+            for (const w of [1100, 820, 520]) {
+                const f = frame(w)
+                const path = f.querySelector<HTMLElement>(
+                    '[data-testid="vb-locus"] [data-bar-drop]',
+                )
+                const facet = box(f.querySelector('[data-testid="vb-facet"]'))!
+                const p = path && !path.hasAttribute('data-bar-hidden') ? box(path) : undefined
+                // The path never reaches into the format toggle.
+                if (p && p.width > 0) expect(p.right).toBeLessThanOrEqual(facet.left)
+            }
+            // Wide: the whole path is in the bar. Narrower: it has moved into [≡].
+            const wide = frame(1100).querySelector<HTMLElement>(
+                '[data-testid="vb-locus"] [data-bar-drop]',
+            )!
+            expect(wide.hasAttribute('data-bar-hidden')).toBe(false)
+            expect(wide.scrollWidth).toBeLessThanOrEqual(wide.clientWidth + 1)
+            for (const w of [820, 520]) {
+                const p = frame(w).querySelector('[data-testid="vb-locus"] [data-bar-drop]')!
+                expect(p.hasAttribute('data-bar-hidden')).toBe(true)
+                expect(frame(w).querySelector('[data-bar-overflow]')).toBeTruthy()
+            }
+        })
+        // A stale fit (the path left in the bar where it does not fit): it cuts off with an
+        // ellipsis before the format toggle instead of running under it.
+        const f = frame(820)
+        const path = f.querySelector<HTMLElement>('[data-testid="vb-locus"] [data-bar-drop]')!
+        path.removeAttribute('data-bar-hidden')
+        f.querySelector('[data-testid="vb-locus"]')!.removeAttribute('data-bar-hidden')
+        const p = box(path)!
+        const facet = box(f.querySelector('[data-testid="vb-facet"]'))!
+        expect(p.width).toBeGreaterThan(0)
+        expect(p.right).toBeLessThanOrEqual(facet.left)
+        const readout = path.firstElementChild as HTMLElement
+        expect(readout.scrollWidth).toBeGreaterThan(readout.clientWidth)
+        path.setAttribute('data-bar-hidden', '')
+    },
+}

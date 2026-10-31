@@ -1,12 +1,16 @@
 /* app/src/ui/PathField.module.css — a path input + its browse button on one row. Lifted from
-   ExportView.module.css's `.path-row` / `.path-input`, which the two path rows there shared. */
+   ExportView.module.css's `.path-row` / `.path-input`, which the two path rows there shared.
+   The gap is the --sp-4 every sibling pair of bracket controls keeps: at --sp-2 a path longer than
+   the field was cut flush against `[browse]`'s bracket and read as one run of text. A path that
+   does not fit ends in an ellipsis while the field is at rest, so it reads as cut, not as touching. */
 .path-field {
   display: flex;
-  gap: var(--sp-2);
+  gap: var(--sp-4);
   align-items: stretch;
 }
 .path-input {
   flex: 1 1 auto;
   min-width: 0;
   font-size: var(--fs-micro);
+  text-overflow: ellipsis;
 }

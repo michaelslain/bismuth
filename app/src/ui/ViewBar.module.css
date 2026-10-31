@@ -113,6 +113,14 @@
 .vb-lead { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
 .vb-trail { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 0 0 auto; }
 .vb-identity, .vb-locus, .vb-facet, .vb-readouts, .vb-config, .vb-actions { display: flex; align-items: center; gap: var(--bar-icon-gap); min-width: 0; }
+/* A SQUEEZED LEAD GIVES FROM THE LOCUS, NEVER THE FACET. The fit drop (below) moves a droppable
+   locus into [≡] before the lead runs out of room; this is what holds when the lead is squeezed
+   anyway. The facet's toggle cannot shrink, so a shrinking facet region only let its buttons
+   spill out of their box; rigid, the space comes from the locus. And a droppable locus element
+   (the export pane's source path) shrinks to its Readout's ellipsis rather than holding its
+   min-content width and running underneath the facet. */
+.vb-facet { flex-shrink: 0; }
+.vb-locus > [data-bar-drop] { min-width: 0; }
 /* PANE CHROME (ui/paneChrome.ts): the bar that claimed a split pane's close + drag. The [×] wrapper
    is the trail's last group, so --bar-crumb-gap (the trail's own gap) already sets it apart like
    any group boundary. It is NOT a .vbRegion, so the collapse ladder never hides it. The bar is the
