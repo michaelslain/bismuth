@@ -220,6 +220,10 @@ ${headingRules}
   p { line-height: ${rule}px; margin: 0 0 ${rule}px; color: ${p.fg}; }
   li { line-height: ${rule}px; margin: 0; color: ${p.fg}; }
   li > p:last-of-type { margin-bottom: 0; }
+  /* Each blank line past the first in a run (blankLines.ts) is one rule of space. A heading
+     after one drops its top rule, which would otherwise count one blank line twice. */
+  .bismuth-blank-line { height: ${rule}px; margin: 0; }
+  .bismuth-blank-line + :is(h1, h2, h3, h4, h5, h6) { margin-top: 0; }
   ul, ol { margin: 0; padding-left: 1.4em; }
   a { color: ${p.accent}; }
   /* Vertical rhythm: margin (${rule}px top+bottom = 2 rules) and padding (${rule / 2}px

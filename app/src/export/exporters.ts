@@ -20,6 +20,7 @@ import { stripFrontmatter } from '../bases/cardBodySplit'
 import { pageSections } from './pageBreaks'
 import { whenMathReady } from '../editor/katexLoader'
 import { inkifyMarkdown } from './inkHtml'
+import { keepBlankLines } from './blankLines'
 import type {
     ExportFormat,
     ExportResult,
@@ -81,7 +82,7 @@ async function bodyHtml(
                 palette.scheme,
             )
             const typed = await typedTables(
-                renderMarkdown(ink.text),
+                renderMarkdown(keepBlankLines(ink.text)),
                 deps,
                 palette,
             )
@@ -93,7 +94,11 @@ async function bodyHtml(
         // its own and would render it as a stray <hr> + paragraph text.
         const { data, body } = parseFrontmatter(text)
         const ink = await inkifyMarkdown(body, deps, palette.scheme)
-        const typed = await typedTables(renderMarkdown(ink.text), deps, palette)
+        const typed = await typedTables(
+            renderMarkdown(keepBlankLines(ink.text)),
+            deps,
+            palette,
+        )
         return {
             html: frontmatterBlockHtml(data) + typed.html,
             css: ink.css + typed.css,
@@ -191,10 +196,10 @@ async function renderSectionHtml(
     // Ink first, for the same reason bodyHtml does it: a ```draw fence in a page-broken note
     // is still ink, and a section rendered without this step exports its drawings as base64.
     const ink = await inkifyMarkdown(section, deps, palette.scheme)
-    let html = renderMarkdown(ink.text)
+    let html = renderMarkdown(keepBlankLines(ink.text))
     if (UNRENDERED_MATH.test(html)) {
         await whenMathReady()
-        html = renderMarkdown(ink.text)
+        html = renderMarkdown(keepBlankLines(ink.text))
     }
     const typed = await typedTables(html, deps, palette)
     return { html: typed.html, css: ink.css + typed.css }

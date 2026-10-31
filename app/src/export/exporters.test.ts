@@ -67,6 +67,20 @@ describe('renderExport', () => {
         expect(r.previewHtml).toBe(text)
     })
 
+    test('note -> html keeps extra blank lines as spacers; md keeps the source', async () => {
+        const src = 'one\n\n\n\ntwo'
+        const d = deps({ read: async () => src })
+        const html = enc.decode(
+            (await renderExport('a/note.md', 'html', d)).bytes,
+        )
+        expect(
+            html.split('<div class="bismuth-blank-line"></div>').length - 1,
+        ).toBe(2)
+        expect(html).toContain('.bismuth-blank-line {')
+        const md = await renderExport('a/note.md', 'md', d)
+        expect(enc.decode(md.bytes)).toBe(src)
+    })
+
     test('note -> md returns the raw source', async () => {
         const r = await renderExport('a/note.md', 'md', deps())
         expect(r.filename).toBe('note.md')
