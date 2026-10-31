@@ -192,6 +192,8 @@ import {
     setTabPinned,
     splitColdLaunch,
     decideOpen,
+    isNewTab,
+    findNewTab,
     hasRestorableContent,
     tabNotePath,
     tabBarLabel,
@@ -1101,6 +1103,17 @@ export default function App() {
 
     // Append a brand-new tab showing `content` and make it active. The "new" branch of
     // decideOpen's decision — i.e. the default outcome of opening a note (see openFile).
+    // The "replace" branch: the active tab is a "New tab" (panes.ts isNewTab), so `content` loads
+    // into its one pane instead of opening beside it. Recorded as a navigation of that pane, so
+    // Back returns to the graph.
+    const openInPlace = (tabId: string, leafId: string, content: string) => {
+        updateTab(tabId, t => ({
+            ...t,
+            root: setContent(t.root, leafId, content),
+            focusId: leafId,
+        }))
+        recordNav(leafId, content)
+    }
     const openInFreshTab = (content: string) => {
         const tab = makeTab(content)
         setTabs(ts => [...ts, tab])
@@ -1110,7 +1123,8 @@ export default function App() {
     // Open a content id in a NEW tab — always (#56: opening a note must never clobber the tab
     // you're on). If the active tab's focused pane already shows it, do nothing; if it's
     // already open in some tab (this one, in another pane, or a different tab entirely) we
-    // focus that tab/pane instead of spawning a duplicate. Otherwise: fresh tab. This is the
+    // focus that tab/pane instead of spawning a duplicate. On a "New tab" it loads in place
+    // (decideOpen's "replace"). Otherwise: fresh tab. This is the
     // path for wikilinks, the file tree, the quick switcher, graph-node clicks, search results
     // and daily notes.
     // Companion redirect (binary-files plan, Task 2 + fix 1): a binary's tag-carrying companion
@@ -1142,17 +1156,26 @@ export default function App() {
                     focusId: decision.leafId,
                 }))
                 return
+            case 'replace':
+                openInPlace(decision.tabId, decision.leafId, target)
+                return
             case 'new':
                 openInFreshTab(target)
                 return
         }
     }
     // Open a content id for a TOOL surface (settings/terminal/export/graph/daemon/new-chat).
-    // It opens exactly like a file: already shown somewhere → focused, otherwise a new tab, so
-    // a tool never replaces a pane of a split either.
+    // It opens exactly like a file: already shown somewhere → focused, on a "New tab" → in its
+    // place, otherwise a new tab, so a tool never replaces a pane of a split either.
     const openTool = openFile
-    // New Tab (Cmd+T): ALWAYS a fresh home tab (settings.homePage, else the graph) — never focuses an existing one.
+    // New Tab (Cmd+T): a window holds at most one "New tab" (panes.ts isNewTab), so when one is
+    // open, Cmd+T focuses it; otherwise a fresh home tab (settings.homePage, else the graph).
     const newTab = () => {
+        const existing = findNewTab(tabs())
+        if (existing) {
+            setActiveTabId(existing.id)
+            return
+        }
         const content = homeContent(settings.homePage)
         const tab = makeTab(content)
         setTabs(ts => [...ts, tab])
@@ -1541,6 +1564,11 @@ export default function App() {
     // The tab is added before the popover lets go of the id, so the retained set never loses it
     // (no reconnect).
     const openChatInTab = (chatId: string) => {
+        const active = activeTab()
+        if (active && isNewTab(active)) {
+            openInPlace(active.id, active.root.id, CHAT_PREFIX + chatId)
+            return
+        }
         const tab = makeTab(CHAT_PREFIX + chatId)
         batch(() => {
             setTabs(ts => [...ts, tab])

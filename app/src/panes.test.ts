@@ -655,6 +655,48 @@ test('decideOpen: new tab (not in-place) when a normal, unpinned active tab show
     expect(decideOpen([normal], normal, 'b')).toEqual({ kind: 'new' })
 })
 
+// --- a "New tab" (one unpinned pane showing the graph) gives way to what is opened from it ---
+import { isNewTab, findNewTab } from './panes'
+
+test('findNewTab: finds the one New tab, or nothing when every tab holds something', () => {
+    const [note, home] = tabsFrom(['a.md', GRAPH_TAB])
+    expect(findNewTab([note, home])).toBe(home)
+    expect(findNewTab([note])).toBeUndefined()
+})
+
+test('decideOpen: opening anything from a New tab replaces it in place', () => {
+    const [home] = tabsFrom([GRAPH_TAB])
+    for (const c of ['b.md', SETTINGS_FILE, TERMINAL_PREFIX + 'x', CHAT_PREFIX + 'x', DAEMON_TAB])
+        expect(decideOpen([home], home, c)).toEqual({
+            kind: 'replace',
+            tabId: home.id,
+            leafId: (home.root as Leaf).id,
+        })
+})
+
+test('decideOpen: content already open elsewhere is focused, not loaded into the New tab', () => {
+    const [home, b] = tabsFrom([GRAPH_TAB, 'b.md'])
+    expect(decideOpen([home, b], home, 'b.md')).toEqual({
+        kind: 'focus',
+        tabId: b.id,
+        leafId: (b.root as Leaf).id,
+    })
+})
+
+test('isNewTab: only an unpinned single graph pane counts', () => {
+    const [home, note] = tabsFrom([GRAPH_TAB, 'a.md'])
+    const [pinned] = tabsFrom([GRAPH_TAB], [GRAPH_TAB])
+    const root = makeLeaf(GRAPH_TAB)
+    const { root: split } = splitLeaf(root, root.id, 'row', 'a.md')
+    const splitTab: Tab = { id: 's', root: split, focusId: root.id }
+    expect(isNewTab(home)).toBe(true)
+    expect(isNewTab(note)).toBe(false)
+    expect(isNewTab(pinned)).toBe(false)
+    expect(isNewTab(splitTab)).toBe(false)
+    expect(decideOpen([pinned], pinned, 'b.md')).toEqual({ kind: 'new' })
+    expect(decideOpen([splitTab], splitTab, 'b.md')).toEqual({ kind: 'new' })
+})
+
 // --- hasRestorableContent (App.tsx startup: is a cold-launch stash worth keeping) ---
 import {
     hasRestorableContent,
@@ -780,7 +822,7 @@ test('tabBarIcon: a named note with no frontmatter icon falls back to a generic 
 })
 
 // --- tool surfaces (new chat, terminal, settings, graph…) open through decideOpen too ---
-import { EMPTY_PANE, SETTINGS_FILE } from './tabIds'
+import { EMPTY_PANE, SETTINGS_FILE, DAEMON_TAB } from './tabIds'
 
 test('decideOpen: every tool surface opens a new tab from a split, leaving both panes alone', () => {
     const root = makeLeaf('a.md')

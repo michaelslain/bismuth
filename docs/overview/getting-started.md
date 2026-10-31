@@ -80,12 +80,14 @@ You should land in the chosen note. Notes that match your query light up in the 
 
 Every open item lives in a tab, and each tab holds one or more panes. Tabs sit in a vertical rail along a window edge.
 
-1. Press `Mod+T` for a new tab.
+1. Press `Mod+T` for a new tab. A window holds one new tab at a time, so with one already open, `Mod+T` goes to it.
 2. With a note open, press `Mod+D` to split the pane to the right, or `Mod+Shift+D` to split downward.
 3. Open different notes in the two panes. Move between them with `Mod+Alt+Left` and `Mod+Alt+Right`.
 4. Press `Mod+W` to close the focused pane. Closing the last pane closes the tab, and `Mod+Shift+T` reopens it.
 
 Opening anything from a split tab never replaces one of its panes. A note, a new chat, a terminal, the graph, the daemon page or the settings file opens in a tab of its own, and one already open in a pane or tab is focused there instead.
+
+A new tab is the one exception. While the focused tab is a new tab (one pane showing the graph, labelled `New tab`, and not pinned), whatever you open from it takes that tab over instead of opening beside it, and `Mod+[` (Back) returns to the graph. Something already open elsewhere is still focused there.
 
 Drag a sidebar row onto a note to insert a link to it, or onto a pane's edge to split ([draggables](draggables.md) lists every drop). `Alt+S` toggles the sidebar and `Alt+Shift+S` toggles the tab rail. Every shortcut is rebindable; the full list is in [keybindings](../settings/keybindings.md).
 

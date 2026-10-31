@@ -53,12 +53,27 @@ export function sortPinned(tabs: Tab[]): Tab[] {
 // The only exceptions, in priority order: the active tab's focused pane is already showing
 // that exact content (nothing to do — "noop"), or the content is already open in SOME tab
 // (this one or another, any pane) — then we just focus it rather than spawn a duplicate
-// ("focus"). Otherwise a fresh tab ("new"). Pure, so App's openFile decision is unit-testable
-// without a DOM.
+// ("focus"). Otherwise, when the active tab is a "New tab" (isNewTab), the opened content
+// takes that tab over ("replace") instead of stacking a second tab beside an untouched home,
+// the way a browser's new-tab page gives way to the first page you open. Otherwise a fresh tab
+// ("new"). Pure, so App's openFile decision is unit-testable without a DOM.
 export type OpenDecision =
     | { kind: 'noop' }
     | { kind: 'focus'; tabId: string; leafId: string }
+    | { kind: 'replace'; tabId: string; leafId: string }
     | { kind: 'new' }
+
+// A "New tab": an unpinned tab that is a single pane showing the graph, the tab whose label
+// reads "New tab" (tabIds contentLabel). A split, or a pinned graph tab, is a layout the user
+// built, so it never counts.
+export function isNewTab(tab: Tab): boolean {
+    return !tab.pinned && tab.root.kind === 'leaf' && tab.root.content === GRAPH_TAB
+}
+
+// The one "New tab" a window holds, if any: Mod+T focuses it rather than adding a second.
+export function findNewTab(tabs: Tab[]): Tab | undefined {
+    return tabs.find(isNewTab)
+}
 
 export function decideOpen(
     tabs: Tab[],
@@ -75,6 +90,8 @@ export function decideOpen(
         const existing = findLeafByContent(t.root, content)
         if (existing) return { kind: 'focus', tabId: t.id, leafId: existing.id }
     }
+    if (activeTab && isNewTab(activeTab))
+        return { kind: 'replace', tabId: activeTab.id, leafId: activeTab.root.id }
     return { kind: 'new' }
 }
 

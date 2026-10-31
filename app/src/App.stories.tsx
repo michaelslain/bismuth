@@ -261,6 +261,88 @@ export const OpenWithSplitKeepsPanes: Story = {
 // The same guard for TOOL surfaces: New chat (Mod+Shift+C) on a split tab opens its own tab
 // and leaves both panes as they were. Every tool surface (terminal, settings, graph, daemon,
 // export, feedback) opens through the same `openTool` → `openFile` path.
+// Opening from a "New tab" (one pane on the graph): the note takes that tab over, so the strip
+// still holds one tab, now showing the note. Opening a second note from that note tab adds a tab.
+// Mod+T never makes a second New tab: with one open, it focuses that one.
+export const OpenFromNewTabReplacesIt: Story = {
+    render: () => {
+        seedVault()
+        onCleanup(installFakeChatSocket([]))
+        return (
+            <Frame>
+                <App />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-app-shell]')).not.toBeNull()
+        })
+        const chips = () => canvasElement.querySelectorAll('[data-tab-chip]').length
+        const contents = () =>
+            Array.from(canvasElement.querySelectorAll('[data-pane-leaf]')).map(
+                el => el.getAttribute('data-pane-content'),
+            )
+        await waitFor(() => {
+            expect(contents()).toEqual(['::graph'])
+        })
+        expect(chips()).toBe(1)
+
+        const noteA = 'Draft the roadmap.md'
+        window.dispatchEvent(new CustomEvent('bismuth-open', { detail: noteA }))
+        await waitFor(() => {
+            expect(contents()).toEqual([noteA])
+        })
+        expect(chips()).toBe(1)
+
+        const noteB = 'Ship storybook coverage.md'
+        window.dispatchEvent(new CustomEvent('bismuth-open', { detail: noteB }))
+        await waitFor(() => {
+            expect(chips()).toBe(2)
+        })
+        await waitFor(() => {
+            expect(contents()).toEqual([noteB])
+        })
+
+        // Mod+T opens a third tab on the graph; a new chat (Mod+Shift+C) from it fills that tab.
+        const key = (k: string, shift = false) =>
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: k,
+                    code: `Key${k.toUpperCase()}`,
+                    metaKey: true,
+                    shiftKey: shift,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        key('t')
+        await waitFor(() => {
+            expect(chips()).toBe(3)
+            expect(contents()).toEqual(['::graph'])
+        })
+        // Mod+T on the New tab, or from a note tab while it is open, adds no second New tab.
+        key('t')
+        expect(chips()).toBe(3)
+        fireEvent.click(canvasElement.querySelectorAll('[data-tab-chip]')[0]!)
+        await waitFor(() => {
+            expect(contents()).toEqual([noteA])
+        })
+        key('t')
+        await waitFor(() => {
+            expect(contents()).toEqual(['::graph'])
+        })
+        expect(chips()).toBe(3)
+        key('C', true)
+        await waitFor(() => {
+            const now = contents()
+            expect(now.length).toBe(1)
+            expect(now[0]?.startsWith('::chat')).toBe(true)
+        })
+        expect(chips()).toBe(3)
+    },
+}
+
 export const NewChatWithSplitKeepsPanes: Story = {
     render: () => {
         seedVault()
