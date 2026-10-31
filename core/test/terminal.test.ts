@@ -14,6 +14,7 @@ import {
     sessionCount,
     resizeSession,
     buildPtyEnv,
+    HOST_CLAUDE_SESSION_VARS,
     loginShellArgs,
     shimSpecsFor,
     serializeShimSpecs,
@@ -116,6 +117,9 @@ test("buildPtyEnv keeps Bismuth's 3rd-brain memory ISOLATED from Claude's own me
     // tab's Claude isn't tagged with the app's own workflow key). It still never repoints the memory store.
     const claudeVars = Object.keys(env)
         .filter(k => k.startsWith('CLAUDE_'))
+        .filter(
+            k => !(HOST_CLAUDE_SESSION_VARS as readonly string[]).includes(k),
+        )
         .sort()
     expect(claudeVars).toEqual([
         'CLAUDE_CONFIG_DIR',
@@ -193,6 +197,22 @@ test("buildPtyEnv neutralizes the host's Claude-Code workflow provenance (Bug #1
     expect(env.CLAUDE_JOB_DIR).toBe('')
     expect(env.CLAUDE_WORKFLOW_ID).toBe('')
     expect(env.PATH).toBe('/usr/bin') // unrelated base vars are untouched
+})
+
+test("buildPtyEnv empties the host Claude session's markers so the tab's claude saves its transcript", () => {
+    // An app launched from inside a Claude Code session inherits CLAUDE_CODE_CHILD_SESSION and the host's
+    // session id. A tab's claude that sees the child marker turns transcript saving off, so --resume and
+    // the relay's SessionEnd memory save find nothing. Each marker is overridden with "", not deleted:
+    // bun-pty merges the C-level environ under this object.
+    const base: Record<string, string> = {
+        PATH: '/usr/bin',
+        CLAUDE_CONFIG_DIR: '/Users/x/.claude',
+    }
+    for (const k of HOST_CLAUDE_SESSION_VARS) base[k] = 'host-value'
+    const env = buildPtyEnv({ ...ENV_BASE, base, realClaude: null })
+    for (const k of HOST_CLAUDE_SESSION_VARS) expect(env[k]).toBe('')
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/Users/x/.claude') // user config is not a session marker
+    expect(env.PATH).toBe('/usr/bin')
 })
 
 // --- shimSpecsFor (pure) --------------------------------------------------------------------

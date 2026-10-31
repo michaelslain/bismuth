@@ -4,7 +4,13 @@ import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { existsSync, mkdtempSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { whichClaude, whichBinary } from './claudeWhich'
+import {
+    whichClaude,
+    whichBinary,
+    HOST_CLAUDE_SESSION_VARS,
+} from './claudeWhich'
+
+export { HOST_CLAUDE_SESSION_VARS }
 import { BACKEND_LIST } from './agentBackends/catalog'
 import { prune as relayPrune } from './relay'
 
@@ -324,6 +330,12 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
     // tab exports these itself after spawn, so it is unaffected.
     env.CLAUDE_JOB_DIR = ''
     env.CLAUDE_WORKFLOW_ID = ''
+    // Same for the host session's own identity. A Claude Code that sees CLAUDE_CODE_CHILD_SESSION
+    // treats itself as a child of that host and turns transcript saving OFF ("Transcript saving is
+    // off — inherited CLAUDE_CODE_CHILD_SESSION marker"): no ~/.claude/projects JSONL, so --resume
+    // cannot find the tab's session and the relay's SessionEnd hook has nothing to save into memory.
+    // An app launched by an agent (or `dev:app` from a Claude terminal) carries all of these.
+    for (const k of HOST_CLAUDE_SESSION_VARS) env[k] = ''
     env.TERM = 'xterm-256color'
     // Suppress oh-my-zsh's blocking "Would you like to update? [Y/n]" prompt — an embedded
     // app terminal shouldn't nag at startup, and the prompt eats the first keystrokes.

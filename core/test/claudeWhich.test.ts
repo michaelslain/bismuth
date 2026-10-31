@@ -8,6 +8,7 @@ import {
     claudeLookupPath,
     BISMUTH_BIN_DIR,
     claudeSpawnEnv,
+    HOST_CLAUDE_SESSION_VARS,
     FREE_AGENT_BIN_DIR,
 } from '../src/claudeWhich'
 
@@ -141,5 +142,18 @@ describe('claudeSpawnEnv (BUG #8 4th-bounce root cause: a bare/partial env break
     test('preserves every other inherited env var (spread, not a replacement)', () => {
         const out = claudeSpawnEnv({ SOME_OTHER_VAR: 'kept' })
         expect(out.SOME_OTHER_VAR).toBe('kept')
+    })
+})
+
+describe('claudeSpawnEnv drops the host Claude session markers', () => {
+    // An app started from inside a Claude Code session carries that session's id, messaging socket and
+    // CLAUDE_CODE_CHILD_SESSION. A chat's `claude` is its own session, so none of them may reach it.
+    test('every marker is removed and other vars are kept', () => {
+        const base: Record<string, string> = { SOME_OTHER_VAR: 'kept' }
+        for (const k of HOST_CLAUDE_SESSION_VARS) base[k] = 'host-value'
+        const out = claudeSpawnEnv(base, 'chat')
+        for (const k of HOST_CLAUDE_SESSION_VARS) expect(k in out).toBe(false)
+        expect(out.SOME_OTHER_VAR).toBe('kept')
+        expect(out.BISMUTH_AGENT_CHANNEL).toBe('chat')
     })
 })

@@ -14,6 +14,7 @@ import { DEFAULT_DAEMON_IDENTITY } from '../src/daemon/persona.ts'
 import { buildCodexEnv } from '../src/daemon/codexSession.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 import { ownerTokenDenyPath } from '../src/lib/bismuthPaths.ts'
+import { HOST_CLAUDE_SESSION_VARS } from '../../core/src/claudeWhich.ts'
 
 const ctx = {
     root: '/vault',
@@ -475,3 +476,24 @@ for (const backend of ['opencode', 'toString']) {
         }
     })
 }
+
+test("buildQueryOptions keeps the host Claude session's markers out of the daemon session env", () => {
+    // A daemon started from inside a Claude Code session inherits CLAUDE_CODE_CHILD_SESSION and the host's
+    // session id; the daemon's `claude` is its own session, so they are dropped.
+    const saved: Record<string, string | undefined> = {}
+    for (const k of HOST_CLAUDE_SESSION_VARS) {
+        saved[k] = process.env[k]
+        process.env[k] = 'host-value'
+    }
+    try {
+        const o = buildQueryOptions(ctx, undefined, undefined, { persona: 'You are Atlas.' })
+        const env = o.env as Record<string, string | undefined>
+        for (const k of HOST_CLAUDE_SESSION_VARS) expect(k in env).toBe(false)
+        expect(env.BISMUTH_AGENT_CHANNEL).toBe('daemon')
+    } finally {
+        for (const k of HOST_CLAUDE_SESSION_VARS) {
+            if (saved[k] === undefined) delete process.env[k]
+            else process.env[k] = saved[k]
+        }
+    }
+})

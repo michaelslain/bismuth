@@ -45,6 +45,7 @@ Each tab starts with the variables below set on top of your own environment.
 | `BISMUTH_MEMORY_DIR` | The vault's memory directory; set only when the daemon is enabled |
 | `DISABLE_AUTO_UPDATE`, `DISABLE_UPDATE_PROMPT` | `true`, which silences oh-my-zsh update prompts |
 | `CLAUDE_JOB_DIR`, `CLAUDE_WORKFLOW_ID` | Empty, so a workflow variable from the app's own environment does not leak into your sessions |
+| `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION` and the other per-session markers a running Claude Code exports | Empty, so an app started from inside a Claude Code session does not make each tab's `claude` a child of that session. A child session saves no transcript: `claude --resume` cannot find it and the daemon cannot save it to memory |
 
 Each window runs its own backend on its own port, so a `claude` session reports only to the window whose terminal it runs in.
 

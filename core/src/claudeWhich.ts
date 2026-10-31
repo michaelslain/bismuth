@@ -113,6 +113,40 @@ function realUsername(): string | null {
     }
 }
 
+/**
+ * The per-session markers a running Claude Code exports to its children. Every `claude` Bismuth
+ * starts (a terminal tab, a chat, the daemon) is an independent session, so each is removed from
+ * its env. A child marker in an interactive session turns transcript saving off. The first nine
+ * are the list Claude Code itself deletes before starting an independent session (claude
+ * v2.1.316); the rest point at the host session's process, messaging socket and effort dial.
+ */
+export const HOST_CLAUDE_SESSION_VARS = [
+    'CLAUDECODE',
+    'CLAUDE_CODE_SESSION_ID',
+    'CLAUDE_CODE_CHILD_SESSION',
+    'CLAUDE_CODE_SESSION_ATTENDED',
+    'CLAUDE_CODE_CHROME_MCP_ORG_DENIED',
+    'CLAUDE_CODE_EVAL_INTERVIEW_SESSION',
+    'CLAUDE_CODE_BRIDGE_SESSION_ID',
+    'CLAUDE_CODE_HOST_WORKTREE',
+    'CLAUDE_CODE_HOST_WORKTREE_FENCE',
+    'CLAUDE_CODE_MESSAGING_SOCKET',
+    'CLAUDE_CODE_MESSAGING_TOKEN',
+    'CLAUDE_CODE_ENTRYPOINT',
+    'CLAUDE_CODE_EXECPATH',
+    'CLAUDE_PID',
+    'CLAUDE_EFFORT',
+] as const
+
+/** `env` without the host Claude Code session's markers (HOST_CLAUDE_SESSION_VARS). */
+export function withoutHostClaudeSession(
+    env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+    const out = { ...env }
+    for (const k of HOST_CLAUDE_SESSION_VARS) delete out[k]
+    return out
+}
+
 // BUG #8 (4th bounce) ROOT CAUSE: the spawned CHILD PROCESS needs a WORKING env to actually
 // authenticate, not just a resolvable binary path. `claude` reads its Keychain-stored OAuth
 // credentials via `security find-generic-password -a "$USER" -s "Claude Code-credentials" -w`
@@ -143,7 +177,7 @@ export function claudeSpawnEnv(
     agentChannel?: 'chat' | 'daemon',
 ): Record<string, string | undefined> {
     const out: Record<string, string | undefined> = {
-        ...env,
+        ...withoutHostClaudeSession(env),
         PATH: claudeLookupPath(env),
         HOME: env.HOME || homedir(),
     }

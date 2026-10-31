@@ -7,6 +7,7 @@ import type { VaultContext } from '../lib/config.ts'
 import { isOwner } from '../lib/owner.ts'
 import { whichClaude } from '../lib/claudeWhich.ts'
 import { augmentPath } from '../lib/childEnv.ts'
+import { withoutHostClaudeSession } from '../../../core/src/claudeWhich.ts'
 import {
     buildDenyPaths,
     buildManagedSettingsDeny,
@@ -246,7 +247,7 @@ export function buildQueryOptions(
         // #105). BISMUTH_CLI carries the absolute CLI path too, so a cron body can prefer it over a
         // bare-name PATH lookup (belt-and-suspenders). See childEnv.ts.
         env: {
-            ...process.env,
+            ...withoutHostClaudeSession(process.env),
             BISMUTH_MEMORY_DIR: ctx.memoryDir,
             PATH: augmentPath(process.env.PATH),
             ...(tools.cli ? { BISMUTH_CLI: tools.cli } : {}),
