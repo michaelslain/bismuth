@@ -529,6 +529,10 @@ describeOrSkip(
             )
             expect(userTexts.some(t => t.endsWith(text))).toBe(true)
             expect(userTexts.some(t => t.includes(`"${text}"`))).toBe(false)
+            // Every server-mode turn carries how the chat renders replies (KaTeX math) as system text.
+            expect(JSON.stringify(journal)).toContain(
+                'renders your replies as markdown and typesets',
+            )
         }, 60_000)
 
         test("sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done", async () => {

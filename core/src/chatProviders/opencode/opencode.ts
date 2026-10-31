@@ -67,6 +67,7 @@ import {
 } from '../sessionSink'
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import { titleFromPrompt } from '../titleFromPrompt'
+import { CHAT_RENDERING_NOTE } from '../../chatRenderingNote'
 import {
     opencodeCliArgs,
     opencodeMajor,
@@ -187,15 +188,13 @@ interface OpencodeSession {
     /** The reasoning-effort level the user picked (set_effort). On opencode 2 it rides the turn's
      *  model as its variant when that model lists the level; nothing else reads it. */
     effort?: string
-    /** opencode 2 only: whether the session holds Bismuth's memory instructions entry. */
-    memoryEntrySet?: boolean
 }
 
 type ServerV1 = Extract<OpencodeServerHandle, { version: 1 }>
 type ServerV2 = Extract<OpencodeServerHandle, { version: 2 }>
 
-/** The opencode 2 instructions-entry key Bismuth's per-turn memory rides in. */
-const MEMORY_ENTRY_KEY = 'bismuth-memory'
+/** The opencode 2 instructions-entry key Bismuth's per-turn system text rides in. */
+const SYSTEM_ENTRY_KEY = 'bismuth-memory'
 
 // Frame buffering + reconnect lifecycle (emit / rebindSessionSink / scheduleSessionClose) is
 // transport-agnostic and shared with the Claude provider — see ./sessionSink. OpencodeSession
@@ -684,15 +683,16 @@ async function getOrCreateSession(
     return session
 }
 
-/** The per-turn memory a server-mode turn carries as system text: the session-start brain block
- *  (fetched once per session) then the recall for THIS prompt. Undefined with no memory dir or
- *  nothing to inject. opencode 1 sends it as the prompt's `system`; opencode 2 stores it in a
- *  session instructions entry before the prompt. */
+/** The system text a server-mode turn carries: how the chat renders the reply
+ *  (CHAT_RENDERING_NOTE), then the memory — the session-start brain block (fetched once per
+ *  session) and the recall for THIS prompt — when the vault has a memory dir. opencode 1 sends it
+ *  as the prompt's `system`; opencode 2 stores it in a session instructions entry before the
+ *  prompt. */
 async function turnSystemText(
     s: OpencodeSession,
     text: string,
-): Promise<string | undefined> {
-    if (!s.memoryDir) return undefined
+): Promise<string> {
+    if (!s.memoryDir) return CHAT_RENDERING_NOTE
     // `system` is per-call (fresh every turn), so the session ledger would wrongly suppress notes
     // on later turns: reset it before each recall.
     const svc = recallServiceFor(s.cwd, s.memoryDir)
@@ -729,7 +729,7 @@ async function turnSystemText(
             brainBySession.set(s, b.context)
     }
     const parts = [brainText, recalled?.context].filter((p): p is string => !!p)
-    return parts.length ? parts.join('\n\n') : undefined
+    return [CHAT_RENDERING_NOTE, ...parts].join('\n\n')
 }
 
 /** Send one turn against the shared opencode SERVER: registers a listener on the server's global
@@ -826,7 +826,7 @@ async function runTurnServer(
                 query: { directory: s.cwd },
                 body: {
                     ...(modelObj ? { model: modelObj } : {}),
-                    ...(system ? { system } : {}),
+                    system,
                     parts,
                 },
             })
@@ -974,17 +974,10 @@ async function runTurnServerV2(
     let isError = false
     try {
         const system = await turnSystemText(s, text)
-        // Best-effort: the entries route is experimental, and a turn without memory still runs.
-        if (system)
-            s.memoryEntrySet = await client
-                .putInstruction(sessionId, MEMORY_ENTRY_KEY, system)
-                .then(() => true)
-                .catch(() => s.memoryEntrySet)
-        else if (s.memoryEntrySet)
-            s.memoryEntrySet = await client
-                .removeInstruction(sessionId, MEMORY_ENTRY_KEY)
-                .then(() => false)
-                .catch(() => true)
+        // Best-effort: the entries route is experimental, and a turn without its system text still runs.
+        await client
+            .putInstruction(sessionId, SYSTEM_ENTRY_KEY, system)
+            .catch(() => {})
         const levels =
             (modelsCache ?? []).find(m => m.value === model)?.effortLevels ?? []
         const ref = model ? opencodeV2TurnModel(model, s.effort, levels) : null

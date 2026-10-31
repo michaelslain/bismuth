@@ -37,6 +37,9 @@ import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
 import { shouldRunSlowTests } from '../slowGate'
 import { tempDir } from '../tempDirs'
 
+/** A phrase of CHAT_RENDERING_NOTE with no character JSON escapes, so it matches the raw journal. */
+const CHAT_NOTE_PHRASE = 'renders your replies as markdown and typesets'
+
 const HAS_CLAUDE = whichClaude() !== null
 // Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
 const describeOrSkip =
@@ -249,6 +252,12 @@ describeOrSkip(
             expect(claudeConfigDir).toBeDefined()
             if (claudeConfigDir)
                 expect(readdirSync(claudeConfigDir).length).toBeGreaterThan(0)
+
+            // The chat's system prompt carries how the transcript renders replies (KaTeX math).
+            const journal = await fetch(`${mock!.url}/__aimock/journal`).then(
+                r => r.text(),
+            )
+            expect(journal).toContain(CHAT_NOTE_PHRASE)
         }, 60_000)
 
         test("sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done", async () => {

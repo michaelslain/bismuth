@@ -61,6 +61,7 @@ import {
 } from '../sessionSink'
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import type { ChatBackend, ChatTurnContext } from '../backends'
+import { CHAT_RENDERING_NOTE } from '../../chatRenderingNote'
 import { readCodexOptIns } from '../../settings'
 import {
     localUnreachableMessage,
@@ -196,6 +197,11 @@ interface CodexExecArgsInput {
     localArgs?: string[]
 }
 
+/** A TOML basic string: `JSON.stringify` covers `"`, `\\` and the C0 control chars; TOML also wants
+ *  U+007F escaped and rejects a lone surrogate, which `toWellFormed` replaces. */
+const tomlBasicString = (s: string) =>
+    JSON.stringify(s.toWellFormed()).replace(/\x7f/g, '\\u007f')
+
 /** Build `codex exec`'s argv. Flag choice/order mirrors the (now-removed) official SDK's own
  *  arg-builder verbatim — read from its compiled source before this driver stopped depending on
  *  it, so this is real, working, OpenAI-maintained behavior, not a guess: `--sandbox`/`--cd`/
@@ -217,6 +223,12 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     // event in the ThreadEvent union) — explicit for determinism, matching opencode.ts's `--auto`
     // posture (the same effective "never park on an approval this run mode can't answer" stance).
     args.push('--config', 'approval_policy="never"')
+    // How the chat transcript renders the reply (KaTeX math), on every call, new and resume: codex
+    // exec has no system-prompt flag, and `developer_instructions` is the string key it reads instead.
+    args.push(
+        '--config',
+        `developer_instructions=${tomlBasicString(CHAT_RENDERING_NOTE)}`,
+    )
     if (a.threadId) args.push('resume', a.threadId)
     for (const p of a.imagePaths) args.push('--image', p)
     return args

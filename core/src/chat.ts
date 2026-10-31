@@ -50,6 +50,7 @@ import {
     type ResolvedLocal,
 } from './agentBackends/localModelProbe'
 import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
+import { CHAT_RENDERING_NOTE } from './chatRenderingNote'
 import {
     detachSessionSink,
     emit,
@@ -1432,8 +1433,13 @@ function spawnChatQuery(
                 // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
                 // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
                 // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
-                // relative paths resolve against $HOME instead of `cwd`.
-                systemPrompt: { type: 'preset', preset: 'claude_code' },
+                // relative paths resolve against $HOME instead of `cwd`. The append says how the chat
+                // transcript renders the reply (KaTeX math), which a terminal tab's TUI never gets.
+                systemPrompt: {
+                    type: 'preset',
+                    preset: 'claude_code',
+                    append: CHAT_RENDERING_NOTE,
+                },
                 // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
                 // closure to it. (canUseTool ALSO carries the AskUserQuestion interactive-question flow — see
                 // the ASK_USER_QUESTION_TOOL branch above.)
