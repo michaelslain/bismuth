@@ -25,7 +25,9 @@ import styles from './TopStrip.module.css'
 // THE STRIP IS A BAND (ui/Band): its height, its --sp-5 side padding and its --rule-soft hairline are
 // the band's, not this file's — so the wordmark starts on the same x as the sidebar toolbar and the
 // graph header below it (it used to hand-write a 16px inset, which gave the column two left axes).
-// The macOS gap is Band's NAMED `traffic-lights` inset, never a px value typed here.
+// The macOS gap is Band's NAMED `traffic-lights` inset, never a px value typed here. In native
+// fullscreen macOS hides the lights, so `fullscreen` drops the inset and the wordmark sits on the
+// band's own --sp-5 edge like every other platform (App.tsx tracks it via windowFullscreen.ts).
 //
 // `.top-strip` and `.top-strip-spacer` are reached through the imported `styles` object. Bracket
 // access, not `styles.topStrip`: Vite only exposes camelCase aliases under css.modules.localsConvention,
@@ -34,12 +36,16 @@ import styles from './TopStrip.module.css'
 export function TopStrip(props: {
     mac: boolean
     dragRegion: boolean
+    /** The native window is fullscreen: macOS hides the traffic lights, so no gutter is reserved. */
+    fullscreen?: boolean
     children?: JSX.Element
 }) {
     return (
         <Band
             class={styles['top-strip']}
-            inset={props.mac ? 'traffic-lights' : undefined}
+            inset={
+                props.mac && !props.fullscreen ? 'traffic-lights' : undefined
+            }
             data-tauri-drag-region={props.dragRegion ? 'deep' : undefined}
         >
             {/* THE WORD, not the ASCII crystal: ui/Wordmark (`bismuth` in the gradient sheen) closed by

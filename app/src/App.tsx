@@ -201,6 +201,7 @@ import {
 import { PaneTree } from './PaneTree'
 import { WindowControls } from './shell/WindowControls'
 import { TopStrip } from './shell/TopStrip'
+import { trackFullscreen } from './windowFullscreen'
 import { StatusBar } from './shell/StatusBar'
 import { CommandButton } from './shell/CommandButton'
 import { Sidebar } from './shell/Sidebar'
@@ -304,6 +305,11 @@ async function winToggleMaximize(): Promise<void> {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     await getCurrentWindow().toggleMaximize()
 }
+// Native fullscreen hides the macOS traffic lights, so the top strip drops their gutter (TopStrip).
+async function watchFullscreen(set: (v: boolean) => void): Promise<() => void> {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    return trackFullscreen(getCurrentWindow(), set)
+}
 async function winClose(): Promise<void> {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     await getCurrentWindow().close()
@@ -385,6 +391,15 @@ export default function App() {
     // fetch is still the only source, which is correct: dev and the browser build have no shell
     // to inject one.
     const injectedVault = injectedVaultPath()
+    const [windowFullscreen, setWindowFullscreen] = createSignal(false)
+    onMount(() => {
+        if (!isTauri() || !IS_MAC_PLATFORM) return
+        const unlisten = watchFullscreen(setWindowFullscreen).catch(e => {
+            console.error('fullscreen watch failed', e)
+            return () => {}
+        })
+        onCleanup(() => void unlisten.then(f => f()))
+    })
     const [vaultPath, setVaultPath] = createSignal<string>(injectedVault ?? '')
     onMount(() => {
         fetch(`${apiBase()}/config`)
@@ -3324,6 +3339,7 @@ export default function App() {
                 <TopStrip
                     mac={isTauri() && IS_MAC_PLATFORM}
                     dragRegion={isTauri()}
+                    fullscreen={windowFullscreen()}
                 >
                     <Show when={isTauri() && !IS_MAC_PLATFORM}>
                         <WindowControls

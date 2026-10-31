@@ -35,11 +35,12 @@ The two side keys are independent. When both name the same edge, the sidebar is 
 ## Widths and the top strip
 
 Widths are not part of `layout:`. The sidebar, mini graph and tab rail sizes are `appearance.sidebarWidth`, `appearance.sidebarGraphHeight` and `appearance.tabRailWidth` in the [settings reference](reference.md#appearance); dragging a panel's edge writes them.
-The top strip is fixed and cannot be moved or hidden.
+The top strip is fixed and cannot be moved or hidden. On macOS it leaves room on the left for the window buttons; in fullscreen, where macOS hides them, the wordmark moves to the left edge.
 
 ## How it works
 
 `core/src/shellLayout.ts` holds the pure helpers: `SIDEBAR_SECTIONS` (the section ids, also the default order), `normalizeSidebarSections` (unknown ids dropped, first occurrence wins, non-list gives the default), and `otherSide`.
 The schema in `core/src/schema/settingsSchema.ts` derives the `sidebar` item enum from `SIDEBAR_SECTIONS`. The three palette commands flip the keys through the settings store in `app/src/App.tsx`.
+`app/src/windowFullscreen.ts` re-reads the window's fullscreen state on every resize, and `app/src/shell/TopStrip.tsx` drops its traffic-light inset while it is set.
 
-Source: `core/src/shellLayout.ts`, `core/src/schema/settingsSchema.ts`, `app/src/App.tsx`, `app/src/shell/GraphFloater.tsx`
+Source: `core/src/shellLayout.ts`, `core/src/schema/settingsSchema.ts`, `app/src/App.tsx`, `app/src/shell/GraphFloater.tsx`, `app/src/shell/TopStrip.tsx`, `app/src/windowFullscreen.ts`

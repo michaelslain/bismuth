@@ -19,9 +19,10 @@
 // gradient `.asc-wordmark` reads via `--grad`), projected onto :root exactly as App.tsx projects
 // them.
 //
-// THREE STORIES, ONE PER PLATFORM SHAPE: `Default` is the browser/dev build (no `mac` padding, no
+// ONE STORY PER PLATFORM SHAPE: `Default` is the browser/dev build (no `mac` padding, no
 // WindowControls). `Mac` reserves the 78px of left padding for the native traffic lights and
-// renders no children (macOS never gets typed controls). `WindowsLinux` renders real
+// renders no children (macOS never gets typed controls); `MacFullscreen` drops that reservation,
+// since native fullscreen hides the lights. `WindowsLinux` renders real
 // `<WindowControls>` as children, the only story that exercises the `children` slot at all. Each
 // gets a fixed-width wrapper so `.top-strip-spacer`'s `flex: 1` — the strip's largest visual area —
 // is actually observable rather than collapsing to its content size.
@@ -114,6 +115,28 @@ export const Mac: Story = {
         await expect(lights).toBeGreaterThan(plain)
         await expect(parseFloat(getComputedStyle(strip).paddingLeft)).toBe(lights)
         await expect(parseFloat(getComputedStyle(strip).paddingLeft)).not.toBe(plain)
+    },
+}
+
+/** macOS in native fullscreen: the traffic lights are hidden, so no gutter is reserved and the
+ *  wordmark sits on the band's own --sp-5 edge, the same x as the sidebar toolbar below it. */
+export const MacFullscreen: Story = {
+    render: () => (
+        <Wrap>
+            <TopStrip mac={true} dragRegion={true} fullscreen={true} />
+        </Wrap>
+    ),
+    play: async ({ canvasElement }) => {
+        const strip = canvasElement.querySelector<HTMLElement>(
+            '[data-tauri-drag-region]',
+        )!
+        await expect(strip).not.toBeNull()
+        const probe = document.createElement('div')
+        probe.style.width = 'var(--sp-5)'
+        canvasElement.appendChild(probe)
+        const plain = parseFloat(getComputedStyle(probe).width)
+        probe.remove()
+        await expect(parseFloat(getComputedStyle(strip).paddingLeft)).toBe(plain)
     },
 }
 
