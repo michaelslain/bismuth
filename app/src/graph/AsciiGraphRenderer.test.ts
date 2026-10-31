@@ -8097,6 +8097,85 @@ describe('render loop resilience', () => {
     })
 })
 
+describe('a devicePixelRatio change with no resize (sleep/wake)', () => {
+    // After sleep/wake WebKit can report a ratio of 1 while the display re-initialises; a measure
+    // landing then builds a 1x bitmap, and the box never changes again, so the 2x screen kept
+    // stretching it — the graph went low-res until the pane happened to be resized.
+    function withDpr<T>(run: (set: (v: number) => void) => T): T {
+        const real = Object.getOwnPropertyDescriptor(globalThis.window, 'devicePixelRatio')
+        const set = (v: number) =>
+            Object.defineProperty(globalThis.window, 'devicePixelRatio', {
+                value: v,
+                configurable: true,
+            })
+        try {
+            return run(set)
+        } finally {
+            if (real) Object.defineProperty(globalThis.window, 'devicePixelRatio', real)
+        }
+    }
+    const canvasOf = (r: unknown) =>
+        (r as { canvas: HTMLCanvasElement }).canvas
+
+    it('window focus re-sizes a 1x backing store to 2x once the ratio comes back', () => {
+        withDpr(set => {
+            set(1)
+            const { r } = mountRenderer('2d')
+            expect(canvasOf(r).width).toBe(BOX.width)
+            set(2)
+            window.dispatchEvent(new window.Event('focus'))
+            expect(canvasOf(r).width).toBe(BOX.width * 2)
+            expect(canvasOf(r).height).toBe(BOX.height * 2)
+            expect(canvasOf(r).style.width).toBe(`${BOX.width}px`)
+            r.destroy()
+        })
+    })
+
+    it('a pointer move over an idle field picks up the new ratio', () => {
+        withDpr(set => {
+            set(1)
+            const { r } = mountRenderer('2d')
+            set(2)
+            window.dispatchEvent(
+                new window.PointerEvent('pointermove', { clientX: 10, clientY: 10 }),
+            )
+            expect(canvasOf(r).width).toBe(BOX.width * 2)
+            r.destroy()
+        })
+    })
+
+    it('a running frame picks up the new ratio without any event', () => {
+        withDpr(set => {
+            set(1)
+            const { r } = mountRenderer('2d')
+            set(2)
+            ;(r as unknown as { dirty: boolean }).dirty = true
+            ;(r as unknown as { wake: () => void }).wake()
+            frame()
+            expect(canvasOf(r).width).toBe(BOX.width * 2)
+            r.destroy()
+        })
+    })
+
+    it('an unchanged ratio leaves the backing store alone (assigning width clears the canvas)', () => {
+        withDpr(set => {
+            set(2)
+            const { r } = mountRenderer('2d')
+            const c = canvasOf(r)
+            let writes = 0
+            const w = c.width
+            Object.defineProperty(c, 'width', {
+                get: () => w,
+                set: () => void writes++,
+                configurable: true,
+            })
+            window.dispatchEvent(new window.Event('focus'))
+            expect(writes).toBe(0)
+            r.destroy()
+        })
+    })
+})
+
 describe('a graph drag must never select the note beside it (Task 2)', () => {
     it('a press on the field cancels selectstart, so a drag cannot select the note beside it', () => {
         // The real defect: body{user-select:none} (setSelectionSuppressed) does NOT stop a

@@ -648,6 +648,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     private ctx: CanvasRenderingContext2D | null = null
     private ro?: ResizeObserver
     private dpr = 1
+    private dprMql: MediaQueryList | null = null
 
     private cfg: GraphConfig = { ...DEFAULT_CONFIG } as GraphConfig
 
@@ -1083,6 +1084,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
             this.wake()
         })
         this.ro.observe(el)
+        this.watchDpr()
+        window.addEventListener('focus', this.onWakeCheck)
+        window.addEventListener('pageshow', this.onWakeCheck)
+        document.addEventListener('visibilitychange', this.onWakeCheck)
 
         this.viewport.addEventListener('pointerdown', this.onPointerDown)
         window.addEventListener('pointermove', this.onPointerMove)
@@ -1140,6 +1145,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.stop()
         this.setSelectionSuppressed(false)
         this.ro?.disconnect()
+        this.dprMql?.removeEventListener('change', this.onDpr)
+        this.dprMql = null
+        window.removeEventListener('focus', this.onWakeCheck)
+        window.removeEventListener('pageshow', this.onWakeCheck)
+        document.removeEventListener('visibilitychange', this.onWakeCheck)
         this.viewport?.removeEventListener('pointerdown', this.onPointerDown)
         window.removeEventListener('pointermove', this.onPointerMove)
         window.removeEventListener('pointerup', this.onPointerUp)
@@ -1902,14 +1912,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // so 3D shrinks its glyphs in a small pane exactly like 2D without touching the camera.
         this.sizeScale = compactScale(this.W, this.H)
         this.cellH = this.baseCellH * this.sizeScale
-        this.dpr = clampDprToCanvasArea(
-            Math.min(
-                2,
-                (typeof window !== 'undefined' && window.devicePixelRatio) || 1,
-            ),
-            this.W,
-            this.H,
-        )
+        this.dpr = this.targetDpr(this.W, this.H)
         // Only touch the backing store when it actually changes: assigning canvas.width/height CLEARS
         // the canvas (and resets the 2D context state) even when the value is identical. measure() is
         // called unconditionally from setConfig(), which GraphView fires on every theme/settings change
@@ -1982,12 +1985,60 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (
             this.boxReady &&
             Math.abs(r.width - this.W) < 0.5 &&
-            Math.abs(r.height - this.H) < 0.5
+            Math.abs(r.height - this.H) < 0.5 &&
+            this.targetDpr(r.width, r.height) === this.dpr
         )
             return false
         this.measure()
         this.fit()
         return true
+    }
+
+    /** The device-pixel ratio the backing store should have for a box of this size right now. */
+    private targetDpr(w: number, h: number): number {
+        return clampDprToCanvasArea(
+            Math.min(
+                2,
+                (typeof window !== 'undefined' && window.devicePixelRatio) || 1,
+            ),
+            w,
+            h,
+        )
+    }
+
+    /**
+     * The backing store is sized from devicePixelRatio, and a ratio change fires no resize: the box
+     * stays put while the ratio moves. Sleep/wake is the case that bites — WebKit can report a ratio
+     * of 1 while the display re-initialises, a resize landing then builds a 1x bitmap, and when the
+     * ratio returns to 2 the 2x screen keeps stretching that bitmap (a soft, low-res field) until
+     * something happens to resize the pane. So the ratio is part of what syncSize() compares, a
+     * `(resolution: Ndppx)` query re-checks it the moment it changes, and focus / pageshow /
+     * visibilitychange re-check it in case the query's change event was lost across the sleep.
+     */
+    private watchDpr() {
+        this.dprMql?.removeEventListener('change', this.onDpr)
+        this.dprMql = null
+        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+        this.dprMql = window.matchMedia(
+            `(resolution: ${window.devicePixelRatio || 1}dppx)`,
+        )
+        this.dprMql.addEventListener('change', this.onDpr)
+    }
+
+    private onDpr = () => {
+        this.watchDpr()
+        this.onWakeCheck()
+    }
+
+    /** Re-reconcile the backing store with the current box AND ratio; repaint at once if it changed,
+     *  since resizing a canvas clears it. */
+    private onWakeCheck = () => {
+        if (!this.host) return
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+        if (this.syncSize() && this.running && this.ensureContext()) {
+            this.repaintNow()
+        }
+        this.wake()
     }
 
     /** Draws the current state now, outside the rAF loop (the ResizeObserver callback uses it so a
@@ -2166,9 +2217,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
     private frame = (t: number): boolean => {
         if (!this.running) return false
         if (!this.ensureContext()) return true
-        // Box polling is gone (the ResizeObserver delivers changes); only an unmeasured grid, e.g. a
-        // context that just came back, re-measures here.
-        if (!this.boxReady) this.syncSize()
+        // Box polling is gone (the ResizeObserver delivers changes); an unmeasured grid, e.g. a
+        // context that just came back, re-measures here, and so does a stale devicePixelRatio
+        // (a property read; the box itself is only re-read when the ratio has moved).
+        if (
+            !this.boxReady ||
+            this.targetDpr(this.W, this.H) !== this.dpr
+        )
+            this.syncSize()
         // Real elapsed ms since the last tick — clamped to [1, 100]: never zero/negative (defensive
         // against a non-monotonic or repeated rAF timestamp, which would otherwise divide-by-zero-ish or
         // run the ease backwards) and capped so one slow/late frame can't snap the glide most of the way
@@ -4559,6 +4615,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
 
     private onPointerMove = (e: PointerEvent) => {
+        // The first thing after unlocking is usually the pointer, and the ratio-change event can be
+        // lost across a sleep (see watchDpr), so a stale backing store is caught here too.
+        if (this.boxReady && this.targetDpr(this.W, this.H) !== this.dpr)
+            this.onWakeCheck()
         if (!this.dragging) {
             const nv = this.pick(e.clientX, e.clientY)
             this.applyHover(

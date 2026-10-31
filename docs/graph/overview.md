@@ -242,6 +242,8 @@ A 2D/3D flip animates over `MODE_MORPH_MS` (500) via `modeMorph.ts`, capturing e
 
 The renderer pauses its animation loop while `document.visibilityState` is `hidden`, so a backgrounded browser tab samples a blank canvas.
 
+The canvas backing store is sized from `devicePixelRatio` (capped at 2, and by `clampDprToCanvasArea()` in `graphFit.ts`). A ratio change fires no resize, and after sleep and wake WebKit can report a ratio of 1 for a moment. So the ratio is part of what `syncSize()` compares with the current box. It is re-checked when a `(resolution: Ndppx)` media query changes, on window `focus`, `pageshow` and `visibilitychange`, on a pointer move over the field, and on every frame. A backing store left at a stale ratio is rebuilt and repainted, and the field stays sharp.
+
 ### Atmosphere
 
 `GraphAtmosphere.tsx` paints the density-field glow and vignette. The renderer builds a `DensityField` each dirty frame with `buildBloom()` in `densityField.ts` (a `FIELD_W x FIELD_H` grid of 64 x 40, a three-pass box blur, normalised to a peak of 1) and pushes it through a stable `BloomSink` object that `GraphView.tsx` owns. `GraphAtmosphere` registers one paint function on mount and replays `sink.last`, so a remount while the graph is at rest still paints. Cell alpha follows `v^4`, so only dense regions light up. Colour comes from `--accent` via `bloomColor.ts`; `tintTerritory()` mixes each community's colour in at `TERRITORY_TINT` (0.72) while keeping the base luma, so territory changes hue and never brightness.
