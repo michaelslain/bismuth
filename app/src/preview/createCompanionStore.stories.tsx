@@ -5,7 +5,7 @@
 // runs — bare `solid-js` under `bun test` resolves to its SSR/server build, so a pure `.test.ts`
 // can't exercise this store's reload effect or its debounced-save side effects; only a real
 // browser can.
-import { createSignal } from 'solid-js'
+import { createSignal, onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import createCompanionStore from './createCompanionStore'
@@ -16,6 +16,7 @@ import { companionPathFor } from '../../../core/src/fileKinds'
 import type { CompanionStore } from './annotationTypes'
 import { toasts } from '../ui/toastStore'
 import TextButton from '../ui/TextButton'
+import { start as startServerVersion } from '../serverVersion'
 
 const meta = {
     title: 'Preview/CompanionStore',
@@ -386,5 +387,114 @@ export const OverlappingFlushesBothLandNoConflict: Story = {
         expect(newToasts.some(t => t.message.includes('changed elsewhere'))).toBe(
             false,
         )
+    },
+}
+
+// ── ExternalWriteReloadsOpenPreview ─────────────────────────────────────────────────────────────
+
+/** Drive `serverVersion` off a fake EventSource this story owns, so play() can deliver one SSE
+ *  frame naming the paths core's watcher would report. Takes the stream over when another story
+ *  already started it (`start()` is idempotent per page), the same way `_fakeTransport`'s
+ *  `armFakeServerVersion` does. */
+let fakeSse: { onmessage?: (e: { data: string }) => void } | undefined
+let disposeFakeSse: (() => void) | undefined
+let sseVersion = 1_000_000
+function armFakeSse(): void {
+    fakeSse = undefined
+    const deps = {
+        eventSourceFactory: () => {
+            fakeSse = { close: () => {} } as typeof fakeSse
+            return fakeSse as unknown as EventSource
+        },
+        fetchVersion: async () => ({ version: 0 }),
+        setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+        clearIntervalFn: () => {},
+    }
+    disposeFakeSse = startServerVersion(deps)
+    if (fakeSse) return
+    disposeFakeSse()
+    disposeFakeSse = startServerVersion(deps)
+}
+const sendChange = (paths: string[]) =>
+    fakeSse?.onmessage?.({
+        data: JSON.stringify({ version: ++sseVersion, paths }),
+    })
+
+const EXTERNAL_PATH = 'photo.png'
+const EXTERNAL_INITIAL = '---\ntags: [a]\n---\nhand-written body\n'
+let storeForExternalTest: CompanionStore | undefined
+
+/** The daemon (`bismuth prop set`) rewrites an open image's companion: the watcher's change
+ *  event reaches the store and the frontmatter strip shows the new text without reopening the
+ *  preview. The store's own save echoing back over the same stream changes nothing, and unsaved
+ *  local edits are never replaced by a reload. */
+export const ExternalWriteReloadsOpenPreview: Story = {
+    render: () => {
+        storeForExternalTest = undefined
+        setTransport(
+            fakeTransport({
+                files: {
+                    [companionPathFor(EXTERNAL_PATH)]: EXTERNAL_INITIAL,
+                },
+            }),
+        )
+        armFakeSse()
+        onCleanup(() => disposeFakeSse?.())
+        return (
+            <Host
+                binaryPath={() => EXTERNAL_PATH}
+                onStore={s => {
+                    storeForExternalTest = s
+                }}
+            />
+        )
+    },
+    play: async () => {
+        expect(fakeSse).toBeDefined()
+        await waitFor(() => {
+            expect(storeForExternalTest?.loadState()).toBe('ready')
+        })
+        const store = storeForExternalTest!
+        const path = companionPathFor(EXTERNAL_PATH)
+
+        // 1. An external write + its change event: the store shows it, body included.
+        const daemonText = '---\ntags: [a, from-daemon]\nsource: daemon\n---\nhand-written body\n'
+        await api.write(path, daemonText)
+        sendChange([path])
+        await waitFor(() => {
+            expect(store.frontmatter()).toBe(
+                '---\ntags: [a, from-daemon]\nsource: daemon\n---\n',
+            )
+        })
+
+        // 2. A change naming other paths is ignored; an unknown-extent change (empty paths)
+        //    still checks the file.
+        await api.write(path, '---\ntags: [b]\n---\nhand-written body\n')
+        sendChange(['some/other.md'])
+        await settle(60)
+        expect(store.frontmatter()).toContain('from-daemon')
+        sendChange([])
+        await waitFor(() => {
+            expect(store.frontmatter()).toBe('---\ntags: [b]\n---\n')
+        })
+
+        // 3. Our own save echoing back leaves the edit in place and writes nothing more.
+        store.setFrontmatter('---\ntags: [b, mine]\n---\n')
+        await store.flush()
+        const revisionAfterSave = store.revision()
+        sendChange([path])
+        await settle(60)
+        expect(store.revision()).toBe(revisionAfterSave)
+        expect(store.frontmatter()).toBe('---\ntags: [b, mine]\n---\n')
+        expect(await api.read(path)).toBe(
+            '---\ntags: [b, mine]\n---\nhand-written body\n',
+        )
+
+        // 4. Unsaved local edits are not replaced by an external change mid-debounce.
+        store.setFrontmatter('---\ntags: [b, mine, typing]\n---\n')
+        await api.write(path, '---\ntags: [c]\n---\nhand-written body\n')
+        sendChange([path])
+        await settle(60)
+        expect(store.frontmatter()).toBe('---\ntags: [b, mine, typing]\n---\n')
     },
 }

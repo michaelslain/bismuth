@@ -35,6 +35,7 @@ import type { AnnotationLoadState, CompanionStore } from './annotationTypes'
 import { pushToast } from '../ui/ToastHost'
 import { settings } from '../settings'
 import { registerSidecarFlush } from '../editorRegistry'
+import { onServerChange } from '../serverVersion'
 
 export default function createCompanionStore(
     binaryPath: Accessor<string>,
@@ -219,6 +220,36 @@ export default function createCompanionStore(
             })
         }),
     )
+
+    // Reconcile an EXTERNAL write to the companion (the daemon's `bismuth prop set`, a pane
+    // editing `<file>.md`, a sync) into the open preview — without this the strip shows the text
+    // read when the preview opened until the binary is reopened. An empty `paths` is an
+    // unknown-extent change (initial snapshot, fallback poll): check the file anyway. Waits for
+    // every write already in the chain BEFORE reading, so a read can never return a pre-write
+    // text that would revert this store's own save; a save that starts during the read, or
+    // unsaved local edits, win — their writeChecked conflict path reloads instead.
+    const reconcileExternal = async () => {
+        const token = loadToken
+        if (loadState() === 'loading') return
+        const chain = pendingBaseText
+        const known = await chain
+        let text: string
+        try {
+            text = await api.read(companionPath)
+        } catch {
+            return // read failed or the file vanished; keep what is shown
+        }
+        if (token !== loadToken || pendingBaseText !== chain) return
+        if (dirty || saveTimer !== undefined) return
+        if (text === known && loadState() === 'ready') return // our own save's echo, or no change
+        applyLoadedText(text)
+        setLoadState('ready')
+    }
+    const offServerChange = onServerChange(c => {
+        if (c.paths.length === 0 || c.paths.includes(companionPath))
+            void reconcileExternal()
+    })
+    onCleanup(offServerChange)
 
     // Every other way a debounce window can end badly (PageInk's list, minus the pane-focus
     // specifics — this store has no separate "draw mode" to exit).

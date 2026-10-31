@@ -233,6 +233,7 @@ Never create a separate `<name>.md` that only embeds the binary (`![[paper.pdf]]
 - An orphan is a normal note. If the binary is deleted outside the app, the companion shows in the tree and opens as itself.
 - Moves and deletes travel together. Moving, trashing or restoring the binary carries the companion and the drawing sidecar with it.
 - Hand-written text is kept. You can write a body below the frontmatter. Tag edits keep it untouched.
+- Outside edits show live. When the daemon, the CLI or another pane writes the companion while its image or PDF is open, the tags strip and scratch notes update in place. Edits you have not saved yet are kept, and a save that meets a newer version on disk reloads it and says so.
 
 ### What are scratch-note blocks?
 
