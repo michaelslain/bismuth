@@ -97,7 +97,7 @@ const code = Decoration.mark({ class: 'cm-inline-code' })
 const link = Decoration.mark({ class: 'cm-link' })
 const wikilink = Decoration.mark({ class: 'cm-wikilink' })
 const tag = Decoration.mark({ class: 'cm-tag' })
-// `??slug` memory references — the 3rd-brain twin of `.cm-wikilink`. Carries BOTH classes so the
+// `~slug` memory references — the 3rd-brain twin of `.cm-wikilink`. Carries BOTH classes so the
 // Editor.tsx mousedown navigation gate (`.cm-link, .cm-wikilink`) opens it with no extra branch.
 const memoryRef = Decoration.mark({ class: 'cm-wikilink cm-memory-ref' })
 // Every whole-word "bismuth" in prose gets the iridescent bismuth-crystal gradient
@@ -534,8 +534,8 @@ function pushSymbolEscapes(
     }
 }
 
-/** Style each `??slug` MEMORY REFERENCE on a line — the 3rd-brain twin of a `[[wikilink]]`. Unlike a
- *  wikilink there is no bracket syntax to hide: `??slug` IS the persisted text (that is the whole
+/** Style each `~slug` MEMORY REFERENCE on a line — the 3rd-brain twin of a `[[wikilink]]`. Unlike a
+ *  wikilink there is no bracket syntax to hide: `~slug` IS the persisted text (that is the whole
  *  point), so like `pushTags` this only COLORS the token and hides nothing — the source reads the
  *  same whether or not the caret is on it. Click handling lives in Editor.tsx. */
 function pushMemoryRefs(
@@ -545,9 +545,9 @@ function pushMemoryRefs(
 ) {
     for (const m of text.matchAll(MEMORY_REF_LINE_RE)) {
         // m[1] is the required boundary char (start-of-line/whitespace/`(`) — the ref itself starts
-        // after it and spans `??` + the slug.
+        // after it and spans `~` + the slug.
         const start = lineFrom + (m.index ?? 0) + m[1].length
-        deco.push(memoryRef.range(start, start + 2 + m[2].length))
+        deco.push(memoryRef.range(start, start + 1 + m[2].length))
     }
 }
 
@@ -1135,7 +1135,7 @@ function buildDecorations(
             // wikilinks [[target#heading|alias]] — reveal only the basename (or alias).
             pushWikilinks(deco, text, line.from, revealsRange)
 
-            // `??slug` memory references — the 3rd brain's `[[wikilink]]`.
+            // `~slug` memory references — the 3rd brain's `[[wikilink]]`.
             pushMemoryRefs(deco, text, line.from)
 
             // body #hashtags — tint TEAL. Skipped on heading lines so heading "#"s
@@ -1798,7 +1798,7 @@ export const livePreview = [
             color: 'var(--accent)',
             'font-family': 'var(--ui-font-stack)',
         },
-        // `??slug` memory refs read VIOLET: they are links (they navigate, so they keep .cm-wikilink's
+        // `~slug` memory refs read VIOLET: they are links (they navigate, so they keep .cm-wikilink's
         // pointer + soft underline) but they point at the THIRD brain, not a vault note — blue stays
         // "vault link", teal stays "tag". Declared after .cm-wikilink so the hue override wins on
         // source order (both are single-class selectors).

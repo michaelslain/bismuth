@@ -1991,7 +1991,7 @@ export function Editor(props: {
                                     return true
                                 }
                             }
-                            // `??slug` memory references — open the memory note the slug names. Placed after the
+                            // `~slug` memory references — open the memory note the slug names. Placed after the
                             // wikilink scan (the two grammars can't overlap: a slug has no `[`) and before the
                             // markdown-link scan. Resolve against the known memory notes so a subfoldered note
                             // opens by basename too, exactly like a wikilink; an unresolved slug still opens its
@@ -2001,7 +2001,7 @@ export function Editor(props: {
                             )) {
                                 const s2 =
                                     line.from + (m.index ?? 0) + m[1].length
-                                const en = s2 + 2 + m[2].length
+                                const en = s2 + 1 + m[2].length
                                 if (pos >= s2 && pos <= en) {
                                     const resolved = resolveMemorySlug(
                                         m[2],

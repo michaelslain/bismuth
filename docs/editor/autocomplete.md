@@ -9,7 +9,7 @@ Typing a trigger such as `[[`, `#`, `/` or `:` in a note opens a popup of comple
 | `[[` | note body, table cell, composer | Note names; see [Complete wikilinks and headings](#complete-wikilinks-and-headings) |
 | `[[Note#` | note body, table cell, composer | The headings of `Note` |
 | `#` after a space or at line start | note body, table cell, composer | Existing tags |
-| `??` after a space or at line start | note body, composer | Memory notes (3rd brain), needs the daemon enabled |
+| `~` and a letter, after a space, `(` or at line start | note body, composer | Memory notes (3rd brain), needs the daemon enabled |
 | `/` as the first thing on a line | note body, table cell | A block to insert: heading, table, code, callout and more |
 | `@` after a space or at line start | chat composer only | A vault file, inserted as a wikilink |
 | `:` after a space or at line start | note body, table cell, composer | Emoji, by name or keyword |
@@ -43,11 +43,15 @@ Wikilink targets resolve by file name first and by path second; see [Wikilinks a
 
 ## Reference a memory note
 
-Typing `??` after a space or at the start of a line lists the daemon's memory notes. Picking one inserts its slug after the `??`, and the text `??cron-run-preference` stays in the file as written. Clicking a rendered `??slug` opens `<vault>/.daemon/memory/<slug>.md`.
+Typing `~` and a letter after a space, a `(` or at the start of a line lists the daemon's memory notes that match. Picking one inserts its slug after the `~`, and the text `~cron-run-preference` stays in the file as written. Clicking a rendered `~slug` opens `<vault>/.daemon/memory/<slug>.md`.
+
+```markdown
+as decided in ~cron      ->   as decided in ~cron-run-preference
+```
 
 Memory notes exist only while the daemon is enabled for the vault. With the daemon off the list is empty and the popup never opens. The picker is available in the note editor and the chat composer, not in table cells.
 
-A line that is exactly `??` is the multi-reversed flashcard separator, not a reference. Pressing `Enter` on such a line closes the popup and inserts a newline, so writing a flashcard with `??` and Enter works; see [Flashcards](../flashcards/srs.md).
+A slug starts with a letter, so the other everyday uses of `~` stay plain text and open no popup: `~5 min`, `~/Documents`, `~~strike~~`, a bare `~`, and a `~` glued to a word such as `a~b`.
 
 ## Complete tags
 

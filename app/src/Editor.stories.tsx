@@ -88,7 +88,7 @@ const NOTE_NAMES: NoteCandidate[] = [
     { label: 'Plan', path: 'Projects/Alpha/Plan' },
     { label: 'Plan', path: 'Archive/Plan' },
 ]
-/** One memory candidate so a `??slug` reference has something to resolve against. Unused by
+/** One memory candidate so a `~slug` reference has something to resolve against. Unused by
  *  DEFAULT_TEXT (no memory reference in it) but exercises the required prop with real shape. */
 const MEMORY_NAMES: MemoryCandidate[] = [
     { label: 'daily-standup', slug: 'daily-standup' },
@@ -184,6 +184,52 @@ export const NewNote: Story = {
             />
         </div>
     ),
+}
+
+const MEMORY_REF_TEXT =
+    'Standup notes follow ~daily-standup, filed under #demo. Takes ~5 min, ~~not hourly~~.\n\nAs decided in '
+
+/** `~slug` in a note: the reference renders as a violet memory link, `~5 min` and `~~strike~~`
+ *  stay ordinary text, and typing `~` and a letter opens the memory notes in the popup. */
+export const MemoryReference: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Memory Ref.md': MEMORY_REF_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Memory Ref.md"
+                    initialText={MEMORY_REF_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+        const refs = [...canvasElement.querySelectorAll('.cm-memory-ref')].map(
+            el => el.textContent,
+        )
+        await expect(refs).toEqual(['~daily-standup'])
+        view.focus()
+        const end = view.state.doc.length
+        view.dispatch({
+            changes: { from: end, insert: '~d' },
+            selection: { anchor: end + 2 },
+            userEvent: 'input.type',
+        })
+        await waitFor(() =>
+            expect(
+                document.querySelector('.cm-tooltip-autocomplete')?.textContent,
+            ).toMatch(/daily-standup/),
+        )
+    },
 }
 
 const CODE_LANGUAGES_TEXT = [
@@ -395,7 +441,9 @@ export const MixedTypography: Story = {
         // The two fences are ONE style: a frontmatter `---` row and a code ```lang row open (and
         // close) their blocks with rows of the same height, padding and fence-text tone.
         const fenceText = (row: HTMLElement) =>
-            row.querySelector('.cm-fence-syntax, [data-testid="code-lang"]') as HTMLElement
+            row.querySelector(
+                '.cm-fence-syntax, [data-testid="code-lang"]',
+            ) as HTMLElement
         for (const pair of [tops, bottoms]) {
             const [a, b] = pair.map(r => r.getBoundingClientRect().height)
             await expect(Math.abs(a! - b!)).toBeLessThan(0.5)
@@ -929,7 +977,9 @@ export const DenseTable: Story = {
         //     to `auto` stops the wheel there, and the note does not scroll under a table. A
         //     synthetic WheelEvent scrolls nothing, so the two properties that hand it up are the
         //     check.
-        const box = canvasElement.querySelector('.cm-table-scroll') as HTMLElement
+        const box = canvasElement.querySelector(
+            '.cm-table-scroll',
+        ) as HTMLElement
         await expect(box).not.toBeNull()
         await expect(getComputedStyle(box).overflowY).toBe('hidden')
         await expect(getComputedStyle(box).overscrollBehaviorY).toBe('auto')
@@ -1186,7 +1236,10 @@ export const NarrowPaneTable: Story = {
         ) as HTMLElement
         const toggle = () =>
             infinity.dispatchEvent(
-                new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+                new MouseEvent('mousedown', {
+                    bubbles: true,
+                    cancelable: true,
+                }),
             )
         const fits = () =>
             waitFor(async () => {
@@ -2798,9 +2851,7 @@ export const FindPanelOpen: Story = {
  *  way a person does. */
 export const FindPanelCaseOn: Story = {
     render: () => {
-        setTransport(
-            fakeTransport({ files: { 'Find Case.md': DEFAULT_TEXT } }),
-        )
+        setTransport(fakeTransport({ files: { 'Find Case.md': DEFAULT_TEXT } }))
         return (
             <div style={{ height: STORY_H, width: '100%' }}>
                 <Editor
@@ -2821,9 +2872,10 @@ export const FindPanelCaseOn: Story = {
 
         openSearchPanel(view)
         const caseBtn = await waitFor(() => {
-            const el = canvasElement.querySelector<HTMLButtonElement>(
-                '.bismuth-find-case',
-            )
+            const el =
+                canvasElement.querySelector<HTMLButtonElement>(
+                    '.bismuth-find-case',
+                )
             if (!el) throw new Error('find bar not mounted yet')
             return el
         })
@@ -2896,7 +2948,10 @@ export const TableToolbarExtendedAtRest: Story = {
         // `mousedown` (tableWidget.ts), so a synthetic `.click()` would do nothing.
         if (btn.getAttribute('aria-pressed') !== 'true') {
             btn.dispatchEvent(
-                new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+                new MouseEvent('mousedown', {
+                    bubbles: true,
+                    cancelable: true,
+                }),
             )
         }
         await expect(btn.getAttribute('aria-pressed')).toBe('true')
@@ -2931,7 +2986,6 @@ export const TableToolbarExtendedAtRest: Story = {
     },
 }
 
-
 /** A note under a folder bound to a named schema (`folderSchemas: { Books: book }`): `author` is
  *  required and missing, `rating` is above the schema's max, and `genre` is not one of the enum's
  *  values. Each offending line carries the purple property mark; the vault-wide `due: date` still
@@ -2955,7 +3009,9 @@ export const NamedSchema: Story = {
                     book: {
                         author: { type: 'string', required: true },
                         rating: { type: 'number', min: 0, max: 5 },
-                        genre: { type: { enum: ['sf', 'fantasy', 'literary'] } },
+                        genre: {
+                            type: { enum: ['sf', 'fantasy', 'literary'] },
+                        },
                     },
                 },
                 folderSchemas: { Books: 'book' },

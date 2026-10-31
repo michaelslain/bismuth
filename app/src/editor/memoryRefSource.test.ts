@@ -1,20 +1,19 @@
 // app/src/editor/memoryRefSource.test.ts
 //
-// Pins the `??slug` MEMORY REFERENCE contract — the 3rd-brain twin of the `[[wikilink]]` picker:
-//   • typing `??` opens a memory autocomplete (the way `[[` opens the note picker)
-//   • picking one inserts `??slug`, which PERSISTS in the saved markdown
+// Pins the `~slug` MEMORY REFERENCE contract — the 3rd-brain twin of the `[[wikilink]]` picker:
+//   • typing `~` + a letter opens a memory autocomplete (the way `[[` opens the note picker)
+//   • picking one inserts `~slug`, which PERSISTS in the saved markdown
 //   • daemon disabled → no memory notes → no picker (and no crash)
-//   • a bare `??` LINE is still the SRS multi-reversed flashcard separator: Enter there inserts a
-//     NEWLINE, it does not accept a completion
+//   • a bare `~` opens nothing, so Enter after it is still a newline
 //
 // These run the REAL CompletionSource against a real EditorState + CompletionContext (not a
 // re-implementation), so a regression in matchMemoryRefPrefix, the option assembly, or the apply
 // handler fails here. The note editor and the chat composer both consume this exact source through
 // `vaultCompletion()` → `markdownEditingExtensions`, so one test covers BOTH surfaces.
 //
-// The SRS Enter guard is proved on a MOUNTED EditorView (happy-dom), because the whole point of it
-// is keymap PRECEDENCE against CodeMirror's own Enter→acceptCompletion binding — something only a
-// real dispatched keydown can demonstrate.
+// The Enter behaviour is proved on a MOUNTED EditorView (happy-dom), because it is about keymap
+// precedence against CodeMirror's own Enter→acceptCompletion binding — something only a real
+// dispatched keydown can demonstrate.
 import { GlobalWindow } from 'happy-dom'
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test'
 import { EditorState } from '@codemirror/state'
@@ -46,40 +45,45 @@ function run(
 const labels = (r: CompletionResult | null): string[] =>
     r ? r.options.map(o => String(o.label)) : []
 
-describe('memoryRefSource — `??` opens the memory picker', () => {
-    test('a bare `??` opens the picker listing every memory note', () => {
-        expect(labels(run('??'))).toEqual([
-            'cron-run-preference',
-            'push-after-commit',
-            'note',
-        ])
+describe('memoryRefSource — `~` + a letter opens the memory picker', () => {
+    test('`~c` lists the memory notes matching what was typed', () => {
+        expect(labels(run('~c'))).toContain('cron-run-preference')
     })
 
-    test('the popup is anchored just past the `??`, so the `??` itself survives the pick', () => {
-        // doc "see ??" → `??` at 4..6, so the replaced range starts at 6. This is what makes the
-        // saved text `??slug` rather than `slug`.
-        expect(run('see ??')?.from).toBe(6)
+    test('a bare `~` opens nothing — it is common punctuation', () => {
+        expect(run('~')).toBeNull()
+        expect(run('about ~')).toBeNull()
+    })
+
+    test('the popup is anchored just past the `~`, so the `~` itself survives the pick', () => {
+        // doc "see ~cr" → `~` at 4, so the replaced range starts at 5. This is what makes the
+        // saved text `~slug` rather than `slug`.
+        expect(run('see ~cr')?.from).toBe(5)
     })
 
     test('fires mid-prose after whitespace', () => {
-        expect(labels(run('as noted in ??cron'))).toContain(
+        expect(labels(run('as noted in ~cron'))).toContain(
             'cron-run-preference',
         )
     })
 
-    test('does NOT fire when `??` is glued to a word — `really??` stays prose', () => {
-        expect(run('really??')).toBeNull()
+    test('stays shut for `~5`, `~/path`, `~~strike` and a glued `a~b`', () => {
+        expect(run('~5')).toBeNull()
+        expect(run('cd ~/Doc')).toBeNull()
+        expect(run('~~str')).toBeNull()
+        expect(run('a~b')).toBeNull()
     })
 
-    test('does not fire inside a code span (a `??` in code is literal)', () => {
-        expect(run('`a ?? b')).toBeNull()
+    test('does not fire inside a code span (a `~` in code is literal)', () => {
+        expect(run('`a ~b')).toBeNull()
     })
 
     test('a subfoldered memory note shows its rel path as detail; a flat one shows none', () => {
-        const opts = run('??')!.options
+        const opts = run('~n')!.options
         expect(opts.find(o => o.label === 'note')?.detail).toBe('sub/dir/note')
+        const all = run('~c')!.options
         expect(
-            opts.find(o => o.label === 'cron-run-preference')?.detail,
+            all.find(o => o.label === 'cron-run-preference')?.detail,
         ).toBeUndefined()
     })
 })
@@ -88,12 +92,12 @@ describe('memoryRefSource — daemon disabled', () => {
     test('no memory notes → NO picker at all (no crash, no empty popup)', () => {
         // Daemon off → the server builds no `.daemon/memory` graph nodes → App passes zero candidates.
         // `prefixSource` returns a result with an empty option list, which CM renders as no popup.
-        expect(labels(run('??', []))).toEqual([])
+        expect(labels(run('~c', []))).toEqual([])
     })
 })
 
 // ---------------------------------------------------------------------------------------------
-// Mounted-view proof of the SRS flashcard guard.
+// Mounted-view proof of what Enter does around the `~` picker.
 // ---------------------------------------------------------------------------------------------
 
 // Same install/restore discipline as tableWidget.test.ts / graphBlock.test.ts: install ONLY the
@@ -166,7 +170,7 @@ afterAll(() => {
     }
 })
 
-describe('SRS flashcard separator survives the `??` picker', () => {
+describe('Enter with the `~` picker', () => {
     // Lazily imported AFTER the DOM globals are installed — EditorView touches `document` at import.
     async function mount(doc: string) {
         const { EditorView, keymap } = await import('@codemirror/view')
@@ -188,8 +192,8 @@ describe('SRS flashcard separator survives the `??` picker', () => {
                         inFrontmatter: () => false,
                         readNote: async () => '',
                     }),
-                    // Stands in for the note editor's `enterKeymap` (the normal-precedence Enter handler the
-                    // guard must fall through TO).
+                    // Stands in for the note editor's `enterKeymap` (the normal-precedence Enter handler
+                    // that runs when no picker takes the key).
                     keymap.of([{ key: 'Enter', run: insertNewlineAndIndent }]),
                 ],
             }),
@@ -211,8 +215,8 @@ describe('SRS flashcard separator survives the `??` picker', () => {
     /** Open the picker and BLOCK until it is really `active` AND accepting input. Two real CodeMirror
      *  timings make a naive test lie:
      *    1. the completion pass is debounced (~50ms) — press Enter while it's still `pending` and the
-     *       newline falls through, so an SRS assertion would pass for the WRONG reason (the guard
-     *       never even ran). Asserting `active` makes that failure mode impossible.
+     *       newline falls through, so an "Enter accepts" assertion fails for the WRONG reason.
+     *       Asserting `active` makes that failure mode impossible.
      *    2. `acceptCompletion` IGNORES Enter within `interactionDelay` (75ms) of the popup opening —
      *       an anti-misfire guard. Settle past it so "Enter accepts" is testable at all.
      *  Both are harness concerns only; a human is never this fast. */
@@ -231,27 +235,22 @@ describe('SRS flashcard separator survives the `??` picker', () => {
         await new Promise(r => setTimeout(r, 90)) // clear CM's 75ms interactionDelay
     }
 
-    test('Enter on a bare `??` line inserts a NEWLINE — it never accepts a memory completion', async () => {
-        // This is how you author an SRS multi-reversed card (core/src/srs/parser.ts matches a line whose
-        // trim is exactly "??"). CM binds Enter→acceptCompletion at Prec.highest, so without the guard
-        // the open picker would swallow Enter and paste a slug in place of the separator.
-        const view = await mount('front\n??')
-        // The picker IS open and active on the bare `??` (that's the `[[`-like behavior we want) — the
-        // guard is what keeps Enter meaning "newline" anyway.
-        await openPickerAndWait(view)
+    test('Enter after a bare `~` inserts a NEWLINE — no picker opens to take it', async () => {
+        const view = await mount('about ~')
+        startCompletion(view)
+        await new Promise(r => setTimeout(r, 150))
+        expect(completionStatus(view.state)).not.toBe('active')
         pressEnter(view)
-        const doc = view.state.doc.toString()
-        expect(doc).toBe('front\n??\n')
-        expect(doc).not.toContain('cron-run-preference')
+        expect(view.state.doc.toString()).toBe('about ~\n')
         view.destroy()
     })
 
-    test('Enter on a real `??query` line DOES accept the completion, inserting `??slug`', async () => {
-        const view = await mount('front\n??cron')
+    test('Enter on a `~query` line accepts the completion, inserting `~slug`', async () => {
+        const view = await mount('front\n~cron')
         await openPickerAndWait(view)
         pressEnter(view)
-        // The `??` is preserved (the popup replaces only the slug), so the persisted text is `??slug`.
-        expect(view.state.doc.toString()).toBe('front\n??cron-run-preference')
+        // The `~` is preserved (the popup replaces only the slug), so the persisted text is `~slug`.
+        expect(view.state.doc.toString()).toBe('front\n~cron-run-preference')
         view.destroy()
     })
 })

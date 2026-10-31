@@ -1088,11 +1088,11 @@ export default function App() {
             .map(n => n.label.replace(/^#/, '')),
     )
 
-    // The 3rd brain's notes, powering the `??slug` memory-reference picker (memoryRef.ts) in both the
+    // The 3rd brain's notes, powering the `~slug` memory-reference picker (memoryRef.ts) in both the
     // note editor and the chat composer. This is ALSO the feature's daemon gate, for free: memory is
     // only a graph source while `settings.daemon.enabled` is on (server.ts only points at
     // <vault>/.daemon/memory when it is), so with the daemon off there are no `memory` nodes → no
-    // candidates → the `??` popup never opens.
+    // candidates → the `~` popup never opens.
     const memoryCandidates = createMemo<MemoryCandidate[]>(() =>
         graph()
             .nodes.filter(n => n.kind === 'memory')

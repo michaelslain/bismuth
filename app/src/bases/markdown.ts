@@ -352,7 +352,7 @@ export function maskCode(src: string): { masked: string; codes: string[] } {
 export function unmaskCode(s: string, codes: string[]): string {
     return s.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)] ?? '')
 }
-// `??slug` MEMORY REFERENCES — the 3rd-brain twin of a `[[wikilink]]`, and just as non-standard, so
+// `~slug` MEMORY REFERENCES — the 3rd-brain twin of a `[[wikilink]]`, and just as non-standard, so
 // marked would emit them verbatim. Convert them to the SAME kind of anchor a wikilink produces,
 // pointing at the memory note's real vault path (`.daemon/memory/<slug>.md`).
 //
@@ -361,7 +361,7 @@ export function unmaskCode(s: string, codes: string[]): string {
 // bubble's delegated click, the reader, export), so reusing that class means a memory ref navigates
 // through the exact same machinery instead of a parallel one — `bismuth-memory-ref` only adds the
 // distinct look. Runs alongside tagsToSpans/wikilinksToAnchors on the RAW source (before marked)
-// with the same code-masking caveat, so a `??x` inside code stays literal.
+// with the same code-masking caveat, so a `~x` inside code stays literal.
 const MEMORY_REF_SCAN_RE = new RegExp(MEMORY_REF_RE.source, 'g')
 function memoryRefsToAnchors(src: string): string {
     return src.replace(
@@ -410,13 +410,13 @@ function buttonFenceHtml(code: string): string | null {
     return `\n\n<div data-bismuth-buttons="${encodeButtonBody(body)}">${escapeHtml(inertButtonText(body))}</div>\n\n`
 }
 
-/** Resolve `[[wikilinks]]`, `??memory-refs` + `#tags` on the source while leaving code untouched. */
+/** Resolve `[[wikilinks]]`, `~memory-refs` + `#tags` on the source while leaving code untouched. */
 function linkifyOutsideCode(src: string): string {
     const { masked, codes } = maskCode(src)
     for (let i = 0; i < codes.length; i++)
         codes[i] = buttonFenceHtml(codes[i]!) ?? codes[i]!
     // Memory refs BEFORE tags: a slug can contain `/` and `-` but never `#`, so the two can't
-    // overlap — but ordering after wikilinksToAnchors keeps a `??x` inside an injected anchor's
+    // overlap — but ordering after wikilinksToAnchors keeps a `~x` inside an injected anchor's
     // attributes (there are none today) out of reach, matching the tag pass's placement.
     return unmaskCode(
         tagsToSpans(memoryRefsToAnchors(wikilinksToAnchors(masked))),
@@ -432,7 +432,7 @@ export function renderNoteBody(src: string): string {
 }
 
 /** Render a single cell/line of markdown to sanitized INLINE HTML — emphasis, code, inline
- *  `$math$` (via the shared KaTeX renderer + progressive upgrade), `[[wikilinks]]`, `??memory-refs`
+ *  `$math$` (via the shared KaTeX renderer + progressive upgrade), `[[wikilinks]]`, `~memory-refs`
  *  and `#tags`, with NO block wrapping (`<p>`). Used by Base table/card cells so a cell renders
  *  the same markdown as the rest of the app. `marked.parseInline` runs the inline math
  *  extension above but not the block one, so `$$…$$` stays literal (correct for a cell). */
@@ -440,7 +440,7 @@ export function renderInline(src: string): string {
     // imagesOutsideCode runs INNERMOST so an `![[shot.png]]` in a cell renders as a real <img>
     // (the table-cell image drop) rather than as literal text, and so it is resolved before
     // wikilinksToAnchors sees the inner `[[…]]`. memoryRefsToAnchors stays in the chain (main) so
-    // `??slug` refs still resolve in cells.
+    // `~slug` refs still resolve in cells.
     return sanitizeHtml(
         marked.parseInline(
             iridescentBismuth(
@@ -460,7 +460,7 @@ export function renderInline(src: string): string {
 // Cheap gate: only run the markdown renderer on strings that actually carry inline markup
 // (emphasis, code, a wikilink, a #tag, raw HTML, or `$math$`); plain values stay literal.
 const CELL_MARKUP_RE =
-    /[*_~`$]|\[\[|<[a-z/]|(?:^|\s)#[A-Za-z]|(?:^|[\s(])\?\?\w/
+    /[*_~`$]|\[\[|<[a-z/]|(?:^|\s)#[A-Za-z]|(?:^|[\s(])~[A-Za-z]/
 export function hasInlineMarkup(s: string): boolean {
     // Also treat a bare "bismuth" as markup so a plain-text cell carrying the word still
     // routes through renderInline and picks up the iridescent gradient. BISMUTH_SCAN_RE is

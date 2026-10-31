@@ -7,6 +7,7 @@ const ICONS: Record<string, string> = {
     keyword: 'Hash', // icon names, reserved words
     note: 'File', // wikilink target
     tag: 'Hash', // #tag
+    memory: 'Brain', // ~slug memory note
     emoji: 'Smile',
     modifier: 'Command', // a keybind modifier (Mod/Alt/Shift) in the shortcut autocomplete
     key: 'Keyboard', // a keybind key (A, Enter, ArrowLeft…)

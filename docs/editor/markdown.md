@@ -16,7 +16,7 @@ Read this page to learn what each markdown construct looks like in the editor an
 | `[text](url)` | The link text; click opens the URL in your browser | Move the caret onto the link to show `[` and `](url)` |
 | `https://example.com` | A link, always shown in full; click opens it | Edit it as text |
 | `[[Note]]` or `[[folder/Note#Heading\|alias]]` | Only the alias, or the note's file name; click opens the note | Move the caret onto the link to show the whole token |
-| `??slug` | A violet link to a memory note; click opens it | Edit it as text; nothing is hidden |
+| `~slug` | A violet link to a memory note; click opens it | Edit it as text; nothing is hidden |
 | `#tag` | The tag in the accent color; nothing is hidden | Edit it as text |
 | `- item`, `* item`, `+ item` | A bullet: a filled dot at even nesting levels, a hollow dot at odd levels | Click onto the bullet itself to show `- ` |
 | `1. item` or `1) item` | The number, in the same column as a bullet | Click onto the number to show it raw |

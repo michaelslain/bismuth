@@ -3,7 +3,6 @@ import {
     MEMORY_DIR,
     MEMORY_REF_RE,
     matchMemoryRefPrefix,
-    isSrsSeparatorLine,
     memorySlugFromNodeId,
     memoryRefPath,
     resolveMemorySlug,
@@ -11,96 +10,89 @@ import {
     type MemoryCandidate,
 } from '../src/memoryRef'
 
-// Scan helper: every `??slug` in a source string (the shape a renderer consumes).
+// Scan helper: every `~slug` in a source string (the shape a renderer consumes).
 const scan = (src: string) => [...src.matchAll(MEMORY_REF_RE)].map(m => m[2])
 
-describe('matchMemoryRefPrefix (the `??` autocomplete trigger)', () => {
-    test('a bare `??` opens the picker with an empty query — the way `[[` does', () => {
-        expect(matchMemoryRefPrefix('??')).toEqual({ from: 2, query: '' })
-    })
-
-    test('matches mid-prose after whitespace, reporting where the slug starts', () => {
-        // "see ??" — the `??` starts at 4, so the slug starts at 6.
-        expect(matchMemoryRefPrefix('see ??')).toEqual({ from: 6, query: '' })
-        expect(matchMemoryRefPrefix('see ??cron')).toEqual({
-            from: 6,
+describe('matchMemoryRefPrefix (the `~` autocomplete trigger)', () => {
+    test('opens once `~` is followed by a letter, reporting where the slug starts', () => {
+        expect(matchMemoryRefPrefix('~c')).toEqual({ from: 1, query: 'c' })
+        // "see ~cron" — the `~` sits at 4, so the slug starts at 5.
+        expect(matchMemoryRefPrefix('see ~cron')).toEqual({
+            from: 5,
             query: 'cron',
         })
+        expect(matchMemoryRefPrefix('(~cron')).toEqual({ from: 2, query: 'cron' })
+    })
+
+    test('a bare `~` does not open the picker — it is common punctuation', () => {
+        expect(matchMemoryRefPrefix('~')).toBeNull()
+        expect(matchMemoryRefPrefix('about ~')).toBeNull()
     })
 
     test('captures the partial slug typed so far, including `-` and `/`', () => {
-        expect(matchMemoryRefPrefix('??cron-run')).toEqual({
-            from: 2,
+        expect(matchMemoryRefPrefix('~cron-run')).toEqual({
+            from: 1,
             query: 'cron-run',
         })
-        expect(matchMemoryRefPrefix('??sub/dir')).toEqual({
-            from: 2,
+        expect(matchMemoryRefPrefix('~sub/dir')).toEqual({
+            from: 1,
             query: 'sub/dir',
         })
     })
 
-    test('does NOT fire when a word char precedes the `??` — prose stays prose', () => {
-        // This is the `really??` / `what??` case: `??` glued to a word is punctuation, not a ref.
-        expect(matchMemoryRefPrefix('really??')).toBeNull()
-        expect(matchMemoryRefPrefix('what??')).toBeNull()
+    test('stays shut for the everyday uses of `~`', () => {
+        expect(matchMemoryRefPrefix('~5')).toBeNull() // approximate
+        expect(matchMemoryRefPrefix('cd ~/Doc')).toBeNull() // home path
+        expect(matchMemoryRefPrefix('~~str')).toBeNull() // strikethrough
+        expect(matchMemoryRefPrefix('a~b')).toBeNull() // glued to a word
     })
 
-    test('does not fire on a single `?` or when the caret has left the slug', () => {
-        expect(matchMemoryRefPrefix('?')).toBeNull()
-        expect(matchMemoryRefPrefix('??cron ')).toBeNull() // whitespace ends the ref
+    test('does not fire once the caret has left the slug', () => {
+        expect(matchMemoryRefPrefix('~cron ')).toBeNull()
     })
 
-    test('picks the RIGHTMOST `??` on the line', () => {
-        expect(matchMemoryRefPrefix('??one and ??tw')).toEqual({
-            from: 12,
+    test('picks the RIGHTMOST `~` on the line', () => {
+        expect(matchMemoryRefPrefix('~one and ~tw')).toEqual({
+            from: 10,
             query: 'tw',
         })
     })
 })
 
-describe('MEMORY_REF_RE (the persisted `??slug` syntax)', () => {
+describe('MEMORY_REF_RE (the persisted `~slug` syntax)', () => {
     test('finds refs at start of line and after whitespace/`(`', () => {
-        expect(scan('??alpha')).toEqual(['alpha'])
-        expect(scan('see ??alpha for context')).toEqual(['alpha'])
-        expect(scan('(??alpha)')).toEqual(['alpha'])
+        expect(scan('~alpha')).toEqual(['alpha'])
+        expect(scan('see ~alpha for context')).toEqual(['alpha'])
+        expect(scan('(~alpha)')).toEqual(['alpha'])
     })
 
     test('finds several refs in one string', () => {
-        expect(scan('??alpha and ??beta-two')).toEqual(['alpha', 'beta-two'])
+        expect(scan('~alpha and ~beta-two')).toEqual(['alpha', 'beta-two'])
     })
 
-    test('a slug may contain `-` and `/` but must START with a word char', () => {
-        expect(scan('??cron-run-preference')).toEqual(['cron-run-preference'])
-        expect(scan('??sub/dir/note')).toEqual(['sub/dir/note'])
-        expect(scan('??-leading-dash')).toEqual([])
-        expect(scan('??/slash')).toEqual([])
+    test('a slug may contain `-`, `/` and digits but must START with a letter', () => {
+        expect(scan('~cron-run-preference')).toEqual(['cron-run-preference'])
+        expect(scan('~sub/dir/note')).toEqual(['sub/dir/note'])
+        expect(scan('~v2-notes')).toEqual(['v2-notes'])
+        expect(scan('~-leading-dash')).toEqual([])
+        expect(scan('~/slash')).toEqual([])
+        expect(scan('~5 minutes')).toEqual([])
     })
 
-    test('ignores `??` glued to a word — `really??` is punctuation', () => {
-        expect(scan('really??')).toEqual([])
-        expect(scan('wait what?? ok')).toEqual([]) // `??` followed by a space: no slug
+    test('leaves strikethrough, home paths and glued tildes alone', () => {
+        expect(scan('~~struck~~')).toEqual([])
+        expect(scan('open ~/Documents')).toEqual([])
+        expect(scan('a~b')).toEqual([])
+        expect(scan('~')).toEqual([])
     })
 
-    test('a BARE `??` never parses as a ref — this is what protects SRS flashcards', () => {
-        // `core/src/srs/parser.ts` treats a line that is exactly `??` as the multi-reversed
-        // card separator. A ref requires >=1 slug char, so the two can never collide.
-        expect(scan('??')).toEqual([])
-        expect(scan('front\n??\nback')).toEqual([])
+    test('the old `??slug` spelling is plain text', () => {
+        expect(scan('see ??alpha')).toEqual([])
     })
 
     test('the ref stops at the first non-slug char, so trailing punctuation stays prose', () => {
-        expect(scan('see ??alpha.')).toEqual(['alpha'])
-        expect(scan('see ??alpha, and more')).toEqual(['alpha'])
-    })
-})
-
-describe('isSrsSeparatorLine', () => {
-    test('true only for a line that is exactly `??` (whitespace tolerated)', () => {
-        expect(isSrsSeparatorLine('??')).toBe(true)
-        expect(isSrsSeparatorLine('  ??  ')).toBe(true)
-        expect(isSrsSeparatorLine('??alpha')).toBe(false)
-        expect(isSrsSeparatorLine('front ??')).toBe(false)
-        expect(isSrsSeparatorLine('?')).toBe(false)
+        expect(scan('see ~alpha.')).toEqual(['alpha'])
+        expect(scan('see ~alpha, and more')).toEqual(['alpha'])
     })
 })
 
@@ -153,7 +145,7 @@ describe('resolveMemorySlug', () => {
 })
 
 describe('buildMemoryRefInsert', () => {
-    test('inserts the bare slug (the `??` is already typed) with the caret just past it', () => {
+    test('inserts the bare slug (the `~` is already typed) with the caret just past it', () => {
         expect(buildMemoryRefInsert('cron-run')).toEqual({
             insert: 'cron-run',
             cursorOffset: 8,

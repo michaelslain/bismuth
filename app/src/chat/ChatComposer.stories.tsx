@@ -1,5 +1,5 @@
 // Visual spec for <ChatComposer> — the chat's draft surface: a single-purpose CodeMirror editor
-// with `@file` / `[[note]]` / `#tag` mention autocomplete and its own key routing. This file does
+// with `@file` / `[[note]]` / `#tag` / `~memory` mention autocomplete and its own key routing. This file does
 // NOT modify the component; every story renders the real one, driven by its own props.
 //
 // THIS FILE EXISTS BECAUSE THE COMPOSER HAD NO STORY AT ALL, and a typeface bug lived in exactly
@@ -10,6 +10,8 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
+import { EditorView } from '@codemirror/view'
+import type { MemoryCandidate } from '../../../core/src/memoryRef'
 import { ChatComposer, type ComposerHandle } from './ChatComposer'
 import { expectProseFace, expectFamilyReallyLoaded } from '../ui/_fontFace'
 import './ChatComposer.module.css'
@@ -29,7 +31,12 @@ const none = () => []
 
 /** Every prop the composer needs, with the mention sources empty — the stories below are about the
  *  surface itself, not the autocomplete (which needs a vault to be interesting). */
-function Composer(props: { initial?: string; placeholder?: string }) {
+function Composer(props: {
+    initial?: string
+    placeholder?: string
+    memories?: MemoryCandidate[]
+    tags?: string[]
+}) {
     const [text, setText] = createSignal(props.initial ?? '')
     return (
         <div style={{ width: '640px', 'max-width': '100%' }}>
@@ -38,8 +45,8 @@ function Composer(props: { initial?: string; placeholder?: string }) {
                 onInput={setText}
                 placeholder={() => props.placeholder ?? 'Message Claude'}
                 getNotes={none}
-                getMemories={none}
-                getTags={none}
+                getMemories={() => props.memories ?? []}
+                getTags={() => props.tags ?? []}
                 getFiles={none}
                 onFileMention={noop}
                 onPaste={noop}
@@ -63,7 +70,8 @@ export const Drafting: Story = {
     ),
     play: async ({ canvasElement }) => {
         const scroller = canvasElement.querySelector('.cm-scroller')
-        if (!scroller) throw new Error('composer did not mount a CodeMirror scroller')
+        if (!scroller)
+            throw new Error('composer did not mount a CodeMirror scroller')
         const cs = getComputedStyle(scroller)
         // Computed font-family returns the DECLARED STACK STRING, not whether the face ever
         // loaded — a stack that silently fell through to the Georgia fallback would still match
@@ -89,7 +97,10 @@ export const Drafting: Story = {
         await expect(Number.isFinite(proseScale) && proseScale > 0).toBe(true)
         // toBeCloseTo, not a 2-decimal round: Libron's 0.97 lands on 13.095px, which the
         // browser keeps exact while Math.round(… * 100) / 100 makes 13.1.
-        await expect(parseFloat(cs.fontSize)).toBeCloseTo(editorPx * proseScale, 2)
+        await expect(parseFloat(cs.fontSize)).toBeCloseTo(
+            editorPx * proseScale,
+            2,
+        )
     },
 }
 
@@ -97,7 +108,11 @@ export const Drafting: Story = {
  *  internally rather than pushing the transcript off screen. */
 export const MultiLine: Story = {
     render: () => (
-        <Composer initial={'First line of the draft.\n\nA second paragraph.\n\nAnd a third, so the box has grown well past one row.'} />
+        <Composer
+            initial={
+                'First line of the draft.\n\nA second paragraph.\n\nAnd a third, so the box has grown well past one row.'
+            }
+        />
     ),
 }
 
@@ -132,7 +147,10 @@ export const MatchesTheSentBubble: Story = {
             throw new Error('composer line and sent bubble must both mount')
         const pitch = (el: Element) => {
             const cs = getComputedStyle(el)
-            return { lh: parseFloat(cs.lineHeight), fs: parseFloat(cs.fontSize) }
+            return {
+                lh: parseFloat(cs.lineHeight),
+                fs: parseFloat(cs.fontSize),
+            }
         }
         const composer = pitch(line)
         const sent = pitch(bubble)
@@ -147,5 +165,83 @@ export const MatchesTheSentBubble: Story = {
         probe.remove()
         expect(noteRow).toBeGreaterThan(0)
         expect(composer.lh).toBeCloseTo(noteRow, 2)
+    },
+}
+
+const MEMORIES: MemoryCandidate[] = [
+    { label: 'cron-run-preference', slug: 'cron-run-preference' },
+    { label: 'commit-style', slug: 'commit-style' },
+    { label: 'user-profile', slug: 'user-profile' },
+]
+const TAGS = ['daily', 'design', 'project/alpha']
+
+/** Type `text` at the end of the composer as a user would: a dispatched `input.type` transaction,
+ *  which is what opens the completion popup (CodeMirror's typing trigger and the `~` force-open both
+ *  key off that user event), then wait for the popup's options. */
+async function typeAndOpen(canvasElement: HTMLElement, text: string) {
+    const dom = canvasElement.querySelector('.cm-editor')
+    const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+    if (!view) throw new Error('composer did not mount a CodeMirror view')
+    view.focus()
+    const end = view.state.doc.length
+    view.dispatch({
+        changes: { from: end, insert: text },
+        selection: { anchor: end + text.length },
+        userEvent: 'input.type',
+    })
+    for (let i = 0; i < 100; i++) {
+        const items = document.querySelectorAll('.cm-tooltip-autocomplete li')
+        if (items.length > 0) return [...items].map(li => li.textContent ?? '')
+        await new Promise(r => setTimeout(r, 20))
+    }
+    return []
+}
+
+/** `~` and a letter opens the daemon's memory notes; picking one keeps `~slug` in the message. */
+export const MemoryReference: Story = {
+    render: () => (
+        <Composer initial="as decided in " memories={MEMORIES} tags={TAGS} />
+    ),
+    play: async ({ canvasElement }) => {
+        const items = await typeAndOpen(canvasElement, '~c')
+        await expect(items.some(t => t.includes('cron-run-preference'))).toBe(
+            true,
+        )
+        await expect(items.some(t => t.includes('commit-style'))).toBe(true)
+        await expect(items.some(t => t.includes('user-profile'))).toBe(false)
+    },
+}
+
+/** `#` and a letter opens the vault's tags. */
+export const TagReference: Story = {
+    render: () => (
+        <Composer initial="file this under " memories={MEMORIES} tags={TAGS} />
+    ),
+    play: async ({ canvasElement }) => {
+        const items = await typeAndOpen(canvasElement, '#d')
+        await expect(items.some(t => t.includes('daily'))).toBe(true)
+        await expect(items.some(t => t.includes('design'))).toBe(true)
+    },
+}
+
+/** A sent message renders `~slug` as a violet memory link and `#tag` in the accent colour, the same
+ *  as a note does; `~5 min` and `~~strike~~` stay ordinary text. */
+export const SentReferences: Story = {
+    render: () => (
+        <div style={{ width: '640px', 'max-width': '100%' }}>
+            <ChatTextBubble
+                role="user"
+                text="Per ~cron-run-preference, run it nightly #daily. Takes ~5 min, ~~not hourly~~."
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const refs = canvasElement.querySelectorAll('a.bismuth-memory-ref')
+        await expect(refs.length).toBe(1)
+        await expect(refs[0].getAttribute('data-href')).toBe(
+            '.daemon/memory/cron-run-preference.md',
+        )
+        await expect(canvasElement.textContent).toMatch(/~5 min/)
+        await expect(canvasElement.querySelector('del')).not.toBeNull()
     },
 }
