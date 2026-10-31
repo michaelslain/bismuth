@@ -43,10 +43,10 @@ export async function typeExportTables(
     return { html: out, css }
 }
 
-/** `ink` (or the app's grid ink, --border-soft) as a colour a canvas can fill with. */
+/** `ink` (or the app's table grid ink, --table-edge) as a colour a canvas can fill with. */
 function inkColor(ink?: string): string {
     const probe = document.createElement('span')
-    probe.style.color = ink ?? 'var(--border-soft)'
+    probe.style.color = ink ?? 'var(--table-edge)'
     document.body.appendChild(probe)
     const color = getComputedStyle(probe).color
     probe.remove()

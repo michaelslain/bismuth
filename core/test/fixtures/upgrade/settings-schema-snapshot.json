@@ -2003,6 +2003,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.table-edge": {
+    "type": {
+      "kind": "token",
+      "token": "table-edge"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.teal": {
     "type": {
       "kind": "token",

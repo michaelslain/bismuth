@@ -14,7 +14,7 @@ type Story = StoryObj<typeof meta>
 
 const Frame = (props: { children: unknown }) => (
     <div style={{ padding: '12px' }}>
-        <table style={{ width: '100%', 'border-collapse': 'collapse' }}>
+        <table style={{ width: '100%', 'border-collapse': 'collapse', '--ascii-edge': 'var(--table-edge)' }}>
             {props.children as never}
         </table>
     </div>

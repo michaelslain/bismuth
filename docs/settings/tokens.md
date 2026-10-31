@@ -121,6 +121,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `color-scheme` | scheme | `dark` | light or dark: the browser color-scheme and the light/dark branch of derived surfaces. |
 | `skeleton-ink` | color | `color-mix(in srgb, var(--faint) 22%, transparent)` | Loading placeholder ink: the bars and blocks of a skeleton. |
 | `skeleton-ink-faint` | color | `color-mix(in srgb, var(--faint) 16%, transparent)` | The quieter second step of placeholder ink, for a skeleton's secondary blocks. |
+| `table-edge` | color | `color-mix(in srgb, var(--faint) 70%, var(--border))` | Table grid ink: the typed edges of every table, at least 3:1 against the pane in every built-in theme. |
 
 ### text
 

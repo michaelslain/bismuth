@@ -144,12 +144,15 @@ const BASE_DEPS: Omit<ExportDeps, 'htmlToPdf'> = {
     // the app's node_modules faces.
     docFontCss: async proseStack =>
         (await import('./export/docFontCss')).docFontInlineCss(proseStack),
-    // A "light" export is print paper under a dark app, so its grid takes the paper's own border
-    // ink; a "dark" one mirrors the app chrome and keeps the app's grid ink.
+    // A "light" export is print paper under a dark app, so its grid mixes the paper's own inks the
+    // way --table-edge mixes the app's (muted over border, readable at 3:1 on the sheet); a "dark"
+    // one mirrors the app chrome and keeps the app's --table-edge.
     typeTables: async (html, palette) =>
         (await import('./ui/table/exportTables')).typeExportTables(
             html,
-            palette.scheme === 'light' ? palette.border : undefined,
+            palette.scheme === 'light'
+                ? `color-mix(in srgb, ${palette.muted} 70%, ${palette.border})`
+                : undefined,
         ),
 }
 

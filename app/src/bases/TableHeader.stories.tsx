@@ -19,7 +19,7 @@ const COLS = ['title', 'status', 'due', 'tags']
 /** Plain headers: lowercase micro heads in the muted ink, no drag or resize affordance. */
 export const Static: Story = {
     render: () => (
-        <table style={{ width: '100%', 'border-collapse': 'collapse' }}>
+        <table style={{ width: '100%', 'border-collapse': 'collapse', '--ascii-edge': 'var(--table-edge)' }}>
             <TableHeader cols={COLS} config={sampleBaseConfig()} />
         </table>
     ),
@@ -49,7 +49,7 @@ export const Static: Story = {
 export const WithBodyRow: Story = {
     render: () => (
         <div style={{ padding: '12px' }}>
-            <table style={{ width: '100%', 'border-collapse': 'collapse' }}>
+            <table style={{ width: '100%', 'border-collapse': 'collapse', '--ascii-edge': 'var(--table-edge)' }}>
                 <TableHeader cols={COLS} config={sampleBaseConfig()} />
                 <tbody>
                     <tr>
@@ -97,7 +97,7 @@ export const Interactive: Story = {
         const [pressed, setPressed] = createSignal(-1)
         return (
             <div>
-                <table style={{ width: '100%', 'border-collapse': 'collapse' }}>
+                <table style={{ width: '100%', 'border-collapse': 'collapse', '--ascii-edge': 'var(--table-edge)' }}>
                     <TableHeader
                         cols={COLS}
                         config={sampleBaseConfig()}

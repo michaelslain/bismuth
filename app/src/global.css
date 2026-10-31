@@ -424,6 +424,11 @@
   /* Loading-skeleton ink: two steps, a primary and a quieter one. */
   --skeleton-ink: color-mix(in srgb, var(--faint) 22%, transparent);
   --skeleton-ink-faint: color-mix(in srgb, var(--faint) 16%, transparent);
+  /* Table grid ink: the typed `+ - | =` edges of every table (Bases table view, note and chat
+     tables, query blocks, exports). Mostly --faint with a little --border, so the dashes clear the
+     3:1 non-text contrast floor on --bg, --editor, --surface-1, --surface-2 and --code-bg in every
+     built-in theme; --border-soft, the hairline everywhere else, measures about 1.3:1. */
+  --table-edge: color-mix(in srgb, var(--faint) 70%, var(--border));
 
   /* ── Icon size — ONE size for every icon in the app ("we should just have one size i feel no?";
      picked as 12px 2026-09-24). The live value is `appearance.iconSize`, projected over this by
@@ -880,6 +885,8 @@ body { background: var(--bg); color: var(--fg); }
 .bismuth-table {
   border-collapse: separate;
   border-spacing: 0;
+  /* AsciiCellEdges' ink hook: a table's grid takes --table-edge, readable at 3:1 */
+  --ascii-edge: var(--table-edge);
 }
 .bismuth-table th,
 .bismuth-table td {

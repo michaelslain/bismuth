@@ -19,7 +19,9 @@
 }
 /* The empty line starts where a cell's text does: one tile in from the left `|`. */
 .frame > .emptyRow { padding-inline: var(--ascii-tile-w, 1ch); }
-.table { flex: none; border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
+/* `--ascii-edge` is AsciiCellEdges' ink hook: every cell, header and group/summary row inside takes
+   --table-edge, the grid ink that clears 3:1 against the pane. */
+.table { flex: none; border-collapse: collapse; width: 100%; font-size: var(--fs-ui); --ascii-edge: var(--table-edge); }
 /* The cell is the typed grid's HOST (position: relative, no clipping — see AsciiCellEdges), so it
    carries no padding and no overflow of its own: the gutter and the ellipsis live on `.clip`,
    which spans the cell's whole box, so an open editor still overflows into the gutter as before. */

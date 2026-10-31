@@ -1539,13 +1539,9 @@ const calloutThemeSpec: Record<string, Record<string, string>> = {
     '.cm-callout-wrap .callout-content > :first-child': { 'margin-top': '0' },
     '.cm-callout-wrap .callout-content > :last-child': { 'margin-bottom': '0' },
     // A body table's frame (typeCalloutTables): the padding is the typed edges' half-tile overhang,
-    // as chat's ChatTable frame leaves it, so no `+ - | =` is clipped by the scroller.
-    // The edges take --faint (AsciiCellEdges' --ascii-edge hooks): --border-soft is tuned against the
-    // note pane and measures about 1.2:1 on the callout fill, too faint to read as a grid. The
-    // header's `=` rule sits a step brighter still.
+    // as chat's ChatTable frame leaves it, so no `+ - | =` is clipped by the scroller. The edges
+    // take --table-edge from `.bismuth-table` (global.css), which clears 3:1 on the callout fill too.
     '.cm-callout-wrap .cm-callout-table': {
-        '--ascii-edge': 'var(--faint)',
-        '--ascii-edge-firm': 'color-mix(in srgb, var(--faint) 65%, var(--fg))',
         'max-width': '100%',
         'overflow-x': 'auto',
         'overflow-y': 'hidden',
