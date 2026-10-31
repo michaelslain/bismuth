@@ -174,7 +174,6 @@ import {
     focusNeighbor,
     setContent,
     setRatio,
-    findLeafByContent,
     leaves,
     leafCount,
     legacyContentId,
@@ -1148,45 +1147,10 @@ export default function App() {
                 return
         }
     }
-    // Open a content id for a TOOL surface (settings/terminal/export/graph/daemon/new-chat —
-    // never a vault DOCUMENT (`.settings` is a file, but it is the settings surface, not
-    // something the user "opened")). Deliberately fills the focused pane in a split rather
-    // than spawning a tab mid-split; a single-pane tab already showing it is just focused.
-    // Opening a FILE goes through `openFile` instead, which never replaces a pane (#56) — this
-    // function is not that path, and nothing here bypasses it any more.
-    const openTool = (content: string) => {
-        // Applies the same companion redirect openFile does, in case a tool content id ever
-        // resolves to a binary's companion note.
-        content = resolveCompanionTarget(content)
-        const at = activeTab()
-        if (at && leaves(at.root).length > 1) {
-            const existing = findLeafByContent(at.root, content)
-            if (existing) {
-                updateActiveTab(t => ({ ...t, focusId: existing.id }))
-                return
-            }
-            const focused = leaves(at.root).find(l => l.id === at.focusId)
-            if (focused && !histories.has(at.focusId))
-                recordNav(at.focusId, focused.content)
-            updateActiveTab(t => ({
-                ...t,
-                root: setContent(t.root, t.focusId, content),
-            }))
-            recordNav(at.focusId, content)
-            return
-        }
-        const sameTab = tabs().find(
-            t => t.root.kind === 'leaf' && t.root.content === content,
-        )
-        if (sameTab) {
-            setActiveTabId(sameTab.id)
-            return
-        }
-        const tab = makeTab(content)
-        setTabs(ts => [...ts, tab])
-        setActiveTabId(tab.id)
-        recordNav(tab.root.id, content)
-    }
+    // Open a content id for a TOOL surface (settings/terminal/export/graph/daemon/new-chat).
+    // It opens exactly like a file: already shown somewhere → focused, otherwise a new tab, so
+    // a tool never replaces a pane of a split either.
+    const openTool = openFile
     // New Tab (Cmd+T): ALWAYS a fresh home tab (settings.homePage, else the graph) — never focuses an existing one.
     const newTab = () => {
         const content = homeContent(settings.homePage)

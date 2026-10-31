@@ -778,3 +778,32 @@ test("tabBarIcon: a named note uses the file tree's frontmatter icon when presen
 test('tabBarIcon: a named note with no frontmatter icon falls back to a generic document glyph', () => {
     expect(tabBarIcon(makeTab('Reading.md'), new Map())).toBe('FileText')
 })
+
+// --- tool surfaces (new chat, terminal, settings, graph…) open through decideOpen too ---
+import { EMPTY_PANE, SETTINGS_FILE } from './tabIds'
+
+test('decideOpen: every tool surface opens a new tab from a split, leaving both panes alone', () => {
+    const root = makeLeaf('a.md')
+    const { root: split } = splitLeaf(root, root.id, 'row', 'b.md')
+    const active: Tab = { id: 't1', root: split, focusId: root.id }
+    for (const c of [GRAPH_TAB, SETTINGS_FILE, TERMINAL_PREFIX + 'y', CHAT_PREFIX + 'z'])
+        expect(decideOpen([active], active, c)).toEqual({ kind: 'new' })
+})
+
+test('decideOpen: a new chat from an empty split pane still opens a new tab', () => {
+    const root = makeLeaf('a.md')
+    const { root: split, newLeafId } = splitLeaf(root, root.id, 'row', EMPTY_PANE)
+    const active: Tab = { id: 't1', root: split, focusId: newLeafId }
+    expect(decideOpen([active], active, CHAT_PREFIX + 'x')).toEqual({ kind: 'new' })
+})
+
+test('decideOpen: a tool surface already in a pane of the split is focused, not duplicated', () => {
+    const root = makeLeaf('a.md')
+    const { root: split, newLeafId } = splitLeaf(root, root.id, 'row', GRAPH_TAB)
+    const active: Tab = { id: 't1', root: split, focusId: root.id }
+    expect(decideOpen([active], active, GRAPH_TAB)).toEqual({
+        kind: 'focus',
+        tabId: 't1',
+        leafId: newLeafId,
+    })
+})

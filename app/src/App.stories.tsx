@@ -14,7 +14,9 @@
 // since, unlike most stories, App persists state outside Solid/the fake transport entirely.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
+import { onCleanup } from 'solid-js'
 import App from './App'
+import { installFakeChatSocket } from './chat/_fakeChatSocket'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { SAMPLE_ROWS } from './ui/_baseFixtures'
@@ -155,11 +157,11 @@ export const WithUpdateBanner: Story = {
 
 // Regression guard for #56 ("opening a file never replaces a pane"). The two removed
 // `openFile` bypasses (a Bases card click, app-control's `openTab`) used to pass
-// `newTab: true`, which routed to `openInNewTab` (now `openTool`) — and THAT function, on
-// an already-split active tab, fills the FOCUSED pane in place instead of opening a fresh
-// tab. `onOpen` (App.tsx's `bismuth-open` handler) now always calls `openFile`, which never
-// does that. NOTE: this asserts on both the `data-pane-content` attribute (the pane's
-// content id) and each pane's rendered text, so the guard catches a rewrite either way.
+// `newTab: true`, which routed to a function that, on an already-split active tab, filled
+// the FOCUSED pane in place instead of opening a fresh tab. `onOpen` (App.tsx's
+// `bismuth-open` handler) now always calls `openFile`, which never does that. NOTE: this
+// asserts on both the `data-pane-content` attribute (the pane's content id) and each pane's
+// rendered text, so the guard catches a rewrite either way.
 export const OpenWithSplitKeepsPanes: Story = {
     render: () => {
         seedVault()
@@ -253,6 +255,79 @@ export const OpenWithSplitKeepsPanes: Story = {
                 el => el.textContent?.includes('Ship storybook coverage'),
             ),
         ).toBe(false)
+    },
+}
+
+// The same guard for TOOL surfaces: New chat (Mod+Shift+C) on a split tab opens its own tab
+// and leaves both panes as they were. Every tool surface (terminal, settings, graph, daemon,
+// export, feedback) opens through the same `openTool` → `openFile` path.
+export const NewChatWithSplitKeepsPanes: Story = {
+    render: () => {
+        seedVault()
+        // The new chat connects the moment it opens; the fake socket stands in for core's /chat.
+        onCleanup(installFakeChatSocket([]))
+        return (
+            <Frame>
+                <App />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-app-shell]')).not.toBeNull()
+        })
+        const noteA = 'Draft the roadmap.md'
+        window.dispatchEvent(new CustomEvent('bismuth-open', { detail: noteA }))
+        await waitFor(() => {
+            expect(
+                Array.from(
+                    canvasElement.querySelectorAll('[data-pane-leaf]'),
+                ).map(el => el.getAttribute('data-pane-content')),
+            ).toEqual([noteA])
+        })
+        const key = (k: string, shift = false) =>
+            window.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: k,
+                    code: `Key${k.toUpperCase()}`,
+                    metaKey: true,
+                    shiftKey: shift,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        key('d')
+        await waitFor(() => {
+            expect(canvas.getByText('2 panes')).toBeInTheDocument()
+        })
+        const chipsBefore =
+            canvasElement.querySelectorAll('[data-tab-chip]').length
+        const contents = () =>
+            Array.from(canvasElement.querySelectorAll('[data-pane-leaf]')).map(
+                el => el.getAttribute('data-pane-content'),
+            )
+        const paneContentsBefore = contents()
+        expect(paneContentsBefore.slice().sort()).toEqual(['::empty', noteA])
+
+        key('C', true)
+        await waitFor(() => {
+            expect(
+                canvasElement.querySelectorAll('[data-tab-chip]').length,
+            ).toBe(chipsBefore + 1)
+        })
+        // The new tab is a single pane holding the chat.
+        await waitFor(() => {
+            const now = contents()
+            expect(now.length).toBe(1)
+            expect(now[0]?.startsWith('::chat')).toBe(true)
+        })
+
+        // Back on the split tab, both panes are exactly as they were.
+        fireEvent.click(canvas.getByText('2 panes'))
+        await waitFor(() => {
+            expect(contents()).toEqual(paneContentsBefore)
+        })
     },
 }
 

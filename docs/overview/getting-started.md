@@ -85,6 +85,8 @@ Every open item lives in a tab, and each tab holds one or more panes. Tabs sit i
 3. Open different notes in the two panes. Move between them with `Mod+Alt+Left` and `Mod+Alt+Right`.
 4. Press `Mod+W` to close the focused pane. Closing the last pane closes the tab, and `Mod+Shift+T` reopens it.
 
+Opening anything from a split tab never replaces one of its panes. A note, a new chat, a terminal, the graph, the daemon page or the settings file opens in a tab of its own, and one already open in a pane or tab is focused there instead.
+
 Drag a sidebar row onto a note to insert a link to it, or onto a pane's edge to split ([draggables](draggables.md) lists every drop). `Alt+S` toggles the sidebar and `Alt+Shift+S` toggles the tab rail. Every shortcut is rebindable; the full list is in [keybindings](../settings/keybindings.md).
 
 ## Step 8: Open the settings file
