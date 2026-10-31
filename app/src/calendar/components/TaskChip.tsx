@@ -8,7 +8,8 @@
 // `ui/chipKeys.ts`'s pure `chipKeyAction` (Enter/Space/Shift+F10/ContextMenu/Alt+arrows) — see
 // that module for the key map. A reschedule or toggle rewrites the row, which re-renders this
 // chip as a NEW element (often in another cell), so `state.ts`'s `focusTaskKey`/`requestTaskFocus`
-// carry focus across that remount instead of it falling back to <body>.
+// carry focus across that remount instead of it falling back to <body>. Only a reschedule scrolls
+// to the remounted chip; a toggle or status change keeps the view where it is.
 import type { Component } from 'solid-js'
 import { onMount, Show } from 'solid-js'
 import type { PlacedTask } from '../taskPlacement'
@@ -17,7 +18,7 @@ import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
 import { openTaskStatusMenu } from '../../taskStatusMenu'
 import { taskKey } from '../taskChipKeys'
 import { chipKeyAction } from '../../ui/chipKeys'
-import { focusTaskKey, requestTaskFocus } from '../state'
+import { focusTaskKey, focusTaskScrolls, requestTaskFocus } from '../state'
 import Text from '../../ui/Text'
 import TaskCheck from '../../bases/TaskCheck'
 import type { TaskCheckStatus } from '../../bases/TaskCheck'
@@ -93,7 +94,7 @@ const TaskChip: Component<TaskChipProps> = props => {
     const key = () => taskKey(props.task.row)
     onMount(() => {
         if (focusTaskKey.value !== key()) return
-        if (focusWasLost()) root?.focus()
+        if (focusWasLost()) root?.focus({ preventScroll: !focusTaskScrolls.value })
         focusTaskKey.value = null
     })
     const label = () =>
@@ -138,7 +139,7 @@ const TaskChip: Component<TaskChipProps> = props => {
                         props.onSetStatus(char)
                     })
                 }
-                requestTaskFocus(key())
+                requestTaskFocus(key(), { scroll: true })
                 props.onReschedule?.(action.days)
             }}
             onDragStart={e => {

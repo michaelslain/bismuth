@@ -134,8 +134,15 @@ export const recurrenceAction = createBox<{
  *  after 3s if no chip ever mounts (the write failed and nothing re-rendered). */
 export const focusTaskKey = createBox<string | null>(null)
 
-export function requestTaskFocus(key: string): void {
+/** Whether the chip that consumes `focusTaskKey` scrolls itself into view. Only a reschedule does:
+ *  the person moved the chip and the view follows it. Marking a task never scrolls: an overdue
+ *  task shown on today goes back to its own day once it is done, and following it there jumps
+ *  the grid weeks up from where the person was working. */
+export const focusTaskScrolls = createBox(false)
+
+export function requestTaskFocus(key: string, opts: { scroll?: boolean } = {}): void {
     focusTaskKey.value = key
+    focusTaskScrolls.value = opts.scroll ?? false
     setTimeout(() => {
         if (focusTaskKey.value === key) focusTaskKey.value = null
     }, 3000)

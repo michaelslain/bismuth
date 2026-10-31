@@ -915,6 +915,117 @@ export const FocusFollowsRemount: Story = {
     },
 }
 
+/** A marked task can remount far from where it was clicked: an overdue task is drawn on today, and
+ *  once it is done it goes back to its own day, weeks up the grid. `FocusMovesWithoutScroll` and
+ *  `RescheduleFocusScrolls` render a scroller with a top slot and a bottom slot, scroll to the
+ *  bottom, and remount the chip in the top slot. */
+function remountScroller(id: string) {
+    const initial = task('pay rent', '2026-10-05', 26, {
+        line: 7,
+        field: 'scheduled',
+    })
+    const [at, setAt] = createSignal<{ slot: 'top' | 'bottom'; t: PlacedTask }>(
+        {
+            slot: 'bottom',
+            t: initial,
+        },
+    )
+    ;(window as unknown as Record<string, unknown>)[id] = {
+        initial,
+        moveUp: () => setAt({ slot: 'top', t: { ...initial, late: 0 } }),
+    }
+    // Each slot keeps its height when empty, so the only thing that can move the scroller is focus.
+    const chip = (slot: 'top' | 'bottom') => (
+        <div style={{ height: '48px' }}>
+            <For each={at().slot === slot ? [at().t] : []}>
+                {t => (
+                    <TaskChip
+                        task={t}
+                        onToggle={() => {}}
+                        onOpen={() => {}}
+                        onSetStatus={() => {}}
+                    />
+                )}
+            </For>
+        </div>
+    )
+    return (
+        <div
+            data-testid="scroller"
+            style={{
+                width: '220px',
+                height: '120px',
+                overflow: 'auto',
+                border: '1px solid var(--border)',
+            }}
+        >
+            {chip('top')}
+            <div style={{ height: '600px' }} />
+            {chip('bottom')}
+        </div>
+    )
+}
+
+async function remountFromBottom(
+    canvasElement: HTMLElement,
+    id: string,
+    scroll: boolean,
+) {
+    const { initial, moveUp } = (
+        window as unknown as Record<
+            string,
+            {
+                initial: PlacedTask
+                moveUp: () => void
+            }
+        >
+    )[id]
+    const scroller = canvasElement.querySelector<HTMLElement>(
+        '[data-testid="scroller"]',
+    )!
+    scroller.scrollTop = scroller.scrollHeight
+    const before = scroller.scrollTop
+    expect(before).toBeGreaterThan(300)
+    requestTaskFocus(taskKey(initial.row), { scroll })
+    moveUp()
+    await new Promise(r => setTimeout(r, 0))
+    const newChip = canvasElement.querySelector<HTMLElement>('[role="button"]')!
+    expect(
+        document.activeElement,
+        'focus did not follow the remounted chip',
+    ).toBe(newChip)
+    return { scroller, before }
+}
+
+/** Marking a task (toggle or status) carries focus to the remounted chip WITHOUT scrolling to it:
+ *  the grid stays where the person was working. */
+export const FocusMovesWithoutScroll: Story = {
+    render: () => remountScroller('__markRemount'),
+    play: async ({ canvasElement }) => {
+        const { scroller, before } = await remountFromBottom(
+            canvasElement,
+            '__markRemount',
+            false,
+        )
+        expect(scroller.scrollTop, 'marking a task scrolled the grid').toBe(
+            before,
+        )
+    },
+}
+
+/** A keyboard reschedule (Alt+arrows) moves the chip on purpose, so the view follows it. */
+export const RescheduleFocusScrolls: Story = {
+    render: () => remountScroller('__rescheduleRemount'),
+    play: async ({ canvasElement }) => {
+        const { scroller, before } = await remountFromBottom(
+            canvasElement,
+            '__rescheduleRemount',
+            true,
+        )
+        expect(scroller.scrollTop).toBeLessThan(before)
+    },
+}
+
 /** A `[[Note]]` link inside a chip belongs to the link: a click opens the note (a
  *  `bismuth-open` event) and must NOT also open the task editor; Enter on the focused link
  *  likewise never reaches the chip's key handling. */

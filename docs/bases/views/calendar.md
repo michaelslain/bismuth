@@ -137,7 +137,7 @@ A name declared in `categories` uses its declared colour. Every other name gets 
 | Press `Alt+←` or `Alt+→` | Reschedules by one day |
 | Press `Alt+↑` or `Alt+↓` | Reschedules by one week |
 
-A drag or an `Alt` shortcut rewrites the field that placed the task (`scheduled` or `due`, or `dateField`). For a checkbox line it always writes bracket form; see [task syntax](../../tasks/syntax.md#rescheduling-a-date-field). Keyboard focus follows the task to its new cell after a write.
+A drag or an `Alt` shortcut rewrites the field that placed the task (`scheduled` or `due`, or `dateField`). For a checkbox line it always writes bracket form; see [task syntax](../../tasks/syntax.md#rescheduling-a-date-field). Keyboard focus follows the task to its new cell after a write. A reschedule scrolls the grid to the task's new cell; marking a task done or setting its status keeps the grid where it is, even when the task moves, such as an overdue task going back from today to its own day.
 
 Only a task with a place to write is editable from the grid: a checkbox line in a note, or a row in the base's own rows. Any other chip draws a dimmed checkbox and ignores toggling, dragging and the shortcuts, though `Enter` still opens it.
 
