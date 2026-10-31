@@ -32,7 +32,9 @@
     margin: 0 auto;
     padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
     background: none;
-    border: 1px solid var(--border-soft);
+    /* The `--chat-*` borders carry a tinted chat's colour (ChatView.module.css); outside a chat host
+       (the daemon page) the plain tokens apply. */
+    border: 1px solid var(--chat-border-soft, var(--border-soft));
     border-radius: var(--r-0);
     transition: border-color var(--dur) var(--ease);
 }
@@ -40,7 +42,7 @@
     margin-bottom: var(--chat-composer-line-pad);
 }
 .box:hover:not(:focus-within) {
-    border-color: var(--border);
+    border-color: var(--chat-border, var(--border));
 }
 .box:focus-within {
     border-color: var(--accent);

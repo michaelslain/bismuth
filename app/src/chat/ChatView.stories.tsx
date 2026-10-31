@@ -24,11 +24,18 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor, within } from 'storybook/test'
 import { onCleanup } from 'solid-js'
 import { ChatView } from './ChatView'
-import { retainFakeChat, type FakeChatFrames } from './_fakeChatSocket'
+import {
+    retainFakeChat,
+    installFakeChatSocket,
+    type FakeChatFrames,
+} from './_fakeChatSocket'
+import { forgetChatSession } from './chatSessionStore'
+import { retainChatSessions } from './chatSessions'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { chatHistoryFixture } from './_chatHistoryFixtures'
 import { providerStorageKey } from './chatProvider'
+import { CHAT_COLOR_SWATCHES, setChatColor } from './chatColors'
 import {
     expectProseFace,
     expectUiFace,
@@ -761,5 +768,164 @@ export const ModelPickerSwitchToClaude: Story = {
             if (!page.querySelector('[role="dialog"]'))
                 throw new Error('picking a model closed the dialog')
         })
+    },
+}
+
+/** A tinted chat's transcript: a user turn, prose with a table-free list, a tool chip, an inline
+ *  code span, and both interactive cards, so every surface the tint recipe touches (pane, bubble,
+ *  tool row, card, code, header, composer) is on screen at once. */
+const TINT_FRAMES: ChatFrame[] = [
+    ...SESSION_OPEN,
+    { type: 'user-message', text: "What's still open in my daily note?" },
+    { type: 'assistant-text', text: "Let me read today's note.\n\n" },
+    {
+        type: 'tool-use',
+        id: 't1',
+        name: 'Read',
+        kind: 'read',
+        input: { file_path: 'journal/2026-08-04.md' },
+    },
+    {
+        type: 'tool-result',
+        id: 't1',
+        content: '# 2026-08-04\n\n- [ ] ship the chat refactor\n',
+        isError: false,
+    },
+    {
+        type: 'assistant-text',
+        text: 'One thing is still open in [[2026-08-04]]: **ship the chat refactor**. It lives in `journal/`.',
+    },
+    {
+        type: 'permission',
+        id: 'p1',
+        toolName: 'Bash',
+        input: { command: 'rm -rf app/dist' },
+    },
+]
+
+/** Chats with a pane tint set, the way the tab's Color menu or `/color` sets it. Every chat is
+ *  retained in ONE `retainChatSessions` call — the registry holds exactly the ids it was last
+ *  handed, so retaining them one by one would release all but the last. Colours are set before the
+ *  panes mount and cleared on unmount, so they never leak into another story's chat. */
+function TintedChats(props: {
+    cells: { chatId: string; color: string | null; label: string }[]
+    height: string
+    columns: number
+}) {
+    const restore = installFakeChatSocket(TINT_FRAMES)
+    for (const c of props.cells) {
+        forgetChatSession(c.chatId)
+        setChatColor(c.chatId, c.color)
+    }
+    retainChatSessions(props.cells.map(c => c.chatId))
+    onCleanup(() => {
+        retainChatSessions([])
+        for (const c of props.cells) {
+            forgetChatSession(c.chatId)
+            setChatColor(c.chatId, null)
+        }
+        restore()
+    })
+    return (
+        <div
+            style={{
+                display: 'grid',
+                'grid-template-columns': `repeat(${props.columns}, minmax(0, 1fr))`,
+                gap: '12px',
+                padding: props.columns > 1 ? '12px' : '0',
+            }}
+        >
+            {props.cells.map(c => (
+                <div style={{ height: props.height }} data-tint-cell={c.label}>
+                    <ChatView
+                        chatId={c.chatId}
+                        noteNames={() => []}
+                        memoryNames={() => []}
+                        tagNames={() => []}
+                    />
+                </div>
+            ))}
+        </div>
+    )
+}
+
+/** Every swatch beside the untinted baseline, so the tints are judged against each other and
+ *  against the theme they sit in. */
+function TintGallery() {
+    const cells = [
+        { name: 'None', value: null as string | null },
+        ...CHAT_COLOR_SWATCHES,
+    ].map(c => ({
+        chatId: `story-chat-tint-${c.name.toLowerCase()}`,
+        color: c.value,
+        label: c.name,
+    }))
+    // Three rows that fit the viewport exactly: the preview body does not scroll, so a fixed cell
+    // height would clip the last row out of every screenshot. Each pane auto-scrolls to its latest
+    // turn, so the card, the last bubble, the header and the composer stay on screen.
+    return (
+        <TintedChats
+            cells={cells}
+            height="calc((100vh - 48px) / 3)"
+            columns={3}
+        />
+    )
+}
+
+const tintGalleryPlay: Story['play'] = async ({ canvasElement }) => {
+    await waitFor(() => {
+        const n = [...canvasElement.querySelectorAll('[data-tint-cell]')].filter(
+            el => el.textContent?.includes('rm -rf app/dist'),
+        ).length
+        if (n !== CHAT_COLOR_SWATCHES.length + 1)
+            throw new Error(`${n} tinted chats rendered`)
+    })
+}
+
+/** The tint gallery in the default dark theme (ink). */
+export const TintGallery_Dark: Story = {
+    render: () => <TintGallery />,
+    play: tintGalleryPlay,
+}
+
+/** The tint gallery in the light theme (paper). */
+export const TintGallery_Light: Story = {
+    globals: { theme: 'paper' },
+    render: () => <TintGallery />,
+    play: tintGalleryPlay,
+}
+
+/** One full-size tinted chat (blue) — the pane a person sees after picking a colour. */
+export const Tinted: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <TintedChats
+                cells={[
+                    {
+                        chatId: 'story-chat-tinted',
+                        color: '#3b82f6',
+                        label: 'Blue',
+                    },
+                ]}
+                height={STORY_H}
+                columns={1}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await findText(canvasElement, 'rm -rf app/dist')
+        // The tint is set on the host as --chat-tint and styled by ChatView.module.css alone: no
+        // inline background, and the pane still differs from the theme's own --bg.
+        const host = canvasElement.querySelector<HTMLElement>(
+            '[data-tint-cell] > div',
+        )!
+        await expect(host.dataset.chatTint).toBe('#3b82f6')
+        await expect(host.style.background).toBe('')
+        const probe = document.createElement('div')
+        probe.style.backgroundColor = 'var(--bg)'
+        host.appendChild(probe)
+        const themeBg = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        await expect(getComputedStyle(host).backgroundColor).not.toBe(themeBg)
     },
 }

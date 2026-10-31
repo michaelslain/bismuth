@@ -25,11 +25,19 @@
   --chat-hover-bg: var(--hover-bg);
   --chat-fg-mix: color-mix(in srgb, var(--fg) 4%, transparent);
 }
+/* A tinted chat is a quiet wash, not a coloured slab: each surface mixes a small share of the tint
+   into ITS OWN theme token, so the pane, cards, code wells and borders keep the theme's elevation
+   (a card still lifts off the pane in dark and in light) and text keeps its contrast. The shares
+   are one scale: the pane and the surfaces carry the same share, so a card reads as the theme's
+   card in that colour rather than a grey box on a saturated field; borders carry more, so the hue
+   still reads at the edges. ChatView.tsx only sets --chat-tint (the user's colour); the recipe
+   lives here. */
 .chatTab[data-chat-tint] {
-  --chat-surface-1: color-mix(in oklch, var(--chat-tint) 14%, var(--bg));
-  --chat-surface-2: color-mix(in oklch, var(--chat-tint) 26%, var(--surface-1));
-  --chat-border-soft: color-mix(in oklch, var(--chat-tint) 30%, var(--border-soft));
-  --chat-border: color-mix(in oklch, var(--chat-tint) 40%, var(--border));
-  --chat-hover-bg: color-mix(in oklch, var(--chat-tint) 18%, var(--hover-bg));
-  --chat-fg-mix: color-mix(in oklch, var(--chat-tint) 10%, transparent);
+  background: color-mix(in oklch, var(--chat-tint) 9%, var(--bg));
+  --chat-surface-1: color-mix(in oklch, var(--chat-tint) 9%, var(--surface-1));
+  --chat-surface-2: color-mix(in oklch, var(--chat-tint) 12%, var(--surface-2));
+  --chat-border-soft: color-mix(in oklch, var(--chat-tint) 22%, var(--border-soft));
+  --chat-border: color-mix(in oklch, var(--chat-tint) 32%, var(--border));
+  --chat-hover-bg: color-mix(in oklch, var(--chat-tint) 12%, var(--hover-bg));
+  --chat-fg-mix: color-mix(in oklch, var(--chat-tint) 8%, transparent);
 }

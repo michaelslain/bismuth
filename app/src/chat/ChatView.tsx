@@ -70,16 +70,13 @@ export function ChatView(props: ChatViewProps): JSX.Element {
         <div
             class={styles.chatTab}
             ref={host}
-            // Per-chat pane tint: wash the chosen colour into the host background so the whole
-            // surface reads as that colour, and expose it as --chat-tint so the transcript's
-            // surfaces blend against it (ChatView.module.css) instead of floating as opaque boxes.
+            // Per-chat pane tint: expose the chosen colour as --chat-tint and mark the host; the
+            // whole recipe (pane wash, surfaces, borders) is ChatView.module.css's
+            // `.chatTab[data-chat-tint]`, so the colour is set here and styled in one place.
             data-chat-tint={chatColor(props.chatId)}
             style={
                 chatColor(props.chatId)
-                    ? {
-                          background: `color-mix(in srgb, ${chatColor(props.chatId)} 50%, var(--bg))`,
-                          '--chat-tint': chatColor(props.chatId),
-                      }
+                    ? { '--chat-tint': chatColor(props.chatId) }
                     : undefined
             }
             onDragOver={drop.onDragOver}
