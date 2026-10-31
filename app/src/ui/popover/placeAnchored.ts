@@ -24,3 +24,21 @@ export function placeBelowOrAbove(opts: {
     if (above >= EDGE_GAP) return above
     return Math.max(EDGE_GAP, viewportH - h - EDGE_GAP)
 }
+
+/** Viewport-relative left for a surface of width `w` whose natural left is `x`.
+ *  The horizontal twin of placeBelowOrAbove: right of `x` when it fits; flipped so its RIGHT
+ *  edge lands on `flipFrom` (default `x`, the cursor) when it does not; clamped inside the
+ *  viewport as a last resort. A submenu passes its parent's left edge as `flipFrom`. */
+export function placeRightOrLeft(opts: {
+    x: number
+    w: number
+    viewportW: number
+    flipFrom?: number
+}): number {
+    const { x, w, viewportW, flipFrom = x } = opts
+    if (w <= 0) return x // not measured yet — first frame paints at the natural position
+    if (x + w <= viewportW - EDGE_GAP) return x
+    const left = flipFrom - w
+    if (left >= EDGE_GAP) return left
+    return Math.max(EDGE_GAP, viewportW - w - EDGE_GAP)
+}

@@ -11,7 +11,6 @@
 // daemon is down; if its stale `running` flag survived a daemon restart, `cronTone` falls back to
 // whatever it last actually did (failed/ok/idle) instead of a bare `idle`.
 import { createMemo, createSignal, For, Show } from 'solid-js'
-import { Portal } from 'solid-js/web'
 import type { DaemonCron } from '../../../core/src/daemonGraph'
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
 import { relTimeISO } from '../relTime'
@@ -228,14 +227,12 @@ function DaemonCrons(props: DaemonCronsProps) {
     const menuEl = () => (
         <Show when={menu()}>
             {m => (
-                <Portal>
-                    <ContextMenu
-                        x={m().x}
-                        y={m().y}
-                        items={m().items}
-                        onClose={() => setMenu(null)}
-                    />
-                </Portal>
+                <ContextMenu
+                    x={m().x}
+                    y={m().y}
+                    items={m().items}
+                    onClose={() => setMenu(null)}
+                />
             )}
         </Show>
     )

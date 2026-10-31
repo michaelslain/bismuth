@@ -8,7 +8,6 @@ import {
     onMount,
     onCleanup,
 } from 'solid-js'
-import { Portal } from 'solid-js/web'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { titleOf } from './kanbanMeta'
@@ -832,27 +831,23 @@ export function MapView(props: {
 
             <Show when={pinMenu()}>
                 {m => (
-                    <Portal>
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            items={pinMenuItems(m().row)}
-                            onClose={() => setPinMenu(null)}
-                        />
-                    </Portal>
+                    <ContextMenu
+                        x={m().x}
+                        y={m().y}
+                        items={pinMenuItems(m().row)}
+                        onClose={() => setPinMenu(null)}
+                    />
                 )}
             </Show>
 
             <Show when={mapMenu()}>
                 {m => (
-                    <Portal>
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            items={mapMenuItems(m().lat, m().lng)}
-                            onClose={() => setMapMenu(null)}
-                        />
-                    </Portal>
+                    <ContextMenu
+                        x={m().x}
+                        y={m().y}
+                        items={mapMenuItems(m().lat, m().lng)}
+                        onClose={() => setMapMenu(null)}
+                    />
                 )}
             </Show>
         </div>

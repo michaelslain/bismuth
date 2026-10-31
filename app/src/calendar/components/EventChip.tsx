@@ -1,5 +1,4 @@
 import { createSignal, For, Show } from 'solid-js'
-import { Portal } from 'solid-js/web'
 import { CalendarEvent, Category } from '../types'
 import { showEventModal, settings, recurrenceAction, useCalendarNav } from '../state'
 import { deleteEventWithUndo, duplicateEvent } from '../eventActions'
@@ -186,35 +185,31 @@ export function EventChip(props: Props) {
             </Show>
             <Show when={menu()}>
                 {m => {
-                    // Portal to document.body so the fixed menu escapes the chip's
-                    // overflow:hidden and :hover filter (which would otherwise clip it).
                     return (
-                        <Portal>
-                            <ContextMenu
-                                x={m().x}
-                                y={m().y}
-                                items={[
-                                    {
-                                        label: 'Edit',
-                                        icon: 'Pencil',
-                                        onSelect: openEdit,
-                                    },
-                                    {
-                                        label: 'Duplicate',
-                                        icon: 'Copy',
-                                        onSelect: handleDuplicate,
-                                    },
-                                    {
-                                        label: 'Delete',
-                                        icon: 'Trash2',
-                                        danger: true,
-                                        separatorBefore: true,
-                                        onSelect: handleDelete,
-                                    },
-                                ]}
-                                onClose={() => setMenu(null)}
-                            />
-                        </Portal>
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            items={[
+                                {
+                                    label: 'Edit',
+                                    icon: 'Pencil',
+                                    onSelect: openEdit,
+                                },
+                                {
+                                    label: 'Duplicate',
+                                    icon: 'Copy',
+                                    onSelect: handleDuplicate,
+                                },
+                                {
+                                    label: 'Delete',
+                                    icon: 'Trash2',
+                                    danger: true,
+                                    separatorBefore: true,
+                                    onSelect: handleDelete,
+                                },
+                            ]}
+                            onClose={() => setMenu(null)}
+                        />
                     )
                 }}
             </Show>

@@ -5,6 +5,10 @@
 // its side). The SURFACE (chrome + rows) is the shared <PopoverList>; keyboard nav is
 // the shared createMenuNav hook (one per level, but a single document listener so the
 // two levels never both react to the same key).
+//
+// It portals itself to <body>: a menu rendered in place under a `filter` or `transform` ancestor (a
+// chip's hover filter) would take that box as its `position: fixed` containing block, and be placed
+// against it and clipped by its overflow instead of the window's.
 import {
     createEffect,
     createSignal,
@@ -12,10 +16,11 @@ import {
     onMount,
     Show,
 } from 'solid-js'
+import { Portal } from 'solid-js/web'
 import PopoverList, { type PopoverRow } from './popover/PopoverList'
 import QuickActionRail, { type QuickAction } from './popover/QuickActionRail'
 import { createMenuNav } from './popover/createMenuNav'
-import { placeBelowOrAbove } from './popover/placeAnchored'
+import { placeBelowOrAbove, placeRightOrLeft } from './popover/placeAnchored'
 import { registerActiveMenu } from '../activeMenu'
 
 export type MenuItem = PopoverRow & {
@@ -27,16 +32,17 @@ export type MenuItem = PopoverRow & {
 
 export type { QuickAction }
 
-// Estimated flyout width, used only to decide whether to flip the submenu to the
-// left when there isn't room on the right. The actual width is the popover min-width.
-const SUB_WIDTH = 190
-
 /** Top edge for a surface of height `h` whose natural top is `y`.
  *  Below the cursor when it fits; ABOVE it when it does not — a menu opened near the bottom
  *  used to keep its top at the cursor and let its last rows fall off screen. Clamped as a last
  *  resort for a menu taller than the viewport (which also gets a scrollbar, via popover.css). */
 const placeY = (y: number, h: number, flipFrom?: number): number =>
     placeBelowOrAbove({ y, h, viewportH: window.innerHeight, flipFrom, gap: 4 })
+
+/** Left edge for a surface of width `w` whose natural left is `x`: right of the cursor when it
+ *  fits, LEFT of it when it does not — the horizontal twin of placeY. */
+const placeX = (x: number, w: number, flipFrom?: number): number =>
+    placeRightOrLeft({ x, w, viewportW: window.innerWidth, flipFrom })
 
 /** Closes on outside-click, Escape, or after a (non-disabled) leaf item is chosen.
  *  Arrow keys move selection; Right opens a submenu, Left closes it; Enter activates. */
@@ -49,14 +55,15 @@ export function ContextMenu(props: {
     onClose: () => void
 }) {
     let rootEl: HTMLDivElement | undefined
-    // The open submenu: which parent row, and where to place its flyout.
+    // The open submenu: which parent row, the parent's edges it hangs off, and its row's top.
     const [sub, setSub] = createSignal<{
         index: number
-        x: number
+        left: number
+        right: number
         y: number
     } | null>(null)
-    // Measured menu width — needed ONLY for the left-edge flip below. Re-measured when the rows
-    // change, since a different menu is a different width.
+    // Measured menu width — for the right-edge flip and the quick-action rail. Re-measured when the
+    // rows change, since a different menu is a different width.
     const [menuW, setMenuW] = createSignal(0)
     createEffect(() => {
         props.items // track: re-measure when this menu's rows change
@@ -74,13 +81,16 @@ export function ContextMenu(props: {
     // mounts only while `sub()` is set, so the effect naturally re-measures each time it opens.
     let subEl: HTMLDivElement | undefined
     const [subH, setSubH] = createSignal(0)
+    const [subW, setSubW] = createSignal(0)
     const subItems = (): MenuItem[] => {
         const s = sub()
         return s ? (props.items[s.index]?.submenu ?? []) : []
     }
     createEffect(() => {
         subItems() // track: re-measure whenever the flyout opens, closes, or its rows change
-        setSubH(subEl?.getBoundingClientRect().height ?? 0)
+        const r = subEl?.getBoundingClientRect()
+        setSubH(r?.height ?? 0)
+        setSubW(r?.width ?? 0)
     })
 
     const openSub = (i: number) => {
@@ -94,13 +104,8 @@ export function ContextMenu(props: {
         const rr = rowEl?.getBoundingClientRect()
         const right = pr ? pr.right : props.x
         const left = pr ? pr.left : props.x
-        // Flip to the left edge when the flyout would overflow the viewport on the right.
-        const x =
-            right + SUB_WIDTH > window.innerWidth
-                ? Math.max(2, left - SUB_WIDTH + 2)
-                : right - 2
         const y = rr ? rr.top : props.y
-        setSub({ index: i, x, y })
+        setSub({ index: i, left, right, y })
         // Start on the first row that can be picked: a disabled lead row (an `Effective:` note) is
         // information, not a choice.
         subNav.setActive(Math.max(0, item.submenu.findIndex(it => !it.disabled)))
@@ -209,14 +214,17 @@ export function ContextMenu(props: {
             it.submenu?.length ? { ...it, hasSubmenu: true } : it,
         )
 
+    // The menu's resolved left edge: the rail hangs off it, so it is shared, not recomputed.
+    const menuLeft = () => placeX(props.x, menuW())
+
     return (
-        <>
+        <Portal>
             {/* Quick-action rail: icon buttons pinned BESIDE the menu (to its left), never inside
           the option list — so they stay visible however long the list gets (#67). */}
             <Show when={props.quickActions?.length}>
                 <QuickActionRail
                     actions={props.quickActions!}
-                    x={props.x}
+                    x={menuLeft()}
                     y={props.y}
                     flipFrom={props.flipFrom}
                     menuWidth={menuW()}
@@ -232,7 +240,11 @@ export function ContextMenu(props: {
                 style={{
                     position: 'fixed',
                     top: `${placeY(props.y, menuH(), props.flipFrom)}px`,
-                    left: `${props.x}px`,
+                    left: `${menuLeft()}px`,
+                    // Its own width wherever it opens: near the right edge a fixed box shrinks to
+                    // the room left, ellipsizing its rows and under-measuring the width the flip
+                    // needs.
+                    width: 'max-content',
                     'z-index': 'var(--z-popover)',
                 }}
             />
@@ -247,12 +259,14 @@ export function ContextMenu(props: {
                         style={{
                             position: 'fixed',
                             top: `${placeY(s().y, subH())}px`,
-                            left: `${s().x}px`,
+                            // Off the parent's right edge, or flipped to end at its left edge.
+                            left: `${placeX(s().right - 2, subW(), s().left + 2)}px`,
+                            width: 'max-content',
                             'z-index': 'var(--z-popover)', // same rung as its parent; mounted later in the fragment, so it paints above it
                         }}
                     />
                 )}
             </Show>
-        </>
+        </Portal>
     )
 }

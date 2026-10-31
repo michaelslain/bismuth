@@ -7,7 +7,6 @@
 // liveness file it can trust), so "live" here means enabled AND the daemon process itself is up
 // (`daemonRunning`) — the same rule this file's own `toneFor` has always applied.
 import { createMemo, createSignal, For, Show } from 'solid-js'
-import { Portal } from 'solid-js/web'
 import type { DaemonProcess } from '../../../core/src/daemonGraph'
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
 import { TextButton } from '../ui/TextButton'
@@ -172,14 +171,12 @@ function DaemonProcesses(props: DaemonProcessesProps) {
     const menuEl = () => (
         <Show when={menu()}>
             {m => (
-                <Portal>
-                    <ContextMenu
-                        x={m().x}
-                        y={m().y}
-                        items={m().items}
-                        onClose={() => setMenu(null)}
-                    />
-                </Portal>
+                <ContextMenu
+                    x={m().x}
+                    y={m().y}
+                    items={m().items}
+                    onClose={() => setMenu(null)}
+                />
             )}
         </Show>
     )

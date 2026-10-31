@@ -114,10 +114,8 @@ export const WithQuickActionsAndDisabledRow: Story = {
     ),
 }
 
-/** A menu opened near the bottom edge must flip ABOVE the cursor, not run off screen. The
- *  component already flips horizontally (the rail, and submenus near the right edge); the
- *  vertical case was never written, so a right-click low in the window lost its last rows —
- *  including, in the reported case, every spellcheck suggestion below the first. */
+/** A menu opened near the bottom edge flips ABOVE the cursor, not run off screen — a right-click
+ *  low in the window keeps its last rows, such as every spellcheck suggestion below the first. */
 export const NearBottomEdge: Story = {
     render: () => (
         <ContextMenu
@@ -139,6 +137,127 @@ export const NearBottomEdge: Story = {
         await expect(r.top).toBeGreaterThanOrEqual(0)
         // …and it got there by flipping ABOVE the cursor, not by being clamped on top of it.
         await expect(r.bottom).toBeLessThanOrEqual(window.innerHeight - 40 + 1)
+    },
+}
+
+/** Every visible menu surface (the parent and, when open, its flyout) sits inside the window. */
+const expectOnScreen = async () => {
+    const menus = [...document.querySelectorAll<HTMLElement>('.bismuth-popover')]
+    await expect(menus.length).toBeGreaterThan(0)
+    for (const m of menus) {
+        const r = m.getBoundingClientRect()
+        await expect(r.left).toBeGreaterThanOrEqual(0)
+        await expect(r.top).toBeGreaterThanOrEqual(0)
+        await expect(r.right).toBeLessThanOrEqual(window.innerWidth)
+        await expect(r.bottom).toBeLessThanOrEqual(window.innerHeight)
+    }
+}
+
+const LONG_ROWS: MenuItem[] = [
+    { label: 'Open in new pane to the right', icon: 'Columns2', onSelect: noop },
+    { label: 'Copy vault-relative path', icon: 'Copy', onSelect: noop },
+    { label: 'Reveal in system file manager', icon: 'FolderOpen', onSelect: noop },
+    {
+        label: 'Move to…',
+        icon: 'FolderInput',
+        submenu: [
+            { label: 'reading/papers/to-annotate-this-week/', onSelect: noop },
+            { label: 'projects/', onSelect: noop },
+        ],
+    },
+]
+
+/** A right-click near the window's right edge opens the menu LEFT of the cursor, at its full
+ *  width — not run off the edge, and not squeezed until its labels ellipsize. */
+export const NearRightEdge: Story = {
+    render: () => (
+        <ContextMenu x={window.innerWidth - 30} y={90} items={LONG_ROWS} onClose={noop} />
+    ),
+    play: async () => {
+        await expectOnScreen()
+        const r = document.querySelector('.bismuth-popover')!.getBoundingClientRect()
+        // Flipped: its right edge is the cursor.
+        await expect(Math.abs(r.right - (window.innerWidth - 30))).toBeLessThanOrEqual(1)
+        // Full width: no row label is cut short.
+        for (const l of document.querySelectorAll<HTMLElement>('.bismuth-popover-label'))
+            await expect(l.scrollWidth).toBeLessThanOrEqual(l.clientWidth)
+    },
+}
+
+/** The bottom-right corner flips on both axes: up-and-left of the cursor. */
+export const NearBottomRightCorner: Story = {
+    render: () => (
+        <ContextMenu
+            x={window.innerWidth - 20}
+            y={window.innerHeight - 20}
+            items={LONG_ROWS}
+            quickActions={[{ icon: 'Pin', label: 'Pin', onSelect: noop }]}
+            onClose={noop}
+        />
+    ),
+    play: async () => {
+        await expectOnScreen()
+    },
+}
+
+/** A submenu whose parent sits near the right edge flies out to the LEFT, sized by its own measured
+ *  width — a flyout wider than a guess used to overflow anyway. */
+export const SubmenuNearRightEdge: Story = {
+    render: () => (
+        <ContextMenu x={window.innerWidth - 300} y={90} items={LONG_ROWS} onClose={noop} />
+    ),
+    play: async () => {
+        await new Promise(r => setTimeout(r, 20))
+        const row = [...document.querySelectorAll<HTMLElement>('[data-popover-row]')].find(el =>
+            el.textContent?.includes('Move to'),
+        )!
+        row.click()
+        await waitFor(() =>
+            expect(document.querySelectorAll('.bismuth-popover').length).toBe(2),
+        )
+        await expectOnScreen()
+        const [parent, flyout] = [...document.querySelectorAll('.bismuth-popover')].map(m =>
+            m.getBoundingClientRect(),
+        )
+        await expect(flyout.right).toBeLessThanOrEqual(parent.left + 3)
+    },
+}
+
+/** A menu rendered under a `filter` ancestor (a calendar chip's hover filter) — which becomes the
+ *  containing block of a `position: fixed` child — still lands at the cursor in WINDOW coordinates
+ *  and is not clipped by the box's overflow: the menu portals itself to the body. */
+export const InsideFilteredBox: Story = {
+    render: () => (
+        <div
+            style={{
+                position: 'absolute',
+                left: '200px',
+                top: '150px',
+                width: '240px',
+                height: '120px',
+                overflow: 'hidden',
+                filter: 'brightness(1.1)',
+                border: 'var(--rule)',
+                color: 'var(--text-muted)',
+                padding: '8px',
+            }}
+        >
+            filter + overflow: hidden
+            <ContextMenu x={300} y={200} items={FILE_ROW_ITEMS} onClose={noop} />
+        </div>
+    ),
+    play: async () => {
+        await expectOnScreen()
+        const menu = document.querySelector<HTMLElement>('.bismuth-popover')!
+        const r = menu.getBoundingClientRect()
+        await expect(Math.abs(r.left - 300)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(r.top - 200)).toBeLessThanOrEqual(1)
+        // Painted, not clipped: the menu's last row is the hit-test winner at its own centre.
+        const last = [...menu.querySelectorAll<HTMLElement>('[data-popover-row]')].pop()!
+        const lr = last.getBoundingClientRect()
+        await expect(
+            last.contains(document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2)),
+        ).toBe(true)
     },
 }
 

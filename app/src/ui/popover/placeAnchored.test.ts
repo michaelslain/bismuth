@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { EDGE_GAP, placeBelowOrAbove } from './placeAnchored'
+import { EDGE_GAP, placeBelowOrAbove, placeRightOrLeft } from './placeAnchored'
 
 describe('placeBelowOrAbove', () => {
     test('fits below returns y unchanged', () => {
@@ -26,5 +26,31 @@ describe('placeBelowOrAbove', () => {
 
     test('h === 0 returns y (unmeasured first frame)', () => {
         expect(placeBelowOrAbove({ y: 42, h: 0, viewportH: 100 })).toBe(42)
+    })
+})
+
+describe('placeRightOrLeft', () => {
+    test('fits right returns x unchanged', () => {
+        expect(placeRightOrLeft({ x: 10, w: 50, viewportW: 200 })).toBe(10)
+    })
+
+    test('does not fit right flips its right edge onto the cursor', () => {
+        expect(placeRightOrLeft({ x: 180, w: 50, viewportW: 200 })).toBe(130)
+    })
+
+    test('flipFrom puts the right edge on that edge instead of on x', () => {
+        expect(placeRightOrLeft({ x: 178, w: 50, viewportW: 200, flipFrom: 100 })).toBe(50)
+    })
+
+    test('fits neither side, clamped to viewportW - w - EDGE_GAP', () => {
+        expect(placeRightOrLeft({ x: 30, w: 80, viewportW: 100 })).toBe(14)
+    })
+
+    test('wider than the viewport returns EDGE_GAP', () => {
+        expect(placeRightOrLeft({ x: 30, w: 150, viewportW: 100 })).toBe(EDGE_GAP)
+    })
+
+    test('w === 0 returns x (unmeasured first frame)', () => {
+        expect(placeRightOrLeft({ x: 42, w: 0, viewportW: 100 })).toBe(42)
     })
 })
