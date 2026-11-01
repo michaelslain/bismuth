@@ -200,3 +200,75 @@ export const ColumnSetupBlocked: Story = {
         </Host>
     ),
 }
+
+const SUBAGENTS = [
+    {
+        id: 'a1',
+        agentType: 'Explore',
+        description: 'map the chat transcript pipeline',
+        status: 'done' as const,
+    },
+    {
+        id: 'a2',
+        agentType: 'general-purpose',
+        description: 'find every caller of deliver',
+        status: 'running' as const,
+    },
+]
+
+/** The agents strip sits directly above the composer box, edge to edge with it. `play()` flips the
+ *  running row to done through the stub's setter — no timers. */
+export const PaneWithSubagents: Story = {
+    render: () => {
+        const session = makeStubChatSession({
+            transcript: [...CONVERSATION_ITEMS],
+            subagents: SUBAGENTS,
+        })
+        return (
+            <Host>
+                <ChatSessionBody
+                    variant="pane"
+                    session={session}
+                    placeholder="Message Claude"
+                    persona="Claude"
+                    empty={greeting()}
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                    composerTestId="pane-composer"
+                />
+            </Host>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await expect(c.getByText('find every caller of deliver')).toBeTruthy()
+        const strip = c.getByRole('status')
+        const box = c.getByTestId('pane-composer').lastElementChild as HTMLElement
+        await expect(
+            Math.abs(
+                strip.getBoundingClientRect().left -
+                    box.getBoundingClientRect().left,
+            ),
+        ).toBeLessThan(1)
+    },
+}
+
+export const ColumnWithSubagents: Story = {
+    render: () => (
+        <Host gap>
+            <ChatSessionBody
+                variant="column"
+                session={makeStubChatSession({
+                    transcript: [...CONVERSATION_ITEMS],
+                    subagents: SUBAGENTS,
+                })}
+                placeholder="Message daemon"
+                persona="daemon"
+                noteNames={noNames}
+                memoryNames={noNames}
+                tagNames={noNames}
+            />
+        </Host>
+    ),
+}

@@ -18,6 +18,7 @@ import type {
 } from './chatSession'
 import type { ChatProviderChoice } from './chatProvider'
 import type { ChatSearchHit, ChatSessionInfo, ChatScope } from '../api'
+import type { ChatSubagent } from '../../../core/src/chatSubagentTypes'
 import type { FileCandidate } from '../editor/atMention'
 
 export type StubChatSessionInit = Partial<{
@@ -54,9 +55,12 @@ export type StubChatSessionInit = Partial<{
     historyQuery: string
     searchHits: ChatSearchHit[]
     searchLoading: boolean
+    subagents: ChatSubagent[]
 }>
 
 export type StubChatSession = ChatSession & {
+    /** Drive the agents strip from a play(). */
+    setSubagents: (list: ChatSubagent[]) => void
     /** Every action call, keyed by method name, for play() assertions. */
     calls: Record<string, unknown[][]>
 }
@@ -114,6 +118,9 @@ export function makeStubChatSession(
     const [slashCommands] = createSignal<string[]>(init.slashCommands ?? [])
     const [historyEntries] = createSignal<string[]>(init.historyEntries ?? [])
     const [persona] = createSignal(init.persona ?? 'Claude')
+    const [subagents, setSubagents] = createSignal<ChatSubagent[]>(
+        init.subagents ?? [],
+    )
 
     const [historyOpen, setHistoryOpen] = createSignal(
         init.historyOpen ?? false,
@@ -198,6 +205,8 @@ export function makeStubChatSession(
         },
         streaming,
         awaitingReply,
+        subagents,
+        setSubagents,
         manifest,
         setupError,
         gateRefusal,

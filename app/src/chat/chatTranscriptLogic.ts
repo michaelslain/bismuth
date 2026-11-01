@@ -277,6 +277,7 @@ export function applyChatFrame(
         case 'title': // → publishChatTitle (names the TAB, not a transcript item)
         case 'session': // → rememberChatSession / publishChatOrigin
         case 'context': // → header context-usage pill
+        case 'subagent': // → ChatSession.subagents (the strip above the composer), never a transcript item
         case 'error': // → setup / visibility-refusal / per-turn error signals
             return false
 

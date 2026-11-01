@@ -12,6 +12,7 @@ import Text from '../ui/Text'
 import Disclosure from '../ui/Disclosure'
 import { chipSummary, clamp, pickToolIcon } from './chatToolIcon'
 import { prettyInput, summarizeInput } from './chatToolFormat'
+import ChatStatusMark from './ChatStatusMark'
 import ChatToolInput from './ChatToolInput'
 import type { ToolPart } from './chatTranscriptLogic'
 import styles from './ChatToolRow.module.css'
@@ -60,35 +61,15 @@ const ChatToolRow: Component<ChatToolRowProps> = props => {
                                 {summary()}
                             </Text>
                         </Show>
-                        <Text
-                            as="span"
-                            inherit
-                            class={styles['chat-tool-status']}
-                        >
-                            <Show
-                                when={props.part.pending}
-                                fallback={
-                                    <Icon
-                                        value={
-                                            props.part.isError ? 'X' : 'Check'
-                                        }
-                                        class={
-                                            props.part.isError
-                                                ? styles['chat-tool-x']
-                                                : styles['chat-tool-check']
-                                        }
-                                    />
-                                }
-                            >
-                                <Text
-                                    as="span"
-                                    inherit
-                                    class={styles['chat-tool-pending']}
-                                >
-                                    …
-                                </Text>
-                            </Show>
-                        </Text>
+                        <ChatStatusMark
+                            status={
+                                props.part.pending
+                                    ? 'pending'
+                                    : props.part.isError
+                                      ? 'error'
+                                      : 'ok'
+                            }
+                        />
                     </Text>
                 }
             >

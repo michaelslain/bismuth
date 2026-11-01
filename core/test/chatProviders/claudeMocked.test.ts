@@ -26,10 +26,16 @@
 // assumed from documentation.
 //
 // No production files were changed for this task.
-import { afterAll, afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, describe, expect, mock, test } from 'bun:test'
 import { readdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { closeChat, detachSink, newChatId, sendMessage } from '../../src/chat'
+import {
+    closeChat,
+    detachSink,
+    newChatId,
+    openSession,
+    sendMessage,
+} from '../../src/chat'
 import { whichClaude } from '../../src/claudeWhich'
 import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
@@ -331,3 +337,103 @@ describeOrSkip(
         }, 60_000)
     },
 )
+
+// The drain loop turns a (faked) SDK stream into `subagent` frames. Unlike the describe above this
+// spawns nothing: query() is replaced by a generator, so it needs only the `claude` path to resolve.
+const describeDrain = HAS_CLAUDE ? describe : describe.skip
+
+describeDrain('chat.ts drain: subagent frames off a faked SDK stream', () => {
+    test('Agent tool_use, task_started, tool_result and task_notification yield running then done, and an errored foreground call fails', async () => {
+        const sdk = await import('@anthropic-ai/claude-agent-sdk')
+        const originalExports = { ...sdk }
+        const toolUse = (id: string, input: Record<string, unknown>) => ({
+            type: 'assistant',
+            message: {
+                content: [{ type: 'tool_use', id, name: 'Agent', input }],
+            },
+        })
+        const toolResult = (id: string, content: string, isError = false) => ({
+            type: 'user',
+            message: {
+                content: [
+                    {
+                        type: 'tool_result',
+                        tool_use_id: id,
+                        content,
+                        is_error: isError,
+                    },
+                ],
+            },
+        })
+        const stream = [
+            toolUse('bg1', {
+                subagent_type: 'Explore',
+                description: 'scan docs',
+                run_in_background: false,
+            }),
+            {
+                type: 'system',
+                subtype: 'task_started',
+                task_id: 'k1',
+                tool_use_id: 'bg1',
+                description: 'scan docs',
+                subagent_type: 'Explore',
+            },
+            toolResult(
+                'bg1',
+                'Async agent launched, running in the background',
+            ),
+            toolUse('fg1', { description: 'quick check' }),
+            toolResult('fg1', 'it broke', true),
+            {
+                type: 'system',
+                subtype: 'task_notification',
+                task_id: 'k1',
+                tool_use_id: 'bg1',
+                status: 'completed',
+                output_file: '',
+                summary: '',
+            },
+            { type: 'result', is_error: false, num_turns: 1 },
+        ]
+        mock.module('@anthropic-ai/claude-agent-sdk', () => ({
+            ...originalExports,
+            query: () => {
+                async function* messages() {
+                    for (const m of stream) yield m
+                }
+                return Object.assign(messages(), {
+                    supportedModels: async () => [],
+                    initializationResult: async () => ({ commands: [] }),
+                    mcpServerStatus: async () => [],
+                    setModel: () => Promise.resolve(),
+                    setPermissionMode: () => Promise.resolve(),
+                    interrupt: () => Promise.resolve(),
+                    close: () => {},
+                })
+            },
+        }))
+        const cwd = tempDir('bismuth-claude-subagents-')
+        const chatId = newChatId()
+        const { sink, frames, waitFor } = makeChatFrameCollector(15_000)
+        try {
+            await openSession(chatId, cwd, sink)
+            await waitFor(f => f.type === 'result')
+            const subs = frames.flatMap(f =>
+                f.type === 'subagent'
+                    ? [`${f.id}:${f.agentType}:${f.status}`]
+                    : [],
+            )
+            expect(subs).toEqual([
+                'bg1:Explore:running',
+                'fg1:agent:running',
+                'fg1:agent:failed',
+                'bg1:Explore:done',
+            ])
+        } finally {
+            closeChat(chatId)
+            mock.module('@anthropic-ai/claude-agent-sdk', () => originalExports)
+            await rm(cwd, { recursive: true, force: true }).catch(() => {})
+        }
+    }, 30_000)
+})

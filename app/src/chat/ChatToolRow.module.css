@@ -43,22 +43,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.chat-tool-status {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-}
-.chat-tool-check {
-    color: var(--success);
-}
-.chat-tool-x {
-    color: var(--danger);
-}
-/* A plain ellipsis reads as pending without looking like a typo (the old blinking `.asc-caret`
-   underscore read as a stray character after the summary — design #15). */
-.chat-tool-status .chat-tool-pending {
-    color: var(--text-muted);
-}
 .chat-tool-detail {
     display: flex;
     flex-direction: column;

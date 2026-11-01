@@ -120,6 +120,12 @@
     flex: none;
 }
 
+/* The avatar inside a line of UI text (the chat's subagent rows): the same form one type step down,
+   so the face sits in the line instead of standing above it. */
+.avatar.inline {
+    --glyph: var(--fs-ui);
+}
+
 /* Optical alignment: the leading `.` is centred in its monospace cell, so its ink starts ~0.15em
    right of the box — measured 2.3px at 15px against the prose column's first letters. Pulled back
    by that much the dot's ink sits on the same left edge as the name-only rows and the reply text

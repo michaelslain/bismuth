@@ -34,6 +34,8 @@ import {
 } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import type { ChatFrame } from '../../../core/src/chat'
+import type { ChatSubagent } from '../../../core/src/chatSubagentTypes'
+import { upsertSubagent } from './chatSubagents'
 import { api, wsBase } from '../api'
 import {
     applyChatFrame,
@@ -205,6 +207,9 @@ export type ChatSession = {
     addMention: (path: string, noteIds: string[]) => void
     streaming: Accessor<boolean>
     awaitingReply: Accessor<boolean>
+    /** The subagents the current reply dispatched, in dispatch order; cleared when the user sends the
+     *  next turn. Feeds the agents strip above the composer. */
+    subagents: Accessor<ChatSubagent[]>
     manifest: Accessor<ChatManifest | null>
     setupError: Accessor<ChatProviderChoice | null>
     gateRefusal: Accessor<ChatGateRefusal | null>
@@ -321,6 +326,7 @@ export function createChatSession(
     const storage = browserStorage()
     const [transcript, setTranscript] = createStore<TurnItem[]>([])
     const [draft, setDraft] = createSignal('')
+    const [subagents, setSubagents] = createSignal<ChatSubagent[]>([])
     const [attachments, setAttachments] = createSignal<ChatAttachment[]>([])
     const [streaming, setStreaming] = createSignal(false)
     const [manifest, setManifest] = createSignal<ChatManifest | null>(null)
@@ -635,6 +641,9 @@ export function createChatSession(
             case 'question':
                 applyFrameToTranscript(frame)
                 break
+            case 'subagent':
+                setSubagents(list => upsertSubagent(list, frame))
+                break
             case 'result':
                 // Don't clobber the specific message an earlier `error` frame already set.
                 if (frame.isError && !turnError())
@@ -732,6 +741,8 @@ export function createChatSession(
         )
             return
         setQueuedTurns(q.slice(1))
+        // A staged turn starting is the next reply; the strip starts over.
+        setSubagents([])
         setTranscript(
             produce(m => {
                 for (const item of m) {
@@ -1134,6 +1145,8 @@ export function createChatSession(
             return false
         }
         setTurnError(null)
+        // Sent and not joining a running turn: this is the next reply, so the strip starts over.
+        setSubagents([])
         if (messageId) undelivered = [...undelivered, messageId]
         setTranscript(
             produce(
@@ -1302,6 +1315,7 @@ export function createChatSession(
         staleDones = 0
         undelivered = []
         setTranscript([])
+        setSubagents([])
         setStreaming(false)
         setTurnError(null)
         setManifest(null)
@@ -1662,6 +1676,7 @@ export function createChatSession(
         addMention,
         streaming,
         awaitingReply,
+        subagents,
         manifest,
         setupError,
         gateRefusal,

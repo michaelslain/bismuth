@@ -23,6 +23,11 @@
 //     mode" section below and opencodeServer.ts's top-of-file note for exactly what was checked.
 import type { ChatFrame, ChatImage } from '../../chat'
 import { stripEditorContext } from '../../chat'
+import {
+    newSubagentRoster,
+    observeSubagentFrame,
+    type SubagentRoster,
+} from '../../chatSubagentRoster'
 
 /** Mutable per-TURN accounting for translateOpencodeEvent: which part ids have emitted how much
  *  text (suffix-only re-emission), which tool callIDs already produced a tool-use frame, the
@@ -36,6 +41,8 @@ export interface OpencodeTurnState {
     /** tool callIDs whose `tool-result` frame already went out (never double-resolve a chip). */
     toolsFinished: Set<string>
     sessionId: string | null
+    /** Subagents the turn's `task` tool calls started. */
+    subagents: SubagentRoster
     /** Summed `cost` off step_finish events (USD). Null until any step reported one. */
     costUsd: number | null
 }
@@ -46,6 +53,7 @@ export function newOpencodeTurnState(): OpencodeTurnState {
         toolsStarted: new Set(),
         toolsFinished: new Set(),
         sessionId: null,
+        subagents: newSubagentRoster(),
         costUsd: null,
     }
 }
@@ -109,6 +117,7 @@ function toolPartFrames(
     part: Record<string, unknown>,
     toolsStarted: Set<string>,
     toolsFinished: Set<string>,
+    subagents?: SubagentRoster,
 ): ChatFrame[] {
     const frames: ChatFrame[] = []
     const callId =
@@ -139,6 +148,16 @@ function toolPartFrames(
             ),
             isError: status === 'error',
         })
+    }
+    // Live turns only: a replayed export passes no roster. opencode's live `pending` event carries
+    // `input: {}` (the model is still streaming the arguments), so a task row starts off the first
+    // event that has the real input.
+    if (subagents) {
+        if (status !== 'pending')
+            frames.push(...subagents.toolUse(callId, name, st.input))
+        for (const f of [...frames])
+            if (f.type === 'tool-result')
+                frames.push(...observeSubagentFrame(subagents, f))
     }
     return frames
 }
@@ -181,7 +200,12 @@ export function translateOpencodeEvent(
             // Tool events arrive with their state already resolved (status:"completed"/"error") in run
             // mode — emit the tool-use chip AND its result together. A pending status emits only the
             // chip; a later event for the same callID then resolves it.
-            return toolPartFrames(part, state.toolsStarted, state.toolsFinished)
+            return toolPartFrames(
+                part,
+                state.toolsStarted,
+                state.toolsFinished,
+                state.subagents,
+            )
         case 'step_finish': {
             const cost = opencodeTurnCost(part.cost)
             if (cost !== null) state.costUsd = (state.costUsd ?? 0) + cost
@@ -811,6 +835,8 @@ export interface OpencodeServerTurnState {
     messageRoles: Map<string, 'user' | 'assistant'>
     toolsStarted: Set<string>
     toolsFinished: Set<string>
+    /** Subagents the turn's `task` tool calls started. */
+    subagents: SubagentRoster
 }
 
 export function newOpencodeServerTurnState(): OpencodeServerTurnState {
@@ -820,6 +846,7 @@ export function newOpencodeServerTurnState(): OpencodeServerTurnState {
         messageRoles: new Map(),
         toolsStarted: new Set(),
         toolsFinished: new Set(),
+        subagents: newSubagentRoster(),
     }
 }
 
@@ -879,7 +906,12 @@ export function translateOpencodeServerEvent(
             typeof part.messageID === 'string' ? part.messageID : ''
         if (state.messageRoles.get(messageId) === 'user') return []
         if (part.type === 'tool')
-            return toolPartFrames(part, state.toolsStarted, state.toolsFinished)
+            return toolPartFrames(
+                part,
+                state.toolsStarted,
+                state.toolsFinished,
+                state.subagents,
+            )
         if (part.type === 'text' || part.type === 'reasoning') {
             const id = typeof part.id === 'string' ? part.id : ''
             if (!id) return []

@@ -1,0 +1,37 @@
+/* ChatSubagentStrip.module.css — ChatSubagentStrip.tsx is the ONLY importer.
+   The strip is the composer box's width: capped to the reading column and centred exactly like
+   ChatComposerBar's `.box`, so its edges are the box's edges in both session-body variants. */
+.strip {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--chat-column);
+    margin: 0 auto var(--sp-3);
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+}
+/* One line per subagent: type, description. Capped at five rows' height; more rows scroll
+   inside the strip. */
+.rows {
+    max-height: calc(5 * var(--fs-ui) * var(--lh-ui));
+    overflow-y: auto;
+}
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    min-width: 0;
+}
+.type {
+    flex: 0 1 auto;
+    max-width: 18ch;
+    min-width: 0;
+}
+.description {
+    flex: 1 1 0;
+    min-width: 0;
+}
+/* More rows than the cap: fade the bottom edge so the scroll is visible. */
+.rows[data-overflow] {
+    mask-image: linear-gradient(to bottom, black calc(100% - var(--sp-5)), transparent);
+}

@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { basename } from 'node:path'
-import type { ChatAgentSession } from './agents'
 import {
     query,
     listSessions,
@@ -60,7 +58,12 @@ import {
 } from './chatProviders/sessionSink'
 // One source of truth for how a subagent's lifetime is swept, so the chat and relay paths
 // can't drift apart (they render as the same thing in the same view).
-import { sweepDoneSubagents } from './relay'
+import {
+    newSubagentRoster,
+    observeSubagentFrame,
+    type SubagentRoster,
+} from './chatSubagentRoster'
+import type { ChatSubagent } from './chatSubagentTypes'
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -121,6 +124,8 @@ export type ChatFrame =
       }
     /** That tool finished (a user `tool_result` content block). */
     | { type: 'tool-result'; id: string; content: string; isError: boolean }
+    /** A subagent the current reply dispatched, upserted by `id` (core/src/chatSubagentTypes.ts). Live only. */
+    | ({ type: 'subagent' } & ChatSubagent)
     /** canUseTool is asking the USER to approve/deny a not-pre-allowed tool. */
     | { type: 'permission'; id: string; toolName: string; input: unknown }
     /** Claude called the AskUserQuestion tool — 1-4 multiple-choice questions the USER must answer for
@@ -544,20 +549,9 @@ interface ChatSession {
     /** ms epoch of the last turn activity (set on spawn, bumped on each push + turn-end). Drives the
      *  chat node's awake/idle state in the agents graph, like a relay session's lastSeen. */
     lastActivityAt: number
-    /** Subagents spawned via the SDK Task tool this session, keyed by the Task tool_use id. Populated
-     *  in the drain loop (tool-use → add, tool-result → mark done); swept on the relay's shared
-     *  lifetimes (brief linger once done, backstop age if the result never came — see
-     *  relay.ts's sweepDoneSubagents). Surfaced as depth-1 children in the agents graph. */
-    chatSubagents: Map<
-        string,
-        {
-            agentId: string
-            agentType: string
-            startedAt: number
-            done: boolean
-            doneAt?: number
-        }
-    >
+    /** The subagents this chat dispatched, fed live by the drain loop; each change becomes a
+     *  `subagent` frame (chatSubagentRoster.ts). */
+    subagents: SubagentRoster
     /** Latch so a grace-timeout close after an explicit close can't write the note twice. */
     captured?: boolean
     /** The chat's private toggle (setPrivate): when the conversation ends its transcript and saved
@@ -1204,7 +1198,7 @@ async function createSession(
         memoryDir,
         turnCount: 0,
         lastActivityAt: Date.now(),
-        chatSubagents: new Map(),
+        subagents: newSubagentRoster(),
     }
 
     if (!spawnChatQuery(session, denyEntries, resume)) return null // spawn error already pushed
@@ -2208,67 +2202,6 @@ function maybeEmitTitle(session: ChatSession): void {
         .catch(() => {})
 }
 
-/** The Claude Code tool that spawns a subagent — its tool_use starts one, its tool_result ends it. */
-const TASK_TOOL = 'Task'
-
-/**
- * Track the SDK Task-tool subagent lifecycle off the drain loop's frames so a visual chat's
- * subagents appear as depth-1 children in the agents graph (matching the relay session→subagent
- * shape). A `tool-use` named "Task" starts one (keyed by its tool_use id, typed from the tool's
- * `subagent_type`); the matching `tool-result` marks it done. Non-Task frames are ignored.
- */
-function trackChatSubagent(session: ChatSession, frame: ChatFrame): void {
-    if (frame.type === 'tool-use' && frame.name === TASK_TOOL) {
-        const input = (frame.input ?? {}) as {
-            subagent_type?: unknown
-            description?: unknown
-        }
-        const agentType =
-            (typeof input.subagent_type === 'string' && input.subagent_type) ||
-            (typeof input.description === 'string' && input.description) ||
-            'subagent'
-        session.chatSubagents.set(frame.id, {
-            agentId: frame.id,
-            agentType,
-            startedAt: Date.now(),
-            done: false,
-        })
-    } else if (frame.type === 'tool-result') {
-        const sub = session.chatSubagents.get(frame.id)
-        if (sub && !sub.done) {
-            sub.done = true
-            sub.doneAt = Date.now()
-        }
-    }
-}
-
-/**
- * Snapshot the live visual-chat sessions for the agents graph (core/src/agents.ts). Each registered
- * chat is a first-class session node hanging off "you"; a chat dropped from the registry (tab closed
- * / session ended → closeChat) simply isn't here, so the agents graph prunes it with no extra work.
- * Finished subagents past their TTL are swept as this runs. Pure read over the module registry.
- */
-export function chatAgentSnapshot(
-    now: number = Date.now(),
-): ChatAgentSession[] {
-    const out: ChatAgentSession[] = []
-    for (const s of sessions.values()) {
-        sweepDoneSubagents(s.chatSubagents, now)
-        out.push({
-            chatId: s.id,
-            label: s.title || basename(s.cwd) || 'Chat',
-            active: s.turnActive,
-            lastActivityAt: s.lastActivityAt,
-            subagents: [...s.chatSubagents.values()].map(sub => ({
-                agentId: sub.agentId,
-                agentType: sub.agentType,
-                done: sub.done,
-            })),
-        })
-    }
-    return out
-}
-
 /**
  * The drain loop: translate every SDK message for this session into ChatFrames per the taxonomy.
  * Runs until the generator ends (input queue closed or the CLI exited). Wrapped so any throw —
@@ -2440,13 +2373,25 @@ async function drain(session: ChatSession): Promise<void> {
                 // assistant → tool_use frames (text/thinking handled above); user → tool_result frames (the
                 // user's own prompt came from the client). Shared with history replay via translateSdkMessage.
                 for (const frame of translateSdkMessage(msg, { live: true })) {
-                    trackChatSubagent(session, frame) // Task tool_use/result → agents-graph subagent lifecycle
-                    // TTL/backstop sweep (same lifetimes as relay's registry — see relay.ts sweepDoneSubagents).
-                    // chatAgentSnapshot used to be the only caller of this; nothing polls it any more since the
-                    // agents graph was removed, so without this call session.chatSubagents was append-only.
-                    sweepDoneSubagents(session.chatSubagents, Date.now())
                     emit(session, frame)
+                    for (const sub of observeSubagentFrame(
+                        session.subagents,
+                        frame,
+                    ))
+                        emit(session, sub)
                 }
+                continue
+            }
+
+            if (msg.type === 'system' && msg.subtype === 'task_started') {
+                for (const sub of session.subagents.taskStarted(msg))
+                    emit(session, sub)
+                continue
+            }
+
+            if (msg.type === 'system' && msg.subtype === 'task_notification') {
+                for (const sub of session.subagents.taskNotification(msg))
+                    emit(session, sub)
                 continue
             }
 
@@ -2499,7 +2444,8 @@ async function drain(session: ChatSession): Promise<void> {
         // deliberately, so ending it here must not read as the session dying. See the pinned `q` above.
         if (session.q !== q) return
         // The `claude` child is done writing, so a private conversation's transcript can go now.
-        if (session.private && session.sessionId) erasePrivateTranscript(session)
+        if (session.private && session.sessionId)
+            erasePrivateTranscript(session)
         // If closeChat() tore the session down it was already removed from the registry, so reaching
         // here with the session STILL registered means the drain ended on its OWN — the `claude` child
         // exited (or threw). Evict it (so the next sendMessage re-spawns a fresh session) and tell the
@@ -2770,8 +2716,7 @@ export function captureToMemory(
         try {
             // `daemon.saveSessions` is read at this moment, so a toggle applies to the next chat end.
             const saveSessions = (await readSettings(cwd))?.data?.daemon as
-                | { saveSessions?: unknown }
-                | undefined
+                { saveSessions?: unknown } | undefined
             if (saveSessions?.saveSessions !== true) return
             // A chat hidden from the daemon (its own level or the chat default) is never captured.
             const chats = await readChatVisibility(cwd)

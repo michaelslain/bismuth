@@ -18,6 +18,11 @@
 // A `*.ended` event carries the part's whole text, so a part that never streamed (or whose deltas
 // were partly missed) still renders exactly once through the suffix rule below.
 import type { ChatFrame } from '../../chat'
+import {
+    newSubagentRoster,
+    observeSubagentFrame,
+    type SubagentRoster,
+} from '../../chatSubagentRoster'
 import type { OpencodeV2ModelRef } from './opencodeV2Client'
 import type {
     OpencodeAuthMethod,
@@ -43,6 +48,8 @@ export interface OpencodeV2TurnState {
     toolNames: Map<string, string>
     toolsStarted: Set<string>
     toolsFinished: Set<string>
+    /** Subagents the turn's `task` tool calls started. */
+    subagents: SubagentRoster
     /** Summed `session.step.ended` cost (USD); null until a step reports a positive one. */
     costUsd: number | null
     /** Set once a `session.execution.*` end event arrives. */
@@ -58,6 +65,7 @@ export function newOpencodeV2TurnState(): OpencodeV2TurnState {
         toolNames: new Map(),
         toolsStarted: new Set(),
         toolsFinished: new Set(),
+        subagents: newSubagentRoster(),
         costUsd: null,
         outcome: null,
         declined: false,
@@ -116,6 +124,17 @@ function startTool(
     ]
 }
 
+/** `frames` plus the subagent frames its tool-use / tool-result entries cause. */
+function withSubagents(
+    state: OpencodeV2TurnState,
+    frames: ChatFrame[],
+): ChatFrame[] {
+    return [
+        ...frames,
+        ...frames.flatMap(f => observeSubagentFrame(state.subagents, f)),
+    ]
+}
+
 /**
  * Translate ONE event of the turn's session into the ChatFrames it produces, updating `state`.
  * Permission asks are parsed separately (parseOpencodeV2PermissionAsk) because the driver must
@@ -162,7 +181,7 @@ export function translateOpencodeV2Event(
         }
         case 'session.tool.called': {
             const id = str(d.id)
-            return id ? startTool(state, id, d.input) : []
+            return id ? withSubagents(state, startTool(state, id, d.input)) : []
         }
         case 'session.tool.success':
         case 'session.tool.failed': {
@@ -181,7 +200,7 @@ export function translateOpencodeV2Event(
                     : text,
                 isError: failed,
             })
-            return frames
+            return withSubagents(state, frames)
         }
         case 'session.step.ended': {
             if (typeof d.cost === 'number' && d.cost > 0)

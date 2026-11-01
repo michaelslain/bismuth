@@ -51,8 +51,9 @@ export type DaemonFaceProps = {
     caption?: JSX.Element
     /** `hero` (default): the daemon page's resting focal point, scaled to its column. `compact`: the
      *  one-line header form, glyph with the caption to its right. `avatar`: the bot's small inline
-     *  face on a chat turn's label row (ChatTranscript) — fixed size, never a caption. */
-    size?: 'hero' | 'compact' | 'avatar'
+     *  face on a chat turn's label row (ChatTranscript) — fixed size, never a caption. `inline`: the
+     *  avatar at UI text size, for a face inside a line of UI text (the chat's subagent rows). */
+    size?: 'hero' | 'compact' | 'avatar' | 'inline'
     /** Who the face is, for its accessible name — the chat persona in a transcript. Default
      *  `daemon`. */
     label?: string
@@ -264,7 +265,10 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
             class={[
                 styles.root,
                 props.size === 'compact' ? styles.compact : '',
-                props.size === 'avatar' ? styles.avatar : '',
+                props.size === 'avatar' || props.size === 'inline'
+                    ? styles.avatar
+                    : '',
+                props.size === 'inline' ? styles.inline : '',
                 props.class,
             ]
                 .filter(Boolean)
@@ -302,7 +306,13 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
                     </Index>
                 </div>
             </div>
-            <Show when={props.size !== 'avatar' && props.caption}>
+            <Show
+                when={
+                    props.size !== 'avatar' &&
+                    props.size !== 'inline' &&
+                    props.caption
+                }
+            >
                 {/* Text (ui/Text.tsx) now forwards every other HTML attribute, incl. data-*, so
                     `data-testid` lands directly on it — no bare wrapper span needed. */}
                 <Text

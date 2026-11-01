@@ -26,6 +26,7 @@ import { createSignal, Show, type Component, type JSX } from 'solid-js'
 import type { ChatSession } from './chatSession'
 import ChatTranscript from './ChatTranscript'
 import ChatComposerBar from './ChatComposerBar'
+import ChatSubagentStrip from './ChatSubagentStrip'
 import ChatControls from './ChatControls'
 import ChatHistoryModal from './ChatHistoryModal'
 import ChatSetupGate from './ChatSetupGate'
@@ -98,6 +99,9 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
             class={column() ? styles.columnComposer : styles.paneComposer}
             data-testid={props.composerTestId}
         >
+            <Show when={props.session}>
+                {s => <ChatSubagentStrip agents={s().subagents()} />}
+            </Show>
             <ChatComposerBar
                 session={props.session}
                 placeholder={props.placeholder}

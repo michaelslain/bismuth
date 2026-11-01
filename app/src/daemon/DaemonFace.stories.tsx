@@ -142,6 +142,21 @@ export const Compact: Story = {
     },
 }
 
+/** The avatar at UI text size, for a face inside a line of UI text (the chat's subagent rows):
+ *  one row per mood a subagent shows — busy while it runs, idle once done, hurt when it failed. */
+export const Inline: Story = {
+    args: { mood: 'busy', size: 'inline', label: 'subagent' },
+    render: args => (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}
+        >
+            <DaemonFace {...args} />
+            <DaemonFace mood="idle" size="inline" />
+            <DaemonFace mood="hurt" size="inline" />
+        </div>
+    ),
+}
+
 /** The bot's inline avatar on a chat turn's label row (ChatTranscript's lowest assistant row): a
  *  fixed small glyph at `--fs-lead`, never a caption even when one is passed, named for the persona
  *  it stands for. One row per animated mood so the eyes can be compared at this size. */
