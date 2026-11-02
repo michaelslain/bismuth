@@ -149,10 +149,14 @@ export interface Settings {
         recall: {
             enabled: boolean // master switch for every automatic memory injection (prompt, mid-turn, session start, subagent); needs daemon.enabled
             midTurn: boolean // one recall per agent tool batch
+            files: boolean // also inject matching vault notes, PDFs and described images (needs embeddings.enabled)
+            chats: boolean // also inject pointers to matching past chats (needs embeddings.enabled)
+            docs: boolean // also inject pointers to matching Bismuth docs pages (needs embeddings.enabled)
         }
     }
     embeddings: {
         enabled: boolean // embedding search for memory recall + vault-note search: loads a ~35MB model into a helper on first use, unloaded after 10 min idle; off = keyword-only
+        describeImages: boolean // Claude writes each new or changed image's description into its companion note (one Haiku request per image)
     }
     update: {
         autoUpdate: boolean // auto-apply Bismuth app updates on launch (auto-relaunch when ready)

@@ -109,7 +109,11 @@ import {
 import { DEFAULTS as SETTINGS_DEFAULTS } from './schema/settingsSchema'
 import { invalidateSearchIndex, updateSearchIndex } from './search'
 import { invalidateBrain } from './brain'
+import { invalidateRecallDenyPlans } from './memoryRecall'
 import { syncVaultEmbeddings } from './vaultEmbed'
+import { syncDocsEmbeddings } from './docsEmbed'
+import { docsIndexWantedSync } from './embeddingsSetting'
+import { imageDescribeDeps, syncImageDescriptions } from './imageDescribe'
 import {
     migrateDaemonState,
     daemonIdentityName,
@@ -295,7 +299,15 @@ export function createServer(cfg: CoreConfig) {
         .catch(() => unmarkSelfWritten([SETTINGS_FILE]))
     // Vault-note embeddings (a no-op while `embeddings.enabled` is false): index once at boot, after the
     // settings reconcile so the switch is read from the settled file.
-    void bootReconcile.then(() => syncVaultEmbeddings(cfg.vault))
+    imageDescribeDeps.marks = selfWriteMarks
+    imageDescribeDeps.written = paths => invalidate(...paths)
+    void bootReconcile.then(() => {
+        syncVaultEmbeddings(cfg.vault)
+        syncImageDescriptions(cfg.vault)
+        // The docs index (Bismuth's own pages, a recall source) builds once too, persisted after,
+        // only when recall can inject it: embeddings alone may be on just for search.
+        if (docsIndexWantedSync(cfg.vault, readDaemonEnabledSync(cfg.vault))) syncDocsEmbeddings()
+    })
 
     // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
     // spelling has no reader any more (core/src/taskLegacy.ts says why), so an un-migrated
@@ -419,6 +431,7 @@ export function createServer(cfg: CoreConfig) {
             // config may add the 3rd brain (graph) and the .daemon folder (tree) that the
             // DEFAULTS-seeded boot state did not have.
             version++
+            invalidateRecallDenyPlans(cfg.vault)
             sse.publish({
                 version,
                 paths: [],
@@ -561,6 +574,7 @@ export function createServer(cfg: CoreConfig) {
         // The brain block's vault map is built from the notes, so any vault change drops it.
         if (vaultTouched) invalidateBrain(cfg.vault)
         if (vaultTouched) syncVaultEmbeddings(cfg.vault, paths.length > 0 ? paths : undefined)
+        if (vaultTouched) syncImageDescriptions(cfg.vault, paths.length > 0 ? paths : undefined)
         if (vaultTouched) {
             // The search index covers note bodies (and basenames/headings/tags), so even a content-only edit
             // that's dirty to neither graph nor tree changes search results. When we know exactly which paths
@@ -593,6 +607,7 @@ export function createServer(cfg: CoreConfig) {
             else tasksCache.invalidate()
         }
         version++
+        invalidateRecallDenyPlans(cfg.vault)
         sse.publish({ version, paths, dirty })
     }
 
@@ -630,6 +645,7 @@ export function createServer(cfg: CoreConfig) {
                         // Toggling daemon.enabled flips memory injection for newly-claimed tabs.
                         setPoolMemoryDir(effectiveMemoryDir())
                         version++
+                        invalidateRecallDenyPlans(cfg.vault)
                         sse.publish({
                             version,
                             paths: [],

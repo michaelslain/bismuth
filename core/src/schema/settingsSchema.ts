@@ -646,6 +646,21 @@ export const SETTINGS_SCHEMA: Schema = {
                 default: false,
                 doc: 'Run one memory recall per agent tool batch (between tool calls, inside a long turn), not only when you send a prompt. Cost: one extra lookup for each batch of tool calls an agent makes, so a long agentic turn does that many extra recalls. Off is the default: memory is recalled at the prompt only. Has no effect when recall.enabled is off.',
             },
+            files: {
+                type: 'boolean',
+                default: true,
+                doc: 'Also inject the vault notes, PDFs and described images that match a prompt or a subagent task by meaning, under a "# Vault files" heading. Needs recall.enabled and embeddings.enabled; files hidden from the session stay out.',
+            },
+            chats: {
+                type: 'boolean',
+                default: true,
+                doc: 'Also inject one-line pointers to past chats in this vault that match a prompt or a subagent task by meaning, under a "# Past chats" heading. Needs recall.enabled and embeddings.enabled; the current chat and chats hidden from the session stay out.',
+            },
+            docs: {
+                type: 'boolean',
+                default: true,
+                doc: 'Also inject one-line pointers to the Bismuth documentation pages that match a prompt or a subagent task by meaning, under a "# Bismuth docs" heading. Needs recall.enabled and embeddings.enabled.',
+            },
         }),
     }),
     // Meaning-based (embedding) search, for memory recall and vault-note search alike. Top level
@@ -655,6 +670,11 @@ export const SETTINGS_SCHEMA: Schema = {
             type: 'boolean',
             default: false,
             doc: 'Use embedding (meaning-based) search in memory recall and in vault-note search. Cost: on first use core starts a separate helper process holding a ~35MB embedding model (about 260-280MB of RAM while it runs, exits after 10 minutes idle, which returns all of that memory); the first pass over a large vault takes minutes of CPU while it embeds. Off = keyword-only recall and search, and the helper is never started.',
+        },
+        describeImages: {
+            type: 'boolean',
+            default: false,
+            doc: "Have Claude (Haiku, through your own claude login) write a description of each new or changed vault image into the image's companion note, so the image is found by semantic search and by recall. Cost: one short Claude request per image added or changed; images hidden from the daemon are never sent. Needs embeddings.enabled.",
         },
     }),
     // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself

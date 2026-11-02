@@ -13,11 +13,17 @@ import type {
 } from '@bismuth/memory'
 import { composeBrain } from './brain'
 import type { BrainOpts } from './brain'
-import { sharedSemanticChannel } from './memoryEmbed'
+import { QUERY_PREFIX, QUERY_TIMEOUT_MS, sharedSemanticChannel } from './memoryEmbed'
 import { neighbourNames, notesAbout } from './memoryLinkBoost'
 import { RERANK_TIMEOUT_MS, sharedReranker } from './memoryRerank'
 import type { Reranker } from './memoryRerank'
-import { readEmbeddingsEnabledSync } from './embeddingsSetting'
+import { readEmbeddingsEnabledSync, readRecallSourcesSync } from './embeddingsSetting'
+import type { RecallSourceSwitches } from './embeddingsSetting'
+import { sourceKey } from './semanticSources'
+import type { SourceHit, SourceQuery } from './semanticSources'
+import { packSources, sourceSection } from './sourcePack'
+import { resolveDenyPlan } from './visibility'
+import type { DenyPlan } from './visibility'
 import { SETTINGS_FILE, readDaemonEnabledSync } from './settings'
 
 /** The recall service: ONE long-lived owner of ranking, packing and the per-session dedup ledger,
@@ -60,6 +66,8 @@ export type RecallResponse = {
     semantic?: true
     /** True when the cross-encoder gate decided this request (injected or refused). */
     reranked?: true
+    /** The source hits injected beside memory, as `sourceKey` (`kind:id`), in block order. */
+    sources?: string[]
 }
 
 export type RecallSettings = {
@@ -125,6 +133,9 @@ export type RecallDeps = {
     vault?: string
     /** The session-start block (vault map + profile + memory index). Defaults to `composeBrain`. */
     brain?: (opts: BrainOpts) => Promise<string | null>
+    /** Candidates from the vault-file, past-chat and docs sources for a query vector the service
+     *  embedded once (prompt + subagent only). Absent = no sources. */
+    sources?: (q: SourceQuery & { switches: RecallSourceSwitches }) => Promise<SourceHit[]>
 }
 
 /** Memory notes injected because they link a note the user has open or a tool just touched. */
@@ -373,6 +384,131 @@ function preferNeighbourPointers(
     return `${head}${POINTER_TITLE}\n${lines.join('\n')}\n\n${close}`
 }
 
+/** Hits asked of the sources: enough to find a source's tenth-best cosine. */
+const SOURCE_K = 10
+/** Candidates per source that reach the reranker. */
+const SOURCE_RERANKED = 3
+/** Past chats are noisier evidence than files or docs: they need this much more logit. */
+const CHAT_EXTRA_LOGIT = 2
+/** Docs hold many near-miss pages for any technical prompt: measured unrelated pointers score up to
+ *  -1.67 where real hits score 5.4 or more, so the docs bar is the rerank gate plus this. */
+const DOCS_EXTRA_LOGIT = 6
+/** Files also admit their best `FILE_COSINE_TAKE` on cosine alone when they score at least
+ *  `FILE_COSINE_ADMIT` and stand `FILE_COSINE_MARGIN` above the source's tenth-best. The cross-encoder
+ *  reads conversational prompts poorly: replaying real sessions (`bench/recallReplay.ts`), the file
+ *  the agent went on to open ranked first by cosine in 56 of 126 retrievable cases while its median
+ *  logit was -8.3, under `RERANK_MIN_LOGIT`. Adding this path took injected right files from 12 to 34
+ *  of 237 prompts, with a file injected on 15 of 80 prompts that used no tool. */
+const FILE_COSINE_ADMIT = 0.8
+const FILE_COSINE_MARGIN = 0.05
+const FILE_COSINE_TAKE = 2
+
+const withTimeout = async <T>(p: Promise<T>, ms: number): Promise<T | undefined> => {
+    p.catch(() => {})
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<undefined>(res => {
+        timer = setTimeout(() => res(undefined), ms)
+    })
+    try {
+        return await Promise.race([p, late])
+    } finally {
+        clearTimeout(timer)
+    }
+}
+
+/** The source hits worth injecting for a query: each source's candidates clear the mode's cosine
+ *  floor and sit `SEMANTIC_BACKGROUND_MARGIN` above that source's own tenth-best, are not already in
+ *  the session's ledger, and the best few are judged by the cross-encoder. No reranker, no
+ *  embedder, a slow source or any failure = no hits (a source hit is semantic-only evidence, never
+ *  injected without the second check). Never rejects. */
+/** What the reranker reads a source hit as: its title, if any, over its best excerpt. */
+export function sourcePassage(h: SourceHit): string {
+    return h.title ? `${h.title}\n${h.excerpt}` : h.excerpt
+}
+
+async function gatherSources(a: {
+    sources: NonNullable<RecallDeps['sources']>
+    switches: RecallSourceSwitches
+    embedder: Embedder | null
+    reranker: Reranker | null
+    mode: 'prompt' | 'subagent'
+    queryText: string
+    rerankText: string
+    channel: 'chat' | 'daemon'
+    sessionId: string
+    sent: Map<string, string>
+    timeoutMs: number
+}): Promise<SourceHit[]> {
+    try {
+        if (!a.embedder || !a.reranker) return []
+        const deadline = Date.now() + a.timeoutMs
+        const left = () => Math.max(0, deadline - Date.now())
+        const vec = (await withTimeout(a.embedder.embed([QUERY_PREFIX + a.queryText]), QUERY_TIMEOUT_MS))?.[0]
+        if (!vec) return []
+        const all = await withTimeout(
+            a.sources({
+                vec,
+                k: SOURCE_K,
+                channel: a.channel,
+                excludeSessionId: a.sessionId,
+                switches: a.switches,
+            }),
+            left(),
+        )
+        if (!all?.length) return []
+        const minCosine = mem.PACK_LIMITS[a.mode].semanticMinCosine
+        const groups = { files: [] as SourceHit[], chats: [] as SourceHit[], docs: [] as SourceHit[] }
+        for (const h of all) groups[sourceSection(h)].push(h)
+        const reranker = a.reranker
+        const judged = await Promise.all(
+            (Object.keys(groups) as (keyof typeof groups)[]).map(async key => {
+                const hits = groups[key].sort((x, y) => y.score - x.score)
+                if (!hits.length) return []
+                // Files and chats must stand SEMANTIC_BACKGROUND_MARGIN above their own tenth-best, the
+                // query's background level. Docs are held to the cosine floor and the reranker only: one
+                // topic owns many sections (a calendar question matches a dozen calendar sections within
+                // 0.06 of each other), so the tenth-best there is the topic itself, not background, and
+                // the relative floor would refuse every well-matched docs question.
+                const floor =
+                    hits.length >= SOURCE_K && key !== 'docs'
+                        ? Math.max(minCosine, hits[SOURCE_K - 1]!.score + mem.SEMANTIC_BACKGROUND_MARGIN)
+                        : minCosine
+                const fresh = (h: SourceHit) => a.sent.get(sourceKey(h)) !== h.hash
+                const background = hits.length >= SOURCE_K ? hits[SOURCE_K - 1]!.score : 0
+                const byCosine =
+                    key === 'files'
+                        ? hits
+                              .slice(0, FILE_COSINE_TAKE)
+                              .filter(h => h.score >= FILE_COSINE_ADMIT && h.score - background >= FILE_COSINE_MARGIN && fresh(h))
+                        : []
+                const cands = hits.filter(h => h.score >= floor && fresh(h)).slice(0, SOURCE_RERANKED)
+                if (!cands.length) return byCosine
+                const logits = await withTimeout(
+                    reranker.rerank(
+                        a.rerankText,
+                        cands.map(sourcePassage),
+                    ),
+                    left(),
+                )
+                if (!logits || logits.length !== cands.length) return byCosine
+                // the gate is written over ranked notes; it only reads their order, so a hit rides in `note`
+                const wrapped = cands.map(hit => ({ hit, lexical: 0, score: hit.score }) as unknown as RankedNote)
+                const kept = mem.gateByRerank(wrapped, logits, {
+                    minLogit:
+                        mem.RERANK_MIN_LOGIT +
+                        (key === 'chats' ? CHAT_EXTRA_LOGIT : key === 'docs' ? DOCS_EXTRA_LOGIT : 0),
+                })
+                const gated = kept.map(r => (r as unknown as { hit: SourceHit }).hit)
+                const keys = new Set(gated.map(sourceKey))
+                return [...gated, ...byCosine.filter(h => !keys.has(sourceKey(h)))].sort((x, y) => y.score - x.score)
+            }),
+        )
+        return judged.flat()
+    } catch {
+        return []
+    }
+}
+
 /** `toolBatches`: tool batches that injected since this key's last prompt (or subagent start). */
 type LedgerEntry = { lastSeen: number; injected: Map<string, string>; toolBatches: number }
 
@@ -495,8 +631,14 @@ export function createRecallService(deps: RecallDeps): {
         sweep(t)
 
         const notes = await loadNotes(dir)
+        // sources can answer a prompt even when memory has nothing
+        const sourcesOn =
+            !!deps.sources &&
+            settings.semantic &&
+            (req.mode === 'prompt' || req.mode === 'subagent')
         // an empty memory dir still has a vault map to hand a new session
-        if (!notes.length && !(req.mode === 'session-start' && deps.vault)) return none('no-memory')
+        if (!notes.length && !(req.mode === 'session-start' && deps.vault) && !sourcesOn)
+            return none('no-memory')
 
         if (req.mode === 'session-start') {
             // The brain block (vault map + profile + memory index); without a vault, or if composing
@@ -575,10 +717,30 @@ export function createRecallService(deps: RecallDeps): {
         const hasQuery = !!(primary.trim() || context?.trim() || location?.trim())
         if (!hasQuery && !vaultPaths.length) return none('no-match')
 
+        // Sources start now and run beside the memory pipeline; they are read after the memory pack.
+        const sourcesP: Promise<SourceHit[]> =
+            sourcesOn && primary.trim()
+                ? gatherSources({
+                      sources: deps.sources!,
+                      switches: deps.vault
+                          ? readRecallSourcesSync(deps.vault)
+                          : { files: true, chats: true, docs: true },
+                      embedder: deps.embedder(),
+                      reranker: deps.reranker?.() ?? null,
+                      mode: req.mode as 'prompt' | 'subagent',
+                      queryText: mem.semanticQueryText({ primary, context, location }),
+                      rerankText: mem.rerankQuery({ primary, ...(context ? { context } : {}) }),
+                      channel: req.channel ?? 'daemon',
+                      sessionId: req.sessionId,
+                      sent: ledger.injected,
+                      timeoutMs: deps.rerankTimeoutMs ?? RERANK_TIMEOUT_MS,
+                  })
+                : Promise.resolve([])
+
         let semantic: Map<string, number> | undefined
         if (settings.semantic) {
             const embedder = deps.embedder()
-            if (hasQuery && embedder && deps.semanticScores)
+            if (hasQuery && notes.length && embedder && deps.semanticScores)
                 semantic = await deps
                     .semanticScores(
                         embedder,
@@ -590,7 +752,7 @@ export function createRecallService(deps: RecallDeps): {
         } else deps.semanticOff?.()
 
         const query = { primary, ...(context ? { context } : {}), ...(location ? { location } : {}) }
-        const ranked: RankedNote[] = hasQuery
+        const ranked: RankedNote[] = hasQuery && notes.length
             ? eng.rankNotes(indexFor(dir, notes), query, mem.rankOptions(req.mode, semantic))
             : []
 
@@ -655,31 +817,63 @@ export function createRecallService(deps: RecallDeps): {
             const floor = (onSemantic && limits.semanticMinScore) || limits.minScore
             packed = withKeywordPicks(packed, onList, keyword, floor, limits.maxNotes, packOn)
         }
+        const sourceHits = await sourcesP
         // `semantic: true` says the semantic channel scored this request, matched or not.
-        if (!packed.text)
+        if (!packed.text && !sourceHits.length)
             return {
-                ...none('no-match'),
+                ...none(notes.length ? 'no-match' : 'no-memory'),
                 ...(scored ? { semantic: true as const } : {}),
                 ...(gated ? { reranked: true as const } : {}),
             }
 
         const limits = mem.PACK_LIMITS[req.mode]
-        const injectedNow = new Set(packed.injected.map(i => i.name))
-        packed.text = markBoosted(packed.text, boosted.filter(n => injectedNow.has(n.name)), limits.budgetChars)
-        if (limits.pointers > 0)
-            packed.text = preferNeighbourPointers(packed.text, notes, [...injectedNow], exclude, limits)
+        if (packed.text) {
+            const injectedNow = new Set(packed.injected.map(i => i.name))
+            packed.text = markBoosted(packed.text, boosted.filter(n => injectedNow.has(n.name)), limits.budgetChars)
+            if (limits.pointers > 0)
+                packed.text = preferNeighbourPointers(packed.text, notes, [...injectedNow], exclude, limits)
+        }
+
+        // Sources fill what budget memory left; with no memory the block is the banner and sources.
+        let block: string | null = packed.text
+        let sourcesNow: SourceHit[] = []
+        if (sourceHits.length) {
+            const tag = mem.MEMORY_BLOCK_TAG
+            const bare = `<${tag}>\n${mem.MEMORY_BANNER}\n\n</${tag}>`
+            const room = limits.budgetChars - (packed.text ?? bare).length
+            const sp = packSources(sourceHits, req.mode as 'prompt' | 'subagent', room, deps.vault ?? '')
+            if (sp.text) {
+                sourcesNow = sp.injected
+                if (!packed.text) block = `<${tag}>\n${mem.MEMORY_BANNER}\n\n${sp.text}</${tag}>`
+                else {
+                    const closeAt = packed.text.lastIndexOf(`</${tag}>`)
+                    block =
+                        closeAt < 0
+                            ? `${packed.text}\n${sp.text}`
+                            : `${packed.text.slice(0, closeAt)}${sp.text}${packed.text.slice(closeAt)}`
+                }
+            }
+        }
+        if (!block)
+            return {
+                ...none(notes.length ? 'no-match' : 'no-memory'),
+                ...(scored ? { semantic: true as const } : {}),
+                ...(gated ? { reranked: true as const } : {}),
+            }
 
         // The caller gave up on this recall, so the model never saw these notes: leave the ledger be.
         if (req.signal?.aborted) return none('no-match')
         for (const i of packed.injected) ledger.injected.set(i.name, i.hash)
+        for (const h of sourcesNow) ledger.injected.set(sourceKey(h), h.hash)
         if (req.mode === 'tool') ledger.toolBatches++
         ledger.lastSeen = t
         ledgers.set(key, ledger)
         return {
-            context: packed.text,
+            context: block,
             injected: packed.injected.map(i => i.name),
             ...(scored ? { semantic: true as const } : {}),
             ...(gated ? { reranked: true as const } : {}),
+            ...(sourcesNow.length ? { sources: sourcesNow.map(sourceKey) } : {}),
         }
     }
 
@@ -687,6 +881,53 @@ export function createRecallService(deps: RecallDeps): {
         recall: req => recall(req).catch(() => none('no-match')),
         reset,
     }
+}
+
+const denyPlans = new Map<string, { at: number; p: Promise<DenyPlan> }>()
+/** The deny plan walks every frontmatter in the vault: share one per vault and channel for 30 s. */
+const denyPlanFor = (vault: string, ch: 'chat' | 'daemon') => {
+    const k = `${vault}|${ch}`
+    const hit = denyPlans.get(k)
+    if (hit && Date.now() - hit.at < 30_000) return hit.p
+    const p = resolveDenyPlan(vault, ch)
+    denyPlans.set(k, { at: Date.now(), p })
+    p.catch(() => denyPlans.delete(k))
+    return p
+}
+
+/** Drop a vault's cached deny plans; the server calls it whenever the watcher bumps its version,
+ *  so a note hidden just now stops being recalled at once. The 30 s TTL is only an upper bound. */
+export function invalidateRecallDenyPlans(vault: string): void {
+    denyPlans.delete(`${vault}|chat`)
+    denyPlans.delete(`${vault}|daemon`)
+}
+
+/** The three real sources, run side by side; each is dropped alone when it is slower than the
+ *  rerank budget or fails. Loaded lazily: nothing here is needed until a semantic query runs. */
+export async function sourcesFor(
+    vault: string,
+    q: SourceQuery & { switches: RecallSourceSwitches },
+): Promise<SourceHit[]> {
+    const run = async (on: boolean, f: () => Promise<SourceHit[]>): Promise<SourceHit[]> =>
+        on ? ((await withTimeout(f(), RERANK_TIMEOUT_MS).catch(() => undefined)) ?? []) : []
+    const [files, chats, docs] = await Promise.all([
+        run(q.switches.files, async () => {
+            const plan = await denyPlanFor(vault, q.channel)
+            // a vault that cannot say what is restricted shows no files
+            if (!plan.determined) return []
+            return (await import('./vaultEmbed')).vaultSourceHits(vault, { ...q, deny: plan.entries })
+        }),
+        run(q.switches.chats, async () => {
+            const plan = await denyPlanFor(vault, q.channel)
+            // as `bismuth history`: a transcript may quote any restricted note, so a vault that
+            // restricts a note or folder (per-chat levels alone do not count) recalls no chats
+            // a folderVisibility rule on an empty folder yields no deny entries, so chats still inject there (nothing in it to quote)
+            if (!plan.determined || plan.entries.some(e => e.kind !== 'chat')) return []
+            return (await import('./chatEmbed')).chatSourceHits(vault, q)
+        }),
+        run(q.switches.docs, async () => (await import('./docsEmbed')).docsSourceHits(q)),
+    ])
+    return [...files, ...chats, ...docs]
 }
 
 const shared = new Map<string, ReturnType<typeof createRecallService>>()
@@ -713,6 +954,7 @@ export function recallServiceFor(
             semanticScores: (e, q, n, d) => sharedSemanticChannel().semanticScores(e, q, n, d),
             semanticOff: () => sharedSemanticChannel().pause(),
             reranker: () => sharedReranker(),
+            sources: q => sourcesFor(vault, q),
             vault,
         })
         shared.set(key, svc)

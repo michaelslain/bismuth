@@ -2465,9 +2465,30 @@
     "max": null,
     "required": false
   },
+  "daemon.recall.chats": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.recall.docs": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "daemon.recall.enabled": {
     "type": "boolean",
     "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.recall.files": {
+    "type": "boolean",
+    "default": true,
     "min": null,
     "max": null,
     "required": false
@@ -2599,6 +2620,13 @@
       "kind": "object"
     },
     "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "embeddings.describeImages": {
+    "type": "boolean",
+    "default": false,
     "min": null,
     "max": null,
     "required": false

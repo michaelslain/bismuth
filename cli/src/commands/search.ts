@@ -4,7 +4,7 @@
 // app's file watcher picks up the writes live.
 import type { CommandMap } from '../types'
 import { BOOLEAN_FLAGS, bool, fail, flag, out, positionals, requireVault } from '../args'
-import { semanticQuery } from '../semantic'
+import { semanticQuery, type SearchHit } from '../semantic'
 import { searchVault, type SearchOpts } from '../../../core/src/search'
 import { replaceInVault } from '../../../core/src/replace'
 import { commitVault, snapshotMessage } from '../../../core/src/backup'
@@ -21,6 +21,15 @@ function buildOpts(args: string[]): SearchOpts {
         caseSensitive: bool(args, 'case'),
         wholeWord: bool(args, 'word'),
     }
+}
+
+/** The left column of a `--semantic` line: a note's path as is, `a.pdf p.4`, `a.png (image)`, or
+ *  `chat <date> <session-id>`. */
+export function semanticLabel(h: SearchHit): string {
+    if (h.kind === 'chat') return `chat ${h.date ?? ''} ${h.session ?? ''}`.replace(/ {2,}/g, ' ').trim()
+    if (h.kind === 'pdf') return h.page ? `${h.path} p.${h.page}` : h.path
+    if (h.kind === 'image') return `${h.path} (image)`
+    return h.path
 }
 
 export const commands: CommandMap = {
@@ -45,8 +54,7 @@ export const commands: CommandMap = {
                 const r = await semanticQuery(args, vault, { query }, entries, limit)
                 if (!Array.isArray(r)) fail(r.message)
                 if (bool(args, 'json')) return out(r, args)
-                for (const h of r)
-                    console.log(`${h.path}  ${h.score.toFixed(3)}  ${h.excerpt}`)
+                for (const h of r) console.log(`${semanticLabel(h)}  ${h.score.toFixed(3)}  ${h.excerpt}`)
                 return
             }
             const results = await searchVault(

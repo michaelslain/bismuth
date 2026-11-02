@@ -268,7 +268,7 @@ These tools measure rather than judge. Each takes its own flags; read the header
 | `bench/bench.ts` | Backend hot paths (`listTree`, search, task evaluation) over a synthetic vault, with worst event-loop stall | `bun bench/bench.ts --vault-size 2000 --label current` |
 | `bench/paneLoad.ts` | Idle cost of a PDF pane beside the daemon page against a running core and Vite: requests per minute, main-thread busy time, core CPU, PDF first paint and bytes. It prints one JSON object | `bun bench/paneLoad.ts --base <vite url> --api <core url> --pdf <vault path> [--seconds 60]` (`--base`, `--api`, `--pdf` required) |
 | `bench/basesPerfBench.ts` | Bases and tasks timing over a synthetic vault; compare the printed tables before and after a change | `bun run bench:bases-perf` |
-| `bench/recallEval.ts` | Memory-recall rankers against labelled cases; `--service [--embeddings off\|on] [--explain]` runs them through the real recall service | `bun bench/recallEval.ts --dir <memoryDir> --cases <file>` |
+| `bench/recallEval.ts` | Memory-recall rankers against labelled cases; `--service [--embeddings off\|on] [--sources off\|on] [--explain]` runs them through the real recall service, and with sources on counts the vault, chat and docs injections | `bun bench/recallEval.ts --dir <memoryDir> --cases <file>` |
 | `bench/watch.sh` | A live progress view of a running `cssBaseline` or `storyAudit` sweep | `bash bench/watch.sh` in a second terminal |
 
 ## How it works

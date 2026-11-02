@@ -182,13 +182,13 @@ If the extension in `path` disagrees with the content type, the extension is cor
 |---|---|---|---|
 | `POST /search` | `{query, opts: {caseSensitive, wholeWord, regex}, snippetLimit?}` | `[{path, matchCount, snippets}]`, every matching note. `400` on an invalid regex. | filtered; none |
 | `POST /search-prompt` | `{query}`, a natural-language question | The `/search` shape plus a `reason` per hit. | filtered; none |
-| `POST /search/semantic` | `{query?, around?, k?}`; `query` is a text, `around` a note path | `{hits: [{path, score, excerpt}]}` or `{unavailable, message}`, always `200`. `400` when neither `query` nor `around` is a string. | filtered; none |
+| `POST /search/semantic` | `{query?, around?, k?, chats?}`; `query` is a text, `around` a note path | `{hits: [{path, score, excerpt}]}` or `{unavailable, message}`, always `200`. `400` when neither `query` nor `around` is a string. | filtered; none |
 
 `snippetLimit` caps the snippets per note (default 20) and does not change `matchCount`.
 Without `regex`, results are ranked in three tiers: full-text matches, then literal matches the index missed, then typo matches when `caseSensitive` is false.
 With `regex`, every note is scanned and results sort by match count.
 
-`POST /search/semantic` ranks notes by meaning rather than by words. With `query` it returns the notes closest to that text; with `around` it returns the notes closest to that note, the note itself excluded, and `around` wins when both are sent. `k` is the number of hits (default `10`; a value that is not a positive number falls back to the default). `excerpt` is the best-matching passage of the note, up to 300 characters, and `score` is higher for a closer match.
+`POST /search/semantic` ranks notes by meaning rather than by words. With `query` it returns the notes closest to that text; with `around` it returns the notes closest to that note, the note itself excluded, and `around` wins when both are sent. `k` is the number of hits (default `10`; a value that is not a positive number falls back to the default). `chats: false` leaves past chats out of the hits, so a caller that must drop them gets `k` files and receives no chat excerpts. `excerpt` is the best-matching passage of the note, up to 300 characters, and `score` is higher for a closer match.
 The route reads `embeddings.enabled` from the vault's `.settings` on every call. When the answer is not a hit list, the body is `{unavailable, message}` with HTTP `200`:
 
 | `unavailable` | Meaning |

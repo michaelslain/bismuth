@@ -52,6 +52,7 @@ import { dailyNotePath, dailyNoteContent } from '../dailyNote'
 import { searchVault } from '../search'
 import { promptSearch } from '../searchPrompt'
 import { vaultSemanticNeighbours, vaultSemanticSearch } from '../vaultEmbed'
+import { chatSemanticSearch } from '../chatEmbed'
 import { listFsPaths } from '../fsPaths'
 import { replaceInVault } from '../replace'
 import { spawnVaultBackend } from '../openFolder'
@@ -573,24 +574,53 @@ export default function vaultRoutes(
             }
         },
 
-        // Semantic (embedding) search over vault notes, or the neighbours of one note (`around`).
-        // Read-only despite POST. Answers 200 with `{ hits }` or `{ unavailable, message }`; denied
-        // notes are dropped before `k` is applied.
+        // Semantic (embedding) search over vault files (notes, PDFs by page, described images) and past
+        // chats, or the neighbours of one file (`around`, files only). Read-only despite POST.
+        // Answers 200 with `{ hits }` or `{ unavailable, message }`; denied files are dropped before
+        // `k` is applied. Chats join only for the owner or an agent in a vault that restricts nothing;
+        // the owner's token may narrow its chat view to `daemon` with `channel` (the CLI does so for
+        // an agent hand), and `chats: false` leaves chats out for any caller. A chat source that is unavailable while files answered leaves files alone.
         'POST /search/semantic': async (req, __) => {
-            const { query, around, k } = (await req.json()) as {
+            const { query, around, k, channel, chats: withChats } = (await req.json()) as {
                 query?: string
                 around?: string
                 k?: number
+                channel?: string
+                chats?: boolean
             }
             if (typeof query !== 'string' && typeof around !== 'string')
                 return new Response('query or around is required', { status: 400 })
             const deny = await denyEntriesForRequest(req)
-            const opts = { k: typeof k === 'number' && k > 0 ? Math.floor(k) : undefined, deny }
-            const r =
-                typeof around === 'string'
-                    ? await vaultSemanticNeighbours(cfg.vault, around, opts)
-                    : await vaultSemanticSearch(cfg.vault, query!, opts)
-            return Response.json(Array.isArray(r) ? { hits: r } : r)
+            const kk = typeof k === 'number' && k > 0 ? Math.floor(k) : undefined
+            const opts = { k: kk, deny }
+            if (typeof around === 'string') {
+                const r = await vaultSemanticNeighbours(cfg.vault, around, opts)
+                return Response.json(Array.isArray(r) ? { hits: r } : r)
+            }
+            const files = await vaultSemanticSearch(cfg.vault, query!, opts)
+            if (!Array.isArray(files)) return Response.json(files)
+            const asked = requestChannel(req)
+            const chatChannel = asked === 'owner' ? (channel === 'daemon' ? 'daemon' : 'chat') : asked
+            // `chats: false` skips the chat index: a caller that must drop chats anyway (the CLI for an
+            // agent in a restricted vault) neither pays for them nor receives their excerpts.
+            const chats =
+                withChats === false || (asked !== 'owner' && deny.length > 0)
+                    ? []
+                    : await chatSemanticSearch(cfg.vault, query!, { k: kk, channel: chatChannel })
+            const merged = [
+                ...files.map(h => ({ ...h, kind: h.kind ?? 'note' })),
+                ...(Array.isArray(chats)
+                    ? chats.map(c => ({
+                          path: `chat ${c.id}`,
+                          score: c.score,
+                          excerpt: c.excerpt,
+                          kind: 'chat' as const,
+                          date: c.date,
+                          session: c.id,
+                      }))
+                    : []),
+            ].sort((a, b) => b.score - a.score)
+            return Response.json({ hits: kk ? merged.slice(0, kk) : merged })
         },
 
         // AI prompt-search fallback: re-rank keyword candidates with a one-shot Haiku turn when the

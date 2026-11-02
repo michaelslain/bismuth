@@ -471,6 +471,21 @@ The logs read are Claude Code's, kept per working directory under `~/.claude/pro
 The session running the command is left out of its own results.
 An agent is refused `history` in a restricted vault, because a transcript quotes whatever its session read and has no single path to filter.
 
+## image
+
+Has Claude describe an image so semantic search and recall can find it. Headless; it uses the machine's own `claude` login. With `embeddings.describeImages` on, the server does the same for each new or changed image on its own.
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `image describe` | `<file> [--force] [--vault <dir>]` | Writes a description of the image, including any visible text, into `description` in its companion note. Prints `{path, companion, description, skipped?}`. | no |
+
+The reply carries `skipped` instead of a new description when the image is unchanged since the last description (`unchanged`; `--force` describes it again), over 5 MB (`too-large`), not a format Claude reads, which is png, jpg, gif or webp (`unsupported`), or [hidden](../vault/visibility.md) from the daemon (`hidden`).
+The companion note is created when missing, and its other properties and body stay as they are. A file that is not an image fails, and so does a machine with no `claude` installed.
+
+```bash
+bismuth image describe photos/board.png
+```
+
 ## install and uninstall
 
 Installs or removes the CLI and MCP server machine-wide. Neither touches the vault. The packaged app installs the CLI and MCP server itself on launch; see [install](../overview/install.md).
@@ -584,7 +599,7 @@ Full-text search and vault-wide find-and-replace. Both share three booleans: `--
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `search` | `<query> [--regex] [--case] [--word]` | Prints ranked matches with snippets, with no cap on results. | no |
-| `search --semantic` | `<query> [--limit n] [--json]` | Ranks notes by meaning instead of text. Prints one `path  score  excerpt` line per hit, or the hits as JSON. `--limit` defaults to `10`. | optional |
+| `search --semantic` | `<query> [--limit n] [--json]` | Ranks notes, PDFs, images and past chats by meaning instead of text. Prints one `path  score  excerpt` line per hit (a PDF adds `p.<page>`, an image `(image)`, a chat `chat <date> <session-id>`), or the hits as JSON. `--limit` defaults to `10`. | optional |
 | `replace` | `<query> <replacement> [--scope <path>] [--no-snapshot] [--regex] [--case] [--word]` | Replaces across the vault, or in one note with `--scope`. Prints the result object. | no |
 
 Without `--regex`, search is mid-word and typo tolerant.
@@ -709,7 +724,8 @@ The visibility gate in `core/src/visibilityCliGate.ts` runs once in `index.ts` b
 Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `call` attaches the owner token and turns failures into messages.
 The run registry is `core/src/runRegistry.ts`.
 `history` parses each session log with `memory/src/sessionHistory.ts`, which reuses the turn folding in `memory/src/transcript.ts`.
+`image describe` calls `describeImage` in `core/src/imageDescribe.ts`, which sends the bytes to Haiku through the Agent SDK and records a content hash in `describedHash`.
 `cli/src/ocr.ts` builds the engine argv for `ocr`; Marker and engine lookup, shared with `pdf md`, are in `core/src/marker.ts`.
 `cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
 
-Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `core/src/imageDescribe.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`

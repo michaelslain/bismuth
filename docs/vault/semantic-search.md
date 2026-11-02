@@ -1,6 +1,6 @@
 # Semantic search
 
-Semantic search ranks the notes in a vault by meaning instead of by the words they contain, so a query like "how do I plan a launch" finds a note titled "Release checklist". It is off by default and shares one switch, `embeddings.enabled`, with the meaning-based channel of memory recall.
+Semantic search ranks the notes, PDFs, images and past chats of a vault by meaning instead of by the words they contain, so a query like "how do I plan a launch" finds a note titled "Release checklist". It is off by default and shares one switch, `embeddings.enabled`, with the meaning-based channel of memory recall.
 Read it to decide whether to turn the switch on, to run a meaning-based query, or to change how the index is built.
 
 ```yaml
@@ -17,7 +17,16 @@ bismuth search "open things" --semantic --limit 3 --vault ~/Notes
 open.md  0.912  about open things
 ```
 
-Each hit is the note path, a cosine score and an excerpt of the best matching passage, at most 300 characters.
+Each hit is a path, a cosine score and an excerpt of the best matching passage, at most 300 characters. A hit carries a kind:
+
+| Kind | What it is | Text line starts with | JSON fields |
+|---|---|---|---|
+| `note` | A markdown note. | `open.md` | `path`, `score`, `excerpt`, `kind` |
+| `pdf` | One page of a PDF with a text layer. | `papers/a.pdf p.4` | the same, plus `page` |
+| `image` | An image, found through its description. `path` is the image itself, never its companion note. | `photos/board.png (image)` | the same |
+| `chat` | A past conversation in this vault. | `chat 2026-10-29 <session-id>` | `path` (`chat <session-id>`), `score`, `excerpt`, `kind`, `date`, `session` |
+
+Hits of every kind are merged by score, so one list can mix them.
 
 ## What does turning it on cost?
 
@@ -28,9 +37,9 @@ With the key off, recall and search are keyword-only and the helper never starts
 
 ## How do I run a semantic query?
 
-Run `bismuth search <query> --semantic [--limit n] [--json]`. `--limit` defaults to `10`; `--json` prints the hits as an array of `{path, score, excerpt}`. [The CLI reference](../cli/reference.md) has every flag.
+Run `bismuth search <query> --semantic [--limit n] [--json]`. `--limit` defaults to `10`; `--json` prints the hits as an array of the objects in the table above. [The CLI reference](../cli/reference.md) has every flag.
 
-`bismuth map --around <note>` adds a `similar:` line of up to five near notes when the switch is on and the answer arrives within two seconds. With the switch off, or when the answer is unavailable or late, the output is unchanged and the exit code stays `0`. `--json` adds a `similar` array in the same case.
+`bismuth map --around <note>` adds a `similar:` line of up to five near files (notes, PDFs and images, never chats) when the switch is on and the answer arrives within two seconds. With the switch off, or when the answer is unavailable or late, the output is unchanged and the exit code stays `0`. `--json` adds a `similar` array in the same case.
 
 ```text
 # open.md
@@ -60,15 +69,27 @@ When no core answers, the CLI runs the query in its own process if the switch is
 
 A running core that does not answer in time yields `warming` and no in-process run, because it is probably still loading the same model. A running core that answers with an error prints that error and exits `1`, also with no in-process run.
 
+## How does an image get a description?
+
+An image is found by meaning through the description in its companion note (`photo.png` → `photo.png.md`), so an image with no description is not in the index. Turn on `embeddings.describeImages` and core has Claude Haiku describe each new or changed image, including any visible text, through your own `claude` login:
+
+```yaml
+embeddings:
+  enabled: true
+  describeImages: true
+```
+
+For one image on demand, run `bismuth image describe <file> [--force]`. An image whose bytes are unchanged since its last description is skipped unless `--force` is given. Images over 5 MB, formats Claude cannot read, and images hidden from the daemon are never sent. [The CLI reference](../cli/reference.md) has the output shape.
+
 ## What can agents not see?
 
-A hidden or chat-only note never appears in the hits, the `similar:` line or an excerpt for an agent. Denied notes are dropped before the limit is applied, so a hidden best match does not take a slot. A hidden note used as the `--around` anchor returns nothing. [Visibility controls](visibility.md) explains the levels. You see everything from your own shell.
+A hidden or chat-only note, PDF or image never appears in the hits, the `similar:` line or an excerpt for an agent. Chats follow `chatVisibility`, and an agent in a vault that restricts any note gets no chat hits at all, the same rule `bismuth history` keeps. Denied notes are dropped before the limit is applied, so a hidden best match does not take a slot. A hidden note used as the `--around` anchor returns nothing. [Visibility controls](visibility.md) explains the levels. You see everything from your own shell.
 
 ## What happens in the background?
 
 - Turning the switch off stops background embedding, including a pass already running. Turning it on again rescans the vault and embeds the notes that changed.
 - Core re-embeds changed notes shortly after a file change and after the vault loads at boot.
-- Only markdown notes are indexed. Any file or folder whose path has a dot-prefixed segment is skipped, which keeps the `.daemon/` folder out of the index.
+- Markdown notes, PDFs (page by page) and images (through the description in their companion note) are indexed, and past chats are indexed in their own store. Any file or folder whose path has a dot-prefixed segment is skipped, which keeps the `.daemon/` folder out of the index.
 - Vectors persist between runs, so a restart embeds only what changed.
 
 ## How it works
@@ -81,8 +102,8 @@ A query with `build: true` (what the CLI's in-process run passes) also runs the 
 
 `core/src/memoryEmbed.ts` owns the shared embedder child process (loaded lazily, exits when idle) and the vector store. Memory recall and vault search share the one process. `core/src/embeddingsSetting.ts` is the single reader of the switch: it reads `.settings` on each call and returns `false` on any missing or malformed value.
 
-`POST /search/semantic` in `core/src/routes/vault.ts` takes `{query, k}` or `{around, k}` and answers `{hits}` or `{unavailable, message}` with status `200`; it returns `400` when neither `query` nor `around` is a string. It is read-only despite the method, and it applies the caller's visibility. [The HTTP reference](../api/http-reference.md#search) lists the other search routes.
+`POST /search/semantic` in `core/src/routes/vault.ts` takes `{query, k}` or `{around, k}` and answers `{hits}` (files merged with `chatSemanticSearch` from `core/src/chatEmbed.ts` for a `query`, files only for `around`; a chat source that is unavailable leaves the files alone) or `{unavailable, message}` with status `200`; it returns `400` when neither `query` nor `around` is a string. It is read-only despite the method, and it applies the caller's visibility. [The HTTP reference](../api/http-reference.md#search) lists the other search routes.
 
-`cli/src/semantic.ts` picks the core, posts to the route asking for `k` plus the number of deny entries, applies the deny filter again on the CLI side and keeps the first `k`, and falls back to the in-process functions in `vaultEmbed.ts` only when no core answers. `tryCall` (`cli/src/http.ts`) tells the cases apart: a value, no core reachable, a timeout, or an error status from a live core. One time budget covers the server attempt and the fallback together.
+`cli/src/semantic.ts` picks the core, posts to the route asking for `k` plus the number of deny entries, applies the deny filter again on the CLI side and keeps the first `k`, and falls back to the in-process functions in `vaultEmbed.ts` and `chatEmbed.ts` only when no core answers, merging them the same way. It drops chat hits whenever the deny list is not empty. `tryCall` (`cli/src/http.ts`) tells the cases apart: a value, no core reachable, a timeout, or an error status from a live core. One time budget covers the server attempt and the fallback together.
 
 Source: `core/src/vaultEmbed.ts`, `core/src/memoryEmbed.ts`, `core/src/embeddingsSetting.ts`, `core/src/routes/vault.ts`, `cli/src/semantic.ts`, `cli/src/commands/search.ts`, `cli/src/commands/map.ts`

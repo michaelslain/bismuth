@@ -15,10 +15,19 @@ import {
     type SemanticHit,
     type SemanticUnavailable,
 } from '../../core/src/vaultEmbed'
+import { chatSemanticSearch } from '../../core/src/chatEmbed'
+import { cliGateChannel } from '../../core/src/visibilityCliGate'
 import { filterByPath } from '../../core/src/visibilityFilter'
 import type { DenyEntry } from '../../core/src/visibility'
 
-export type SemanticResult = SemanticHit[] | SemanticUnavailable
+/** One `search --semantic` hit: a file (note, pdf with `page`, image by its binary path) or a chat
+ *  (`path` is `chat <session-id>`, with `date` and `session`). */
+export type SearchHit = Omit<SemanticHit, 'kind'> & {
+    kind?: 'note' | 'pdf' | 'image' | 'chat'
+    date?: string
+    session?: string
+}
+export type SemanticResult = SearchHit[] | SemanticUnavailable
 
 /** The running core to ask: an explicit --api / BISMUTH_API / CLAUDE_RELAY_URL, else the core the
  *  run registry lists for this vault. Never the :4321 guess, which may serve another vault. An
@@ -39,7 +48,7 @@ function coreFor(args: string[], vault: string): string | undefined {
     return resolveRunRegistryBase(target)
 }
 
-const isHits = (v: unknown): v is { hits: SemanticHit[] } =>
+const isHits = (v: unknown): v is { hits: SearchHit[] } =>
     !!v && Array.isArray((v as { hits?: unknown }).hits)
 const isUnavailable = (v: unknown): v is SemanticUnavailable =>
     !!v && typeof (v as { unavailable?: unknown }).unavailable === 'string'
@@ -57,6 +66,12 @@ const WARMING: SemanticUnavailable = {
     unavailable: 'warming',
     message: 'the running server did not answer in time',
 }
+
+const agentChannel = (): 'chat' | 'daemon' | null => cliGateChannel() as 'chat' | 'daemon' | null
+
+/** An agent in a vault that restricts anything gets no chat hits (the rule `bismuth history` keeps). */
+const withoutChats = (hits: SearchHit[], deny: DenyEntry[]): SearchHit[] =>
+    deny.length > 0 ? hits.filter(h => h.kind !== 'chat') : hits
 
 /** Test seam: replaces `workerAvailable` for one call. */
 export type SemanticDeps = { workerAvailable?: () => boolean }
@@ -82,12 +97,12 @@ export async function semanticQuery(
         // "owner", so it returns the unfiltered top k. Ask for k + deny.length, then filter and cut
         // back to k: buildDenyPaths emits one entry per restricted file, so deny.length bounds the
         // notes the filter can remove.
-        const r = await tryCall(base, 'POST', '/search/semantic', { ...q, k: k + deny.length }, timeoutMs ?? DEFAULT_WAIT_MS + 5000)
+        const r = await tryCall(base, 'POST', '/search/semantic', { ...q, k: k + deny.length, ...(deny.length > 0 ? { chats: false } : {}), ...(agentChannel() === 'daemon' ? { channel: 'daemon' } : {}) }, timeoutMs ?? DEFAULT_WAIT_MS + 5000)
         if ('timeout' in r) return WARMING
         // A live core that answered with a failure is not an absent one: never load a model here.
         if ('error' in r) return fail(`POST /search/semantic → ${r.error}: ${r.message || 'the running server failed the request'}`)
         if ('value' in r) {
-            if (isHits(r.value)) return filterByPath(r.value.hits, deny, h => h.path).slice(0, k)
+            if (isHits(r.value)) return withoutChats(filterByPath(r.value.hits, deny, h => h.path), deny).slice(0, k)
             if (isUnavailable(r.value)) return r.value
         }
     }
@@ -98,10 +113,36 @@ export async function semanticQuery(
         return { unavailable: 'warming', message: 'the semantic index did not answer in time' }
     // No core will ever embed this vault for us, so the query builds the index itself.
     const opts = { k, deny, waitMs: remaining, build: true }
-    const run =
+    const wantChats = q.around === undefined && deny.length === 0
+    const run: Promise<SemanticResult> =
         q.around !== undefined
             ? vaultSemanticNeighbours(vault, q.around, opts)
-            : vaultSemanticSearch(vault, q.query ?? '', opts)
+            : Promise.all([
+                  vaultSemanticSearch(vault, q.query ?? '', opts),
+                  wantChats
+                      ? chatSemanticSearch(vault, q.query ?? '', {
+                            k,
+                            channel: agentChannel() === 'daemon' ? 'daemon' : 'chat',
+                            waitMs: remaining,
+                            build: true,
+                        })
+                      : Promise.resolve([]),
+              ]).then(([files, chats]) => {
+                  if (isSemanticUnavailable(files)) return files
+                  // The chat source being unavailable leaves the files alone.
+                  const chatHits: SearchHit[] = Array.isArray(chats)
+                      ? chats.map(c => ({
+                            path: `chat ${c.id}`,
+                            score: c.score,
+                            excerpt: c.excerpt,
+                            kind: 'chat' as const,
+                            date: c.date,
+                            session: c.id,
+                        }))
+                      : []
+                  const fileHits: SearchHit[] = files.map(h => ({ ...h, kind: h.kind ?? 'note' }))
+                  return [...fileHits, ...chatHits].sort((a, b) => b.score - a.score).slice(0, k)
+              })
     let timer: ReturnType<typeof setTimeout> | undefined
     const r = remaining !== undefined
         ? await Promise.race([
@@ -115,5 +156,5 @@ export async function semanticQuery(
           ])
         : await run
     clearTimeout(timer)
-    return isSemanticUnavailable(r) ? r : filterByPath(r, deny, h => h.path)
+    return !Array.isArray(r) ? r : withoutChats(filterByPath(r, deny, h => h.path), deny)
 }

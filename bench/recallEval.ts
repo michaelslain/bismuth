@@ -15,7 +15,15 @@
 // on = the real semantic channel + reranker, as `recallServiceFor` wires them (the model downloads to
 // ~/.bismuth/models on first use). The legacy and bm25 rows ride along for comparison. --explain
 // prints, for each miss and false injection, the lexical ranker's score and the rule that decided it.
+//   ... --service --embeddings on --sources on
+// --sources on (needs --embeddings on): the service also gets the three real sources (vault files,
+// past chats, Bismuth docs) over the fixtures the cases file carries beside its `cases` -- see
+// memory/test/fixtures/recallSourceCases.json: { vault, docs, chats, cases }. A case's `expect` may
+// name source keys (`docs:<page>#<anchor>`, `chat:<id>`, `note:<path>`, `pdf:<path>`); a case with
+// `sourcesExpect: []` must inject no source. The summary then adds sourceRecall@5 and
+// sourceFalseInject. --sources off (the default) leaves every number as it was.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { isMemoryNoteVisibleToDaemon, loadAllNotes } from '../memory/src/graph'
@@ -38,8 +46,23 @@ export type EvalCase = {
     /** A tool case with a full-size payload (absolute path, a real response body), reported on its
      *  own as well as inside the tool group. */
     realistic?: boolean
+    /** Memory note names, plus (with `--sources on`) source keys `kind:id`. */
     expect: string[]
+    /** Source keys that must inject; `[]` says no source may inject. */
+    sourcesExpect?: string[]
 }
+
+/** A source key (`sourceKey` in core/src/semanticSources.ts): `kind:id`. */
+const SOURCE_KEY = /^(note|pdf|image|chat|docs):/
+export const isSourceKey = (k: string) => SOURCE_KEY.test(k)
+/** The memory note names a case expects: `expect` without its source keys. */
+export const memoryExpect = (c: EvalCase) => c.expect.filter(k => !isSourceKey(k))
+/** The source keys a case expects to inject. */
+export const sourceExpect = (c: EvalCase) => [
+    ...new Set([...c.expect.filter(isSourceKey), ...(c.sourcesExpect ?? [])]),
+]
+/** Whether a case says anything about sources. */
+export const hasSourceExpectation = (c: EvalCase) => c.sourcesExpect !== undefined || c.expect.some(isSourceKey)
 export type RankerName = 'legacy' | 'bm25' | 'hybrid' | 'rerank'
 export type Reranker = { rerank(query: string, passages: string[]): Promise<number[]>; dispose(): void }
 export type Embedder = { embed(texts: string[]): Promise<Float32Array[]>; dispose(): void }
@@ -231,6 +254,8 @@ export type CaseRun = {
     /** `--service` only: the semantic channel scored the request / the cross-encoder gate decided it. */
     semantic?: boolean
     reranked?: boolean
+    /** `--service --sources on` only: the `sourceKey` of each injected source hit, in block order. */
+    sources?: string[]
 }
 
 export type Summary = {
@@ -244,6 +269,12 @@ export type Summary = {
     meanChars: number
     p50ms: number
     p95ms: number
+    /** Only when the runs carry source injections: mean share of expected source keys among the
+     *  first 5 injected, over cases that expect any. */
+    sourceRecall5?: number
+    /** Only when the runs carry source injections: share of `sourcesExpect: []` cases that injected
+     *  any source. */
+    sourceFalseInject?: number
 }
 
 export type Prepared = {
@@ -380,22 +411,40 @@ function pct(sorted: number[], q: number): number {
 }
 
 export function summarize(ranker: string, cases: EvalCase[], runs: CaseRun[]): Summary {
-    const positives = cases.map((c, i) => ({ c, r: runs[i]! })).filter(x => x.c.expect.length > 0)
-    const negatives = cases.map((c, i) => ({ c, r: runs[i]! })).filter(x => x.c.expect.length === 0)
+    const positives = cases.map((c, i) => ({ c, r: runs[i]! })).filter(x => memoryExpect(x.c).length > 0)
+    const negatives = cases.map((c, i) => ({ c, r: runs[i]! })).filter(x => memoryExpect(x.c).length === 0)
     const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
     const recallAt = (k: number) =>
         mean(
             positives.map(
-                ({ c, r }) => c.expect.filter(n => r.injected.slice(0, k).includes(n)).length / c.expect.length,
+                ({ c, r }) =>
+                    memoryExpect(c).filter(n => r.injected.slice(0, k).includes(n)).length / memoryExpect(c).length,
             ),
         )
     const mrr = mean(
         positives.map(({ c, r }) => {
-            const first = r.injected.findIndex(n => c.expect.includes(n))
+            const first = r.injected.findIndex(n => memoryExpect(c).includes(n))
             return first < 0 ? 0 : 1 / (first + 1)
         }),
     )
     const ms = runs.map(r => r.ms).sort((a, b) => a - b)
+    const withSources = runs.some(r => r.sources !== undefined)
+    const srcPositives = cases.map((c, i) => ({ c, r: runs[i]! })).filter(x => sourceExpect(x.c).length > 0)
+    const srcNegatives = cases.map((c, i) => ({ c, r: runs[i]! })).filter(x => x.c.sourcesExpect?.length === 0)
+    const sourceMetrics = withSources
+        ? {
+              sourceRecall5: mean(
+                  srcPositives.map(
+                      ({ c, r }) =>
+                          sourceExpect(c).filter(k => (r.sources ?? []).slice(0, 5).includes(k)).length /
+                          sourceExpect(c).length,
+                  ),
+              ),
+              sourceFalseInject: srcNegatives.length
+                  ? srcNegatives.filter(x => (x.r.sources ?? []).length > 0).length / srcNegatives.length
+                  : 0,
+          }
+        : {}
     return {
         ranker,
         cases: cases.length,
@@ -406,6 +455,7 @@ export function summarize(ranker: string, cases: EvalCase[], runs: CaseRun[]): S
         meanChars: mean(runs.map(r => r.chars)),
         p50ms: pct(ms, 0.5),
         p95ms: pct(ms, 0.95),
+        ...sourceMetrics,
     }
 }
 
@@ -415,15 +465,73 @@ export async function evaluate(p: Prepared, ranker: RankerName, cases: EvalCase[
     return { summary: summarize(ranker, cases, runs), runs }
 }
 
+/** The files a `--sources on` run builds its three sources from: a vault (a string is a markdown
+ *  file, `{ pdf: [page text, ...] }` a PDF), a docs dir, and chat logs (id -> [prompt, reply] turns). */
+export type SourceFixture = {
+    vault?: Record<string, string | { pdf: string[] }>
+    docs?: Record<string, string>
+    chats?: Record<string, [string, string][]>
+}
+
+type CasesFile = EvalCase[] | ({ cases: EvalCase[] } & SourceFixture)
+
+const readCasesFile = (file: string) => JSON.parse(readFileSync(file, 'utf8')) as CasesFile
+
+/** A cases file is a bare array of cases, or `{ cases, vault?, docs?, chats? }`. */
 export function loadCases(file: string): EvalCase[] {
-    return JSON.parse(readFileSync(file, 'utf8')) as EvalCase[]
+    const f = readCasesFile(file)
+    return Array.isArray(f) ? f : f.cases
+}
+
+export function loadSourceFixture(file: string): SourceFixture {
+    const f = readCasesFile(file)
+    return Array.isArray(f) ? {} : { vault: f.vault ?? {}, docs: f.docs ?? {}, chats: f.chats ?? {} }
+}
+
+/** A valid PDF with one text line per page (`(`, `)` and `\\` are escaped). */
+export function makePdf(pages: string[]): string {
+    const esc = (t: string) => t.replace(/[\\()]/g, m => `\\${m}`)
+    const objs: string[] = []
+    objs.push('<< /Type /Catalog /Pages 2 0 R >>')
+    objs.push(`<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`)
+    objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+    pages.forEach((t, i) => {
+        const stream = `BT /F1 12 Tf 20 100 Td (${esc(t)}) Tj ET`
+        objs.push(
+            `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 6000 200] /Contents ${5 + i * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`,
+        )
+        objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`)
+    })
+    let out = '%PDF-1.4\n'
+    const offs: number[] = []
+    objs.forEach((o, i) => {
+        offs.push(out.length)
+        out += `${i + 1} 0 obj\n${o}\nendobj\n`
+    })
+    const xref = out.length
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`
+    for (const o of offs) out += `${String(o).padStart(10, '0')} 00000 n \n`
+    out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+    return out
 }
 
 export const isToolCase = (c: EvalCase) => !!c.tool
 export const isSubagentCase = (c: EvalCase) => c.mode === 'subagent'
 
 // ---- service: run each case through createRecallService ----------------------------------------
-export type ServiceOpts = { embeddings: 'off' | 'on'; vault?: string }
+export type ServiceOpts = {
+    embeddings: 'off' | 'on'
+    vault?: string
+    /** on = the service also gets sources. With `inject` they are the caller's fakes (the unit test);
+     *  without, the real three sources over `fixture`, which needs `embeddings: 'on'`. */
+    sources?: 'off' | 'on'
+    fixture?: SourceFixture
+    inject?: {
+        embedder: () => Embedder | null
+        reranker: () => Reranker | null
+        sources: (q: any) => Promise<any[]>
+    }
+}
 export type ServiceRunner = {
     run(c: EvalCase, i: number): Promise<CaseRun>
     close(): void
@@ -436,6 +544,8 @@ export async function createServiceRunner(memoryDir: string, opts: ServiceOpts):
     const { createRecallService } = await import('../core/src/memoryRecall')
     const tmp = mkdtempSync(join(tmpdir(), 'recall-eval-'))
     const on = opts.embeddings === 'on'
+    const sourcesOn = opts.sources === 'on'
+    if (sourcesOn && !on && !opts.inject) throw new Error('--sources on needs --embeddings on')
     let channel: Awaited<ReturnType<typeof makeChannel>> | undefined
     async function makeChannel() {
         const { createSemanticChannel } = await import('../core/src/memoryEmbed')
@@ -448,10 +558,59 @@ export async function createServiceRunner(memoryDir: string, opts: ServiceOpts):
         const { sharedReranker } = await import('../core/src/memoryRerank')
         reranker = () => sharedReranker()
     }
+    // The real sources, over the fixture: a temp vault, a docs dir and chat logs under a temp
+    // CLAUDE_CONFIG_DIR, each source's vector store in the temp dir and sharing the one channel.
+    const savedConfigDir = process.env.CLAUDE_CONFIG_DIR
+    let srcVault: string | undefined
+    let realSources: ((q: any) => Promise<any[]>) | undefined
+    if (sourcesOn && !opts.inject) {
+        const fx = opts.fixture ?? {}
+        const vault = join(tmp, 'src-vault')
+        srcVault = vault
+        const put = (root: string, rel: string, body: string) => {
+            mkdirSync(dirname(join(root, rel)), { recursive: true })
+            writeFileSync(join(root, rel), body)
+        }
+        mkdirSync(vault, { recursive: true })
+        writeFileSync(join(vault, '.settings'), 'embeddings:\n  enabled: true\n')
+        for (const [rel, body] of Object.entries(fx.vault ?? {}))
+            put(vault, rel, typeof body === 'string' ? body : makePdf(body.pdf))
+        const docsRoot = join(tmp, 'src-docs')
+        mkdirSync(docsRoot, { recursive: true })
+        for (const [rel, body] of Object.entries(fx.docs ?? {})) put(docsRoot, rel, body)
+        const claude = join(tmp, 'src-claude')
+        process.env.CLAUDE_CONFIG_DIR = claude
+        const { encodeProjectDir } = await import('../memory/src/sessionHistory')
+        for (const [id, turns] of Object.entries(fx.chats ?? {})) {
+            const at = '2026-10-20T10:00:00'
+            const lines = turns.flatMap(([u, c]) => [
+                JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: u } }),
+                JSON.stringify({ type: 'assistant', timestamp: at, message: { role: 'assistant', content: [{ type: 'text', text: c }] } }),
+            ])
+            put(join(claude, 'projects', encodeProjectDir(vault)), `${id}.jsonl`, lines.join('\n') + '\n')
+        }
+        const [{ configureVaultEmbed, vaultSourceHits }, { configureChatEmbed, chatSourceHits }, { configureDocsEmbed, docsSourceHits }] =
+            await Promise.all([import('../core/src/vaultEmbed'), import('../core/src/chatEmbed'), import('../core/src/docsEmbed')])
+        configureVaultEmbed({ channel: channel!, vectorsDir: join(tmp, 'vectors-vault') })
+        configureChatEmbed({ channel: channel!, vectorsDir: join(tmp, 'vectors-chat') })
+        configureDocsEmbed({ channel: channel!, vectorsDir: join(tmp, 'vectors-docs'), docsRoot })
+        // as recallServiceFor's sourcesFor: the three sources side by side, a switch off = skipped
+        // (the fixture vault restricts nothing, so no deny list)
+        realSources = async q => {
+            const [files, chats, docs] = await Promise.all([
+                q.switches.files ? vaultSourceHits(vault, q) : [],
+                q.switches.chats ? chatSourceHits(vault, q) : [],
+                q.switches.docs ? docsSourceHits(q) : [],
+            ])
+            return [...files, ...chats, ...docs]
+        }
+    }
     const svc = createRecallService({
         memoryDir: () => memoryDir,
-        settings: () => ({ enabled: true, midTurn: true, semantic: on }),
-        embedder: () => (channel ? channel.embedder() : null),
+        settings: () => ({ enabled: true, midTurn: true, semantic: on || !!opts.inject }),
+        embedder: () => (opts.inject ? opts.inject.embedder() : channel ? channel.embedder() : null),
+        ...(opts.inject ? { reranker: opts.inject.reranker } : {}),
+        ...(sourcesOn ? { sources: (opts.inject?.sources ?? realSources) as any } : {}),
         ...(channel
             ? {
                   semanticScores: channel.semanticScores,
@@ -460,13 +619,31 @@ export async function createServiceRunner(memoryDir: string, opts: ServiceOpts):
                   rerankTimeoutMs: 120_000,
               }
             : {}),
-        ...(opts.vault ? { vault: opts.vault } : {}),
+        ...(srcVault ? { vault: srcVault } : opts.vault ? { vault: opts.vault } : {}),
     })
     if (on) {
         // warm the model, the vector store and the reranker before the clock starts
         await svc.recall({ mode: 'prompt', sessionId: 'warm', prompt: 'warm up the embedding model and the reranker' })
         await Promise.all([...channel!.stores.values()].map(s => s.flush()))
         await svc.recall({ mode: 'prompt', sessionId: 'warm2', prompt: 'warm up the embedding model and the reranker' })
+    }
+    if (realSources && srcVault) {
+        // the three source indexes build in the background: poll each until it answers
+        const { QUERY_PREFIX } = await import('../core/src/memoryEmbed')
+        const vec = (await channel!.embedder()!.embed([`${QUERY_PREFIX}warm up`]))[0]!
+        const q = { vec, k: 3, channel: 'daemon' as const, switches: { files: true, chats: true, docs: true } }
+        const want = [(opts.fixture?.vault && Object.keys(opts.fixture.vault).length) || 0, Object.keys(opts.fixture?.chats ?? {}).length, Object.keys(opts.fixture?.docs ?? {}).length]
+        const [{ vaultSourceHits }, { chatSourceHits }, { docsSourceHits }] = await Promise.all([
+            import('../core/src/vaultEmbed'),
+            import('../core/src/chatEmbed'),
+            import('../core/src/docsEmbed'),
+        ])
+        const asks = [() => vaultSourceHits(srcVault!, q), () => chatSourceHits(srcVault!, q), () => docsSourceHits(q)]
+        const deadline = Date.now() + 300_000
+        for (const [n, ask] of asks.entries()) {
+            while (want[n]! > 0 && (await ask()).length === 0 && Date.now() < deadline)
+                await new Promise(r => setTimeout(r, 500))
+        }
     }
     mkdirSync(join(tmp, 'transcripts'), { recursive: true })
     return {
@@ -500,9 +677,17 @@ export async function createServiceRunner(memoryDir: string, opts: ServiceOpts):
                 ...(res.reason ? { reason: res.reason } : {}),
                 ...(res.semantic ? { semantic: true } : {}),
                 ...(res.reranked ? { reranked: true } : {}),
+                ...(sourcesOn ? { sources: res.sources ?? [] } : {}),
             }
         },
         close() {
+            if (realSources) {
+                void import('../core/src/vaultEmbed').then(m => m.configureVaultEmbed())
+                void import('../core/src/chatEmbed').then(m => m.configureChatEmbed())
+                void import('../core/src/docsEmbed').then(m => m.configureDocsEmbed())
+            }
+            if (savedConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
+            else process.env.CLAUDE_CONFIG_DIR = savedConfigDir
             rmSync(tmp, { recursive: true, force: true })
         },
     }
@@ -566,17 +751,38 @@ export function findings(p: Prepared, cases: EvalCase[], runs: CaseRun[]): Findi
     cases.forEach((c, i) => {
         const run = runs[i]!
         const label = c.prompt ?? (c.tool ? `tool: ${c.tool.map(t => t.tool_name).join(',')}` : '')
-        if (c.expect.length === 0) {
+        const wantSources = sourceExpect(c)
+        if (run.sources) {
+            const missedSources = wantSources.filter(k => !run.sources!.slice(0, 5).includes(k))
+            if (missedSources.length)
+                out.push({
+                    case: i,
+                    prompt: label,
+                    expected: wantSources,
+                    injected: run.sources,
+                    why: missedSources.map(k => `${k}: not injected as a source`),
+                })
+            if (c.sourcesExpect?.length === 0 && run.sources.length > 0)
+                out.push({
+                    case: i,
+                    prompt: label,
+                    expected: [],
+                    injected: run.sources,
+                    why: run.sources.map(k => `${k}: injected as a source where none was expected`),
+                })
+        }
+        const want = memoryExpect(c)
+        if (want.length === 0) {
             if (run.injected.length > 0)
                 out.push({ case: i, prompt: label, expected: [], injected: run.injected, why: explainInjected(p, c, run.injected) })
             return
         }
-        const missed = c.expect.filter(e => !run.injected.slice(0, 5).includes(e))
+        const missed = want.filter(e => !run.injected.slice(0, 5).includes(e))
         if (missed.length)
             out.push({
                 case: i,
                 prompt: label,
-                expected: c.expect,
+                expected: want,
                 injected: run.injected,
                 ...(run.reason ? { reason: run.reason } : {}),
                 why: missed.map(e => `${e}: ${explainMiss(p, c, e)}`),
@@ -607,10 +813,23 @@ async function serviceMain(argv: string[], arg: (n: string) => string | undefine
         console.error('--embeddings takes off or on')
         process.exit(2)
     }
+    const sources = arg('sources') ?? 'off'
+    if (sources !== 'off' && sources !== 'on') {
+        console.error('--sources takes off or on')
+        process.exit(2)
+    }
+    if (sources === 'on' && embeddings !== 'on') {
+        console.error('--sources on needs --embeddings on (sources are semantic and gated by the reranker)')
+        process.exit(2)
+    }
     const vault = arg('vault')
     const p = await prepare(dir)
     const all = loadCases(casesFile)
-    const runner = await createServiceRunner(dir, { embeddings, ...(vault ? { vault: resolve(vault) } : {}) })
+    const runner = await createServiceRunner(dir, {
+        embeddings,
+        ...(vault ? { vault: resolve(vault) } : {}),
+        ...(sources === 'on' ? { sources, fixture: loadSourceFixture(casesFile) } : {}),
+    })
     const label = `service-${embeddings}`
     const groups = [
         { name: 'prompt mode', pick: (c: EvalCase) => !isToolCase(c) && !isSubagentCase(c) },
@@ -618,7 +837,7 @@ async function serviceMain(argv: string[], arg: (n: string) => string | undefine
         { name: 'subagent mode', pick: isSubagentCase },
     ]
     const result: Record<string, unknown> = {}
-    const out: string[] = [`notes: ${p.notes.length}  cases: ${all.length}  service embeddings: ${embeddings}`]
+    const out: string[] = [`notes: ${p.notes.length}  cases: ${all.length}  service embeddings: ${embeddings}${sources === 'on' ? '  sources: on' : ''}`]
     const allFindings: Finding[] = []
     try {
         for (const g of groups) {
@@ -656,10 +875,11 @@ async function serviceMain(argv: string[], arg: (n: string) => string | undefine
 
 function table(rows: Summary[]): string {
     const f = (n: number) => n.toFixed(3)
-    const head = 'ranker   cases  recall@3  recall@5  mrr    falseInj  meanChars  p50ms  p95ms'
+    const withSources = rows.some(s => s.sourceRecall5 !== undefined)
+    const head = `ranker   cases  recall@3  recall@5  mrr    falseInj  meanChars  p50ms  p95ms${withSources ? '   sourceRecall@5  sourceFalseInject' : ''}`
     const lines = rows.map(
         s =>
-            `${s.ranker.padEnd(8)} ${String(s.cases).padEnd(6)} ${f(s.recall3).padEnd(9)} ${f(s.recall5).padEnd(9)} ${f(s.mrr).padEnd(6)} ${f(s.falseInject).padEnd(9)} ${String(Math.round(s.meanChars)).padEnd(10)} ${s.p50ms.toFixed(2).padEnd(6)} ${s.p95ms.toFixed(2)}`,
+            `${s.ranker.padEnd(8)} ${String(s.cases).padEnd(6)} ${f(s.recall3).padEnd(9)} ${f(s.recall5).padEnd(9)} ${f(s.mrr).padEnd(6)} ${f(s.falseInject).padEnd(9)} ${String(Math.round(s.meanChars)).padEnd(10)} ${s.p50ms.toFixed(2).padEnd(6)} ${s.p95ms.toFixed(2)}${withSources ? `    ${(s.sourceRecall5 === undefined ? '-' : f(s.sourceRecall5)).padEnd(15)} ${s.sourceFalseInject === undefined ? '-' : f(s.sourceFalseInject)}` : ''}`,
     )
     return [head, ...lines].join('\n')
 }
@@ -674,7 +894,7 @@ async function main() {
     const casesFile = arg('cases')
     if (!dir || !casesFile) {
         console.error('usage: bun bench/recallEval.ts --dir <memoryDir> --cases <file> [--semantic <module>] [--reranker <module>] [--sweep] [--json]')
-        console.error('       bun bench/recallEval.ts --dir <memoryDir> --cases <file> --service [--embeddings off|on] [--vault <dir>] [--explain] [--json]')
+        console.error('       bun bench/recallEval.ts --dir <memoryDir> --cases <file> --service [--embeddings off|on] [--sources off|on] [--vault <dir>] [--explain] [--json]')
         process.exit(2)
     }
     if (argv.includes('--service')) return await serviceMain(argv, arg, resolve(dir), resolve(casesFile))

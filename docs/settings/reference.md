@@ -293,6 +293,9 @@ When `enabled` is off the daemon is dormant: its state stays on disk and the `.d
 | `inheritUserMcp` | boolean | `false` | | Let daemon sessions use the MCP servers and plugins of your own `claude` CLI. |
 | `recall.enabled` | boolean | `false` | | Master switch for automatic memory injection into agent sessions. Needs `daemon.enabled`. |
 | `recall.midTurn` | boolean | `false` | | Also recall memory once per tool batch inside a long turn. |
+| `recall.files` | boolean | `true` | | Also inject vault notes, PDFs and described images that match by meaning. Needs `embeddings.enabled`. |
+| `recall.chats` | boolean | `true` | | Also inject pointers to past chats that match by meaning. Needs `embeddings.enabled`. |
+| `recall.docs` | boolean | `true` | | Also inject pointers to Bismuth documentation pages that match by meaning. Needs `embeddings.enabled`. Core indexes the pages at boot and keeps the index between runs, so only changed pages are indexed again. |
 | `email.enabled` | boolean | `false` | | Mail this vault's new inbox pages to you; a reply naming a button presses it. Needs `daemon.enabled` and `~/.bismuth/email.json`. |
 | `email.address` | string | `''` | | Fresh mail from you to this address becomes a request page. Empty: only replies are read. |
 
@@ -320,6 +323,7 @@ Meaning-based (embedding) search for memory recall and for vault-note search. It
 | Key | Type | Default | Values / bounds | Effect |
 |---|---|---|---|---|
 | `enabled` | boolean | `false` | | Search by meaning as well as by words, in memory recall and in vault-note search. |
+| `describeImages` | boolean | `false` | | Claude writes a description of each new or changed image into its companion note, so semantic search and recall find the image. |
 
 `enabled` starts a helper process on first use that holds a roughly 35 MB embedding model (about 260 to 280 MB of RAM while it runs). The helper exits after 10 minutes idle and returns that memory.
 The first pass over a large vault takes minutes of CPU while the notes are embedded.

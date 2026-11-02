@@ -180,11 +180,11 @@ They override framework habits, and most violations compile, render and pass tes
 | editor, ink | `docs/editor/markdown.md`, `docs/editor/ink.md` |
 | chat backends | `docs/chat/overview.md`, `docs/chat/backends.md` |
 | daemon | `docs/daemon/overview.md` |
-| memory injection, the session-start brain, the vault map, the dream | `docs/daemon/communication.md`, `docs/vault/map.md`, `docs/daemon/memory.md` |
+| memory injection (and the files, chats and docs recall injects beside it), the session-start brain, the vault map, the dream | `docs/daemon/communication.md`, `docs/vault/map.md`, `docs/daemon/memory.md` |
 | inbox <-> email bridge, `bismuth daemon email`, `~/.bismuth/email.json` | `docs/daemon/email.md` |
 | feedback page, `bismuth feedback`, the hosted relay in `services/feedback/` | `docs/overview/feedback.md` |
 | visibility (what agents may read) | `docs/vault/visibility.md` |
-| vault semantic search, embeddings switch | `docs/vault/semantic-search.md` |
+| vault semantic search (notes, PDFs, images, chats), embeddings switch, `bismuth image describe` | `docs/vault/semantic-search.md` |
 | OCR of PDFs and images, `bismuth ocr`, the `ocr` MCP tool | `docs/vault/ocr.md` |
 | PDF → markdown note, `bismuth pdf md`, the `pdf_to_markdown` MCP tool, the PDF bar's button | `docs/vault/pdf-to-markdown.md` |
 | ` ```button ` fences in notes and chat replies, `bismuth button`, `.daemon/buttons/` | `docs/editor/buttons.md` |

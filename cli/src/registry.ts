@@ -38,6 +38,7 @@ import * as brain from './commands/brain'
 import * as history from './commands/history'
 import * as ocr from './commands/ocr'
 import * as pdf from './commands/pdf'
+import * as image from './commands/image'
 
 /** Merge order is load-bearing: a later group's key overwrites an earlier one. */
 const GROUPS: { commands: CommandMap }[] = [
@@ -76,6 +77,7 @@ const GROUPS: { commands: CommandMap }[] = [
     history,
     ocr,
     pdf,
+    image,
 ]
 
 export const registry: CommandMap = Object.assign(

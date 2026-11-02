@@ -59,7 +59,7 @@ export const commands: CommandMap = {
                 if (!n) fail(`note not found: ${around}`)
                 // Best effort: embeddings off, unavailable or slow leave the output unchanged.
                 const sim = await semanticQuery(args, vault, { around: n.path }, deny, SIMILAR_MAX, SIMILAR_WAIT_MS).catch(() => null)
-                const similar = Array.isArray(sim) ? sim.map(h => h.path) : []
+                const similar = Array.isArray(sim) ? sim.filter(h => h.kind !== 'chat').map(h => h.path) : []
                 if (json) return out(similar.length ? { ...n, similar } : n, args)
                 const list = (label: string, items: string[]) =>
                     items.length ? `${label}: ${items.join(', ')}` : ''

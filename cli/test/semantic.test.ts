@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { semanticQuery } from '../src/semantic'
+import { semanticLabel } from '../src/commands/search'
 import { tryCall } from '../src/http'
 import type { DenyEntry } from '../../core/src/visibility'
 import { makeLeakVault, runCli } from './visibilityLeak'
@@ -14,7 +15,24 @@ const RANKED = ['Private/a.md', 'n1.md', 'n2.md', 'n3.md', 'n4.md', 'n5.md', 'n6
     excerpt: path,
 }))
 let asked: Array<{ k: number }> = []
-let mode: 'ok' | 'fail' = 'ok'
+let mode: 'ok' | 'fail' | 'kinds' = 'ok'
+const KINDS = [
+    { path: 'chat s1', score: 0.95, excerpt: 'c', kind: 'chat', date: '2026-10-29', session: 's1' },
+    { path: 'a.pdf', score: 0.9, excerpt: 'p', kind: 'pdf', page: 4 },
+    { path: 'b.png', score: 0.8, excerpt: 'i', kind: 'image' },
+    { path: 'n.md', score: 0.7, excerpt: 'n', kind: 'note' },
+]
+// More files than k, so a stub that ignores k or chats: false cannot pass by accident.
+const SERVED = [
+    { path: 'chat s1', score: 0.99, excerpt: 'c', kind: 'chat', date: '2026-10-29', session: 's1' },
+    { path: 'chat s2', score: 0.97, excerpt: 'c', kind: 'chat', date: '2026-10-28', session: 's2' },
+    { path: 'f1.md', score: 0.9, excerpt: 'f', kind: 'note' },
+    { path: 'f2.md', score: 0.8, excerpt: 'f', kind: 'note' },
+    { path: 'f3.md', score: 0.7, excerpt: 'f', kind: 'note' },
+    { path: 'f4.md', score: 0.6, excerpt: 'f', kind: 'note' },
+    { path: 'f5.md', score: 0.5, excerpt: 'f', kind: 'note' },
+    { path: 'f6.md', score: 0.4, excerpt: 'f', kind: 'note' },
+]
 let server: ReturnType<typeof Bun.serve>
 let api = ''
 
@@ -24,7 +42,11 @@ beforeAll(() => {
         hostname: '127.0.0.1',
         fetch: async req => {
             if (mode === 'fail') return Response.json({ error: 'index exploded' }, { status: 500 })
-            const body = (await req.json()) as { k: number }
+            const body = (await req.json()) as { k: number; chats?: boolean }
+            if (mode === 'kinds') {
+                const hits = (body.chats === false ? SERVED.filter(h => h.kind !== 'chat') : SERVED).slice(0, body.k)
+                return Response.json({ hits })
+            }
             asked.push(body)
             return Response.json({ hits: RANKED.slice(0, body.k) })
         },
@@ -105,5 +127,39 @@ describe('a failing live core is not an absent one', () => {
         const r = await runCli(['map', '--around', 'open.md', '--api', api], { channel: 'owner' })
         expect(r.code).not.toBe(0)
         expect(r.stderr).toContain('index exploded')
+    }, T)
+})
+
+describe('semantic hits of every kind', () => {
+    test('labels: note path, pdf page, image marker, chat date and session', () => {
+        expect(KINDS.map(h => semanticLabel(h as never))).toEqual([
+            'chat 2026-10-29 s1',
+            'a.pdf p.4',
+            'b.png (image)',
+            'n.md',
+        ])
+        expect(semanticLabel({ path: 'x.md', score: 1, excerpt: '' })).toBe('x.md')
+    })
+
+    test('the owner keeps chat hits and their fields, cut to k', async () => {
+        mode = 'kinds'
+        const r = await semanticQuery(['--api', api], '/vault-that-does-not-exist', { query: 'x' }, [], 3)
+        expect(Array.isArray(r) && r.map(h => h.kind)).toEqual(['chat', 'chat', 'note'])
+        expect(Array.isArray(r) && r[0]).toMatchObject({ date: '2026-10-29', session: 's1' })
+    }, T)
+
+    test('an agent in a restricted vault gets no chat hits and still k files', async () => {
+        mode = 'kinds'
+        const r = await semanticQuery(['--api', api], '/vault-that-does-not-exist', { query: 'x' }, [entry('Private/a.md')], 3)
+        expect(Array.isArray(r) && r.map(h => h.path)).toEqual(['f1.md', 'f2.md', 'f3.md'])
+        expect(Array.isArray(r) && r.filter(h => h.kind === 'chat').length).toBe(0)
+    }, T)
+
+    test('map --around never prints a chat in similar', async () => {
+        makeLeakVault()
+        mode = 'kinds'
+        const r = await runCli(['map', '--around', 'open.md', '--json', '--api', api], { channel: 'owner' })
+        expect(r.code).toBe(0)
+        expect(r.stdout).not.toContain('chat s1')
     }, T)
 })

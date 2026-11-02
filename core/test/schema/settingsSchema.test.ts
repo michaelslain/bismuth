@@ -176,9 +176,11 @@ test('calendar section mirrors the calendar defaults', () => {
     expect(cal.militaryTime.default).toBe(false)
 })
 
-test('embeddings section is exactly { enabled }, a boolean that defaults off', () => {
+test('embeddings section is exactly { enabled, describeImages }, booleans that default off', () => {
     const embeddings = objectFields(SETTINGS_SCHEMA.embeddings)
-    expect(Object.keys(embeddings)).toEqual(['enabled'])
+    expect(Object.keys(embeddings)).toEqual(['enabled', 'describeImages'])
+    expect(embeddings.describeImages.type).toBe('boolean')
+    expect(embeddings.describeImages.default).toBe(false)
     expect(embeddings.enabled.type).toBe('boolean')
     expect(embeddings.enabled.default).toBe(false)
     expect(embeddings.enabled.doc).toContain('keyword-only')
@@ -202,9 +204,13 @@ test('daemon section is exactly { backend, email, enabled, inboxRetentionDays, i
         'enabled',
     ])
     expect(Object.keys(objectFields(daemon.recall)).sort()).toEqual([
+        'chats',
+        'docs',
         'enabled',
+        'files',
         'midTurn',
     ])
+    for (const k of ['files', 'chats', 'docs']) expect(objectFields(daemon.recall)[k]!.default).toBe(true)
     expect(daemon.inheritUserMcp.type).toBe('boolean')
     expect(daemon.inheritUserMcp.default).toBe(false)
     expect(daemon.keepLogs.type).toBe('boolean')

@@ -2,7 +2,7 @@ import { test, expect } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tempDir } from './helpers'
-import { readEmbeddingsEnabledSync } from '../src/embeddingsSetting'
+import { docsIndexWantedSync, readEmbeddingsEnabledSync } from '../src/embeddingsSetting'
 
 async function vaultWith(settings: string | null): Promise<string> {
     const vault = await tempDir('bismuth-embeddings-')
@@ -42,5 +42,16 @@ test('a corrupt file or a directory at the path never throws and reads false', a
 test('the old daemon.recall.semantic key is not read', async () => {
     expect(
         readEmbeddingsEnabledSync(await vaultWith('daemon:\n  recall:\n    semantic: true\n')),
+    ).toBe(false)
+})
+
+test('the docs index is wanted only when recall can inject docs, not for search alone', async () => {
+    const on = 'embeddings:\n  enabled: true\ndaemon:\n  recall:\n    enabled: true\n'
+    expect(docsIndexWantedSync(await vaultWith(on), true)).toBe(true)
+    expect(docsIndexWantedSync(await vaultWith(on), false)).toBe(false)
+    expect(docsIndexWantedSync(await vaultWith('embeddings:\n  enabled: true\n'), true)).toBe(false)
+    expect(docsIndexWantedSync(await vaultWith(`${on}    docs: false\n`), true)).toBe(false)
+    expect(
+        docsIndexWantedSync(await vaultWith('embeddings:\n  enabled: false\ndaemon:\n  recall:\n    enabled: true\n'), true),
     ).toBe(false)
 })

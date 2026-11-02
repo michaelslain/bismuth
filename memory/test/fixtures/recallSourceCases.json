@@ -1,0 +1,45 @@
+{
+    "vault": {
+        "Projects/Launch.md": "# Launch plan\n\nThe harbor dashboard launches on the first Monday of March. Checklist: freeze the schema, rehearse the rollback, brief the support rota, and publish the status page before the announcement goes out.",
+        "Projects/Garden.md": "# Garden notes\n\nTomatoes go in after the last frost. Mulch the beds in April and water early in the morning.",
+        "papers/heat-pump.pdf": {
+            "pdf": [
+                "Heat pump basics. A heat pump moves heat between two reservoirs using a refrigerant loop.",
+                "Defrost cycle. When the outdoor coil frosts over the controller reverses the valve and melts the ice with heat drawn from the indoor loop.",
+                "Sizing. Match the compressor capacity to the design heating load of the building."
+            ]
+        }
+    },
+    "docs": {
+        "bases/authoring/calendar.md": "# Calendar view\n\nThe calendar view lays a base out on a month grid.\n\n## Writing a calendar base\n\nSet `view: calendar` and name the date property in `dateProp`. Each row with a date becomes an event on the grid; rows without one are listed under the grid.\n\n## Colours\n\nEvent colours come from the colour property.",
+        "tasks/syntax.md": "# Task syntax\n\n## Bracketed fields\n\nA task parses only bracketed fields such as `[due 2026-09-14]` and `[high]`."
+    },
+    "chats": {
+        "chat-tz-fix": [
+            ["why does the nightly cron fire an hour late after the clocks change", "the cron expression was read in UTC; setting the timezone field to the vault timezone fixed the daylight saving drift"]
+        ],
+        "chat-groceries": [
+            ["what should I cook this weekend", "a slow roasted tomato soup with sourdough would suit the cold weather"]
+        ]
+    },
+    "cases": [
+        {
+            "prompt": "how do I write a calendar base with a date property so rows show up as events",
+            "expect": ["docs:bases/authoring/calendar.md#writing-a-calendar-base"]
+        },
+        {
+            "prompt": "what was the fix for the nightly cron firing an hour late when the clocks change",
+            "expect": ["chat:chat-tz-fix"]
+        },
+        {
+            "prompt": "how does the heat pump defrost cycle melt ice on the outdoor coil",
+            "expect": ["pdf:papers/heat-pump.pdf"]
+        },
+        {
+            "prompt": "what is on the checklist for the harbor dashboard launch in March",
+            "expect": ["note:Projects/Launch.md"]
+        },
+        { "prompt": "thanks that looks good", "expect": [], "sourcesExpect": [] },
+        { "prompt": "what is the capital city of Australia", "expect": [], "sourcesExpect": [] }
+    ]
+}

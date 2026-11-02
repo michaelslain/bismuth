@@ -110,6 +110,42 @@ Memory notes that link the note you are looking at are injected even when no wor
 
 A batch of tool calls that read or edited a vault file does the same for that file, with a cap of 1 note. A note already sent in the session is skipped, and every injected note still counts against the block's character budget.
 
+## Files, past chats and docs beside memory
+
+Prompt and subagent recall also inject the vault files, past chats and Bismuth documentation pages that match the prompt by meaning, each under a heading that names its source. They need `embeddings.enabled` as well as `daemon.recall.enabled`, and each source has its own switch. Memory is packed first and keeps its whole share of the block; the sources fill what character budget is left.
+
+```
+# Memories
+
+## alice (person) [friend, climbing]
+Path: /Users/me/vault/.daemon/memory/alice.md
+Climbing partner; plans trips in the spring
+
+# Vault files
+
+## papers/attention.pdf (pdf, page 4)
+Path: /Users/me/vault/papers/attention.pdf
+Scaled dot-product attention divides by the square root of the key dimension…
+
+# Past chats
+
+- 2026-10-29 — "you: why does the backup cron fire late claude: the expression was read in UTC…" (open: `bismuth history show 3f2a9c1e-…`)
+
+# Bismuth docs
+
+- bases/authoring/calendar.md — Calendar (read: `bismuth_docs_read bases/authoring/calendar.md`)
+```
+
+| Source | Heading | What an item shows | Prompt cap | Subagent cap |
+|---|---|---|---|---|
+| Vault files: notes, PDFs by page, images through their description | `# Vault files` | header with path and kind, an excerpt | 2 | 2 |
+| Past chats started in this vault | `# Past chats` | date, one matching turn, the command that opens it | 2 | 1 |
+| Bismuth documentation | `# Bismuth docs` | page and section, the call that reads it | 2 | 2 |
+
+An item is sent once per session until its content changes, like a memory note. Tool-batch recall never injects sources.
+
+Visibility applies to every source. A hidden file is never injected, and a chat-only file is never injected into a daemon session. Past chats follow `chatVisibility`, the session asking is never in its own results, and a vault that restricts any note injects no past chats at all, the rule `bismuth history` keeps for agents.
+
 ## Tune or turn off automatic recall
 
 These `.settings` keys control injection. They apply on the next call.
@@ -118,6 +154,9 @@ These `.settings` keys control injection. They apply on the next call.
 |---|---|---|
 | `daemon.recall.enabled` | `false` | Master switch for every automatic injection. Off, agents see only what they ask for with `recall`. |
 | `daemon.recall.midTurn` | `false` | Also recall after each batch of tool calls. Off, memory is recalled at the prompt only |
+| `daemon.recall.files` | `true` | Also inject matching vault notes, PDFs and described images. Needs `embeddings.enabled`. |
+| `daemon.recall.chats` | `true` | Also inject pointers to matching past chats. Needs `embeddings.enabled`. |
+| `daemon.recall.docs` | `true` | Also inject pointers to matching Bismuth docs pages. Needs `embeddings.enabled`. |
 
 These keys need `daemon.enabled`. [The settings reference](../settings/reference.md#daemon) has the full text.
 
@@ -193,6 +232,10 @@ The reranker judges each passage against `rerankQuery`. That is the prompt itsel
 
 **Measuring through the real service.** `bun bench/recallEval.ts --dir <memoryDir> --cases <file> --service [--embeddings off|on] [--vault <dir>] [--explain]` sends each case through `createRecallService`, so the numbers are what an agent receives. `--embeddings off` (the default) runs with no embedder or reranker, the keyword-only path; `on` loads the real embedder and reranker and downloads the model on first use. `--vault <dir>` gives the service a vault, so session-start composes a brain. `--explain` lists every miss and every false injection with the reason: the note's score against the mode's floor and its rank, the query words that matched and whether they sit in its name, tags or description, the keyword-only rule that admitted or dropped it, and the strongest rivals. `--sweep` also sweeps `minScore` over a grid read from the scores the candidates carry, bracketing the production floor.
 
+**Measuring sources.** `--service --embeddings on --sources on` also hands the service the three real sources (vault files, past chats, Bismuth docs) over fixtures in the cases file: `{ cases, vault, docs, chats }` (`memory/test/fixtures/recallSourceCases.json`). A case's `expect` may name source keys (`docs:<page>#<anchor>`, `chat:<id>`, `note:<path>`, `pdf:<path>`), and `sourcesExpect: []` says no source may inject. The summary adds `sourceRecall@5`, the share of expected source keys among the first five injected, and `sourceFalseInject`, the share of `sourcesExpect: []` cases that injected any source. With `--sources off` (the default) every number is the one without sources. Sources are semantic and gated by the reranker, so `--sources on` requires `--embeddings on`.
+
+**Replaying real sessions.** `bun bench/recallReplay.ts --vault <dir> [--logs <dir>] [--out <dir>] [--negatives n] [--dry]` turns every prompt in the vault's Claude Code session logs into a case. A case's labels are the Bismuth docs pages, notes, PDFs and images the agent fetched itself before the next prompt; a prompt that mentions an earlier chat is a past-chat case; a prompt after which the agent used no tool is a quiet case. Each case runs through the real service and sources, chats that started after the prompt are left out, and the summary reports per kind how often a label was injected (hit) and how often it was among the sources' top 10 (retrieved), plus how often a quiet case got any source. The vault and the logs are only read; indexes are built under `--out`, which also receives `cases.jsonl` with every prompt, so keep it out of the repo. `--dry` prints the case counts only.
+
 ### The brain block
 
 `composeBrain` in `core/src/brain.ts` builds the block per vault and channel (`chat` or `daemon`). The channel selects the deny list that hides restricted notes from the map. The map is cached with a build generation: `invalidateBrain` (called by the server's file watcher and the daemon's) bumps it so a build that started earlier never writes a stale map back, and an entry older than `MAP_MAX_AGE_MS` (5 minutes) rebuilds. Memory notes are loaded on every call, so only the map is cached. `buildVaultMap` and `formatVaultMap` (`core/src/vaultMap.ts`) drop detail in steps until the map fits: recent notes, tags, cluster exemplars and base names go first.
@@ -207,7 +250,15 @@ The recall service's `session-start` mode calls `composeBrain` with the request'
 
 ### One service behind every surface
 
-`createRecallService` in `core/src/memoryRecall.ts` is the single implementation. The relay hooks reach it through the route, and the visual chat (`core/src/chat.ts`) and opencode call `recallServiceFor` in-process, so all of them share one already-sent record per session. A recall that was abandoned (the caller timed out) never adds to the record, because the agent never saw the notes. The service rebuilds its index only when a note file's modification time or size changed, and reads `.settings` on every request. It answers `reason: disabled`, `mid-turn-off`, `no-memory`, `no-match` or `turn-budget` (a tool batch after this turn's one injection) when it injects nothing.
+`createRecallService` in `core/src/memoryRecall.ts` is the single implementation. The relay hooks reach it through the route, and the visual chat (`core/src/chat.ts`) and opencode call `recallServiceFor` in-process, so all of them share one already-sent record per session. A recall that was abandoned (the caller timed out) never adds to the record, because the agent never saw the notes. The service rebuilds its index only when a note file's modification time or size changed, and reads `.settings` on every request. It answers `reason: disabled`, `mid-turn-off`, `no-memory`, `no-match` or `turn-budget` (a tool batch after this turn's one injection) when it injects nothing; with no admitted source, an empty memory directory answers `no-memory` and a memory with no match answers `no-match`.
+
+### Sources beside memory
+
+After memory is packed, `gatherSources` in `core/src/memoryRecall.ts` embeds the query once (`QUERY_PREFIX`, waiting at most `QUERY_TIMEOUT_MS`) and asks each enabled source for `SOURCE_K` (10) hits against that vector: `vaultSourceHits` (`core/src/vaultEmbed.ts`), `chatSourceHits` (`core/src/chatEmbed.ts`) and `docsSourceHits` (`core/src/docsEmbed.ts`), sharing the shapes in `core/src/semanticSources.ts`. One deadline covers the embed, the sources and the reranker, so a slow source is dropped for that request and memory still answers inside the caller's budget.
+
+A candidate must clear the mode's `semanticMinCosine`. Files and chats that return a full `SOURCE_K` also need the source's tenth-best cosine plus `SEMANTIC_BACKGROUND_MARGIN`; docs skip that relative floor, because many sections share one topic, and keep one hit per page. The best `SOURCE_RERANKED` (3) per source then go to the cross-encoder: a file needs `RERANK_MIN_LOGIT`, a chat `RERANK_MIN_LOGIT + CHAT_EXTRA_LOGIT` (2) and a docs page `RERANK_MIN_LOGIT + DOCS_EXTRA_LOGIT` (6). Files also admit their best two on cosine alone when they score at least `FILE_COSINE_ADMIT` (0.80) and stand `FILE_COSINE_MARGIN` (0.05) above the source's tenth-best, because the cross-encoder scores conversational prompts low even when the file is the one the agent goes on to open; `bench/recallReplay.ts` measures both paths on real sessions. No reranker, or no query vector in time, means no sources for that request. `packSources` (`core/src/sourcePack.ts`) renders the sections within `SOURCE_LIMITS` and the remaining budget, and the response lists the injected `sourceKey`s (`kind:id`) in `sources`.
+
+The file deny plan for the caller's channel is cached per vault and channel for 30 seconds and dropped by `invalidateRecallDenyPlans` on every watcher change. The docs index is built at core boot only when recall can inject it (`docsIndexWantedSync`: `daemon.enabled`, `daemon.recall.enabled`, `embeddings.enabled` and `daemon.recall.docs` all on), in slices of eight sections so a query embed never waits behind the whole pass; `docsIndexReady()` resolves when it is complete.
 
 ### Device files
 
