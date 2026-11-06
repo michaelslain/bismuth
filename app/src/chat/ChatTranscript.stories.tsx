@@ -99,8 +99,9 @@ export const SelectionReply: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        const item = canvas.getByText(/queued messages could double-send/)
+        const item = within(canvasElement).getByText(
+            /queued messages could double-send/,
+        )
         const textNode = [...item.childNodes].find(
             n => n.nodeType === 3 && n.textContent?.includes('queued'),
         ) as Text
@@ -112,10 +113,23 @@ export const SelectionReply: Story = {
         sel?.removeAllRanges()
         sel?.addRange(range)
         await fireEvent.mouseUp(item)
-        const reply = await canvas.findByRole('button', { name: 'reply' })
+        // Portalled to <body>: a pane is `contain: strict`, so a fixed element left inside it would
+        // be placed relative to the pane, not the viewport.
+        const reply = await within(document.body).findByRole('button', {
+            name: 'reply',
+        })
+        await expect(canvasElement.contains(reply)).toBe(false)
         // The surface behind the label is opaque, not the transparent bracket register.
         const surface = reply.closest('[data-popover]')
         await expect(surface).not.toBeNull()
+        // It sits centred over the selection, just above it.
+        const sr = range.getBoundingClientRect()
+        const pr = (surface as Element).getBoundingClientRect()
+        await expect(
+            Math.abs(pr.left + pr.width / 2 - (sr.left + sr.width / 2)),
+        ).toBeLessThan(2)
+        await expect(pr.bottom).toBeLessThanOrEqual(sr.top)
+        await expect(sr.top - pr.bottom).toBeLessThan(16)
         const bg = getComputedStyle(surface as Element).backgroundColor
         await expect(bg).not.toBe('rgba(0, 0, 0, 0)')
         await expect(bg).not.toBe('transparent')

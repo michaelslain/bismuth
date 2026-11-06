@@ -5,5 +5,13 @@
  * carries it, and the ViewBar that owns the pane's chrome dims its own title.
  */
 
-.pane-leaf { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+/* `contain: strict` makes each pane its own layout and paint island: a keystroke, a streamed chat
+ * token or a PDF page landing in one pane re-lays-out and repaints that pane only, instead of every
+ * pane in the tab (bench/manyPanes.ts: typing in one of eight notes cost 7.2ms a key without it,
+ * 3.9ms with it, about what a lone pane costs). The pane's size comes from its split, never its
+ * content, so size containment changes nothing on screen. The one consequence: the pane becomes
+ * the containing block of any `position: fixed` descendant, so a floating element placed in
+ * viewport coordinates portals to <body> (ui/AnchoredPopover, ui/ContextMenu, the chat's selection
+ * reply) — CodeMirror's tooltips detect the containing block and switch to absolute themselves. */
+.pane-leaf { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; contain: strict; }
 .pane-body { flex: 1; min-height: 0; overflow: auto; }

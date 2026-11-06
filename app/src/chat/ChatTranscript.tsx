@@ -16,6 +16,7 @@ import {
     type Component,
     type JSX,
 } from 'solid-js'
+import { Portal } from 'solid-js/web'
 import Caret from '../ui/Caret'
 import { openWikilinkHref } from '../ui/openNote'
 import { IconTextButton } from '../ui/IconTextButton'
@@ -280,24 +281,29 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
             {/* Floating "Reply" on an active text selection inside a bubble. onMouseDown +
                 preventDefault keeps the selection alive so onReply quotes it before it collapses.
                 The Popover is its surface: the bracket register paints no fill, and this floats
-                over the prose above the selection. */}
+                over the prose above the selection. It is portalled to <body>: every pane is
+                `contain: strict` (PaneLeaf.module.css), which makes the pane the containing block
+                of a `position: fixed` descendant, so viewport coordinates placed inside the pane
+                would land offset by the pane's own position. */}
             <Show when={selReply()}>
                 {s => (
-                    <Popover
-                        class={styles['chat-sel-reply']}
-                        style={{ left: `${s().x}px`, top: `${s().y}px` }}
-                    >
-                        <TextButton
-                            onMouseDown={e => {
-                                e.preventDefault()
-                                props.onReply(s().text)
-                                window.getSelection()?.removeAllRanges()
-                                setSelReply(null)
-                            }}
+                    <Portal>
+                        <Popover
+                            class={styles['chat-sel-reply']}
+                            style={{ left: `${s().x}px`, top: `${s().y}px` }}
                         >
-                            reply
-                        </TextButton>
-                    </Popover>
+                            <TextButton
+                                onMouseDown={e => {
+                                    e.preventDefault()
+                                    props.onReply(s().text)
+                                    window.getSelection()?.removeAllRanges()
+                                    setSelReply(null)
+                                }}
+                            >
+                                reply
+                            </TextButton>
+                        </Popover>
+                    </Portal>
                 )}
             </Show>
             <Show when={menu()}>

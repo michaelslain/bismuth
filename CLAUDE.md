@@ -99,6 +99,9 @@ They override framework habits, and most violations compile, render and pass tes
 - **Module classes are hashed at build time**: a call site holding a literal class string compiles
   and matches nothing. Never `closest('.class')` or `classList` against a class name; the child
   claims its event with `stopPropagation` (which does not stop `onPointerDown`/`onDblClick`).
+- **Every pane is `contain: strict`** (`PaneLeaf.module.css`), so it is the containing block of a
+  `position: fixed` descendant: anything placed in viewport coordinates from inside a pane renders
+  through `<Portal>` (`PaneLeaf.contain.test.ts`).
 - **Element hooks**: `data-<name>` is a runtime hook; `data-testid` is test-only. No third form.
 - **Everything is a component, even text.** Use `ui/` primitives (`Text`, `Heading`, `Label`,
   `Badge`, `Field`, …); if none fits, add the primitive.
