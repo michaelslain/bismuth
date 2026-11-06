@@ -450,15 +450,30 @@ export function createChatSession(
                     .map(e => e.path),
             ),
     )
-    const fileCandidates = createMemo<FileCandidate[]>(() =>
-        vaultTree()
-            .filter(e => e.kind === 'file' && e.visibility !== 'hidden')
-            .map(e => ({
-                label: noteNameFromPath(e.path),
-                path: e.path,
-                folder: e.path.includes('/') ? e.path.split('/')[0] : undefined,
-            })),
-    )
+    // Files first, then folders (`Work/`), so a name shared by a note and its folder lists the note
+    // first; a folder pick references the whole folder.
+    const fileCandidates = createMemo<FileCandidate[]>(() => {
+        const visible = vaultTree().filter(e => e.visibility !== 'hidden')
+        const top = (path: string) =>
+            path.includes('/') ? path.split('/')[0] : undefined
+        return [
+            ...visible
+                .filter(e => e.kind === 'file')
+                .map(e => ({
+                    label: noteNameFromPath(e.path),
+                    path: e.path,
+                    folder: top(e.path),
+                })),
+            ...visible
+                .filter(e => e.kind === 'dir')
+                .map(e => ({
+                    label: `${e.path.slice(e.path.lastIndexOf('/') + 1)}/`,
+                    path: e.path,
+                    folder: top(e.path),
+                    dir: true,
+                })),
+        ]
+    })
     // One shared, in-flight-deduped fetch for every session; the memos above follow the cache.
     createEffect(() => {
         lastChange()

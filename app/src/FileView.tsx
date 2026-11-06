@@ -4,7 +4,7 @@ import { parseFrontmatter } from '../../core/src/frontmatter'
 import { isBasePath, isBaseText } from '../../core/src/bases/baseFile'
 import { Editor } from './Editor'
 import { vaultTree } from './treeStore'
-import { registerBasePaths } from './editor/wikilink'
+import { registerBasePaths, registerFolderPaths } from './editor/wikilink'
 import { BaseView } from './bases/BaseView'
 import { InboxPageView } from './InboxPageView'
 import { Loading } from './ui/EmptyState'
@@ -22,6 +22,12 @@ registerBasePaths(() =>
     vaultTree()
         .map(e => e.path)
         .filter(isBasePath),
+)
+// `[[` completion offers the vault's folders after its notes (`[[Projects/Work/]]`).
+registerFolderPaths(() =>
+    vaultTree()
+        .filter(e => e.kind === 'dir')
+        .map(e => e.path),
 )
 
 /**

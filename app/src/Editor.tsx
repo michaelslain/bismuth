@@ -76,6 +76,7 @@ import { settingsSchemaFor } from '../../core/src/schema/themedSettingsSchema'
 import { customThemes, customThemeOverrides } from './customThemes'
 import { propertySchemas, noteSchemaForText } from './propertyRegistry'
 import {
+    isFolderTarget,
     parseWikilink,
     resolveNotePath,
     findHeadingLineIndex,
@@ -147,7 +148,7 @@ import {
 import { decideSseReconcile } from './editor/sseReconcile'
 import { mapReaderAnchor } from './editor/readerAnchor'
 import { keepaliveSaveInit } from './editor/keepaliveSave'
-import { openNote } from './ui/openNote'
+import { openNote, revealFolder } from './ui/openNote'
 import { cursor } from './editor/cursorTheme'
 
 // ExternalReload + externalReconcileSpec live in editor/reconcileDispatch.ts (shared,
@@ -1972,6 +1973,11 @@ export function Editor(props: {
                                     const { target, heading } = parseWikilink(
                                         m[1],
                                     )
+                                    // `[[Folder/]]` names a folder: show it in the file tree.
+                                    if (isFolderTarget(target)) {
+                                        revealFolder(target)
+                                        return true
+                                    }
                                     // Wikilinks are filename-based: resolve the basename to its real vault
                                     // path so subfolder notes open (and highlight) correctly. An unresolved
                                     // target opens as a new note at the typed name (read falls back to "").

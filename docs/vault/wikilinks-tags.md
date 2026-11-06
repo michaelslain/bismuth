@@ -23,10 +23,17 @@ This note links to `Gamma` and `reading/Gamma` (the embed produces no link), and
 | Heading | `[[My Note#Section]]` | `My Note`, opened scrolled to the `Section` heading |
 | Path | `[[reading/My Note]]` | exactly `reading/My Note.md` |
 | Combined | `[[reading/My Note#Section\|Alias]]` | `reading/My Note`, heading and alias applied |
+| Folder | `[[reading/Books/]]` | the folder `reading/Books`; clicking it shows the folder in the file tree |
 
 Anything between the brackets is allowed except `]`, so `[[2024-01-15]]`, `[[doc-v1.2.3]]` and `[[note@tag]]` are valid targets. An empty `[[]]` is ignored. In live preview the editor hides the brackets, the folder path and the heading, and shows the alias, or the bare name if there is none.
 
 A heading anchor matches an ATX heading (`## Section`) by its text, ignoring case and repeated spaces. If no heading matches, the note simply opens at its saved scroll position.
+
+## How does a folder link work?
+
+A wikilink whose target ends in `/` names a folder by its full vault path: `[[reading/Books/]]`. The trailing slash keeps it apart from a note called `Books`, so a folder link never creates a note. Live preview shows the folder name with its slash (`Books/`), and clicking the link opens the sidebar, expands the folder and selects it in the file tree. A folder link creates no graph edge.
+
+`[[` completion lists folders after notes; see [Autocomplete](../editor/autocomplete.md#complete-wikilinks-and-headings). In the chat composer, a folder link picked from the popup adds the folder to the message's context.
 
 ## How does a link find its note?
 
@@ -146,4 +153,4 @@ The completion sources are wired in `app/src/editor/autocomplete.ts`; heading co
 
 `SECOND_BRAIN_KINDS` in `core/src/graph.ts` is `note` and `tag`. A tag node has no `folder` field.
 
-Source: `core/src/wikilinks.ts`, `core/src/tags.ts`, `core/src/vault.ts`, `core/src/graphBuilder.ts`, `core/src/linkTarget.ts`, `core/src/graph.ts`, `core/src/schema/coerce.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/autocomplete.ts`, `app/src/Editor.tsx`
+Source: `core/src/wikilinks.ts`, `core/src/tags.ts`, `core/src/vault.ts`, `core/src/graphBuilder.ts`, `core/src/linkTarget.ts`, `core/src/graph.ts`, `core/src/schema/coerce.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/autocomplete.ts`, `app/src/editor/wikilinkOptions.ts`, `app/src/Editor.tsx`, `app/src/FileTree.tsx`, `app/src/ui/openNote.ts`

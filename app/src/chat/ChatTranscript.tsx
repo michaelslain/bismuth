@@ -17,7 +17,7 @@ import {
     type JSX,
 } from 'solid-js'
 import Caret from '../ui/Caret'
-import { openNote } from '../ui/openNote'
+import { openWikilinkHref } from '../ui/openNote'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextButton } from '../ui/TextButton'
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
@@ -153,7 +153,7 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
         const href = a.getAttribute('data-href')
         if (!href) return
         e.preventDefault()
-        openNote(href)
+        openWikilinkHref(href)
     }
 
     /** Right-click a prose bubble → Reply/Copy. Reply always quotes the WHOLE message (the floating

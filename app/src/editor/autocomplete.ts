@@ -21,6 +21,8 @@ import {
     parseHeadings,
     resolveNotePath,
     buildInsert,
+    knownFolderPaths,
+    folderLinkTarget,
     type NoteCandidate,
 } from './wikilink'
 import {
@@ -47,7 +49,11 @@ import { querySource } from './queryComplete'
 import { taskSource } from './taskComplete'
 import { slashSource } from './slashComplete'
 import { applyCompletion as applyInsert } from './applyCompletion'
-import { wikilinkOptions, type WikilinkOption } from './wikilinkOptions'
+import {
+    wikilinkOptions,
+    folderOptions,
+    type WikilinkOption,
+} from './wikilinkOptions'
 
 // Is the caret inside a code span / fenced block per the markdown syntax tree? `[[`,
 // `#tag` and `:emoji:` are prose features — they must NOT fire inside code, where those
@@ -131,8 +137,12 @@ function prefixSource<T>(opts: {
 // full name (`C# Notes`) still completes, rather than leaving an empty popup.
 // Exported so `autocomplete.test.ts` can pin the apply contract directly against the
 // assembled options (same idiom as `emojiSource`/`memoryRefSource`).
+// Folders follow the notes (`[[Projects/Work/]]`, see folderOptions); `onFolderPick` fires with the
+// picked folder's link target, so the chat composer can wire it into the chat's context.
 export function wikilinkSource(
     getNotes: () => NoteCandidate[],
+    getFolders: () => readonly string[] = () => [],
+    onFolderPick?: (target: string) => void,
 ): CompletionSource {
     return prefixSource<WikilinkOption>({
         match: textBefore => {
@@ -140,16 +150,21 @@ export function wikilinkSource(
             if (h && resolveNotePath(h.target, getNotes())) return null // heading source owns it
             return matchWikilinkPrefix(textBefore)
         },
-        items: () => wikilinkOptions(getNotes()),
+        items: () => [
+            ...wikilinkOptions(getNotes()),
+            ...folderOptions(getFolders()),
+        ],
         toOption: o => ({
             label: o.label,
             ...(o.detail ? { detail: o.detail } : {}),
+            ...(o.folder ? { type: 'folder' } : {}),
             apply(
                 view: EditorView,
                 completion: Completion,
                 applyFrom: number,
                 applyTo: number,
             ) {
+                if (o.folder) onFolderPick?.(o.target)
                 const after = view.state.doc.sliceString(applyTo, applyTo + 2)
                 const { insert, cursorOffset } = buildInsert(
                     o.target,
@@ -349,17 +364,21 @@ function atMentionSource(
             .map(f => ({
                 label: f.label,
                 detail: f.folder,
+                ...(f.dir ? { type: 'folder' } : {}),
                 apply(
                     view: EditorView,
                     completion: Completion,
                     applyFrom: number,
                     applyTo: number,
                 ) {
-                    onPick?.(f.path)
+                    // A folder is referenced by its full path with a trailing slash, in the reference
+                    // list and in the inserted link alike.
+                    const ref = f.dir ? folderLinkTarget(f.path) : f.path
+                    onPick?.(ref)
                     // Insert `[[Name]] ` (trailing space to keep typing), caret parked just past it. Mirrors
                     // wikilinkFor(path) for the reference, but built from the display label so the popup pick
                     // and the inserted text are the same string.
-                    const insert = `[[${f.label}]] `
+                    const insert = `[[${f.dir ? ref : f.label}]] `
                     applyInsert(
                         view,
                         completion,
@@ -681,6 +700,9 @@ export function vaultCompletion(opts: {
     // note editor → the at-mention source is simply not added.
     getFiles?: () => FileCandidate[]
     onFileMention?: (path: string) => void
+    // Folder paths `[[` offers after the notes. Defaults to the registered vault folders
+    // (registerFolderPaths); a story or test passes its own.
+    getFolders?: () => readonly string[]
     // The current note's path, supplied ONLY by the note Editor (never the chat composer or a
     // table cell) — gates the `/` menu's "Query builder" item, which needs a host note for the
     // ```query block it inserts. Passed straight through to slashSource().
@@ -716,7 +738,11 @@ export function vaultCompletion(opts: {
                 // Heading source BEFORE the note source: inside `[[Note#…` the note source bails and this
                 // one owns the popup (it's also async, so ordering keeps the sync note source from racing it).
                 wikilinkHeadingSource(opts.getNotes, opts.readNote),
-                wikilinkSource(opts.getNotes),
+                wikilinkSource(
+                    opts.getNotes,
+                    opts.getFolders ?? knownFolderPaths,
+                    opts.onFileMention,
+                ),
                 // `~slug` memory reference — wired only when the host supplies the memory list.
                 ...(getMemories ? [memoryRefSource(getMemories)] : []),
                 tagSource(opts.getTags),

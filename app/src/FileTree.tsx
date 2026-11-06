@@ -856,6 +856,26 @@ export function FileTree(props: {
     window.addEventListener('bismuth-file-menu', onFileMenu)
     onCleanup(() => window.removeEventListener('bismuth-file-menu', onFileMenu))
 
+    // A clicked `[[Folder/]]` link (ui/openNote's revealFolder): expand the folder and its
+    // ancestors, select its row, and scroll it into view once the rows exist.
+    const onRevealFolder = (ev: Event) => {
+        const path = (ev as CustomEvent<string>).detail
+        if (!path || !findNode(path)) return
+        revealAncestors(path)
+        setOpen(prev => new Set(prev).add(path))
+        setSelected(new Set([path]))
+        setAnchor(path)
+        requestAnimationFrame(() =>
+            rows()
+                .find(el => el.dataset.ftPath === path)
+                ?.scrollIntoView({ block: 'nearest' }),
+        )
+    }
+    window.addEventListener('bismuth-reveal-folder', onRevealFolder)
+    onCleanup(() =>
+        window.removeEventListener('bismuth-reveal-folder', onRevealFolder),
+    )
+
     function revealAncestors(path: string) {
         const segs = path.split('/').slice(0, -1)
         setOpen(prev => {

@@ -10,6 +10,8 @@ import {
     resolveNotePath,
     wikilinkVisibleRange,
     wikilinkOpenPath,
+    isFolderTarget,
+    folderLinkTarget,
 } from './wikilink'
 
 // `start` is the document offset of the opening "[[". With start=0, "[[" occupies 0-1,
@@ -314,4 +316,29 @@ test('findHeadingLineIndex: -1 when no heading matches', () => {
 test('findHeadingLineIndex: ignores a matching # line inside a fence', () => {
     const lines = ['```', '## Fenced', '```', '## Fenced']
     expect(findHeadingLineIndex(lines, 'Fenced')).toBe(3)
+})
+
+// `[[Projects/Work/]]` names a folder: the trailing slash marks it, and the visible name keeps it.
+test('isFolderTarget: a trailing slash marks a folder; a bare slash or a note does not', () => {
+    expect(isFolderTarget('Projects/Work/')).toBe(true)
+    expect(isFolderTarget('Work/')).toBe(true)
+    expect(isFolderTarget('/')).toBe(false)
+    expect(isFolderTarget('Projects/Work')).toBe(false)
+})
+
+test('folderLinkTarget: one trailing slash, however many the path had', () => {
+    expect(folderLinkTarget('Projects/Work')).toBe('Projects/Work/')
+    expect(folderLinkTarget('Projects/Work//')).toBe('Projects/Work/')
+})
+
+test('parseWikilink: a folder link displays its name with the slash', () => {
+    expect(parseWikilink('Projects/Work/')).toEqual({
+        target: 'Projects/Work/',
+        display: 'Work/',
+    })
+})
+
+test('wikilinkVisibleRange: a folder link reveals its name and slash', () => {
+    // "[[Projects/Work/]]": inner starts at 2, "Work/" spans 11..16.
+    expect(wikilinkVisibleRange('Projects/Work/', 0)).toEqual({ from: 11, to: 16 })
 })

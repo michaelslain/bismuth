@@ -231,3 +231,28 @@ describe('buildEditorContextText instruction', () => {
         expect(buildEditorContextText({ ...base, instruction: '  \n ' })).toBe('')
     })
 })
+
+describe('buildEditorContextText — referenced folders', () => {
+    test('a referenced folder is listed on its own line', () => {
+        const text = buildEditorContextText({
+            activeFile: null,
+            openFiles: [],
+            selection: '',
+            hiddenPaths: new Set(),
+            referencedFiles: ['a.md', 'Projects/Work/'],
+        })
+        expect(text).toContain('Referenced files: a.md\n')
+        expect(text).toContain('Referenced folders: Projects/Work/')
+    })
+
+    test('a hidden folder is dropped', () => {
+        const text = buildEditorContextText({
+            activeFile: null,
+            openFiles: [],
+            selection: '',
+            hiddenPaths: new Set(['Private']),
+            referencedFiles: ['Private/'],
+        })
+        expect(text).toBe('')
+    })
+})

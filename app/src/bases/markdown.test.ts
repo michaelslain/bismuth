@@ -175,6 +175,12 @@ describe('renderNoteBody — wikilinks/tags vs code', () => {
         expect(html).toContain('data-href="Another Note.md"')
     })
 
+    test('a folder wikilink keeps its slash and shows the folder name', () => {
+        const html = renderNoteBody('see [[Projects/Work/]] here')
+        expect(html).toContain('data-href="Projects/Work/"')
+        expect(html).toContain('>Work/</a>')
+    })
+
     test('a wikilink inside an INLINE code span stays literal (no anchor)', () => {
         const html = renderNoteBody('use `[[x]]` to link')
         expect(html).not.toContain('bismuth-wikilink')

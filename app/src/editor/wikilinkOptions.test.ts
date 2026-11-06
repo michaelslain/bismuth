@@ -1,6 +1,6 @@
 // app/src/editor/wikilinkOptions.test.ts
 import { test, expect } from 'bun:test'
-import { wikilinkOptions } from './wikilinkOptions'
+import { wikilinkOptions, folderOptions } from './wikilinkOptions'
 import { baseOf, linkTargetFor } from '../../../core/src/linkTarget'
 import type { NoteCandidate } from './wikilink'
 
@@ -64,4 +64,11 @@ test('wikilinkOptions: counts and targets by baseOf(path), not label, when they 
         expect(o.target).toBe(linkTargetFor(notes[i].path, ids))
         expect(baseOf(notes[i].path)).toBe('Notes.markdown')
     })
+})
+
+test('folderOptions: name with a slash as label, parent dir as detail, full path + slash as target', () => {
+    expect(folderOptions(['Projects/Work', 'Inbox'])).toEqual([
+        { label: 'Work/', detail: 'Projects', target: 'Projects/Work/', folder: true },
+        { label: 'Inbox/', detail: '', target: 'Inbox/', folder: true },
+    ])
 })

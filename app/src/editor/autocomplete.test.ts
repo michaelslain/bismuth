@@ -125,3 +125,35 @@ test('wikilinkSource: applying a duplicate-name note inserts the full path [[Arc
     const { insert } = applyPick(result, { detail: 'Archive' }, doc.length)
     expect(doc.slice(0, result.from) + insert).toBe('[[Archive/Plan]]')
 })
+
+// Folders follow the notes in the `[[` popup: picking one inserts its full path with a trailing
+// slash and reports that target (the chat composer wires it into the chat's context).
+test('wikilinkSource: a folder option inserts [[Projects/Work/]] and reports the pick', () => {
+    const doc = '[[Wo'
+    const state = EditorState.create({ doc })
+    const ctx = new CompletionContext(state, doc.length, false)
+    const picked: string[] = []
+    const result = wikilinkSource(
+        () => [{ label: 'Workout', path: 'Workout' }],
+        () => ['Projects/Work'],
+        t => picked.push(t),
+    )(ctx) as CompletionResult
+    expect(result.options.map(o => o.label)).toEqual(['Workout', 'Work/'])
+    const { insert } = applyPick(result, 'Work/', doc.length)
+    expect(doc.slice(0, result.from) + insert).toBe('[[Projects/Work/]]')
+    expect(picked).toEqual(['Projects/Work/'])
+})
+
+test('wikilinkSource: picking a note reports no folder', () => {
+    const doc = '[[So'
+    const state = EditorState.create({ doc })
+    const ctx = new CompletionContext(state, doc.length, false)
+    const picked: string[] = []
+    const result = wikilinkSource(
+        () => [{ label: 'Solo', path: 'Solo' }],
+        () => [],
+        t => picked.push(t),
+    )(ctx) as CompletionResult
+    applyPick(result, 'Solo', doc.length)
+    expect(picked).toEqual([])
+})

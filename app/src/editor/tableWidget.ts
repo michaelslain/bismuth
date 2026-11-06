@@ -74,14 +74,19 @@ import { minimalChange } from './normalizeFrontmatter'
 import { watchFitTable } from '../ui/table/fitTable'
 import { watchScrollFade } from '../ui/table/scrollFade'
 import { api } from '../api'
-import { parseWikilink, resolveNotePath, wikilinkOpenPath } from './wikilink'
+import {
+    isFolderTarget,
+    parseWikilink,
+    resolveNotePath,
+    wikilinkOpenPath,
+} from './wikilink'
 // A synchronous, Solid-free read of "is a gallery modal open?" (galleryState.ts is a plain .ts, so
 // importing it never taints this module's headless tests). Opening the emoji gallery from a `:`
 // completion inside a cell grabs focus for the modal's search box, blurring the cell's nested
 // CodeMirror — we DEFER the blur teardown (both leaveEdit + the root commit) while a gallery is up so
 // the gallery's deferred applyInsert has a live editor to write into + refocus (#49).
 import { isGalleryOpen } from '../ui/gallery/galleryState'
-import { openNote } from '../ui/openNote'
+import { openNote, revealFolder } from '../ui/openNote'
 import { emojiQuickAction, type QuickActionSpec } from './emojiQuickAction'
 import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 // The nested in-cell CodeMirror editor (#15/#49) is imported DYNAMICALLY (see loadCellEditor below):
@@ -741,6 +746,10 @@ export function insertEmbedsInTableCell(
 function openCellWikilink(view: EditorView, raw: string): void {
     const { target, heading } = parseWikilink(raw)
     if (!target) return
+    if (isFolderTarget(target)) {
+        revealFolder(target)
+        return
+    }
     const notes = view.state.facet(noteNamesFacet)?.() ?? []
     const resolved = resolveNotePath(target, notes)
     openNote(wikilinkOpenPath(target, resolved), heading)

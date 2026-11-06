@@ -6,12 +6,12 @@ Typing a trigger such as `[[`, `#`, `/` or `:` in a note opens a popup of comple
 
 | You type | Where | It completes |
 |---|---|---|
-| `[[` | note body, table cell, composer | Note names; see [Complete wikilinks and headings](#complete-wikilinks-and-headings) |
+| `[[` | note body, table cell, composer | Note names, then folders; see [Complete wikilinks and headings](#complete-wikilinks-and-headings) |
 | `[[Note#` | note body, table cell, composer | The headings of `Note` |
 | `#` after a space or at line start | note body, table cell, composer | Existing tags |
 | `~` and a letter, after a space, `(` or at line start | note body, composer | Memory notes (3rd brain), needs the daemon enabled |
 | `/` as the first thing on a line | note body, table cell | A block to insert: heading, table, code, callout and more |
-| `@` after a space or at line start | chat composer only | A vault file, inserted as a wikilink |
+| `@` after a space or at line start | chat composer only | A vault file or folder, inserted as a wikilink |
 | `:` after a space or at line start | note body, table cell, composer | Emoji, by name or keyword |
 | `{{` | note body and frontmatter | Template tokens |
 | A key at column 0 in frontmatter | note frontmatter | Property names from the property registry |
@@ -36,6 +36,8 @@ Typing `[[` opens a list of every note in the vault, showing the note's name wit
 ```
 
 If two notes share a base name, the option inserts the full vault path instead, so the link stays unambiguous: `[[work/Project Alpha]]`.
+
+Folders follow the notes in the list, each shown as its name with a slash (`Books/`) and its parent folder beside it. Picking one inserts the folder's full path with a trailing slash: `[[reading/Books/]]`. In the chat composer the pick also adds the folder to the chat's context. See [folder links](../vault/wikilinks-tags.md#how-does-a-folder-link-work).
 
 Once the link contains a `#` after a name that matches a real note, the popup lists that note's headings instead. Picking one inserts the heading text and closes the link: `[[Project Alpha#Goals]]`. If the part before `#` does not match a note (a note literally named `C# Notes`), the popup stays in note mode so the full name still completes. A link to an unknown note offers no headings.
 
@@ -111,7 +113,7 @@ The divider starts with a blank line on purpose: `---` directly under a paragrap
 
 ## Mention a file in the chat composer
 
-In the chat composer, `@` after a space or at the start of a line lists every file in the vault, ranked by name then path, at most 50. Picking one inserts `[[Name]] ` and adds that file to the chat's context. The `@` stays literal inside code spans and in email addresses. The note editor and table cells do not offer this popup.
+In the chat composer, `@` after a space or at the start of a line lists every file in the vault, then every folder, ranked by name then path, at most 50. Picking a file inserts `[[Name]] ` and picking a folder inserts `[[path/to/Folder/]] `; either way the pick is added to the chat's context. Files and folders hidden from AI are not listed. The `@` stays literal inside code spans and in email addresses. The note editor and table cells do not offer this popup.
 
 ## Complete template tokens
 
@@ -194,7 +196,7 @@ While you build a combination by hand, the popup offers `Mod`, `Alt`, `Shift`, `
 
 ## How it works
 
-`app/src/editor/autocomplete.ts` exports `vaultCompletion`, one `autocompletion()` extension whose `override` array holds every note-editor source. Several `autocompletion()` extensions conflict, so all body and frontmatter sources share this array. Each source is a `CompletionSource` paired with a pure matcher in `wikilink.ts`, `tag.ts`, `emoji.ts`, `templateToken.ts`, `atMention.ts` or `core/src/memoryRef.ts`, so triggers are unit-tested without a browser. `Editor.tsx` and the table cell editor (`cellEditorExtensions.ts`) both build it through `markdownEditingExtensions`, which is why a cell completes like the note body. A source that needs a host input is added only when the host supplies it: `getMemories` for `??`, `getFiles` for `@`, `getHostPath` for the Query builder item, and `slashMenu: false` removes the slash menu from the composer.
+`app/src/editor/autocomplete.ts` exports `vaultCompletion`, one `autocompletion()` extension whose `override` array holds every note-editor source. Several `autocompletion()` extensions conflict, so all body and frontmatter sources share this array. Each source is a `CompletionSource` paired with a pure matcher in `wikilink.ts`, `tag.ts`, `emoji.ts`, `templateToken.ts`, `atMention.ts` or `core/src/memoryRef.ts`, so triggers are unit-tested without a browser. `Editor.tsx` and the table cell editor (`cellEditorExtensions.ts`) both build it through `markdownEditingExtensions`, which is why a cell completes like the note body. A source that needs a host input is added only when the host supplies it: `getMemories` for `??`, `getFiles` for `@`, `getHostPath` for the Query builder item, and `slashMenu: false` removes the slash menu from the composer. The `[[` source takes its folders from `getFolders`, which defaults to `knownFolderPaths()` in `wikilink.ts`, the vault tree's folders that `FileView.tsx` registers through `registerFolderPaths`; `folderOptions` in `wikilinkOptions.ts` turns them into options, and a folder pick calls the host's `onFileMention`.
 
 Every source applies through `applyCompletion` in `app/src/editor/applyCompletion.ts`, which replaces the range, places the caret and tags the transaction with `pickedCompletion` so CodeMirror closes the popup. Passing `trigger = true` (or `makeApply(..., true)`) reopens the popup after the insert, which chains `[[` into wikilinks or `[due ` into dates. `completionDisplayConfig` and `completionNavKeymap` in `completionDisplay.ts` draw the icon column and bind the navigation keys. A `wikilinkAutoTrigger` listener force-opens the popup for `[[`, `@` and `??`, which CodeMirror's word-character auto-activation misses.
 

@@ -8,7 +8,13 @@
 // target — a note basename, or a full filename for non-markdown files), `path` is the real vault
 // path (used to wire the reference into the chat context), `folder` is the top-level folder shown
 // as autocomplete detail. Same shape as NoteCandidate, but spans every file, not just notes.
-export type FileCandidate = { label: string; path: string; folder?: string }
+// `dir` marks a folder: its label ends in `/` and picking it inserts `[[path/]]`.
+export type FileCandidate = {
+    label: string
+    path: string
+    folder?: string
+    dir?: boolean
+}
 
 // `@` at start-of-line or after whitespace, then the query. Vault file names can contain spaces, so
 // the query greedily takes the rest of the line up to the caret — but stops at another `@` so each

@@ -43,7 +43,7 @@ export function parseWikilink(inner: string): {
     const target = (
         hash === -1 ? beforeAlias : beforeAlias.slice(0, hash)
     ).trim()
-    const basename = target.slice(target.lastIndexOf('/') + 1)
+    const basename = linkBasename(target)
     const result: {
         target: string
         alias?: string
@@ -171,8 +171,37 @@ export function wikilinkVisibleRange(
     }
     const hash = inner.indexOf('#')
     const targetLen = hash === -1 ? inner.length : hash
-    const basenameStart = inner.slice(0, targetLen).lastIndexOf('/') + 1
+    const target = inner.slice(0, targetLen)
+    const basenameStart = targetLen - linkBasename(target).length
     return { from: innerStart + basenameStart, to: innerStart + targetLen }
+}
+
+// The last path segment of a link target. A folder target (`Projects/Work/`) keeps its trailing
+// slash, so the visible name reads `Work/` rather than an empty string.
+function linkBasename(target: string): string {
+    const end = isFolderTarget(target) ? target.length - 1 : target.length
+    return target.slice(target.lastIndexOf('/', end - 1) + 1)
+}
+
+/** A wikilink target naming a FOLDER: written with a trailing slash (`[[Projects/Work/]]`), so it
+ *  can never be mistaken for, or create, a note of the same name. */
+export function isFolderTarget(target: string): boolean {
+    return target.length > 1 && target.endsWith('/')
+}
+
+/** The wikilink target for a folder path: the full vault path plus a trailing slash. */
+export function folderLinkTarget(path: string): string {
+    return `${path.replace(/\/+$/, '')}/`
+}
+
+// The vault's folder paths, supplied by whoever owns the file tree (FileView registers the tree
+// cache), so `[[` completion offers folders in every editor without threading a prop.
+let folderPathsGetter: () => readonly string[] = () => []
+export function registerFolderPaths(get: () => readonly string[]): void {
+    folderPathsGetter = get
+}
+export function knownFolderPaths(): readonly string[] {
+    return folderPathsGetter()
 }
 
 // Resolve a wikilink target (a basename like "My Note" or a full path like

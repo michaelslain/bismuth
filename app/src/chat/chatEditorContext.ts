@@ -19,7 +19,8 @@ export interface EditorContextInput {
     activePane?: string | null
     /** Paths whose RESOLVED visibility is "hidden" (core/src/visibility.ts isVisibleToChat). */
     hiddenPaths: ReadonlySet<string>
-    /** Files the user EXPLICITLY referenced in this chat (Row 79) — @-mentioned or dragged in.
+    /** Files the user EXPLICITLY referenced in this chat (Row 79) — @-mentioned or dragged in. A
+     *  folder is its path with a trailing slash and is listed as a referenced folder.
      *  Listed in the preamble so their content is available to the model, visibility-filtered
      *  like everything else. Deduped against the active file / open tabs so nothing repeats. */
     referencedFiles?: string[]
@@ -44,9 +45,16 @@ export function buildEditorContextText(input: EditorContextInput): string {
     // Referenced files (Row 79): drop hidden ones, then anything already named as the active file or
     // an open tab (no point listing it twice).
     const openPaths = new Set(openFiles.map(f => f.path))
-    const referencedFiles = (input.referencedFiles ?? []).filter(
-        p => !input.hiddenPaths.has(p) && p !== activeFile && !openPaths.has(p),
+    // A referenced FOLDER is its path with a trailing slash (`Projects/Work/`): checked against the
+    // hidden set without the slash, and listed on its own line.
+    const referenced = (input.referencedFiles ?? []).filter(
+        p =>
+            !input.hiddenPaths.has(p.replace(/\/+$/, '')) &&
+            p !== activeFile &&
+            !openPaths.has(p),
     )
+    const referencedFiles = referenced.filter(p => !p.endsWith('/'))
+    const referencedFolders = referenced.filter(p => p.endsWith('/'))
     const EXPORT_LABEL = EXPORT_PANE_LABEL
     const exportPath = input.activePane?.startsWith(EXPORT_LABEL)
         ? input.activePane.slice(EXPORT_LABEL.length)
@@ -61,7 +69,7 @@ export function buildEditorContextText(input: EditorContextInput): string {
         !activeFile &&
         !activePane &&
         !selection &&
-        referencedFiles.length === 0
+        referenced.length === 0
     )
         return ''
     const lines: string[] = ['<editor-context>']
@@ -72,6 +80,8 @@ export function buildEditorContextText(input: EditorContextInput): string {
         lines.push(`Open tabs: ${openFiles.map(f => f.path).join(', ')}`)
     if (referencedFiles.length)
         lines.push(`Referenced files: ${referencedFiles.join(', ')}`)
+    if (referencedFolders.length)
+        lines.push(`Referenced folders: ${referencedFolders.join(', ')}`)
     if (selection) {
         lines.push(
             `Current selection${input.selectionPath ? ` (from ${input.selectionPath})` : ''}:`,

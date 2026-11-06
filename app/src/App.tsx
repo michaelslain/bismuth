@@ -2631,13 +2631,17 @@ export default function App() {
             const chatId = (e as CustomEvent<{ chatId?: string }>).detail?.chatId
             if (chatId) openChatInTab(chatId)
         }
+        // A clicked `[[Folder/]]` link: the file tree selects the folder, so the sidebar must show.
+        const onRevealFolder = () => setSidebarVisible(true)
         window.addEventListener('bismuth-open', onOpen)
+        window.addEventListener('bismuth-reveal-folder', onRevealFolder)
         window.addEventListener('bismuth-deleted', onDeleted)
         window.addEventListener('bismuth-moved', onMoved)
         window.addEventListener('bismuth-chat-rename', onChatRename)
         window.addEventListener('bismuth-open-terminal', onOpenTerminal)
         window.addEventListener('bismuth-open-chat', onOpenChat)
         onCleanup(() => {
+            window.removeEventListener('bismuth-reveal-folder', onRevealFolder)
             window.removeEventListener('bismuth-open', onOpen)
             window.removeEventListener('bismuth-deleted', onDeleted)
             window.removeEventListener('bismuth-moved', onMoved)

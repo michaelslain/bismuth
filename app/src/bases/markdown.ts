@@ -309,8 +309,11 @@ function wikilinksToAnchors(src: string): string {
     return src.replace(WIKILINK_RE, (_m, inner: string) => {
         const [rawTarget, alias] = inner.split('|')
         const target = rawTarget.split('#')[0].trim()
-        const label = (alias ?? target.split('/').pop() ?? target).trim()
-        const path = target.endsWith('.md') ? target : `${target}.md`
+        // A folder target (`Projects/Work/`) keeps its slash: it reveals the folder, never a note.
+        const folder = target.length > 1 && target.endsWith('/')
+        const name = folder ? `${target.slice(0, -1).split('/').pop()}/` : target.split('/').pop()
+        const label = (alias ?? name ?? target).trim()
+        const path = folder || target.endsWith('.md') ? target : `${target}.md`
         return `<a class="bismuth-wikilink" data-href="${escapeAttr(path)}">${escapeHtml(label)}</a>`
     })
 }
