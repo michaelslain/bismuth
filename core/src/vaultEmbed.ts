@@ -16,6 +16,8 @@ import {
 } from './memoryEmbed'
 import type { SemanticChannel, VectorStore } from './memoryEmbed'
 import { mapWithConcurrency } from './concurrency'
+import { readTranscript, stripTranscriptMarkers } from './transcript'
+import { stripMarks } from './bookMarks'
 import { binaryForCompanion, companionPathFor, isImagePath, isPdfPath } from './fileKinds'
 import { fileBasename } from './pathUtils'
 import { extractTags } from './tags'
@@ -124,8 +126,9 @@ const MAX_PDF_BYTES = 40 * 1024 * 1024
 const MAX_PDF_PAGES = 500
 
 const titleOf = (path: string, body: string): string => {
-    const h = /^#{1,6}\s+(.+?)\s*$/m.exec(body)
-    return h?.[1] ?? fileBasename(path)
+    for (const m of body.matchAll(/^#{1,6}\s+(.+?)\s*$/gm))
+        if (!/^Page \d+$/.test(m[1])) return m[1]
+    return fileBasename(path)
 }
 
 /** A vault note in the shape the shared store hashes and chunks: the path is the name, the title the
@@ -133,7 +136,7 @@ const titleOf = (path: string, body: string): string => {
 function memoryNote(path: string, body: string, tags: readonly string[]): MemoryNote {
     return {
         name: path,
-        content: body,
+        content: stripMarks(stripTranscriptMarkers(body)),
         backlinks: [],
         frontmatter: {
             type: 'fact',
@@ -307,7 +310,13 @@ async function toPdfNotes(vault: string, path: string): Promise<MemoryNote[] | n
     const sig = `${stat.size}:${stat.mtimeMs}`
     const hit = pdfCache.get(key)
     if (hit && hit.sig === sig && hit.companion === (comp?.parsed ?? null)) return hit.notes
-    const pages = stat.size > MAX_PDF_BYTES ? [] : await pdfPageTexts(await fa.readBinary(vault, path))
+    const layer = stat.size > MAX_PDF_BYTES ? [] : await pdfPageTexts(await fa.readBinary(vault, path))
+    // A page's transcript (the companion's marked block, transcribe.ts) is the deliberate reading of
+    // it: a scan or a handwritten notebook has no text layer, or a garbled one from OCR. It wins over
+    // the PDF's own text for its page, with highlight marks taken out.
+    const transcript = new Map(readTranscript(comp?.c.body ?? '').map(p => [p.page, stripMarks(p.text)]))
+    const count = Math.max(layer.length, ...transcript.keys(), 0)
+    const pages = Array.from({ length: count }, (_, i) => transcript.get(i + 1) ?? layer[i] ?? '')
     const description = descriptionOf(comp?.c ?? null) || fileBasename(path)
     const notes = pdfEntries(path, description, comp?.c.tags ?? [], pages)
     pdfCache.set(key, { sig, companion: comp?.parsed ?? null, notes })
@@ -324,7 +333,8 @@ async function toImageNote(vault: string, path: string): Promise<MemoryNote | nu
     const known = imageNotes.get(comp.parsed)
     if (known) return known
     const description = descriptionOf(comp.c)
-    const body = comp.c.body.trim()
+    // the companion's own text, with a transcript's markers and highlight marks taken out
+    const body = stripMarks(stripTranscriptMarkers(comp.c.body)).trim()
     if (!description && !body && comp.c.tags.length === 0) return null
     const note = binaryNote(path, description || fileBasename(path), [description, body].filter(Boolean).join('\n'), comp.c.tags)
     imageNotes.set(comp.parsed, note)

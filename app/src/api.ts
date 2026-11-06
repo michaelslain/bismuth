@@ -121,6 +121,9 @@ const OWNER_TOKEN = resolveOwnerToken(
         .__BISMUTH_OWNER_TOKEN__,
 )
 
+import type { PageText, TranscribeEngine, TranscriptEngine } from '../../core/src/transcript'
+import type { MarkerSetupState, MarkerStatus } from '../../core/src/markerSetup'
+import type { TextLine } from '../../core/src/visionOcr'
 import type { GraphData, TreeEntry, ViewLayout } from '../../core/src/graph'
 import type { SearchOpts, SearchResult } from './searchOpts'
 import type { Task } from '../../core/src/tasks'
@@ -616,6 +619,53 @@ export const api = {
         post('/row/delete', { file, index }),
     rowReorder: (file: string, from: number, to: number) =>
         post('/row/reorder', { file, from, to }),
+    /** Transcribe an image or PDF (all its pages, or `pages`) into its companion note. */
+    transcribe: (body: {
+        file: string
+        engine?: TranscribeEngine
+        pages?: number[]
+        book?: string
+        onlyMissing?: boolean
+        math?: 'careful' | 'fast'
+    }) =>
+        postJson<{
+            ok: true
+            companion: string
+            engine: TranscriptEngine
+            pages: { page: number; chars: number }[]
+            escalated?: number[]
+            math?: number[]
+            markerSkipped?: string
+            aiSkipped?: string
+            skipped?: true
+        }>('/transcribe', body),
+    /** Whether Marker, the local math reader, is installed, and its install job. */
+    markerSetup: () => getJson<MarkerStatus>('/transcribe/setup'),
+    /** Start installing Marker in the background; answers the job's state. */
+    startMarkerSetup: () => postJson<MarkerSetupState>('/transcribe/setup', {}),
+    /** The transcript a page file's companion note holds. */
+    storedTranscript: (file: string) =>
+        getJson<{ engine?: TranscriptEngine; at?: string; pages: PageText[] }>(
+            `/transcript?file=${encodeURIComponent(file)}`,
+        ),
+
+    /** Mark (`add`) or unmark (`remove`) quotes in one page's transcript; returns that page's marks. */
+    markTranscript: (req: {
+        file: string
+        page?: number
+        add?: string[]
+        remove?: string[]
+    }) =>
+        postJson<{ ok: true; companion: string; marks: string[] }>(
+            '/transcript/mark',
+            req,
+        ),
+    /** The page's text lines with boxes as page fractions, recognised on demand. */
+    transcriptLines: (file: string, pages?: number[]) =>
+        postJson<{ pages: { page: number; lines: TextLine[] }[] }>(
+            '/transcript/lines',
+            { file, pages },
+        ),
 
     move: (from: string, to: string) => post('/move', { from, to }),
     del: (path: string) => postJson<{ trashPath: string }>('/delete', { path }),

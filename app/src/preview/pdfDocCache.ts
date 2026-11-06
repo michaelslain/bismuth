@@ -142,6 +142,18 @@ const stillFresh = createFreshness<LoadedPdf>({
     dropStash: dropStashFor,
 })
 
+/** After a save into the PDF the cached document still carries the highlights it was loaded
+ *  with, and a self-write does not invalidate it; hand a returning view the saved set instead. */
+export function rememberCachedHighlights(key: string, pages: Highlight[][]): void {
+    const hit = pdfCache.acquire(key)
+    if (!hit) return
+    try {
+        hit.value.doc.highlights = Promise.resolve(pages)
+    } finally {
+        hit.release()
+    }
+}
+
 const replacedListeners = createReplacedListeners()
 
 /** Subscribe to `key`'s file being rewritten under an open document (a range-loaded document

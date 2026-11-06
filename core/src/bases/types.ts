@@ -22,6 +22,7 @@ const VIEW_TYPE_VALUES = [
     'map',
     'calendar',
     'flashcards',
+    'book',
     'bar',
     'line',
     'stat',
@@ -133,6 +134,12 @@ export interface ViewConfig {
     // lives in companion columns: `<dueField>Back` / `<easeField>Back` / `<intervalField>Back`
     // (defaults dueBack / easeBack / intervalBack). Replaces the old `:::` reversed card.
     bidirectional?: boolean
+    // Book view: the property holding each row's page file (a wikilink, embed or vault path).
+    page?: string // default "page"
+    // Book view: two pages side by side, or one page at a time.
+    bookLayout?: 'spread' | 'single' // default "spread"
+    // Book view: the pages as photographed or scanned, or their transcriptions set as text.
+    bookMode?: 'scroll' | 'pages' | 'text' // default "pages"
     // Chart views (bar, line, stat): axis + aggregation config.
     x?: string // property id for the x-axis / category
     y?: string // property id for the y-axis value

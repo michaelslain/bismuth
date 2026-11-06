@@ -1,11 +1,11 @@
 // app/src/preview/BookmarksPanel.tsx
 // The PDF preview's right-hand navigation column, styled like the file tree: bookmarks (the
-// user's own page marks, stored in the binary's `.draw` sidecar through the annotation store)
-// above outline (the document's embedded table of contents, resolved by PdfPages' `onOutline`).
+// user's own page marks, stored in the binary's `.draw` sidecar through the annotation store; the
+// list is BookmarkList, the same one a book's panel shows) above outline (the document's embedded table of contents, resolved by PdfPages' `onOutline`).
 // Every bookmark edit goes through `store.edit` with the pure ops in
 // core/src/drawing/pageBookmarks.ts, so it shares the sidecar's one debounce and one undo stack
 // with ink and highlights.
-import { createMemo, For, Show } from 'solid-js'
+import { createMemo, Show } from 'solid-js'
 import {
     addBookmark,
     removeBookmark,
@@ -13,10 +13,9 @@ import {
     sortedBookmarks,
 } from '../../../core/src/drawing/pageBookmarks'
 import type { AnnotationStore, OutlineNode } from './annotationTypes'
-import BookmarkRow from './BookmarkRow'
+import BookmarkList from './BookmarkList'
 import OutlineTree from './OutlineTree'
 import { currentOutlinePath, outlineTitleForPage } from './outlineCurrent'
-import IconButton from '../ui/IconButton'
 import Text from '../ui/Text'
 import styles from './BookmarksPanel.module.css'
 
@@ -43,65 +42,22 @@ function BookmarksPanel(props: BookmarksPanelProps) {
                 .filter(Boolean)
                 .join(' ')}
         >
-            <section class={styles['bookmarks-section']} aria-label="Bookmarks">
-                <div class={styles['bookmarks-head']}>
-                    <Text as="span" size="micro" tone="muted" eyebrow>
-                        bookmarks
-                    </Text>
-                    <IconButton
-                        icon="Plus"
-                        label="Bookmark this page"
-                        size="sm"
-                        disabled={!ready()}
-                        onClick={() =>
-                            props.store.edit(d =>
-                                addBookmark(
-                                    d,
-                                    props.currentPage(),
-                                    outlineTitleForPage(
-                                        props.outline(),
-                                        props.currentPage(),
-                                    ) ?? undefined,
-                                ),
-                            )
-                        }
-                    />
-                </div>
-                <Show
-                    when={bookmarks().length > 0}
-                    fallback={
-                        <Text
-                            size="ui"
-                            tone="muted"
-                            class={styles['bookmarks-empty']}
-                        >
-                            No bookmarks yet.
-                        </Text>
-                    }
-                >
-                    <div role="list">
-                        <For each={bookmarks()}>
-                            {b => (
-                                <BookmarkRow
-                                    bookmark={b}
-                                    ready={ready()}
-                                    onJump={props.onJump}
-                                    onRename={(id, label) =>
-                                        props.store.edit(d =>
-                                            renameBookmark(d, id, label),
-                                        )
-                                    }
-                                    onRemove={id =>
-                                        props.store.edit(d =>
-                                            removeBookmark(d, id),
-                                        )
-                                    }
-                                />
-                            )}
-                        </For>
-                    </div>
-                </Show>
-            </section>
+            <BookmarkList
+                bookmarks={bookmarks()}
+                ready={ready()}
+                onAdd={() =>
+                    props.store.edit(d =>
+                        addBookmark(
+                            d,
+                            props.currentPage(),
+                            outlineTitleForPage(props.outline(), props.currentPage()) ?? undefined,
+                        ),
+                    )
+                }
+                onJump={props.onJump}
+                onRename={(id, label) => props.store.edit(d => renameBookmark(d, id, label))}
+                onRemove={id => props.store.edit(d => removeBookmark(d, id))}
+            />
             <section class={styles['bookmarks-section']} aria-label="Outline">
                 <div class={styles['bookmarks-head']}>
                     <Text as="span" size="micro" tone="muted" eyebrow>

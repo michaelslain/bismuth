@@ -54,6 +54,7 @@ import {
     createCalendarNav,
 } from '../calendar/state'
 import { FlashcardsView } from './FlashcardsView'
+import BookView from './BookView'
 import { BaseSettings } from './BaseSettings'
 import AddRowAction from './AddRowAction'
 import BaseSourceEditor from './BaseSourceEditor'
@@ -536,6 +537,9 @@ export function BaseView(props: {
     const [flashcardsSlots, setFlashcardsSlots] = createSignal<
         ViewBarSlots | undefined
     >()
+    // The book pushes its bar slots up like the deck does: its page, layout and panel state are
+    // per-instance.
+    const [bookSlots, setBookSlots] = createSignal<ViewBarSlots | undefined>()
 
     /** A chart kind's ViewBar contribution is just the `config` region — its x/y/aggregate/bin
      *  pickers, writing straight to the base file. Only shown when there's a file to write
@@ -596,6 +600,7 @@ export function BaseView(props: {
             })
         }
         if (activeType() === 'flashcards') return flashcardsSlots()
+        if (activeType() === 'book') return bookSlots()
         return chartConfigSlot()
     })
 
@@ -717,7 +722,9 @@ export function BaseView(props: {
                                         icon={
                                             activeType() === 'calendar'
                                                 ? 'Calendar'
-                                                : 'Table'
+                                                : activeType() === 'book'
+                                                  ? 'BookOpen'
+                                                  : 'Table'
                                         }
                                     >
                                         {n()}
@@ -907,6 +914,20 @@ export function BaseView(props: {
                                     onReviewed={revalidateAfterWrite}
                                     onBarSlots={setFlashcardsSlots}
                                 />
+                            </Match>
+                            <Match when={activeType() === 'book'}>
+                                <Show when={result()}>
+                                    {res => (
+                                        <BookView
+                                            rows={res().groups.flatMap(g => g.rows)}
+                                            view={res().view}
+                                            basePath={data()!.basePath}
+                                            ownsRows={ownsRows()}
+                                            onChange={revalidateAll}
+                                            onBarSlots={setBookSlots}
+                                        />
+                                    )}
+                                </Show>
                             </Match>
                             <Match when={activeType() === 'calendar'}>
                                 {/* Keyed on the nav so another base's calendar remounts under its

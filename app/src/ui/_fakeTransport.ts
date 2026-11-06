@@ -303,6 +303,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         visibility: resolveVisibility(s.ownVisibility, chatDefault),
     })
     const files = new Map<string, string>(Object.entries(seed.files ?? {}))
+    const transcribed = new Set<string>()
     const binaries = new Map<string, Uint8Array>(
         Object.entries(seed.binaries ?? {}),
     )
@@ -561,6 +562,8 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         getJson: async <T>(path: string): Promise<T> => {
             const { pathname, params } = splitPath(path)
             if (pathname === '/tree') return tree as unknown as T
+            if (pathname === '/transcript')
+                return { pages: [] } as unknown as T
             if (pathname === '/version')
                 return {
                     version: seed.versioned ? fakeVersion : 1,
@@ -674,6 +677,27 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         },
         postJson: async <T>(path: string, body: unknown): Promise<T> => {
             const { pathname } = splitPath(path)
+            if (pathname === '/transcribe') {
+                const { file, engine, onlyMissing } = body as { file: string; engine?: string; onlyMissing?: boolean }
+                // the server skips a file whose companion is already stamped when asked only for the missing
+                if (onlyMissing && transcribed.has(file))
+                    return { ok: true, companion: `${file}.md`, engine: 'on-device', pages: [], skipped: true } as unknown as T
+                transcribed.add(file)
+                return {
+                    ok: true,
+                    companion: `${file}.md`,
+                    engine: engine === 'ai' ? 'ai' : 'on-device',
+                    pages: [],
+                } as unknown as T
+            }
+            if (pathname === '/transcript/mark')
+                return {
+                    ok: true,
+                    companion: `${(body as { file: string }).file}.md`,
+                    marks: (body as { add?: string[] }).add ?? [],
+                } as unknown as T
+            if (pathname === '/transcript/lines')
+                return { pages: [] } as unknown as T
             if (pathname === '/rows') {
                 const { spec } = body as { spec: SourceSpec }
                 return resolveRows(spec) as unknown as T

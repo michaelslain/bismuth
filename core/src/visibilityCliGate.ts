@@ -237,12 +237,18 @@ const PATH_SCOPED_COMMANDS = new Set([
     'mkdir',
     'prop',
     'render',
-    // `ocr` reads one PDF or image and writes its text layer, or a `<name>.ocr.md` beside it.
+    // `ocr` reads one PDF and writes its text layer in place.
     'ocr',
     // `highlights` reads one PDF's or image's `.draw` sidecar and prints its highlighted text.
     'highlights',
     // `pdf md` reads one PDF and writes `<name>.md` beside it.
     'pdf',
+    // `book pages` lists a base's page files, returns none when its source reads a hidden base, and
+    // filters rows and page files through `agentDenyEntries` itself.
+    'book',
+    // `transcribe` reads one image or PDF and writes its companion note; a hidden file or companion
+    // reads as missing.
+    'transcribe',
     // `button` reads one note's ```button fences and presses a prompt button in it.
     'button',
 ])

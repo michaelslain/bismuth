@@ -135,6 +135,8 @@ import {
 } from './routes/context'
 import { default as agentsRoutes } from './routes/agents'
 import { default as basesRoutes, basesMutatingRoutes } from './routes/bases'
+import { default as transcribeRoutes, transcribeMutatingRoutes } from './routes/transcribe'
+import { registerAiTranscriber } from './transcribe'
 import { default as daemonRoutes, daemonMutatingRoutes } from './routes/daemon'
 import memoryRoutes from './routes/memory'
 import { default as gcalRoutes, gcalMutatingRoutes } from './routes/gcal'
@@ -204,6 +206,9 @@ const gcalTickMs = (): number =>
 // back for several seconds, so the floor is generous: an echo is still matched by the file's
 // stamp, so a genuine external edit inside the window changes the stamp and is reported.
 const SELF_WRITE_GRACE_MS = 10_000
+
+// A literal import() so a compiled core embeds the ai transcriber; the app and iPad paths never reach this file.
+registerAiTranscriber(() => import('./aiTranscribe'))
 
 export function cliArg(name: string): string | undefined {
     const i = Bun.argv.indexOf(`--${name}`)
@@ -991,6 +996,7 @@ export function createServer(cfg: CoreConfig) {
     const routes: Record<string, Handler> = {
         ...agentsRoutes(ctx),
         ...basesRoutes(ctx),
+        ...transcribeRoutes(ctx),
         ...daemonRoutes(ctx),
         ...gcalRoutes(ctx),
         ...graphRoutes(ctx),
@@ -1003,6 +1009,7 @@ export function createServer(cfg: CoreConfig) {
     }
     const mutatingRoutes: Record<string, Handler> = {
         ...basesMutatingRoutes(ctx),
+        ...transcribeMutatingRoutes(ctx),
         ...daemonMutatingRoutes(ctx),
         ...gcalMutatingRoutes(ctx),
         ...settingsMutatingRoutes(ctx),

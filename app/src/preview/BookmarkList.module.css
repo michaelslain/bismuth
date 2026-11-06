@@ -1,0 +1,20 @@
+/* BookmarkList.module.css — the reader's bookmarks section (BookmarkList.tsx ONLY): a header row
+   with `+`, then the rows. The panel around it (a book's column, the PDF preview's column with its
+   outline) owns the background, border and scroll. */
+.section {
+    display: flex;
+    flex-direction: column;
+}
+
+.head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: var(--row-h, 18px);
+    padding: 0 var(--sp-4);
+}
+
+.empty {
+    margin: 0;
+    padding: var(--sp-2) var(--sp-4);
+}

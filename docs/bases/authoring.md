@@ -93,6 +93,7 @@ A `views:` list in an existing file is read through its first entry only and is 
 | Rows with `lat` and `lng` plotted on a map | `map` |
 | A date field, with optional time and recurrence, on a month, week or day grid | `calendar` |
 | Front and back pairs reviewed with spaced repetition | `flashcards` |
+| Scanned pages, photos or PDFs to turn like a book, each row one page file | `book` |
 | A category or time axis against a numeric value, as bars | `bar` |
 | A numeric value over time, as a trend | `line` |
 | One aggregated number (sum, average, count) as a tile | `stat` |
@@ -106,7 +107,7 @@ A `views:` list in an existing file is read through its first entry only and is 
    ```
    bismuth base create <path> --view <kind> [--source <spec>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]
    ```
-   It writes `<path>.base.jsonl` (an explicit `.md` path makes a markdown base) with `source: notes` unless `--source` is given, so delete that key with `bismuth prop delete` for a collection (calendar, stored table rows). Its result lists any `missing` key the layout still needs: kanban `groupBy`, map `lat` and `lng`, chart `x`.
+   It writes `<path>.base.jsonl` (an explicit `.md` path makes a markdown base) with `source: notes` unless `--source` is given, so delete that key with `bismuth prop delete` for a collection (calendar, book, stored table rows). Its result lists any `missing` key the layout still needs: kanban `groupBy`, map `lat` and `lng`, chart `x`.
 4. Validate with `bismuth base validate <path>`. It prints `{"ok":true,"errors":[]}` and exits 0 when the base is sound; otherwise it lists each problem and exits 1. It catches:
    - an invalid `view:` value, which the app would render as `table`
    - a `views:` list with more than one entry

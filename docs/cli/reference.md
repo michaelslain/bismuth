@@ -106,7 +106,7 @@ Channel `chat` hides notes marked `hidden`; channel `daemon` hides `hidden` and 
 | Tier | Commands | Behaviour |
 |---|---|---|
 | Always allowed | `backends`, `backup`, `daemon`, `docs`, `doctor`, `folder-icon`, `install`, `memory`, `page`, `uninstall`, `app`, `settings get`, `settings schema`, `settings deny-list`, `checkpoint advance`, `checkpoint ref` | Cannot print a note body. |
-| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render`, `ocr`, `highlights`, `pdf`, `button` | Refused when an argument names a restricted note or folder. |
+| Path-scoped | `read`, `write`, `move`, `delete`, `restore`, `mkdir`, `prop` (except `prop check`), `render`, `ocr`, `highlights`, `pdf`, `book`, `transcribe`, `button` | Refused when an argument names a restricted note or folder. |
 | Filtered | `tree`, `templates`, `graph`, `search`, `replace`, `rows`, `row`, `base`, `task`, `card`, `calendar`, `gcal`, `relay`, `note`, `daily`, `map`, `brain`, `checkpoint diff`, `prop check` | Run, with restricted notes dropped before any count, group or summary. |
 | Refused | `api`, `serve`, `export`, `chat`, `update`, `settings set`, `settings status-bar`, `folder-visibility`, any unlisted command | Exit non-zero with a reason. |
 
@@ -207,6 +207,16 @@ bismuth base migrate --all --vault <vault>
 `base validate` reads the raw config (frontmatter or line 1), because the normal parser silently turns an unknown `view:` into `table`. It also reports a YAML comment that truncated a value (`#` after a space starts a comment inside a plain scalar) and a base that lists more than one layout.
 
 A hidden `--of` base answers like a missing one: no rows, no refusal. `base migrate-queries` and `--dry-run` print `{changed, files, unconvertible, degraded, skipped}`; blocks that already carry their own `where:` or `sort:` are left alone and counted under `unconvertible`.
+
+## book
+
+Lists a book base's pages. Headless. Reading the pages into their companion notes is [`transcribe`](#transcribe). The base's view is in [book view](../bases/views/book.md).
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `book pages` | `<base> [--json] [--vault <dir>]` | Prints the base's page files in the view's sorted order, one per line; `--json` prints `{file, kind, rowIndex}` objects. | no |
+
+`book` is path-scoped; for an agent a hidden page file reads as missing.
 
 ## button
 
@@ -555,13 +565,13 @@ For an agent, a hidden template makes `note new --template` fail with `refused: 
 
 ## ocr
 
-Gives a PDF a selectable text layer, and transcribes a PDF or image into a note with math as LaTeX. Headless; it drives `ocrmypdf` and Marker installed on the machine. Engines, output and failure modes are in [OCR](../vault/ocr.md).
+Gives a PDF a selectable text layer. Headless; it drives `ocrmypdf` installed on the machine. Engines, output and failure modes are in [OCR](../vault/ocr.md).
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
-| `ocr` | `<file> [--math] [--force] [--lang <codes>] [--pages <spec>] [--replace] [--vault <dir>]` | Adds the text layer to a PDF in place; `--math`, or any image, also writes `<name>.ocr.md`. Prints `{ok, path, layer?, note?, engine?}`. | no |
+| `ocr` | `<file.pdf> [--force] [--lang <codes>] [--pages <spec>] [--vault <dir>]` | Adds the text layer to the PDF in place. Prints `{ok, path, layer}`. | no |
 
-`ocr` refuses with `EEXIST` when `<name>.ocr.md` exists, unless `--replace` is given. Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes. `ocr` is path-scoped.
+A path that is not a PDF is refused with a message pointing at [`transcribe`](#transcribe). Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes, except `pdf md` and `transcribe`. `ocr` is path-scoped.
 
 ## pdf
 
@@ -715,6 +725,17 @@ Built-in names cannot be created over.
 `theme create` refuses an existing file without `--force`, and `--extends` must name a built-in theme.
 `theme list` reports `ink` as the active theme when `appearance.theme` names an unknown or invalid one.
 
+## transcribe
+
+Reads an image, a handwritten scan or a PDF into its companion note, with math as LaTeX. Headless; `transcribe` runs the same code as `POST /transcribe` in the calling process. Engines, math routing, output and failure modes are in [Transcribe pages and handwritten scans](../vault/transcription.md).
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `transcribe setup` | `[--vault <dir>]` | Installs Marker, the local math reader, into `~/.bismuth/tools` (uv, marker-pdf, llama-server; about 1.2 GB; Mac only) and waits, naming each step on stderr. Prints `{installed, missing, dir}`. See [Install Marker](../vault/transcription.md#install-marker). | no |
+| `transcribe` | `<file> [--engine auto\|on-device\|marker\|ai] [--math careful\|fast] [--pages <spec>] [--book <base>] [--missing] [--vault <dir>]` | Writes the transcript of an image or PDF into `<file>.md`. Without `--engine` the `transcription.engine` setting decides. Prints `{ok, companion, engine, pages, skipped?, escalated?, math?, markerSkipped?, aiSkipped?}`. | no |
+
+`--missing` skips a file whose companion already has `transcribed:`. Through the MCP tool `bismuth_cli` this command may run 30 minutes. `transcribe` is path-scoped; for an agent a hidden page file reads as missing.
+
 ## update
 
 Checks for and applies a git-based self-update. It applies only to a source build; elsewhere `update status` reports `available: false` with a reason, and `update apply` reports an error phase.
@@ -746,7 +767,7 @@ Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `ca
 The run registry is `core/src/runRegistry.ts`; a core that exits removes only a record naming its own pid, and restores the record of a live core it had replaced for the same vault.
 `history` parses each session log with `memory/src/sessionHistory.ts`, which reuses the turn folding in `memory/src/transcript.ts`.
 `image describe` calls `describeImage` in `core/src/imageDescribe.ts`, which sends the bytes to Haiku through the Agent SDK and records a content hash in `describedHash`.
-`cli/src/ocr.ts` builds the engine argv for `ocr`; Marker and engine lookup, shared with `pdf md`, are in `core/src/marker.ts`.
+`cli/src/ocr.ts` builds the engine argv for `ocr`; Marker and engine lookup, shared with `pdf md` and `transcribe`, are in `core/src/marker.ts`.
 `cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
 
 Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `core/src/findVaultRoot.ts`, `core/src/runRegistry.ts`, `core/src/imageDescribe.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`

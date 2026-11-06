@@ -22,6 +22,7 @@
 import { buildGraph } from './engine'
 import { attachLayout, computeViewLayouts } from './layout-cache'
 import { getFileAccess } from './fileAccess'
+import { markTranscript, readStoredTranscript } from './transcribe'
 import {
     editPdfHighlights,
     highlightIOFor,
@@ -513,6 +514,40 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
 
             // ---- structural ops: not in this increment (need FileAccess create/move/
             // delete + a settings.yaml writer + binary asset IO) ----
+            case 'GET /transcript':
+                return readStoredTranscript(vault, q('file'))
+            case 'POST /transcript/mark': {
+                // Emit after the write: emit bumps the version and notifies synchronously.
+                const r = await markTranscript(vault, b as Parameters<typeof markTranscript>[1])
+                emit([r.companion])
+                return r
+            }
+            case 'POST /transcribe':
+                // The ai transcriber runs an agent backend, a child process the iPad cannot start.
+                if ((b as { engine?: unknown }).engine === 'ai')
+                    throw new AppError('AI_UNAVAILABLE', 'ai transcription needs the desktop app', 503)
+                // Marker is a local program the iPad cannot run either.
+                if ((b as { engine?: unknown }).engine === 'marker')
+                    throw new AppError('MARKER_UNAVAILABLE', 'marker runs only on the desktop', 503)
+                throw new AppError(
+                    'VISION_UNAVAILABLE',
+                    'on-device text recognition needs the mac app',
+                    503,
+                )
+            // Marker is a desktop program: the iPad never has it and cannot install it.
+            case 'GET /transcribe/setup':
+            case 'POST /transcribe/setup':
+                return {
+                    installed: false,
+                    missing: ['marker_single', 'llama-server'],
+                    job: { state: 'failed', step: 'uv', error: 'the math reader runs only on the desktop' },
+                }
+            case 'POST /transcript/lines':
+                throw new AppError(
+                    'VISION_UNAVAILABLE',
+                    'on-device text recognition needs the mac app',
+                    503,
+                )
             case 'POST /move':
             case 'POST /delete':
             case 'POST /restore':

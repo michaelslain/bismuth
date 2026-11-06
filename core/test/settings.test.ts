@@ -1393,3 +1393,7 @@ describe('appearance.tokens in the frontend feed', () => {
         expect(feed2.appearance.tokens).toEqual({})
     })
 })
+
+test('the transcription section defaults to auto engine, asking about math, auto provider and no model', () => {
+    expect((DEFAULTS as any).transcription).toEqual({ auto: true, engine: 'auto', math: 'ask', provider: 'auto', model: '' })
+})

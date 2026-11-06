@@ -52,7 +52,8 @@ Each job below is one `bismuth` command, and one `bismuth_cli` call with the sam
 | Check an install that misbehaves after an update | `bismuth doctor` (`--fix` repairs). See [doctor](../overview/doctor.md) |
 | See the vault's folders, clusters, hubs and tags | `bismuth map`; `bismuth map --around <note>` shows where one note sits |
 | Load who the agent works with, the vault map and the memory index | `bismuth brain` |
-| Add a text layer to a scanned PDF, or transcribe an image | `bismuth ocr <file>`. See [OCR](../vault/ocr.md) |
+| Add a text layer to a scanned PDF | `bismuth ocr <file.pdf>`. See [OCR](../vault/ocr.md) |
+| Read an image, handwritten scan or PDF into its note, math as LaTeX | `bismuth transcribe <file>`. See [Transcribe pages and handwritten scans](../vault/transcription.md) |
 | Convert a PDF to a markdown note | `bismuth pdf md <file.pdf>`. See [Convert a PDF to markdown](../vault/pdf-to-markdown.md) |
 | Inspect or drive the daemon | `bismuth daemon status`, `devices`, `owner`, `graph`, `logs`, `cron run`, `cron toggle`, `process toggle` |
 | Read or author inbox pages | `bismuth page list`, `page create`, `page resolve` |

@@ -381,6 +381,11 @@ slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. A c
 into the bar's `[≡]` panel under its `data-bar-menu-label`. The `[≡]` shows only while something is
 dropped, and only when dropping frees more room than the `[≡]` itself takes.
 
+**A view bar stays short.** Words go to the one switch for what the view shows (the book's
+`pages | text`, the calendar's day/week/month); tools are icons; settings a person sets once and
+rarely changes are rows of the bar's settings panel, `ui/BarSettings`, behind one trigger at the
+end of the trail (the book's `Aa`), not worded controls on the bar.
+
 ### The intro frame
 The first-run intro lays every slide out in one frame, identical on all of them: a hero box 96 cells wide by 16 rows tall on the graph's cell grid, scaled up 1.5x (`--intro-glyph-scale`, three quarters of that on windows 800px tall or less), a text slot under it, and the nav pinned to the bottom, so the headline, the body and the nav sit at the same y on every slide. The `hero` variant holds glyph art (`GlyphArt`), or nothing over the graph; the `setup` variant holds the slide's own control.
 

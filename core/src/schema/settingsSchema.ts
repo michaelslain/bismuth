@@ -677,6 +677,45 @@ export const SETTINGS_SCHEMA: Schema = {
             doc: "Have Claude (Haiku, through your own claude login) write a description of each new or changed vault image into the image's companion note, so the image is found by semantic search and by recall. Cost: one short Claude request per image added or changed; images hidden from the daemon are never sent. Needs embeddings.enabled.",
         },
     }),
+    // Transcription of images and PDFs: the reader's text mode, books and `bismuth transcribe`
+    // (core/src/transcribe.ts).
+    transcription: object({
+        auto: {
+            type: 'boolean',
+            default: true,
+            doc: 'The reader transcribes every page that has no text, on its own, as soon as a book opens or gains pages, or a file opens in text mode (off = only when you press the transcribe button).',
+        },
+        engine: {
+            type: enumType(['auto', 'on-device', 'marker', 'ai']),
+            default: 'auto',
+            doc: 'Which transcriber reads a page: "on-device" (macOS text recognition, free and fast, garbles math), "marker" (Marker on this machine, slower, writes math as LaTeX), "ai" (one turn on an agent backend that reads images), or "auto" (the default: on-device first, then math pages are re-read with marker as transcription.math says, and other pages it reads poorly with ai).',
+        },
+        math: {
+            type: enumType(['ask', 'careful', 'fast']),
+            default: 'ask',
+            doc: 'What auto does with a page that looks like math: "ask" (the default: the reader asks; the CLI and agents read it carefully), "careful" (re-read it with marker, or ai where marker is missing; about 15 s a page), or "fast" (keep the on-device text).',
+        },
+        provider: {
+            type: enumType(CHAT_PROVIDER_IDS),
+            default: AUTO_PROVIDER,
+            doc: 'Agent backend that runs ai transcription: "auto" (the default) follows chat.provider; or name one backend. The backend must be installed and read images.',
+        },
+        model: {
+            type: 'string',
+            default: '',
+            doc: "Model the ai transcriber asks the backend for. Empty (the default) uses the backend's own default model.",
+        },
+    }),
+    // The reader: books, and images and PDFs opened in text mode (app/src/bases/BookView.tsx).
+    reader: object({
+        textScale: {
+            type: 'number',
+            default: 1,
+            min: 0.8,
+            max: 1.75,
+            doc: "Text mode's type size, as a multiple of the size the page's width picks (1). The display panel's `A-` and `A+` step it; the pages reflow to it.",
+        },
+    }),
     // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself
     // (see core/src/selfUpdate.ts); by default that's manual via the update banner.
     update: object({

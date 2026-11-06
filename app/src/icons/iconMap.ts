@@ -7,7 +7,7 @@
 //
 // Three kinds of entry, deliberately not silently conflated:
 //   - { kind: 'slug' } — resolved against @iconify-json/ph's icons.json by build-icon-svgs.ts.
-//     141 of these, each verified present (`!!data.icons[slug]`) before this file was written.
+//     142 of these, each verified present (`!!data.icons[slug]`) before this file was written.
 //   - { kind: 'custom' } — a hand-authored inline SVG body, for the two names Phosphor genuinely
 //     has no concept for but the app cannot leave blank: Regex ('.*') and WholeWord ('[W]'), both
 //     visible controls in the editor find panel. Stroked paths (never text) at Phosphor's native
@@ -45,6 +45,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Bold: { kind: 'slug', slug: 'text-b' },
     Book: { kind: 'slug', slug: 'book' },
     BookOpen: { kind: 'slug', slug: 'book-open' },
+    Bookmark: { kind: 'slug', slug: 'bookmark-simple' },
     Bot: { kind: 'slug', slug: 'robot' },
     Box: { kind: 'slug', slug: 'cube' },
     Brain: { kind: 'slug', slug: 'brain' },

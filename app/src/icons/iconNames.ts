@@ -1,6 +1,6 @@
 // app/src/icons/iconNames.ts
 //
-// The 143 canonical icon names every icon set must resolve — the NAME seam registry.ts:3 refers
+// The 144 canonical icon names every icon set must resolve — the NAME seam registry.ts:3 refers
 // to. This list is SET-INDEPENDENT: it does not change when the art behind a name does (Nerd Font
 // -> Phosphor -> whatever comes next), which is what keeps the ~100 real call sites (FileTree,
 // toolbar, palette, command catalog...) stable across a set swap. Only the MAPPING from these
@@ -30,6 +30,7 @@ export const ICON_NAMES: string[] = [
     'Bold',
     'Book',
     'BookOpen',
+    'Bookmark',
     'Bot',
     'Box',
     'Brain',

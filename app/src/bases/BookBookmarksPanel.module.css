@@ -1,0 +1,13 @@
+/* BookBookmarksPanel.module.css — the bookmarks column beside an open book
+   (BookBookmarksPanel.tsx ONLY): the column around the reader's BookmarkList. */
+.panel {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    width: 280px;
+    min-height: 0;
+    overflow: auto;
+    padding-block: var(--sp-3);
+    background: var(--surface-1);
+    border-left: var(--rule-soft);
+}

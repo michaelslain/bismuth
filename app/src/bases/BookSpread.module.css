@@ -1,0 +1,36 @@
+/* BookSpread.module.css — the still pages of an open book, set like a reading app: no page edges,
+   no spine line and no shadows. The pages sit on the pane's own background, so the margins inside
+   each page are the only gutter. */
+.spread {
+    display: flex;
+    position: relative;
+    flex: none;
+}
+
+.page {
+    position: relative;
+    overflow: hidden;
+    flex: none;
+    cursor: pointer;
+}
+
+.empty {
+    cursor: default;
+}
+
+.canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.missing {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-6);
+    text-align: center;
+    overflow-wrap: anywhere;
+}

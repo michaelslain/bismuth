@@ -61,6 +61,9 @@ import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
 import HighlightLayer from './preview/HighlightLayer'
 import PreviewBar from './preview/PreviewBar'
+import BookView from './bases/BookView'
+import type { ReadMode } from './bases/ReadModeSwitch'
+import ViewBar, { Crumb, type ViewBarSlots } from './ui/ViewBar'
 import ScratchTextLayer from './preview/ScratchTextLayer'
 import CodeFindBar from './preview/CodeFindBar'
 import CodePane from './preview/CodePane'
@@ -70,10 +73,9 @@ import BookmarksPanel from './preview/BookmarksPanel'
 import EdgeHandle from './shell/EdgeHandle'
 import { dragWidth, widthBounds } from './edgeResize'
 import { dragMarginRatio, fixedUnitLine, type ScratchLineAt } from './preview/scratchResize'
-import createAnnotationStore from './preview/createAnnotationStore'
-import { pdfCache } from './preview/pdfDocCache'
+import { acquireAnnotationStore } from './preview/sharedAnnotationStore'
+import { rememberCachedHighlights } from './preview/pdfDocCache'
 import type { PdfPageGeom } from '../../core/src/drawing/pdfHighlights'
-import type { Highlight } from '../../core/src/drawing/model'
 import createCompanionStore from './preview/createCompanionStore'
 import type {
     AnnotationStore,
@@ -184,6 +186,28 @@ export function PreviewView(props: {
         onCleanup(watchPdf(path()))
     })
     const name = () => path().split('/').pop() ?? path()
+
+    // How an image or PDF is read: `scroll` is this viewer; `pages` and `text` are the book reader
+    // over this one file, the same reader a book base uses. Remembered per file.
+    const [readMode, setReadMode] = createSignal<ReadMode>('scroll')
+    const [bookLayout, setBookLayout] = createSignal<'spread' | 'single'>('spread')
+    createEffect(
+        on(path, p => {
+            const saved = loadPreviewView(p)
+            setReadMode(saved?.readMode ?? 'scroll')
+            setBookLayout(saved?.bookLayout ?? 'spread')
+        }),
+    )
+    const pickReadMode = (m: ReadMode) => {
+        setReadMode(m)
+        savePreviewView(path(), { readMode: m === 'scroll' ? undefined : m })
+    }
+    const pickBookLayout = (l: 'spread' | 'single') => {
+        setBookLayout(l)
+        savePreviewView(path(), { bookLayout: l === 'single' ? 'single' : undefined })
+    }
+    const [bookSlots, setBookSlots] = createSignal<ViewBarSlots | undefined>()
+    const reading = () => inkable() && readMode() !== 'scroll'
     // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
     // through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/` encoding that lets
     // macOS-screenshot filenames load can never silently regress.
@@ -360,10 +384,9 @@ export function PreviewView(props: {
     }
 
     // --- Annotation store (image + pdf) ------------------------------------------------------
-    // Keyed on a BOOLEAN memo, so the store is built once when the file becomes an ink kind and
-    // disposed (its own cleanup flushes) when it stops being one — a switch between two ink files
-    // keeps the same store, whose own `on(sidecarPath)` effect flushes the old file and loads the
-    // new one. `untrack` keeps the store's setup reads out of this memo's dependencies.
+    // Keyed on a BOOLEAN memo, so the lease is taken when the file becomes an ink kind and given
+    // back (the last holder's release flushes and disposes the store) when it stops being one.
+    // `untrack` keeps the lease's setup reads out of this memo's dependencies.
     const inkableKind = createMemo(inkable)
     // The key PdfPages caches its document under; the store reads page geometry from that entry.
     const pdfDocKey = () =>
@@ -378,28 +401,26 @@ export function PreviewView(props: {
         const nat = untrack(pdfPages)[page]?.nat
         return nat ? { view: [0, 0, nat.w, nat.h], rotate: 0 } : undefined
     }
-    /** After a save into the PDF the cached document still carries the highlights it was loaded
-     *  with; a returning tab reports those, so hand it the saved set instead. */
-    const rememberPdfHighlights = (pages: Highlight[][]) => {
-        const key = pdfDocKey()
-        const hit = key ? pdfCache.acquire(key) : undefined
-        if (!hit) return
-        try {
-            hit.value.doc.highlights = Promise.resolve(pages)
-        } finally {
-            hit.release()
-        }
-    }
-    const store = createMemo<AnnotationStore | undefined>(() =>
-        inkableKind()
-            ? untrack(() =>
-                  createAnnotationStore(() => inkSidecarFor(path()), path, {
-                      pageGeom: pdfPageGeom,
-                      onPdfSaved: rememberPdfHighlights,
-                  }),
-              )
-            : undefined,
-    )
+    // The store is the binary's ONE shared store (sharedAnnotationStore.ts), so an open book over
+    // the same file edits the same document. A switch to another ink file releases the old lease
+    // (its cleanup flushes when this was the last holder) and acquires the new path's.
+    const store = createMemo<AnnotationStore | undefined>(() => {
+        if (!inkableKind()) return undefined
+        const binary = path()
+        const lease = untrack(() =>
+            acquireAnnotationStore(binary, {
+                pageGeom: pdfPageGeom,
+                // The shared entry already hands the cache entry of `binary` the saved highlights;
+                // only a cache key that differs from the path needs this view's own hook.
+                onPdfSaved: pages => {
+                    const key = pdfDocKey()
+                    if (key && key !== binary) rememberCachedHighlights(key, pages)
+                },
+            }),
+        )
+        onCleanup(() => void lease.release())
+        return lease.store
+    })
     const annotReady = () => store()?.loadState() === 'ready'
     // A live drag of the page|strip line (scratchEdge below) previews its ratio here and writes the
     // sidecar once, on release — so one drag is one undo step, not one per pointer move.
@@ -960,6 +981,9 @@ export function PreviewView(props: {
 
     return (
         <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
+            <Show
+                when={reading()}
+                fallback={
             <PreviewBar
                 kind={kind}
                 name={name}
@@ -989,14 +1013,26 @@ export function PreviewView(props: {
                 nativeActions={nativeActions}
                 onOpenExternal={reveal => void openExternal(reveal)}
                 imageSize={imageSize}
+                readMode={inkable() ? readMode : undefined}
+                onReadMode={pickReadMode}
             />
+                }
+            >
+                <ViewBar
+                    identity={<Crumb icon={HEADER_ICON[kind()]}>{name()}</Crumb>}
+                    locus={bookSlots()?.locus}
+                    readouts={bookSlots()?.readouts}
+                    config={bookSlots()?.config}
+                    actions={bookSlots()?.actions}
+                />
+            </Show>
 
             {/* Tags live on the binary's companion note (core/src/fileKinds.ts's
                 companionPathFor) — image/pdf only, mounted under the ViewBar so it reads like a
                 note's own frontmatter sitting above the body. `data-companion-frontmatter` is the
                 RUNTIME hook onKey above gates on — see its comment for why a class can't do this
                 job and stopPropagation from inside the strip wouldn't either. */}
-            <Show when={inkable()}>
+            <Show when={inkable() && !reading()}>
                 <div
                     data-companion-frontmatter
                     class={styles['preview-frontmatter']}
@@ -1009,10 +1045,27 @@ export function PreviewView(props: {
                 </div>
             </Show>
 
+            {/* pages / text: the book reader over this one file. The viewer below stays mounted,
+                out of sight, so scroll comes back where it was. */}
+            <Show when={reading()}>
+                <div class={styles['preview-book']} data-preview-book>
+                    <BookView
+                        rows={[]}
+                        files={[path()]}
+                        view={{ type: 'book', bookMode: readMode() === 'text' ? 'text' : 'pages', bookLayout: bookLayout() }}
+                        ownsRows={false}
+                        onChange={() => {}}
+                        onBarSlots={setBookSlots}
+                        onReadMode={pickReadMode}
+                        onLayout={pickBookLayout}
+                    />
+                </div>
+            </Show>
             <div
                 classList={{
                     [styles['preview-body']]: true,
                     [styles['preview-body--desk']]: inkable(),
+                    [styles['preview-body--away']]: reading(),
                 }}
                 data-testid="preview-body"
                 ref={el => {

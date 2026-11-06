@@ -345,6 +345,30 @@ embeddings:
 
 ---
 
+## `transcription`
+
+Reading the text off page images and scans, for [book views](../bases/views/book.md) and `bismuth transcribe`. See [Transcribe pages and handwritten scans](../vault/transcription.md).
+
+| Key | Type | Default | Values | Effect |
+|---|---|---|---|---|
+| `auto` | boolean | `true` | | A book view transcribes every page that has no text, on its own. Off means only when asked. |
+| `engine` | enum | `auto` | `auto`, `on-device`, `marker`, `ai` | The transcriber. `auto` reads on-device first, re-reads math pages with `marker` as `math` says, and re-reads the pages it reads poorly or not at all with `ai`. `marker` runs Marker on this machine and writes math as LaTeX. |
+| `math` | enum | `ask` | `ask`, `careful`, `fast` | What `auto` does with a page that looks like math. `careful` re-reads it with `marker` (`ai` where marker is missing), `fast` keeps the on-device text. With `ask`, a book view asks after its run; the CLI, the MCP tool and an HTTP request with no `math` read it carefully. |
+| `provider` | enum | `auto` | `auto`, or a backend id | The agent backend that runs `ai`. `auto` follows `chat.provider`. |
+| `model` | string | `''` | | The model `ai` asks the backend for. Empty uses the backend's own default. |
+
+---
+
+## `reader`
+
+The reader's text mode, in [book views](../bases/views/book.md#text-mode).
+
+| Key | Type | Default | Values | Effect |
+|---|---|---|---|---|
+| `textScale` | number | `1` | `0.8` to `1.75` | Text mode's type size, as a multiple of the size the page's width picks. The display panel's `A-` and `A+` step it, and the pages reflow. |
+
+---
+
 ## `chat`
 
 Chat tabs. There is no `chat.computerUse` setting; whether a backend can drive Chrome comes from its catalog capabilities (see [agent backends](../chat/backends.md)).

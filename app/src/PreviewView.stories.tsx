@@ -23,10 +23,11 @@
 // Tauri shell either), not a gap to patch.
 import { createSignal, For, onCleanup, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fireEvent, waitFor, within } from 'storybook/test'
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import { PreviewView } from './PreviewView'
-import { setTransport, type Transport } from './api'
+import { api, setTransport, type Transport } from './api'
+import bookPdfUrl from '../../core/test/drawing/fixtures/pdfkit-highlights.pdf?url'
 import { setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
 import { clearPreviewView, loadPreviewView } from './preview/previewViewMemory'
@@ -616,6 +617,37 @@ export const Pdf: Story = {
         await expect(rgbOf(getComputedStyle(body).backgroundColor)).toEqual(
             hexToRgb(editorHex),
         )
+    },
+}
+
+/** A PDF read as a book: `pages` swaps the viewer and its bar for the book reader over this one
+ *  file, with the same `scroll | pages | text` switch; `scroll` brings the viewer back as it was. */
+export const PdfReadAsBook: Story = {
+    name: 'Pdf read as a book',
+    render: () => {
+        setTransport(fakeTransport({}))
+        clearPreviewView('docs/real.pdf')
+        const original = api.assetUrl
+        api.assetUrl = (target: string) => (target === 'docs/real.pdf' ? bookPdfUrl : original(target))
+        onCleanup(() => (api.assetUrl = original))
+        return (
+            <div style={{ height: '100vh' }}>
+                <PreviewView path="docs/real.pdf" tagNames={NO_TAGS} pdfLoad={() => Promise.resolve(buildChurnTestPdf())} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBeGreaterThanOrEqual(1))
+        await expect(canvas.getByRole('button', { name: 'scroll' })).toHaveAttribute('aria-pressed', 'true')
+        await userEvent.click(canvas.getByRole('button', { name: 'pages' }))
+        await waitFor(() => expect(canvasElement.querySelector('[data-preview-book] [data-book]')).not.toBeNull())
+        await waitFor(() => expect(canvas.getByText(/^page 1 \/\/ \d+$/)).toBeInTheDocument(), { timeout: 8000 })
+        await expect(canvasElement.querySelector('[data-testid="page-readout"]')).toBeNull()
+        await expect(canvas.getByRole('button', { name: 'pages' })).toHaveAttribute('aria-pressed', 'true')
+        await userEvent.click(canvas.getByRole('button', { name: 'scroll' }))
+        await waitFor(() => expect(canvasElement.querySelector('[data-preview-book]')).toBeNull())
+        await waitFor(() => expect(canvasElement.querySelector('[data-testid="page-readout"] button')?.textContent).toBe('p. 1 / 6'))
     },
 }
 
@@ -2240,7 +2272,7 @@ export const PdfViewBarNarrow: Story = {
                     gap: '12px',
                 }}
             >
-                <For each={[520, 380, 320]}>
+                <For each={[720, 380, 320]}>
                     {w => (
                         <div style={{ width: `${w}px`, height: '270px' }} data-testid={`narrow-${w}`}>
                             <PreviewView
@@ -2266,7 +2298,7 @@ export const PdfViewBarNarrow: Story = {
                 expect(
                     bar.querySelector('[data-testid="pdf-zoom-steps"]')!.hasAttribute('data-bar-hidden'),
                     `${w}px: fit settled`,
-                ).toBe(w <= 480),
+                ).toBe(w <= 520),
             )
             const b = bar.getBoundingClientRect()
             expect(b.width).toBeCloseTo(w, 0)
@@ -2295,9 +2327,9 @@ export const PdfViewBarNarrow: Story = {
             // The FIT rule, not fixed breakpoints: an element drops only when it does not fit beside
             // the filename's 7ch, cumulatively level 4 (zoom steps, file actions) first. Measured in
             // this story (the PDF here never loads, so there is no page readout to drop): the full
-            // trail fits at 520px and wider, level 4 is hidden at 480px and below. A hidden element
-            // is behind [≡].
-            const level4Hidden = w <= 480
+            // trail, `scroll | pages | text` included, fits at 720px; level 4 is hidden at 520px and
+            // below, and the switch (level 3) at 380px. A hidden element is behind [≡].
+            const level4Hidden = w <= 520
             const hidden = (el: Element) => el.hasAttribute('data-bar-hidden')
             const steps = bar.querySelector('[data-testid="pdf-zoom-steps"]') as HTMLElement
             expect(hidden(steps), `${w}px: zoom steps hidden`).toBe(level4Hidden)
@@ -2329,12 +2361,12 @@ export const PdfViewBarNarrow: Story = {
         }
 
         const frames = Object.fromEntries(
-            [520, 380, 320].map(w => [
+            [720, 380, 320].map(w => [
                 w,
                 canvasElement.querySelector(`[data-testid="narrow-${w}"]`) as HTMLElement,
             ]),
         )
-        await check(frames[520]!, 520)
+        await check(frames[720]!, 720)
         await check(frames[380]!, 380)
         await check(frames[320]!, 320)
 
@@ -2357,7 +2389,7 @@ export const PdfViewBarNarrow: Story = {
 
         // The load-failure state under the bar: ONE "open in default app", centred under the
         // message.
-        for (const w of [520, 320]) {
+        for (const w of [720, 320]) {
             const frame = frames[w]!
             const actions = Array.from(
                 frame.querySelectorAll<HTMLElement>(`.${styles['preview-body']} button`),

@@ -13,6 +13,7 @@
     "build:bismuth-tools": "bun run scripts/build-bismuth-tools.ts",
     "build:daemon-sidecar": "bun run scripts/build-daemon-sidecar.ts",
         "build:notifier": "bun run scripts/build-notifier.ts",
+        "build:vision": "bun run scripts/build-vision.ts",
     "icons:svg": "bun run scripts/build-icon-svgs.ts",
     "installer": "bun run tauri build && bun run scripts/postbuild-clean.ts && bun run scripts/open-installer.ts",
     "tauri": "bun run scripts/tauri.ts",

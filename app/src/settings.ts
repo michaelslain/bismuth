@@ -165,6 +165,16 @@ export interface Settings {
         provider: string // default provider for NEW chats: "claude" | "opencode"
         presets: ChatPreset[] // saved provider + model + effort combos (chat/chatPresets.ts)
     }
+    transcription: {
+        auto: boolean // the reader transcribes every page with no text on its own
+        engine: string // "auto" | "on-device" | "marker" | "ai"
+        math: string // "ask" | "careful" | "fast": what auto does with a page that looks like math
+        provider: string // agent backend for ai transcription: "auto" follows chat.provider
+        model: string // "" = the backend's own default model
+    }
+    reader: {
+        textScale: number // text mode's type size, a multiple of the page width's own size
+    }
     localModel: {
         // Run chats on a local OpenAI/Anthropic-compatible server (LM Studio, Ollama…) through the
         // existing connectors — see core/src/agentBackends/localModel.ts.

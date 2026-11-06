@@ -26,6 +26,7 @@ export const BASE_VIEW_KINDS: BaseViewKind[] = [
     { view: 'kanban', label: 'Kanban', icon: 'SquareKanban' },
     { view: 'calendar', label: 'Calendar', icon: 'Calendar' },
     { view: 'flashcards', label: 'Flashcards', icon: 'Layers' },
+    { view: 'book', label: 'Book', icon: 'BookOpen' },
     { view: 'map', label: 'Map', icon: 'Map' },
     { view: 'bar', label: 'Bar chart', icon: 'ChartColumn' },
     { view: 'line', label: 'Line chart', icon: 'ChartLine' },
@@ -62,7 +63,7 @@ export function uniqueBaseFileName(
  *  immediately, ready for the user to scope. */
 export function baseTemplate(view: string): string {
     const raw: Record<string, unknown> =
-        view === 'calendar'
+        view === 'calendar' || view === 'book'
             ? { type: 'base', view }
             : { type: 'base', source: 'notes', view }
     return serializeBaseJsonl(raw, [])

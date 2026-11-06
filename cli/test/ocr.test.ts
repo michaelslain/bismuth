@@ -5,13 +5,9 @@ import { makeVault } from '../../core/test/helpers'
 import { shouldRunSlowTests } from '../../core/test/slowGate'
 import {
     findTool,
-    isOcrablePath,
     markerArgs,
-    ocrNote,
-    ocrNotePath,
     ocrmypdfArgs,
     parsePages,
-    tesseractArgs,
     tidyMarkdown,
     toolPath,
 } from '../src/ocr'
@@ -19,19 +15,7 @@ import {
 const REPO_ROOT = join(import.meta.dir, '..', '..')
 const FIXTURE = join(import.meta.dir, 'fixtures', 'ocr-watermark-scan.pdf')
 
-describe('ocr argv and note shapes', () => {
-    test('a sibling note drops the extension and keeps the folder', () => {
-        expect(ocrNotePath('papers/week 8 reading.pdf')).toBe('papers/week 8 reading.ocr.md')
-        expect(ocrNotePath('scan.png')).toBe('scan.ocr.md')
-    })
-
-    test('PDFs and the images both engines read are ocrable', () => {
-        expect(isOcrablePath('a/b.PDF')).toBe(true)
-        expect(isOcrablePath('a.jpeg')).toBe(true)
-        expect(isOcrablePath('a.svg')).toBe(false)
-        expect(isOcrablePath('a.md')).toBe(false)
-    })
-
+describe('ocr argv shapes', () => {
     test('pages parse 1-based and refuse page 0 and backwards ranges', () => {
         expect(parsePages('1-3, 7')).toEqual([[1, 3], [7, 7]])
         expect(parsePages('0')).toBeNull()
@@ -75,22 +59,14 @@ describe('ocr argv and note shapes', () => {
         ])
     })
 
-    test('tesseract prints to stdout in the asked languages', () => {
-        expect(tesseractArgs('a.png', { lang: 'fra' })).toEqual(['a.png', 'stdout', '-l', 'fra'])
-    })
-
     test('tidy collapses marker padding outside code fences only', () => {
         const md = 'rate  $\\eta$  the\n\n\n\n```\na  b\n```\n  - item  two'
         expect(tidyMarkdown(md)).toBe('rate $\\eta$ the\n\n```\na  b\n```\n  - item two\n')
     })
 
-    test('the note links back to its source', () => {
-        expect(ocrNote('# T\n', 'x.pdf')).toBe('---\nsource: "[[x.pdf]]"\n---\n\n# T\n')
-    })
-
     test('tool lookup reaches homebrew and uv dirs past a minimal PATH', () => {
         const path = toolPath({ PATH: '/usr/bin', HOME: '/h' })
-        expect(path.split(':')).toEqual(['/usr/bin', '/opt/homebrew/bin', '/usr/local/bin', '/h/.local/bin'])
+        expect(path.split(':')).toEqual(['/usr/bin', '/opt/homebrew/bin', '/usr/local/bin', '/h/.local/bin', '/h/.bismuth/tools/bin'])
         expect(findTool('definitely-not-a-tool-xyz', { PATH: '/usr/bin', HOME: '/h' })).toBeNull()
     })
 })
@@ -145,5 +121,14 @@ describe.skipIf(!canRun)('bismuth ocr against ocrmypdf', () => {
         const escape = await cli(vault, 'ocr', '../x.pdf')
         expect(escape.code).toBe(1)
         expect(escape.stderr).toContain('escapes vault')
+    }, 30_000)
+})
+
+describe('bismuth ocr on an image', () => {
+    test('refuses and names transcribe, which reads an image into its note', async () => {
+        const vault = makeVault({ 'scan.png': 'x' })
+        const r = await cli(vault, 'ocr', 'scan.png')
+        expect(r.code).toBe(1)
+        expect(r.stderr).toContain('bismuth transcribe scan.png')
     }, 30_000)
 })

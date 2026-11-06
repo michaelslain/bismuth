@@ -40,6 +40,7 @@ export const SERVER_INSTRUCTIONS =
     'daemon not running), run `bismuth doctor` first. ' +
     'Asked to open or show a file in Bismuth: `bismuth app open <vault-relative path>` opens it ' +
     'in its own tab in the running app; `bismuth app tabs` lists what is open. ' +
+    "Transcribing a book's pages, a handwritten scan or a page of math: first read vault/transcription.md. " +
     'In a Bismuth vault, when your session context holds no `# Vault map` section inside a `<bismuth-memory>` block, ' +
     'run `bismuth brain` once at the start; `bismuth map --around <note>` shows where a note sits ' +
     'before reorganising or linking it.'

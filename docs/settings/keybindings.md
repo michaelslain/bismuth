@@ -175,6 +175,13 @@ Each id below is a key under `keybindings:`, with its default combo and the acti
 | `flashcard-good` | `2` | Grade flashcard good |
 | `flashcard-easy` | `3` | Grade flashcard easy |
 
+### Book
+
+| id | default | action |
+|---|---|---|
+| `book-next-page` | `ArrowRight` | Turn book page forward |
+| `book-prev-page` | `ArrowLeft` | Turn book page back |
+
 ### Graph
 
 | id | default | action |

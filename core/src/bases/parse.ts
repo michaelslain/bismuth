@@ -314,6 +314,16 @@ function normalizeView(raw: unknown): ViewConfig {
         easeField: strOrUndef(o.easeField),
         intervalField: strOrUndef(o.intervalField),
         bidirectional: o.bidirectional === true ? true : undefined,
+        // book bindings
+        page: strOrUndef(o.page),
+        bookLayout:
+            o.bookLayout === undefined
+                ? undefined
+                : o.bookLayout === 'single'
+                  ? 'single'
+                  : 'spread',
+        bookMode:
+            o.bookMode === undefined ? undefined : o.bookMode === 'text' || o.bookMode === 'scroll' ? o.bookMode : 'pages',
         // chart bindings
         x: strOrUndef(o.x),
         y: strOrUndef(o.y),

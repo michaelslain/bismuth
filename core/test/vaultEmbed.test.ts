@@ -102,6 +102,34 @@ test('chunks lead with path, title and tags; .daemon and dot dirs are not indexe
     expect(doc.startsWith('notes/x.md\nThe X title\nzeta\n')).toBe(true)
 })
 
+test('an image transcript indexes without its markers or highlight marks', async () => {
+    const f = fixture()
+    f.put('s.png', 'png-bytes')
+    f.put('s.png.md', '---\ntranscribed: on-device\n---\n<!-- bismuth:transcript:start -->\nbody beta ==milk==\n<!-- bismuth:transcript:end -->\n')
+    const r = await settled(() => vaultSemanticSearch(f.vault, 'beta', { waitMs: 2000 }))
+    expect(r.map(h => h.path)).toEqual(['s.png'])
+    expect(r[0].excerpt).not.toContain('<!--')
+    expect(r[0].excerpt).not.toContain('==')
+    const doc = f.calls.texts.find(t => t.includes('body beta'))!
+    expect(doc).not.toContain('<!--')
+    expect(doc).toContain('milk')
+    expect(doc).not.toContain('==')
+})
+
+test('a scanned PDF is found by its transcript, page by page, where it has no text layer', async () => {
+    const f = fixture()
+    f.put('scan.pdf', '%PDF-1.4 not really a pdf')
+    f.put(
+        'scan.pdf.md',
+        '---\ntranscribed: marker\n---\n<!-- bismuth:transcript:start -->\n### Page 1\nalpha notes\n\n### Page 2\nthe beta ==lemma== proof\n<!-- bismuth:transcript:end -->\n',
+    )
+    const r = await sources(f, 'beta')
+    expect(r[0]).toMatchObject({ kind: 'pdf', id: 'scan.pdf', page: 2 })
+    const doc = f.calls.texts.find(t => t.includes('lemma'))!
+    expect(doc).not.toContain('==')
+    expect(doc).not.toContain('<!--')
+})
+
 test('deny filters before k: a hidden best match never appears and k visible hits return', async () => {
     const f = fixture()
     f.put('private/best.md', 'beta beta beta')

@@ -35,6 +35,7 @@ test('SETTINGS_SCHEMA nests the app sections, calendar, ui, server, folderIcons 
             'localModel',
             'mcp',
             'properties',
+            'reader',
             'schemas',
             'server',
             'srs',
@@ -42,6 +43,7 @@ test('SETTINGS_SCHEMA nests the app sections, calendar, ui, server, folderIcons 
             'tabBar',
             'templates',
                 'toolbar',
+                'transcription',
             'ui',
             'update',
             'vault',
@@ -278,8 +280,8 @@ test('DEFAULTS.keybindings materializes every catalog combo', () => {
 
 // --- Task 2: the 25 new rebindable-keys ids, on top of the original 24. ---
 
-test('KEYBINDING_CATALOG has exactly 54 entries (24 original + 25 rebindable-keys + 3 file-menu + quick-ask + chat-history-delete)', () => {
-    expect(KEYBINDING_CATALOG.length).toBe(54)
+test('KEYBINDING_CATALOG has exactly 56 entries (24 original + 25 rebindable-keys + 3 file-menu + quick-ask + chat-history-delete + 2 book)', () => {
+    expect(KEYBINDING_CATALOG.length).toBe(56)
 })
 
 test('every KEYBINDING_CATALOG id is unique', () => {
@@ -463,6 +465,7 @@ test('DEFAULTS is the plain nested object derived from the schema', () => {
             'localModel',
             'mcp',
             'properties',
+            'reader',
             'schemas',
             'server',
             'srs',
@@ -470,6 +473,7 @@ test('DEFAULTS is the plain nested object derived from the schema', () => {
             'tabBar',
             'templates',
                 'toolbar',
+                'transcription',
             'ui',
             'update',
             'vault',

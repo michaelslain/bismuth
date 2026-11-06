@@ -8,10 +8,12 @@ import {
     startPdfMarkdownJob,
     type PdfMarkdownOptions,
 } from '../src/pdfMarkdown'
+import { markerInstall } from '../src/markerSetup'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     INSTALL_HINTS,
+    MARKER_PDF_SPEC,
     MARKER_REPAIR,
     MARKER_SHIM,
     markerFailure,
@@ -185,8 +187,13 @@ describe('pdf → markdown', () => {
     })
 
     test('installs and repairs stay on the marker-pdf 2.x line', () => {
-        expect(INSTALL_HINTS.marker_single).toBe("uv tool install 'marker-pdf>=2,<3'")
+        expect(MARKER_PDF_SPEC).toBe('marker-pdf>=2,<3')
+        const install = markerInstall({ root: '/t', bin: '/t/bin' })
+        expect(install.argv).toEqual(['tool', 'install', 'marker-pdf>=2,<3'])
+        expect(install.env.UV_TOOL_BIN_DIR).toBe('/t/bin')
         expect(MARKER_REPAIR).toBe("uv tool install --reinstall 'marker-pdf>=2,<3'")
+        expect(INSTALL_HINTS.marker_single).toBe('bismuth transcribe setup')
+        expect(INSTALL_HINTS['llama-server']).toBe('bismuth transcribe setup')
     })
 
     test('the shim aliases get_pos onto a pypdfium2 that only has get_bounds', async () => {

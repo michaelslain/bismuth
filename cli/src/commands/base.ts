@@ -401,7 +401,7 @@ const NOT_VISIBLE = '<not visible>'
  * even when every row it ends up returning is itself visible. Cycle-guarded by resolved path.
  * `entries` empty (the owner) never reads a file.
  */
-async function readsDeniedBase(
+export async function readsDeniedBase(
     vault: string,
     spec: SourceSpec | undefined,
     entries: DenyEntry[],

@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run predmg:clean && bun run prebundle:relay && bun run build:bismuth-tools && bun run build && bun run build:core-sidecar && bun run build:daemon-sidecar && bun run build:notifier",
+    "beforeBuildCommand": "bun run predmg:clean && bun run prebundle:relay && bun run build:bismuth-tools && bun run build && bun run build:core-sidecar && bun run build:daemon-sidecar && bun run build:notifier && bun run build:vision",
     "frontendDist": "../dist"
   },
   "app": {
@@ -20,7 +20,8 @@
     "targets": "all",
     "externalBin": [
       "binaries/bismuth-core",
-      "binaries/bismuth-notify"
+      "binaries/bismuth-notify",
+      "binaries/bismuth-vision"
     ],
     "resources": [
       "resources/relay",

@@ -41,6 +41,18 @@ export function parsePages(spec: string): [number, number][] | null {
     return ranges
 }
 
+/** 1-based page numbers as ranges, `[1,2,3,7]` → `[[1,3],[7,7]]`. */
+export function pageRanges(pages: number[]): [number, number][] {
+    const sorted = [...new Set(pages)].sort((a, b) => a - b)
+    const ranges: [number, number][] = []
+    for (const p of sorted) {
+        const last = ranges[ranges.length - 1]
+        if (last && p === last[1] + 1) last[1] = p
+        else ranges.push([p, p])
+    }
+    return ranges
+}
+
 /** Marker counts pages from 0. */
 export function markerPages(ranges: [number, number][]): string {
     return ranges
@@ -50,6 +62,8 @@ export function markerPages(ranges: [number, number][]): string {
 
 export type OcrOptions = {
     force?: boolean
+    /** Label each page in the markdown (`{0}------…`), so it can be split per page. */
+    paginate?: boolean
     /** Tesseract language codes, `eng` or `eng+deu`. */
     lang?: string
     pages?: [number, number][]
@@ -74,6 +88,7 @@ export function markerArgs(
     // that garbled math back instead of transcribing the page. Real vector text is kept.
     if (isPdfPath(input)) argv.push('--strip_existing_ocr')
     if (opts.force) argv.push('--force_ocr')
+    if (opts.paginate) argv.push('--paginate_output')
     if (opts.pages && isPdfPath(input))
         argv.push('--page_range', markerPages(opts.pages))
     return argv
@@ -120,6 +135,20 @@ function joinMathContinuations(lines: string[]): string[] {
     return out
 }
 
+/** The label `--paginate_output` puts before each page: its 0-based page id, then 48 dashes. */
+const PAGE_LABEL = /^\{(\d+)\}-{48}[ \t]*$/m
+
+/** Split paginated Marker markdown into 1-based pages, each tidied. Unlabelled markdown (an
+ *  image) is page 1. A page Marker read as nothing keeps its place with empty text. */
+export function splitMarkerPages(md: string): { page: number; text: string }[] {
+    const parts = md.replace(/\r\n/g, '\n').split(PAGE_LABEL)
+    if (parts.length === 1) return [{ page: 1, text: tidyMarkdown(md).trim() }]
+    const pages: { page: number; text: string }[] = []
+    for (let i = 1; i < parts.length; i += 2)
+        pages.push({ page: Number(parts[i]) + 1, text: tidyMarkdown(parts[i + 1] ?? '').trim() })
+    return pages
+}
+
 /** A transcription note for `sourceName` (a basename): a `source` link back to the file, then
  *  the markdown. */
 export function sourcedNote(body: string, sourceName: string): string {
@@ -128,16 +157,17 @@ export function sourcedNote(body: string, sourceName: string): string {
 }
 
 /** Directories searched after PATH. A daemon or app-spawned agent often runs with a minimal PATH
- *  that misses Homebrew and `uv tool install`'s `~/.local/bin`. */
-export function extraToolDirs(home: string = homedir()): string[] {
-    return ['/opt/homebrew/bin', '/usr/local/bin', join(home, '.local', 'bin')]
+ *  that misses Homebrew and `uv tool install`'s `~/.local/bin`. Last, the tools the app installs
+ *  itself (markerSetup.ts): `~/.bismuth/tools/bin`, or `$BISMUTH_TOOLS_DIR/bin`. */
+export function extraToolDirs(home: string = homedir(), tools?: string): string[] {
+    return ['/opt/homebrew/bin', '/usr/local/bin', join(home, '.local', 'bin'), join(tools || join(home, '.bismuth', 'tools'), 'bin')]
 }
 
 /** PATH with the extra tool dirs appended, so an engine finds its own helpers (Marker spawns
  *  llama-server; ocrmypdf spawns tesseract and Ghostscript). */
 export function toolPath(env: Record<string, string | undefined> = process.env): string {
     const parts = (env.PATH ?? '').split(delimiter).filter(Boolean)
-    for (const d of extraToolDirs(env.HOME ?? homedir()))
+    for (const d of extraToolDirs(env.HOME ?? homedir(), env.BISMUTH_TOOLS_DIR))
         if (!parts.includes(d)) parts.push(d)
     return parts.join(delimiter)
 }
@@ -154,12 +184,15 @@ export function findTool(
     return null
 }
 
+/** The marker-pdf line every install and repair stays on: 2.x, whose CLI and output this reads. */
+export const MARKER_PDF_SPEC = 'marker-pdf>=2,<3'
+
 /** What to install when an engine is missing. */
 export const INSTALL_HINTS: Record<string, string> = {
     ocrmypdf: 'brew install ocrmypdf',
     tesseract: 'brew install tesseract',
-    marker_single: "uv tool install 'marker-pdf>=2,<3'",
-    'llama-server': 'brew install llama.cpp',
+    marker_single: 'bismuth transcribe setup',
+    'llama-server': 'bismuth transcribe setup',
 }
 
 /** The engine's absolute path, or an ENOENT error naming the install command. */
@@ -255,7 +288,7 @@ export function stderrTail(stderr: string, lines = 6): string {
 }
 
 /** Reinstalls Marker within the 2.x line, the one that runs on llama-server. */
-export const MARKER_REPAIR = "uv tool install --reinstall 'marker-pdf>=2,<3'"
+export const MARKER_REPAIR = `uv tool install --reinstall '${MARKER_PDF_SPEC}'`
 
 /** Loaded as `sitecustomize` by every Python process Marker runs. marker-pdf 2.0.0 reads an
  *  image's box with `PdfObject.get_pos`, which the pypdfium2 5 it pins renamed `get_bounds`, so a
@@ -335,4 +368,19 @@ export async function markerTranscribe(
     } finally {
         rmSync(outDir, { recursive: true, force: true })
     }
+}
+
+/** Transcribe with Marker page by page: `pages` (1-based, a PDF's) or all of them. */
+export async function markerPageTexts(
+    abs: string,
+    pages?: number[],
+    signal?: AbortSignal,
+): Promise<{ page: number; text: string }[]> {
+    const md = await markerTranscribe(
+        abs,
+        { paginate: true, ...(pages?.length && isPdfPath(abs) ? { pages: pageRanges(pages) } : {}) },
+        'transcribe',
+        signal,
+    )
+    return splitMarkerPages(md)
 }

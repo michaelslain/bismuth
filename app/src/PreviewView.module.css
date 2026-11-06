@@ -78,3 +78,17 @@
   outline: none;
 }
 
+
+/* pages / text: the book reader over the open file fills the body's place (PreviewView.tsx). */
+.preview-book {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--editor);
+}
+
+/* The viewer while the book reader is up: kept mounted so scroll returns to where it was. */
+.preview-body--away {
+  display: none;
+}

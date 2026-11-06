@@ -1,0 +1,33 @@
+/* BookScroll.module.css — a book as one long column (BookScroll.tsx ONLY). Pages sit straight on the
+   pane's background, as they do in the page and text modes, with a page's own margin as the gap. */
+.scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-4) var(--sp-7);
+}
+
+.page {
+    position: relative;
+    flex: none;
+    width: min(100%, 760px);
+}
+
+.canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.missing {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

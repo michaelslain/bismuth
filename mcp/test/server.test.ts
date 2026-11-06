@@ -100,6 +100,8 @@ test('bismuth_cli runs the CLI in the session working directory, so a flagless c
 test('ocr and pdf get minutes through bismuth_cli, everything else two', () => {
     expect(cliTimeoutMs(['ocr', 'x.pdf'])).toBe(LONG_TIMEOUT_MS)
     expect(cliTimeoutMs(['pdf', 'md', 'x.pdf'])).toBe(LONG_TIMEOUT_MS)
+    expect(cliTimeoutMs(['transcribe', 'notes/scan.pdf'])).toBe(LONG_TIMEOUT_MS)
+    expect(cliTimeoutMs(['transcribe', 'setup'])).toBe(LONG_TIMEOUT_MS)
     expect(LONG_TIMEOUT_MS).toBeGreaterThan(10 * 60_000)
     expect(cliTimeoutMs(['task', 'list'])).toBe(120_000)
     expect(cliTimeoutMs([])).toBe(120_000)

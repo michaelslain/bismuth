@@ -29,7 +29,7 @@
 // dev` no longer brings its own frontend up, so it paints an empty window. `dev:app` is the entry
 // point; run that.
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { concurrently } from 'concurrently'
 import { resolveDevVault, describeChoice } from './devVault'
@@ -57,8 +57,9 @@ const commands = [
     { name: 'vite', command: 'vite', env: { VITE_OWNER_TOKEN: token } },
 ]
 
-// Tauri refuses to start while any externalBin is missing. bismuth-notify is the one small enough
-// to build on the spot (a few seconds of swiftc), so a fresh checkout does not fail on it.
+// Tauri refuses to start while any externalBin is missing. bismuth-notify and bismuth-vision are
+// small enough to build on the spot (a few seconds of swiftc each), so a fresh checkout does not
+// fail on them.
 if (
     native &&
     !(
@@ -67,6 +68,19 @@ if (
     )
 )
     spawnSync('bun', ['run', 'scripts/build-notifier.ts'], { stdio: 'inherit' })
+
+// Rebuilt too when main.swift is newer than the binary: an older helper rejects newer flags.
+const visionBin = existsSync(binariesDir)
+    ? readdirSync(binariesDir).find(f => f.startsWith('bismuth-vision-'))
+    : undefined
+const visionSource = join(import.meta.dir, '..', 'src-tauri', 'vision', 'main.swift')
+if (
+    native &&
+    (!visionBin ||
+        (existsSync(visionSource) &&
+            statSync(visionSource).mtimeMs > statSync(join(binariesDir, visionBin)).mtimeMs))
+)
+    spawnSync('bun', ['run', 'scripts/build-vision.ts'], { stdio: 'inherit' })
 
 if (native)
     commands.push({

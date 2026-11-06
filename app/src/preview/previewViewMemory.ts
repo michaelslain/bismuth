@@ -20,11 +20,17 @@ export type ImageView = {
     fy: number
 }
 
+/** How a PDF or image is read: the book reader's pages or text. Absent is scroll, the viewer. */
+export type ReadMode = 'pages' | 'text'
+
 export type PreviewViewState = {
     position?: PdfPosition
     zoom: number
     panelOpen: boolean
     image?: ImageView
+    readMode?: ReadMode
+    /** The book reader's layout when it is `single`; absent is two pages when they fit. */
+    bookLayout?: 'single'
 }
 
 /** Where the memory is persisted: `read` returns what `write` last stored (or nothing). */
@@ -64,6 +70,8 @@ function parseEntry(raw: unknown): [string, PreviewViewState] | undefined {
     const state: PreviewViewState = { zoom: s.zoom, panelOpen: s.panelOpen }
     if (isPosition(s.position)) state.position = s.position
     if (isImageView(s.image)) state.image = s.image
+    if (s.readMode === 'pages' || s.readMode === 'text') state.readMode = s.readMode
+    if (s.bookLayout === 'single') state.bookLayout = 'single'
     return [raw[0], state]
 }
 

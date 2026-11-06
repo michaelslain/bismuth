@@ -42,6 +42,7 @@ These requests fail on a device. The in-process backend throws an `EINVAL` error
 | Attachments | Uploading, downloading a remote image, HEIC conversion and staging a temp file all throw |
 | Shell status segments | A `run:` segment returns `shell segments are desktop-only`; `POST /status-bar/trust` is refused |
 | The daemon | The cron and process writes (`/daemon/cron/*`, `/daemon/process/*`) are refused, because the in-process path has no owner channel. Every other `/daemon/*` route has no handler, so the daemon page cannot load |
+| Transcription | `POST /transcribe` answers 503 `VISION_UNAVAILABLE`, 503 `AI_UNAVAILABLE` when it asks for `ai`, or 503 `MARKER_UNAVAILABLE` when it asks for `marker`; reading a stored transcript with `GET /transcript` works. Book pages render as `missing:` placeholders, because in-process asset URLs are not served |
 | The doctor | `GET /doctor` and `POST /doctor/fix` |
 | Templates and the property schema | `GET /templates` returns `[]` and `GET /schema` returns `{ properties: {} }` |
 | Most task edits | `/tasks/reschedule`, `/update`, `/delete`, `/move`, `/archive`, `/create` have no handler; only toggling works |

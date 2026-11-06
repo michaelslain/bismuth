@@ -22,7 +22,7 @@ Each hit is a path, a cosine score and an excerpt of the best matching passage, 
 | Kind | What it is | Text line starts with | JSON fields |
 |---|---|---|---|
 | `note` | A markdown note. | `open.md` | `path`, `score`, `excerpt`, `kind` |
-| `pdf` | One page of a PDF with a text layer. | `papers/a.pdf p.4` | the same, plus `page` |
+| `pdf` | One page of a PDF with a text layer or a transcript. | `papers/a.pdf p.4` | the same, plus `page` |
 | `image` | An image, found through its description. `path` is the image itself, never its companion note. | `photos/board.png (image)` | the same |
 | `chat` | A past conversation in this vault. | `chat 2026-10-29 <session-id>` | `path` (`chat <session-id>`), `score`, `excerpt`, `kind`, `date`, `session` |
 
@@ -89,7 +89,7 @@ A hidden or chat-only note, PDF or image never appears in the hits, the `similar
 
 - Turning the switch off stops background embedding, including a pass already running. Turning it on again rescans the vault and embeds the notes that changed.
 - Core re-embeds changed notes shortly after a file change and after the vault loads at boot.
-- Markdown notes, PDFs (page by page) and images (through the description in their companion note) are indexed, and past chats are indexed in their own store. Any file or folder whose path has a dot-prefixed segment is skipped, which keeps the `.daemon/` folder out of the index.
+- Markdown notes, PDFs (page by page) and images (through the description and text in their companion note) are indexed. A PDF page with a transcription (see [Transcribe pages and handwritten scans](transcription.md)) is indexed by its transcript, which wins over the PDF's own text layer, so a handwritten notebook or a scan is found by what is written on it. Highlight marks and the transcript's marker comments stay out of the index. Past chats are indexed in their own store. Any file or folder whose path has a dot-prefixed segment is skipped, which keeps the `.daemon/` folder out of the index.
 - Vectors persist between runs, so a restart embeds only what changed.
 
 ## How it works

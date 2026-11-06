@@ -1,0 +1,177 @@
+# Transcribe pages and handwritten scans
+
+Transcription turns the pictures in a vault into text: a photographed notebook page, a handwritten scan, a scanned PDF or a page of lecture math becomes markdown inside the file's companion note, where search and embeddings index it, with math written as LaTeX. Use it for the pages of a [book view](../bases/views/book.md) or any image or PDF. For a typeset PDF you want as a note of its own, [Convert a PDF to markdown](pdf-to-markdown.md) fits better; to make a scanned PDF's text selectable in the viewer, use [OCR](ocr.md).
+
+```bash
+bismuth transcribe math/math110-2025-09-22.pdf --book Math.base.jsonl --vault ~/vault
+```
+
+```json
+{"ok":true,"companion":"math/math110-2025-09-22.pdf.md","engine":"marker","pages":[{"page":1,"chars":943},{"page":2,"chars":744},{"page":3,"chars":1027},{"page":4,"chars":554}],"escalated":[1,2,3,4]}
+```
+
+## Pick an engine
+
+Each engine reads a page, and `auto` combines them.
+
+| Engine | Where it runs | Good at | Needs |
+|---|---|---|---|
+| `on-device` | on this machine, Apple Vision | printed text, neat handwriting, fast bulk runs; garbles math | the Bismuth mac app (its bundled `bismuth-vision` helper) |
+| `marker` | Marker on this machine | math as `$…$` and `$$…$$` LaTeX, about 10-15 s a page | `marker_single` and `llama-server`; see [Install Marker](#install-marker) |
+| `ai` | one turn on an agent backend, reading the page image | messy handwriting, mixed layouts | an installed backend that reads images |
+| `auto` | on-device first, then marker or ai on the pages that need it | a whole book of mixed pages | the mac app; marker and ai are optional |
+
+`auto` is the default. The `transcription.engine` setting names the engine used when a call names none.
+
+A run with `--pages` replaces only those pages; a run without it replaces the file's whole transcript.
+
+## How auto routes a page
+
+`auto` reads every page on-device first, then re-reads the pages that need more. The result lists every re-read page in `escalated`.
+
+- A page that looks like math is re-read by `marker` when `math` is `careful`, or by `ai` where marker cannot run; the result's `markerSkipped` says why marker did not run.
+- With `math` set to `fast`, a math page keeps its on-device text, and the result's `math` lists those page numbers.
+- Any other page whose recognition confidence is below 0.5, or whose text is blank, is re-read by `ai`. If ai cannot run, the on-device text stays and the result carries `aiSkipped` with the reason.
+- Where on-device recognition is absent, `auto` sends every page to `marker`, then to `ai` if marker cannot run.
+
+A page looks like math when at least 2 of its lines, and at least 15% of its lines, carry a math tell: a relation or operator symbol, two lone single-letter variables, or a digit next to a letter.
+
+## Choose how math is read
+
+The `math` option sets what `auto` does with a page that looks like math: `careful` re-reads it, `fast` keeps the on-device text. Pass `--math careful|fast` on the command line, or set `transcription.math`. A call that names none uses the setting. With the setting at `ask`, a book view reads math pages fast and then asks whether to read them properly (see [book view transcription](../bases/views/book.md#transcription)), while the CLI, the MCP tool and an HTTP request with no `math` read them carefully.
+
+## Install Marker
+
+Marker installs itself on a Mac the first time it is needed: choosing `[ read it properly ]` in a book's math prompt starts the install when Marker is missing (the prompt says so), the book's readout ends with `// setting up the math reader` while it runs, and the math pages are re-read when it finishes. From the command line, `bismuth transcribe setup` does the same and waits:
+
+```bash
+bismuth transcribe setup
+```
+
+```json
+{ "installed": true, "missing": [], "dir": "/Users/you/.bismuth/tools" }
+```
+
+The install puts three programs under `~/.bismuth/tools`, about 1.2 GB in all, skipping any already on the machine:
+
+| Program | Needed for | Comes from |
+|---|---|---|
+| `uv` | installing Marker | the uv release on GitHub |
+| `marker_single` (Marker) | the `marker` engine and `auto`'s math pages | `uv tool install 'marker-pdf>=2,<3'`, with a Python uv fetches for it |
+| `llama-server` (llama.cpp) | Marker's models | the llama.cpp release for macOS on GitHub |
+
+A failed install says which program failed and why; math pages then go to `ai`. Off a Mac, the install fails at once and names the commands to install by hand. A run that needs Marker while it is missing fails with `run: bismuth transcribe setup`.
+
+The first Marker run downloads its models from Hugging Face, which takes several minutes; later runs start in seconds. Bismuth finds the programs on `PATH` and also in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin` and `~/.bismuth/tools/bin`, so an agent or daemon session with a short `PATH` still reaches them. Delete `~/.bismuth/tools` to remove what the install added.
+
+Marker 2 is the release line that runs its models on `llama-server`, and the `>=2,<3` constraint keeps `uv tool upgrade` on it. A failed Marker run reports Python's last exception line and the repair command; run it to reinstall Marker within that line:
+
+```bash
+uv tool install --reinstall 'marker-pdf>=2,<3'
+```
+
+[Convert a PDF to markdown](pdf-to-markdown.md) runs the same Marker.
+
+## Settings
+
+| Key | Default | Effect |
+|---|---|---|
+| `transcription.auto` | `true` | A book view transcribes every page with no text on its own |
+| `transcription.engine` | `auto` | The engine used when a call names none: `auto`, `on-device`, `marker` or `ai` |
+| `transcription.math` | `ask` | What `auto` does with a page that looks like math: `ask`, `careful` or `fast` |
+| `transcription.provider` | `auto` | The backend that runs `ai`; `auto` follows `chat.provider` |
+| `transcription.model` | empty | The model `ai` asks for; empty is the backend's own default |
+
+The `ai` turn runs in an empty temporary folder and receives only the rendered page image. The vault is never its working folder, the backend's own session record is erased afterwards, and a turn that asks for a tool or permission is stopped. See [settings](../settings/reference.md).
+
+## Where the text lands
+
+The transcript is written into the page file's companion note, `<file>.<ext>.md` (`scan.jpg` gives `scan.jpg.md`). The companion is created on the first run. It holds one marked block:
+
+```markdown
+---
+transcribed: ai
+transcribedAt: 2026-10-31T09:14:02.511Z
+books: ["[[Notebook]]"]
+---
+Your own notes about the page stay here.
+
+<!-- bismuth:transcript:start -->
+Dear diary, the integral of $x^2$ is $x^3/3$.
+<!-- bismuth:transcript:end -->
+```
+
+- `transcribed` is `on-device`, `marker` or `ai`, the transcriber whose text is stored (`ai` when any page went to ai, else `marker` when any went to marker, else `on-device`), and `transcribedAt` the time of the last run.
+- `books` lists each book base the page was filed under with `--book`; a base already in the list is not added twice.
+- Everything outside the two marker comments (tags, other properties, text you wrote) is kept byte for byte on a re-run. Only the block is replaced.
+- An image is one page and its text is the block. A PDF gets one `### Page N` heading per page, in page order.
+
+The companion is an ordinary note, so `bismuth search "<a word on the page>"` finds it, and with embeddings on, `--semantic` finds it by meaning. See [semantic search](semantic-search.md).
+
+## Mark text in a transcript
+
+A highlight on a page's text is a `==marked==` span inside that page's part of the transcript block, so search and notes see it:
+
+```markdown
+Dear diary, the ==integral of $x^2$== is $x^3/3$.
+```
+
+`POST /transcript/mark` with `{ "file": "scan.pdf", "page": 2, "add": ["integral"] }` wraps the first unmarked occurrence of each quote on that page, and `remove` unwraps a span. A quote that is not on the page is skipped, and a span already marked is not wrapped twice. Only the one page's text changes; the frontmatter, other pages and your own text stay byte for byte.
+
+A re-run of a transcript keeps each mark whose text still occurs on the new page and drops the rest.
+
+## Line boxes
+
+`POST /transcript/lines` with `{ "file": "scan.jpg" }` recognises the page again on this machine and returns each line with its box, so a client can find the lines under a region the reader drew:
+
+```json
+{ "pages": [{ "page": 1, "lines": [{ "text": "buy milk", "x": 0.12, "y": 0.2, "w": 0.4, "h": 0.04 }] }] }
+```
+
+`x`, `y`, `w` and `h` are fractions of the page, with the origin at the top left. Boxes are never stored in the companion. A line belongs to a region when the box overlaps it by at least 30% of the line's height. Where on-device recognition is absent (no Mac helper, or the iPad) the route answers 503 `VISION_UNAVAILABLE`.
+
+## Transcribe from the command line
+
+`bismuth transcribe <file>` runs in the calling process and needs no running app. The path is vault-relative and names an image or a PDF; anything else is refused.
+
+| Flag | Effect |
+|---|---|
+| `--engine auto\|on-device\|marker\|ai` | The engine; the `transcription.engine` setting when omitted |
+| `--math careful\|fast` | What `auto` does with a page that looks like math; the `transcription.math` setting when omitted |
+| `--pages <spec>` | 1-based PDF pages, such as `3`, `1-4` or `1-3,7`. Default all |
+| `--book <base>` | Add `[[<base>]]` to the companion's `books` list |
+| `--missing` | Skip a file whose companion already has `transcribed:`; the result carries `"skipped": true` |
+
+`bismuth book pages <base>` prints a book base's page files in the view's sorted order, one per line; `--json` prints each as `{ file, kind, rowIndex }`. Pipe it into `transcribe` to do a whole book:
+
+```bash
+bismuth book pages Notebook --vault ~/vault | while read f; do bismuth transcribe "$f" --missing --book Notebook --vault ~/vault; done
+```
+
+## Transcribe as an agent
+
+An agent runs `bismuth transcribe` from its shell with the flags in the table above; a host with no shell sends the same arguments through the MCP tool `bismuth_cli`, which lets `transcribe` run up to 30 minutes, since a long PDF takes minutes. It fails outside a vault.
+
+`transcribe` is path-scoped under the vault's visibility settings. A hidden or chat-only page file, or one whose companion is hidden, reads as missing to an agent. See [visibility](visibility.md).
+
+## Failure modes
+
+- If the engine is `on-device` and the helper is absent (the app is not installed, or the machine is not a Mac), the call fails with `VISION_UNAVAILABLE` and status 503, and no companion is written. Retry with `--engine marker` or `--engine ai`.
+- If the engine is `marker` and `marker_single` or `llama-server` is missing, the call fails with `MARKER_UNAVAILABLE` and status 503, naming the install command, and no companion is written. Under `auto` the math pages go to `ai` instead and the result carries `markerSkipped`.
+- If the engine is `ai` and the resolved backend is not installed or cannot read images, the call fails with `AI_UNAVAILABLE` and status 503, naming the backend. Under `auto` the on-device text is kept instead.
+- An unknown `engine`, or a `math` other than `careful` or `fast`, fails with status 400.
+- If the file is a note or any other kind, the call fails with status 422. If it does not exist, status 404.
+- If a page is blank or unreadable, the block is written with empty text for that page. Re-run it with another engine, or with `auto`.
+- If you delete the marker comments, the next run appends a new block after your text instead of replacing the old one.
+
+## How it works
+
+`core/src/transcribe.ts` holds the one path every entry point shares: it checks the file, reads the `transcription` settings, picks the engine, runs it and writes the companion. `transcribeAuto` there routes each page. The HTTP routes are `POST /transcribe`, `GET /transcript`, `POST /transcript/mark` and `POST /transcript/lines` in `core/src/routes/transcribe.ts` ([HTTP reference](../api/http-reference.md)); the CLI command is `transcribe`, and `cliTimeoutMs` in `mcp/src/cli.ts` gives it `bismuth_cli`'s long timeout.
+
+`core/src/mathDetect.ts` decides whether a page looks like math from its on-device text. `core/src/marker.ts` runs Marker: `markerPageTexts` runs it with `--paginate_output` and `splitMarkerPages` splits the markdown on Marker's page labels, so each page keeps its own text. `INSTALL_HINTS` there holds the install commands in [Install Marker](#install-marker).
+
+`core/src/bookMarks.ts` finds a page's text inside the block and wraps or unwraps its spans, and `linesInRegion` picks the lines under a region. `core/src/transcript.ts` renders, merges and reads the marked block and stamps the frontmatter through `mutateFrontmatter`. `core/src/visionOcr.ts` runs the `bismuth-vision` helper, which is found through `BISMUTH_VISION_PATH`, then the app bundle, then the development build in `app/src-tauri/binaries`, then, on a Mac with `swiftc`, a build of `main.swift` compiled once and cached in `~/.bismuth/cache/vision`. `core/src/aiTranscribe.ts` runs one headless turn per page image on the resolved backend, in an empty temp folder.
+
+The engines load through dynamic `import()`, so the iPad's in-process core, which has no child processes, still loads the module. Its backend in `core/src/localBackend.ts` answers `POST /transcribe` with 503 `AI_UNAVAILABLE` for `ai` and 503 `VISION_UNAVAILABLE` otherwise, answers `POST /transcript/lines` with 503 `VISION_UNAVAILABLE`, and serves `GET /transcript` and `POST /transcript/mark`. `transcribe` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
+
+Source: `core/src/markerSetup.ts`, `core/src/transcribe.ts`, `core/src/transcript.ts`, `core/src/mathDetect.ts`, `core/src/marker.ts`, `core/src/bookMarks.ts`, `core/src/visionOcr.ts`, `core/src/aiTranscribe.ts`, `core/src/routes/transcribe.ts`, `core/src/localBackend.ts`, `cli/src/commands/transcribe.ts`, `mcp/src/cli.ts`

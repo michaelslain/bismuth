@@ -2871,6 +2871,20 @@
     "max": null,
     "required": false
   },
+  "keybindings.book-next-page": {
+    "type": "keybind",
+    "default": "ArrowRight",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.book-prev-page": {
+    "type": "keybind",
+    "default": "ArrowLeft",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.chat-history-delete": {
     "type": "keybind",
     "default": "Delete, Backspace",
@@ -3370,6 +3384,22 @@
     "max": null,
     "required": false
   },
+  "reader": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "reader.textScale": {
+    "type": "number",
+    "default": 1,
+    "min": 0.8,
+    "max": 1.75,
+    "required": false
+  },
   "schemas": {
     "type": {
       "kind": "object"
@@ -3564,6 +3594,80 @@
         "icon": "Inbox"
       }
     ],
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "transcription": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "transcription.auto": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "transcription.engine": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "ai",
+        "auto",
+        "marker",
+        "on-device"
+      ]
+    },
+    "default": "auto",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "transcription.math": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "ask",
+        "careful",
+        "fast"
+      ]
+    },
+    "default": "ask",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "transcription.model": {
+    "type": "string",
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "transcription.provider": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "auto",
+        "claude",
+        "claude-code-acp",
+        "cline",
+        "codex",
+        "codex-acp",
+        "gemini",
+        "goose",
+        "hermes",
+        "openclaw",
+        "opencode"
+      ]
+    },
+    "default": "auto",
     "min": null,
     "max": null,
     "required": false

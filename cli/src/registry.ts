@@ -9,6 +9,7 @@ import * as search from './commands/search'
 import * as graph from './commands/graph'
 import * as task from './commands/task'
 import * as base from './commands/base'
+import * as book from './commands/book'
 import * as calendar from './commands/calendar'
 import * as card from './commands/card'
 import * as prop from './commands/prop'
@@ -37,6 +38,7 @@ import * as vaultMap from './commands/map'
 import * as brain from './commands/brain'
 import * as history from './commands/history'
 import * as ocr from './commands/ocr'
+import * as transcribeCmd from './commands/transcribe'
 import * as pdf from './commands/pdf'
 import * as image from './commands/image'
 
@@ -48,6 +50,7 @@ const GROUPS: { commands: CommandMap }[] = [
     graph,
     task,
     base,
+    book,
     calendar,
     card,
     prop,
@@ -76,6 +79,7 @@ const GROUPS: { commands: CommandMap }[] = [
     brain,
     history,
     ocr,
+    transcribeCmd,
     pdf,
     image,
 ]

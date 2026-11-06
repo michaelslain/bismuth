@@ -1,6 +1,6 @@
 # Convert a PDF to markdown
 
-Converting a PDF writes a new markdown note beside it, with headings, lists, tables and math as LaTeX, and a `source` property that links back to the PDF. The PDF itself is never changed. It runs Marker, the same engine as `bismuth ocr --math`; install it first (see [OCR](ocr.md#install-the-ocr-engines)).
+Converting a PDF writes a new markdown note beside it, with headings, lists, tables and math as LaTeX, and a `source` property that links back to the PDF. The PDF itself is never changed. It runs Marker, the same engine as the `marker` engine of `bismuth transcribe`; install it first (see [Install Marker](transcription.md#install-marker)).
 
 ```bash
 bismuth pdf md "papers/scan.pdf" --vault ~/vault --pretty
@@ -62,7 +62,7 @@ Without `--replace`, an existing note is refused with `EEXIST` and left as it is
 
 ## When a conversion fails
 
-A failed conversion reports one line: the error Marker raised and the command that reinstalls it, such as `couldn't convert scan.pdf: marker's install is broken (ImportError: …) — repair it: uv tool install --reinstall 'marker-pdf>=2,<3'`. No note is written. Run the command, then convert again. [OCR](ocr.md#install-the-ocr-engines) owns the install.
+A failed conversion reports one line: the error Marker raised and the command that reinstalls it, such as `couldn't convert scan.pdf: marker's install is broken (ImportError: …) — repair it: uv tool install --reinstall 'marker-pdf>=2,<3'`. No note is written. Run the command, then convert again. [Transcription](transcription.md#install-marker) owns the install.
 
 PDFs whose pages hold both text and images convert like any other.
 
@@ -74,7 +74,7 @@ To give a scanned PDF a selectable text layer instead, which does change the PDF
 
 ## How it works
 
-`core/src/pdfMarkdown.ts` holds the conversion: `pdfMarkdownPath` names the note, `checkPdfMarkdown` refuses what cannot convert, and `convertPdfToMarkdown` runs Marker and writes the note. Marker itself, engine lookup on a short `PATH`, page parsing and `tidyMarkdown` live in `core/src/marker.ts`, shared with `bismuth ocr`; `sourcedNote` adds the `source` frontmatter.
+`core/src/pdfMarkdown.ts` holds the conversion: `pdfMarkdownPath` names the note, `checkPdfMarkdown` refuses what cannot convert, and `convertPdfToMarkdown` runs Marker and writes the note. Marker itself, engine lookup on a short `PATH`, page parsing and `tidyMarkdown` live in `core/src/marker.ts`, shared with `bismuth transcribe`; `sourcedNote` adds the `source` frontmatter.
 
 marker-pdf 2.0.0 reads an image's box with `PdfObject.get_pos`, a method the pypdfium2 5 it pins names `get_bounds`, and it reaches that call on any page with text and an image, because `markerArgs` passes `--strip_existing_ocr`. `markerTranscribe` therefore runs Marker with `markerShimEnv`, which puts a `sitecustomize.py` holding `MARKER_SHIM` first on `PYTHONPATH`; the shim adds `get_pos` as an alias of `get_bounds` only when `get_pos` is missing. `markerFailure` turns a non-zero exit into the one-line message, with `MARKER_REPAIR` as the command.
 

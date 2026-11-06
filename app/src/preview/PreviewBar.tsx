@@ -28,6 +28,7 @@
 // they are the only way into what they open. There is no second row.
 import { createSignal, type JSX, Show } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
+import ReadModeSwitch, { type ReadMode } from '../bases/ReadModeSwitch'
 import BarLabel from '../ui/BarLabel'
 import IconButton from '../ui/IconButton'
 import TextButton from '../ui/TextButton'
@@ -79,6 +80,9 @@ export type PreviewBarProps = {
     onTogglePanel?: () => void
     /** the loaded image's natural pixel size; undefined = not loaded / failed / not an image */
     imageSize?: () => { w: number; h: number } | undefined
+    /** image / pdf: the reader's `scroll | pages | text` switch; absent → no switch */
+    readMode?: () => ReadMode
+    onReadMode?: (mode: ReadMode) => void
     /** native file actions; false → group absent */
     nativeActions: () => boolean
     onOpenExternal: (reveal: boolean) => void
@@ -167,6 +171,13 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
             }
             config={
                 <Show when={inkable()}>
+                    <Show when={props.readMode}>
+                        {mode => (
+                            <div class={styles.readMode} data-bar-drop="3" data-bar-menu-label="read as">
+                                <ReadModeSwitch value={mode()()} onChange={m => props.onReadMode?.(m)} />
+                            </div>
+                        )}
+                    </Show>
                     <PdfZoom
                         wide
                         class={styles.afterText}

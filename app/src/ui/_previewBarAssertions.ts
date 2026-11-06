@@ -15,13 +15,18 @@ const painted = (el: Element) => el.getClientRects().length > 0
 export function barItems(bar: HTMLElement): HTMLElement[] {
     const trail = bar.querySelector('[data-testid="vb-trail"]') as HTMLElement | null
     if (!trail) return []
+    // A segmented switch is one control: its segments sit closer than controls do, by design, so
+    // it is measured as one item, its own box.
+    const segmented = (el: HTMLElement) => el.closest<HTMLElement>('[data-segmented]')
     const all = Array.from(trail.querySelectorAll<HTMLElement>('button, span, div')).filter(
         el =>
             painted(el) &&
+            !segmented(el) &&
             (el.tagName === 'BUTTON' ||
                 (el.childElementCount === 0 && /^\d+%$/.test(el.textContent ?? ''))),
     )
-    return all.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+    const switches = Array.from(trail.querySelectorAll<HTMLElement>('[data-segmented]')).filter(painted)
+    return [...all, ...switches].sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
 }
 
 /** A CSS custom property on `el`, resolved to px. */
@@ -230,9 +235,11 @@ export function probeBar(bar: HTMLElement): BarProbe {
             cs.borderTopColor === accent
         )
     }).length
+    // A segmented switch always shows its value as a selected segment; that is a choice, not a
+    // tool switched on, so it is not counted.
     const selectedCount = Array.from(
         bar.querySelectorAll<HTMLElement>('[data-state="selected"]'),
-    ).filter(painted).length
+    ).filter(el => painted(el) && !el.closest('[data-segmented]')).length
     const trail = bar.querySelector('[data-testid="vb-trail"]') as HTMLElement
     const glyphSizes = [
         ...new Set(

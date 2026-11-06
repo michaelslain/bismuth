@@ -173,6 +173,10 @@ const CHECKS = `(() => {
     // container entry never reaches them. They are Univer's own plain-DOM markup at its own 14px — a
     // third-party library this project does not control — surfaced once app-panecontent--sheet got a
     // real height (ds-improve-r1 Task 40). Scoped to the Univer popup, not a global 14px exemption.
+    // [data-text-spread] (the book base's text mode, TextSpread.tsx) is NOT here: only the type-scale
+    // membership check below skips it (its size is the typesetter's own, page width / 26, so the
+    // still pages match the canvas faces the page curl turns, never a scale step); every other check
+    // still sees it.
     const FOREIGN = '.cm-editor, .ProseMirror, .milkdown, .xterm, .univer-container, .univer-popup, .bismuth-sheet, [data-testid="pdf-text-layer"], .katex'
     const inForeign = el => !!el.closest(FOREIGN)
     const all = []
@@ -201,7 +205,7 @@ const CHECKS = `(() => {
             const fs = Math.round(parseFloat(cs.fontSize) * 100) / 100
             // A sanctioned nano is skipped BEFORE the per-size dedupe, so it cannot mark 9.5px as
             // seen and hide a later, unsanctioned 9.5px outside a chip.
-            if (fs && !seenSize.has(fs) && !nanoOk(fs)) {
+            if (fs && !seenSize.has(fs) && !nanoOk(fs) && !el.closest('[data-text-spread]')) {
                 seenSize.add(fs)
                 const onScale = ${JSON.stringify(SCALE)}.some(s => Math.abs(s - fs) < 0.01)
                 const exempt = ${JSON.stringify([...SCALE_EXEMPT])}.some(s => Math.abs(s - fs) < 0.01)

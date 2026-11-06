@@ -1,0 +1,13 @@
+/* app/src/bases/PageTurnLayer.module.css — the WebGL canvas that draws a curling page turn. */
+.layer {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    background: var(--bg);
+}
+
+.canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}

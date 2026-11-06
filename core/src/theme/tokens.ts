@@ -125,6 +125,13 @@ export type CategorySwatchName = keyof typeof CATEGORY_SWATCHES
  *  than a mismatched app surface. */
 export const PDF_PAGE_PAPER = '#FFFFFF'
 
+/** The ink the book reader's text mode sets a transcription in, on PDF_PAGE_PAPER: the text page
+ *  is the same sheet as the scan it was read from, in every theme. */
+export const BOOK_TEXT_INK = '#1D1B18'
+
+/** A muted line on that paper: a page that is not transcribed yet. */
+export const BOOK_TEXT_MUTED = '#8C877F'
+
 /** The hairline between a PDF page and its margin paper — a faint neutral rule, deliberately
  *  subtle since the two are meant to read as one continuous sheet. */
 export const PDF_PAGE_RULE = '#E4E4E4'

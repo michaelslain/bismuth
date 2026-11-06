@@ -1,0 +1,32 @@
+/* BookHighlightLayer.module.css — region highlights over the still pages of an open book
+   (BookHighlightLayer.tsx ONLY). The layer covers the book box and only takes pointer events
+   while the highlight button is armed, so page turns are never blocked when it is not. */
+.layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.armed {
+    pointer-events: auto;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+/* A saved box: multiplied onto the page so handwriting stays black under it; the half opacity is
+   what keeps the writing legible on an engine that drops the blend (same reasoning as the PDF
+   preview's text highlights). */
+.rect {
+    position: absolute;
+    mix-blend-mode: multiply;
+    opacity: 0.5;
+    border-radius: var(--r-mark);
+}
+
+/* The box being dragged: the same tint with an outline, so it reads as unsaved. */
+.draft {
+    position: absolute;
+    opacity: 0.5;
+    outline: 1px solid var(--fg);
+    border-radius: var(--r-mark);
+}

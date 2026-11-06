@@ -128,6 +128,16 @@ describe('previewViewMemory storage', () => {
         })
     })
 
+    test('a stored read mode and single layout come back; anything else is dropped', () => {
+        const { storage } = backing([
+            ['notes.pdf', { zoom: 1, panelOpen: false, readMode: 'text', bookLayout: 'single' }],
+            ['odd.pdf', { zoom: 1, panelOpen: false, readMode: 'scroll', bookLayout: 'spread' }],
+        ])
+        attachPreviewViewStorage(storage)
+        expect(loadPreviewView('notes.pdf')).toMatchObject({ readMode: 'text', bookLayout: 'single' })
+        expect(loadPreviewView('odd.pdf')).toEqual({ zoom: 1, panelOpen: false })
+    })
+
     test('a path saved this session keeps its newer state over the stored one', () => {
         savePreviewView('live.pdf', { zoom: 4 })
         const { storage } = backing([

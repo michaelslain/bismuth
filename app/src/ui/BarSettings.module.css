@@ -1,0 +1,18 @@
+/* app/src/ui/BarSettings.module.css — the rows of a view bar's settings panel. The box is
+   <Popover>, the anchoring <AnchoredPopover>, the trigger <IconButton>; this file is the row
+   layout: one grid, label column then control column, so every control starts at the same x
+   whatever its label's length (the same grid as the bar's [≡] panel). */
+.rows {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    column-gap: var(--sp-6);
+    row-gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5);
+}
+.control {
+    display: flex;
+    align-items: center;
+    justify-self: start;
+    min-height: var(--h-control);
+}

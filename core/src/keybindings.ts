@@ -304,6 +304,18 @@ export const KEYBINDING_CATALOG = [
         doc: 'Grade the current flashcard Easy and advance to the next one.',
     },
     {
+        id: 'book-next-page',
+        label: 'Turn book page forward',
+        default: 'ArrowRight',
+        doc: 'Turn to the next spread of a book base.',
+    },
+    {
+        id: 'book-prev-page',
+        label: 'Turn book page back',
+        default: 'ArrowLeft',
+        doc: 'Turn back to the previous spread of a book base.',
+    },
+    {
         id: 'graph-reset-view',
         label: 'Reset graph view',
         default: 'Escape',

@@ -50,7 +50,8 @@ bun run build:app
 - [Semantic search](vault/semantic-search.md) — find notes by meaning with `bismuth search --semantic`, the `embeddings.enabled` switch and what it costs
 - [Frontmatter and properties](vault/frontmatter.md) — YAML properties, their types, and companion notes for images and PDFs
 - [Convert a PDF to markdown](vault/pdf-to-markdown.md) — a new note beside the PDF with LaTeX math and a `source` link back, from the PDF bar or `bismuth pdf md`
-- [OCR for PDFs and images](vault/ocr.md) — make a scanned PDF's text selectable and transcribe PDFs and images to notes with LaTeX math, with `bismuth ocr`
+- [OCR for PDFs](vault/ocr.md) — make a scanned PDF's text selectable, with `bismuth ocr`
+- [Transcribe pages and handwritten scans](vault/transcription.md) — turn a book's page images, handwritten scans and scanned PDFs into text in their companion notes, with math as LaTeX, with `bismuth transcribe`
 - [Wikilinks and tags](vault/wikilinks-tags.md) — `[[links]]` matched by file name, `#tags`, and how each resolves
 - [Attachments and embeds](vault/attachments.md) — `![[file]]` and `![](url)` embeds, sizing, and where pasted files go
 

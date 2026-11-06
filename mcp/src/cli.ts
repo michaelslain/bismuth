@@ -14,7 +14,7 @@ export interface CliResult {
 const DEFAULT_TIMEOUT_MS = 120_000
 /** OCR and PDF conversion run Marker's models over every page: minutes on a long file. */
 export const LONG_TIMEOUT_MS = 30 * 60_000
-const LONG_COMMANDS = new Set(['ocr', 'pdf'])
+const LONG_COMMANDS = new Set(['ocr', 'pdf', 'transcribe'])
 
 /** PURE: how long a `bismuth_cli` call with these args may run before it is killed. */
 export function cliTimeoutMs(args: string[]): number {

@@ -24,9 +24,12 @@ import { server } from '../src/server'
 // `bismuth --help`, found the CLI was not on its PATH, and only then reached `app open`.
 // Raised 380 → 460 for the lead paragraph naming the CLI as the way in: chats searched for MCP tools
 // that were not there, then ran the app binary inside Bismuth.app and opened a second window.
+// Raised 460 → 480 for the transcription pointer: a book's pages, handwritten scans and math are
+// text only after `bismuth transcribe`, and an agent that never reads vault/transcription.md greps
+// the image files instead.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(460)
+    expect(words).toBeLessThan(480)
 })
 
 test('SERVER_INSTRUCTIONS leads with the CLI as the way in, and bismuth_cli for a host with no shell', () => {

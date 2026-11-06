@@ -56,6 +56,42 @@ function memVault(initial: Record<string, string>): {
 afterEach(() => setFileAccess(undefined as unknown as FileAccess))
 
 describe('localBackend dispatch (no HTTP / no Bun)', () => {
+    test('book routes: transcribe answers 503, transcript reads the stored block', async () => {
+        const { fa } = memVault({ 'p.png': 'x' })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/transcribe', { file: 'p.png' }),
+        ).rejects.toMatchObject({ code: 'VISION_UNAVAILABLE', statusCode: 503 })
+        await expect(
+            be.dispatch('POST', '/transcribe', { file: 'p.png', engine: 'ai' }),
+        ).rejects.toMatchObject({ code: 'AI_UNAVAILABLE', statusCode: 503 })
+        await expect(
+            be.dispatch('POST', '/transcribe', { file: 'p.png', engine: 'marker' }),
+        ).rejects.toMatchObject({ code: 'MARKER_UNAVAILABLE', statusCode: 503 })
+        const t = (await be.dispatch('GET', '/transcript?file=p.png')) as { pages: unknown[] }
+        expect(t.pages).toEqual([])
+    })
+
+    test('book routes: mark rewrites the companion, lines answers 503', async () => {
+        const companion =
+            '---\ntranscribed: on-device\n---\n<!-- bismuth:transcript:start -->\nbuy milk\n<!-- bismuth:transcript:end -->\n'
+        const { fa, files } = memVault({ 'p.png': 'x', 'p.png.md': companion })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        let atEmit = ''
+        be.subscribe(() => {
+            atEmit = files['p.png.md']
+        })
+        const r = (await be.dispatch('POST', '/transcript/mark', { file: 'p.png', add: ['milk'] })) as { marks: string[] }
+        expect(r.marks).toEqual(['milk'])
+        expect(atEmit).toContain('==milk==')
+        await expect(be.dispatch('POST', '/transcript/lines', { file: 'p.png' })).rejects.toMatchObject({
+            code: 'VISION_UNAVAILABLE',
+            statusCode: 503,
+        })
+    })
+
     test('builds the graph from an in-memory vault', async () => {
         const { fa } = memVault({ 'a.md': 'see [[b]]', 'b.md': 'leaf' })
         setFileAccess(fa)

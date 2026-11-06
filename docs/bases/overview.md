@@ -52,7 +52,7 @@ Every key sits at the top level of the frontmatter (markdown) or of the line-1 o
 
 ## What layouts are there?
 
-A base's `view` key picks one layout. Eight are row layouts, where every row stays a visible, editable item. Each links to the page that owns its config keys.
+A base's `view` key picks one layout. Nine are row layouts, where every row stays a visible, editable item. Each links to the page that owns its config keys.
 
 | Row layout | Shows | Config |
 |---|---|---|
@@ -64,6 +64,7 @@ A base's `view` key picks one layout. Eight are row layouts, where every row sta
 | `map` | Rows plotted by latitude and longitude. | [map](./views/map.md) |
 | `calendar` | Events or tasks on a month, week or day grid. | [calendar](./views/calendar.md) |
 | `flashcards` | Spaced-repetition review of front and back fields. | [flashcards](./views/flashcards.md) |
+| `book` | Scanned pages and PDFs read three ways: one long column, turned like a book, or their transcriptions set as text. | [book](./views/book.md) |
 
 Four are charts, which summarize rows into numbers or shapes instead of showing each row:
 

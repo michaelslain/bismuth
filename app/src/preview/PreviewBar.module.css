@@ -86,6 +86,16 @@
   margin-inline-start: calc(var(--sp-2) + 3px);
 }
 
+/* The `scroll | pages | text` switch, after the page readout's text: like `.afterText`, the start
+   adds back the bracket room text lacks, so the readout-to-switch gap measures the bar's one
+   ~16.5px. Its last segment keeps its right bracket room unpainted, and the zoom run after it adds
+   `.afterText`'s room for text it no longer follows, so the end takes both back. On the switch, not
+   the zoom run, so the pull leaves with the switch when the bar drops it. */
+.readMode {
+  margin-inline-start: calc(var(--sp-2) - 0.6px);
+  margin-inline-end: calc(-1 * var(--sp-2) - 1.5px);
+}
+
 /* A plain icon (to markdown, open, reveal) rests in the bar's one muted ink, like an off toggle:
    Button paints a `normal` icon --fg. Hover keeps Button's own accent, and a disabled icon keeps the
    --faint recipe. Keyed on Button's `data-kind`/`data-state` hooks, never a class. The zoom steps

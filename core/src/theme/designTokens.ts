@@ -944,6 +944,7 @@ export const UNREGISTERED_ROOT_VARS: Readonly<Record<string, string>> = {
     '--prose-font-size': 'constraint formula: editor size times the prose scale; set those instead',
     '--code-font-size': 'constraint formula: prose size times code scale times mono scale; set those instead',
     '--fs-rel-code': 'constraint formula: 1em times code scale times mono scale; set those instead',
+    '--fs-rel-math': 'font metric: KaTeX against the book reader\'s Georgia; KATEX_EM in bookMath.ts measures at it, so the two change together',
     '--prose-row': 'constraint formula: the row unit times the prose line height; set those instead',
     '--sidebar-width': 'layout preference: .settings (appearance.sidebarWidth) owns it, and a theme would fight the drag',
     '--sidebar-graph-height': 'layout preference: .settings (appearance.sidebarGraphHeight) owns it',
@@ -1014,8 +1015,8 @@ export const NOT_TOKENS: readonly { group: string; where: string; reason: string
     },
     {
         group: 'PDF page constants',
-        where: 'core/src/theme/tokens.ts (PDF_PAGE_PAPER, PDF_PAGE_RULE, PDF_HIGHLIGHT_YELLOW, PDF_HIGHLIGHT_COLORS)',
-        reason: 'a PDF page is white paper and a highlight is a highlighter ink in every theme; the margin and highlight fill must match that fixed page, not a theme surface',
+        where: 'core/src/theme/tokens.ts (PDF_PAGE_PAPER, PDF_PAGE_RULE, PDF_HIGHLIGHT_YELLOW, PDF_HIGHLIGHT_COLORS, BOOK_TEXT_INK, BOOK_TEXT_MUTED)',
+        reason: 'a PDF page is white paper and a highlight is a highlighter ink in every theme; the margin and highlight fill must match that fixed page, not a theme surface, and the book reader sets a transcription on that same paper so text mode reads as the scan it came from',
     },
     {
         group: 'Font metrics',

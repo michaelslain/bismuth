@@ -147,7 +147,7 @@ test('source offers all view types after `view: `', () => {
     const doc = '```query\nview: \n```'
     const res = complete(doc, 15) // just after "view: "
     expect(res?.options.map(o => o.label)).toContain('kanban')
-    expect(res?.options).toHaveLength(12)
+    expect(res?.options).toHaveLength(13)
 })
 
 test('source offers the bases filter vocabulary after `where: `', () => {

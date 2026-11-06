@@ -1,0 +1,65 @@
+/* BookView.module.css — the book base's pane: the stage the open book sits on, the strip under it
+   and the panel beside it (both mount points for later pieces), and the empty state. */
+.book {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    color: var(--fg);
+}
+
+.main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.stage {
+    position: relative;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: var(--sp-6);
+    overflow: hidden;
+}
+
+/* The page number, centred under the book like a reading app's. */
+.folio {
+    position: absolute;
+    bottom: var(--sp-2);
+    left: 0;
+    right: 0;
+    text-align: center;
+    pointer-events: none;
+}
+
+/* The open book: the still pages, or the turning layer in their place. */
+.box {
+    position: relative;
+    flex: none;
+    touch-action: none;
+    user-select: none;
+}
+
+.empty {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-4);
+}
+
+/* The display panel's text size row: `A-` and `A+` side by side. */
+.textSize {
+    display: inline-flex;
+    gap: var(--sp-2);
+}
+
+/* The page stage stays mounted under scroll mode (it holds the pane measure), out of sight. */
+.hidden {
+    display: none;
+}

@@ -264,6 +264,10 @@
   /* Inline code, relative to the text around it: the SAME ratio as --code-font-size below, taken off
      `1em` instead of the prose size, so `code` inside a heading or a table cell scales with it. */
   --fs-rel-code: calc(1em * var(--code-scale) * var(--mono-scale, 1));
+  /* KaTeX in the book reader, relative to the text around it. KaTeX's own 1.21em matches Computer
+     Modern to a smaller-eyed font; Georgia's large x-height wants less. KATEX_EM in
+     app/src/bases/bookMath.ts measures formulas at this size, so the two change together. */
+  --fs-rel-math: 1.1em;
 
   /* ── Font weight — unchanged, moved verbatim from ui.css:41-43. */
   --fw-regular: 400;
@@ -835,6 +839,14 @@ body { background: var(--bg); color: var(--fg); }
    equation tags / numbers sit flush right; inline math ($…$) flows with the prose. */
 .bismuth-math-display { display: block; }
 .bismuth-math-display .katex-display { margin: 0.4em 0; }
+
+/* Math in the book reader's text mode: bases/TextSpread.tsx marks each formula `data-text-math`
+   and fills it with KaTeX's markup. KaTeX sits at --fs-rel-math of the text around it, the size
+   bookMath.ts measures it at. Display math is placed by the typesetter's `x`, so KaTeX's own
+   centring block and its margins fold into the line. */
+[data-text-math] .katex { font-size: var(--fs-rel-math); }
+[data-text-math] .katex-display { display: inline-block; margin: 0; }
+[data-text-math] .katex-display > .katex { text-align: left; }
 
 /* Lists inside a table cell (see editor/cellList.ts): a `- item` / `1. item` run renders as a
    compact <ul>/<ol> whose bullet/number is REAL TEXT (a `.bismuth-cell-mk` span), the native
