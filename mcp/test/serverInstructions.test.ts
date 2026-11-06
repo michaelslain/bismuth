@@ -56,7 +56,7 @@ test('SERVER_INSTRUCTIONS tells an agent to read the bases guide every time it t
     expect(SERVER_INSTRUCTIONS).toMatch(/EVERY time/)
     expect(SERVER_INSTRUCTIONS).toContain('type: base')
     expect(SERVER_INSTRUCTIONS).toContain('bases/authoring.md')
-    expect(SERVER_INSTRUCTIONS).toContain('bases/authoring/<view kind>.md')
+    expect(SERVER_INSTRUCTIONS).toContain('bases/authoring/<layout>.md')
 })
 
 test('SERVER_INSTRUCTIONS points vault conversions at both guides', () => {

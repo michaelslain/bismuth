@@ -629,8 +629,8 @@ export function KanbanView(props: {
             when={groupBy()}
             fallback={
                 <Callout class={styles.kanbanHint}>
-                    This kanban view needs a "group by" property. Open{' '}
-                    <InlineCode>Settings</InlineCode> (the gear in the view bar)
+                    This kanban board needs a "group by" property. Open{' '}
+                    <InlineCode>Settings</InlineCode> (the gear in the toolbar)
                     and set group by.
                 </Callout>
             }

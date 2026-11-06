@@ -1,6 +1,6 @@
 # Export
 
-Export turns a note, base, spreadsheet or drawing into a file you can share: Markdown, HTML, PNG, PDF, or CSV for a base. It works from the app's export pane and from the `bismuth export` command, and both produce the same result except for a note's tables ([tables](#export-a-notes-tables)). This page is for anyone who exports, and for engineers who add a format or change how pages are cut.
+Export turns a note, base, sheet or drawing into a file you can share: Markdown, HTML, PNG, PDF, or CSV for a base. It works from the app's export page and from the `bismuth export` command, and both produce the same result except for a note's tables ([tables](#export-a-notes-tables)). This page is for anyone who exports, and for engineers who add a format or change how pages are cut.
 
 ```bash
 bismuth export Essay.md --format pdf --out essay.pdf
@@ -10,7 +10,7 @@ bismuth export Sketch.draw                          # Sketch.draw.png, no vault 
 
 ## Export a file from the app
 
-Open the file you want, then run **Export current file…** (Mod+Shift+P, or File > Export…). An export tab opens beside your work. Its bar names the file and holds the format toggle and `[export]`. Below the bar, a live preview of the page sits on the left and the options on the right. Change an option and the preview updates; nothing is written until you export.
+Open the file you want, then run **Export current file…** (Mod+Shift+P, or File > Export…). An export page opens in a tab beside your work. Its toolbar names the file and holds the format toggle and `[export]`. Below the bar, a live preview of the page sits on the left and the options on the right. Change an option and the preview updates; nothing is written until you export.
 
 The options run in the order you decide them: how the file looks, what goes in, then where it goes. The last line names exactly what the export writes, such as `writes roadmap.pdf → Downloads`, next to a second `[export]`.
 
@@ -19,14 +19,14 @@ The options run in the order you decide them: how the file looks, what goes in, 
 | Format | Always, in the bar | The formats valid for this file and mode |
 | font size | PDF | 9, 10, 11, 12, 14, 16 or 18 pt; 12 by default. A larger size repaginates the document |
 | theme | Always | `dark` or `light` |
-| content | Bases | `visual` renders the view as its kind; `data` exports its flat table |
+| content | Bases | `visual` draws the base with its layout; `data` exports its flat table |
 | span, starts | A calendar base in visual mode | `month`, `week`, `3-day` or `day`, anchored on the start day (blank is today) |
 | include `frontmatter` | Plain notes | Keep or strip the leading YAML block. On by default |
 | include `markdown syntax` | Plain notes | Print `##` markers before `h2` to `h6` headings. Off by default |
 | from | Always | The file to export. Defaults to the file you opened; type another vault path, or browse in the desktop app |
 | to | Always | Destination folder. Empty means your Downloads folder; choosing a folder works in the desktop app and is remembered |
 
-The preview shows the page as it prints. An HTML or PNG preview draws one sheet in the chosen theme's colours. A PDF preview is the same viewer a PDF tab uses: the bar carries `p. N / M` (click it to jump) and `− 100% + fit`, and pinch or Ctrl/Cmd+scroll zooms at the pointer. Changing an option keeps the last preview on screen, with `rendering…` in the bar, until the new one is ready, and a new PDF opens on the page you were reading.
+The preview shows the page as it prints. An HTML or PNG preview draws one page in the chosen theme's colours. A PDF preview is the same viewer a PDF tab uses: the toolbar carries `p. N / M` (click it to jump) and `− 100% + fit`, and pinch or Ctrl/Cmd+scroll zooms at the pointer. Changing an option keeps the last preview on screen, with `rendering…` in the toolbar, until the new one is ready, and a new PDF opens on the page you were reading.
 
 Your choices stay put when you switch to another tab and back. Format, font size, theme and the two plain-note toggles carry over to every export you open next; the `from` path, content mode and start day belong to that export tab.
 
@@ -42,15 +42,15 @@ The tab is not available for `.settings`, which is configuration rather than a d
 | Sheet (`.sheet`) | `pdf`, `html`, `png` |
 | Drawing (`.draw`) | `pdf`, `png` |
 
-A base is detected by its frontmatter, not its extension. The export pane starts on `pdf` until you pick a format, and returns to `pdf` whenever a change makes the current format unavailable.
+A base is detected by its frontmatter, not its extension. The export page starts on `pdf` until you pick a format, and returns to `pdf` whenever a change makes the current format unavailable.
 
-A sheet exports its first sheet only, as a plain table of raw cell values. Formatting, formulas and later sheets are not included.
+A sheet exports its first worksheet only, as a plain table of raw cell values. Formatting, formulas and later worksheets are not included.
 
 ## Export a base as it looks or as data
 
-`data` exports the view's flat table: a Markdown table, CSV (RFC 4180 quoting, CRLF line ends) or an HTML table. `visual` renders the view as its own kind, using the live theme's palette. A visual view that resolves no rows reads `no rows` in place of the view. A `md` or `csv` preview shows the file's lines exactly as written, one per line, and scrolls sideways when a line is wider than the sheet.
+`data` exports the base's flat table: a Markdown table, CSV (RFC 4180 quoting, CRLF line ends) or an HTML table. `visual` draws the base with its own layout, using the live theme's palette. A visual export of a base that resolves no rows reads `no rows` in place of the layout. A `md` or `csv` preview shows the file's lines exactly as written, one per line, and scrolls sideways when a line is wider than the page.
 
-| View kind | Visual export |
+| Layout | Visual export |
 |---|---|
 | `calendar` | A month grid, or a time grid for `week`, `3day` and `day` |
 | `cards` | Cards |
@@ -58,7 +58,7 @@ A sheet exports its first sheet only, as a plain table of raw cell values. Forma
 | `list`, `bullets` | A list |
 | `table`, `map`, `bar`, `line`, `stat`, `heatmap`, `flashcards` | The flat data table |
 
-The pane starts in `visual` for calendar, cards, kanban, list and bullets bases, and in `data` for the rest. Once you choose a content mode, opening another file resets it to that file's default.
+The export page starts in `visual` for calendar, cards, kanban, list and bullets bases, and in `data` for the rest. Once you choose a content mode, opening another file resets it to that file's default.
 
 A calendar span of `month` shows the month containing the start day with leading and trailing days from adjacent months. `week` shows seven days from the start of the week, `3day` the start day and the two after it, and `day` just that day. Events come from the same mapping the live calendar uses, with recurrence expanded. In the app, `calendar.weekStartsOnMonday` and `calendar.militaryTime` apply; the command uses a Monday start and 12-hour times.
 
@@ -83,7 +83,7 @@ A line containing only `<!-- pagebreak -->` marks a page boundary. Insert one fr
 | `png` | One file per section: `note-1.png`, `note-2.png`, and so on |
 | `md` | The comment passes through as text |
 
-A marker inside a code fence or inline code stays literal. A section left blank by a marker at the very start or end, or two markers in a row, is dropped. For a page-broken PNG export the pane's bar reads `N pages // N files` and its last line names the first and last file (`writes note-1.png … note-3.png`), and its HTML preview draws one labelled `page N of M` sheet per section. The PDF preview is the real PDF.
+A marker inside a code fence or inline code stays literal. A section left blank by a marker at the very start or end, or two markers in a row, is dropped. For a page-broken PNG export the export page's toolbar reads `N pages // N files` and its last line names the first and last file (`writes note-1.png … note-3.png`), and its HTML preview draws one `page N of M` page for each section. The PDF preview is the real PDF.
 
 ## Export a note's tables
 

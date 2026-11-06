@@ -304,8 +304,8 @@ const SPACING: TokenDef[] = [
     spacing('sp-6', 'length', '16px', 'Spacing step 6.'),
     spacing('sp-7', 'length', '24px', 'Spacing step 7.'),
     spacing('optical-nudge', 'length', '1px', 'One-pixel nudge that centres glyphs optically.'),
-    spacing('bar-icon-gap', 'length', 'var(--sp-4)', 'Gap between icons in a view bar.'),
-    spacing('bar-crumb-gap', 'length', 'var(--sp-5)', 'Gap between breadcrumbs in a view bar.'),
+    spacing('bar-icon-gap', 'length', 'var(--sp-4)', 'Gap between icons in a toolbar.'),
+    spacing('bar-crumb-gap', 'length', 'var(--sp-5)', 'Gap between breadcrumbs in a toolbar.'),
 ]
 
 const size = grp('size')
@@ -319,12 +319,12 @@ const SIZE: TokenDef[] = [
     size('note-gutter', 'length', '40px', 'Side padding of a note: the editor content inset that the title, frontmatter and chat transcript line up with.'),
     size('chat-column', 'length', '680px', 'Reading width of a chat transcript and its composer.'),
     size('daemon-list-max', 'length', '100ch', 'Widest an opened daemon section list (crons, services, inbox, log) grows, so all four end at one x.'),
-    size('view-gutter', 'length', 'var(--sp-5)', 'Side gutter of a Bases view body; matches the view bar.'),
+    size('view-gutter', 'length', 'var(--sp-5)', 'Side gutter of a base layout body; matches the toolbar.'),
     size('rail-w-collapsed', 'length', '46px', 'Width of the tab rail when collapsed.'),
     size('skeleton-bar-h', 'length', 'var(--sp-5)', 'Height of one placeholder bar in a skeleton.'),
     size('list-max-h', 'length', '320px', 'Tallest a dropdown list grows before scrolling.'),
     size('icon', 'length', '12px', 'Size of every icon, 11 to 20px. Also set by appearance.iconSize.', { setting: 'appearance.iconSize' }),
-    size('bar-icon-size', 'length', '18px', 'Size of icons in a view bar.'),
+    size('bar-icon-size', 'length', '18px', 'Size of icons in a toolbar.'),
     size('ascii-dash-pitch', 'number', '2', 'Cells between dashes of an ASCII dashed line.'),
 ]
 

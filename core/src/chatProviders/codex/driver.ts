@@ -248,7 +248,7 @@ export const CODEX_AGENTS_MD_CONTENT = [
     '',
     '**Every time you create, edit or debug a Bismuth base** (a `.base.jsonl` file whose first line is the `type: base` config; older markdown `type: base` notes still read; or a ```query block),',
     'first call the `bismuth_docs_read` MCP tool with `{path: "bases/authoring.md"}`, then',
-    '`{path: "bases/authoring/<view kind>.md"}` for the kind you are writing.',
+    '`{path: "bases/authoring/<layout>.md"}` for the layout you are writing.',
     '',
     '**Converting a vault between Obsidian and Bismuth?** First read `{path: "guides/converting-obsidian-to-bismuth.md"}` or `{path: "guides/converting-bismuth-to-obsidian.md"}` via `bismuth_docs_read`.',
 ].join('\n')

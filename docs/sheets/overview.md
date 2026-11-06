@@ -1,6 +1,6 @@
 # Sheets
 
-A sheet is a spreadsheet that lives in your vault as a `.sheet` file. You edit it in the app with the Univer spreadsheet editor, and the file on disk is plain JSON that diffs cleanly in git. This page is for anyone who keeps tables, budgets or calculations in a vault, and for engineers who read or write `.sheet` files.
+A sheet is a spreadsheet that lives in your vault as a `.sheet` file. You edit it in the app with the Univer spreadsheet editor, and the file on disk is plain JSON that diffs cleanly in git. This page is for anyone who keeps tables, budgets or calculations in a vault, and for engineers who read or write `.sheet` files. A sheet is not a base: it holds free-form cells, where a base's table layout shows one row per item with typed columns.
 
 An empty `.sheet` file is a valid, blank workbook. A small one looks like this:
 
@@ -34,7 +34,7 @@ If the file cannot be read or is not valid JSON when you open it, the pane shows
 
 ## Export a sheet
 
-A sheet exports to `html`, `pdf` and `png` from the export pane (Mod+Shift+P) or with `bismuth export Budget.sheet --format html`. See [export](../export/overview.md). The export contains the first sheet only, as a plain table of raw cell values: formatting, formulas and any later sheets are not included. Cell text renders inline markdown and `$math$`, the same as it does on screen.
+A sheet exports to `html`, `pdf` and `png` from the export page (Mod+Shift+P) or with `bismuth export Budget.sheet --format html`. See [export](../export/overview.md). The export contains the first worksheet only, as a plain table of raw cell values: formatting, formulas and any later worksheets are not included. Cell text renders inline markdown and `$math$`, the same as it does on screen.
 
 ## Where sheets show up
 

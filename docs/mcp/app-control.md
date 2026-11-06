@@ -16,7 +16,7 @@ The `app` commands need a running app. When none answers they fail with `could n
 |---|---|
 | `bismuth app windows` | List open windows: id, label, active tab, tab count |
 | `bismuth app tabs [--window <id>]` | List a window's tabs and the panes in each |
-| `bismuth app open <content> [--new-tab] [--window <id>]` | Open a vault file of any type, or a sentinel, in its own tab, and print `{"opened": "<content>"}` |
+| `bismuth app open <content> [--new-tab] [--window <id>]` | Open a vault file of any type, or a page such as `::graph`, in its own tab, and print `{"opened": "<content>"}` |
 | `bismuth app close <tabId> [--window <id>]` | Close a tab and its panes |
 | `bismuth app focus <tabId> [--window <id>]` | Make a tab active |
 | `bismuth app rename <tabId> <name> [--window <id>]` | Give a tab a custom label |
@@ -26,9 +26,9 @@ The `app` commands need a running app. When none answers they fail with `could n
 | `bismuth app run <commandId> [--window <id>]` | Run a command from the palette's catalog |
 | `bismuth app commands` | List the ids `app run` accepts |
 
-`content` for `app open` is a vault-relative path such as `reading/x.md` or `papers/y.pdf`, or one of the sentinels `::graph`, `::daemon`, `.settings` and `::term:<uuid>`. An absolute path inside the vault is accepted and opened as its vault-relative path, and a path with no extension that names a note opens that note (`reading/x` opens `reading/x.md`). Opening a file always opens its own tab, and `--new-tab` is accepted without effect.
+`content` for `app open` is a vault-relative path such as `reading/x.md` or `papers/y.pdf`, or a page by its id: `::graph`, `::daemon` or `::term:<uuid>`. `.settings` opens as text in the editor. An absolute path inside the vault is accepted and opened as its vault-relative path, and a path with no extension that names a note opens that note (`reading/x` opens `reading/x.md`). Opening a file always opens its own tab, and `--new-tab` is accepted without effect.
 
-A path that names no file fails with exit code 1 and `404: no file "<path>" in the vault`, and no tab opens. `app open` opens the whole file: a `#page=` or `#heading` suffix is not a jump target, so `papers/y.pdf#page=12` is refused as a missing file. Search is the Cmd+O switcher inside the window, so there is no sentinel for it. Tab ids come from `app tabs`.
+A path that names no file fails with exit code 1 and `404: no file "<path>" in the vault`, and no tab opens. `app open` opens the whole file: a `#page=` or `#heading` suffix is not a jump target, so `papers/y.pdf#page=12` is refused as a missing file. Search is the Cmd+O switcher inside the window, so there is no page id for it. Tab ids come from `app tabs`.
 
 With one window open, every command targets it. With none, the command fails with `no Bismuth window is open`; with several it fails and asks for `--window <id>`, which `app windows` lists.
 
@@ -50,7 +50,7 @@ All of them take `--vault <dir>`. The format and lifecycle are in [pages](../dae
 
 ## Scroll a pane
 
-`app scroll` scrolls a pane in the window's active tab: a note, a PDF, a base, a terminal's scrollback, or any other view with content taller than its pane. It targets the focused pane unless `--pane <leafId>` names another pane of the active tab; leaf ids come from `app tabs`.
+`app scroll` scrolls a pane in the window's active tab: a note, a PDF, a base, a terminal's scrollback, or any other file or page with content taller than its pane. It targets the focused pane unless `--pane <leafId>` names another pane of the active tab; leaf ids come from `app tabs`.
 
 ```bash
 bismuth app scroll --pages 1        # down one page

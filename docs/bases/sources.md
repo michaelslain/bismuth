@@ -1,6 +1,6 @@
 # Base sources
 
-A base's `source` says where its rows come from: the notes in the vault, the checkbox tasks in them, or the rows of another base. Every other part of a base, from filters to the view, works on the rows the source produces. This page is for anyone writing a `source:`, and for the person debugging a base that shows too many, too few or the wrong rows.
+A base's `source` says where its rows come from: the notes in the vault, the checkbox tasks in them, or the rows of another base. Every other part of a base, from filters to the layout, works on the rows the source produces. This page is for anyone writing a `source:`, and for the person debugging a base that shows too many, too few or the wrong rows.
 
 ```json
 {"type":"base","source":"notes where file.hasTag(\"book\")","view":"table"}
@@ -10,15 +10,15 @@ That line is the whole of `Books.base.jsonl`. A markdown base holds the same key
 
 ## What can a source be?
 
-A source has one of these kinds. In a base's config it is a string, or an object with the same fields.
+A source's `kind` is `notes`, `tasks` or `base`. In a base's config it is a string, or an object with the same fields.
 
-| Kind | Rows | Fields |
+| `kind` | Rows | Fields |
 |---|---|---|
 | `notes` | Vault notes, one row each. | `where`, `from` |
 | `tasks` | Checkbox tasks found in vault notes, one row each. | `where`, `from` |
 | `base` | The rows of another base. | `ref` |
 
-| Field | Kinds | Meaning |
+| Field | `kind` values | Meaning |
 |---|---|---|
 | `where` | `notes`, `tasks` | A [Bases expression](./query-syntax.md) that keeps the rows where it is true. |
 | `from` | `notes`, `tasks` | A wikilink to a base. Limits the source to the notes that base selects. |
@@ -39,7 +39,7 @@ In the string form, `from`, `ref` and `where` can also sit as top-level keys bes
 
 ## What happens when a base has no source?
 
-A base with no recognised `source` uses its own rows when the file holds any, and otherwise every note in the vault. A JSONL base's own rows are the lines after line 1; a markdown base's are its body. So the empty base `type: base` shows the whole vault, and a base that holds rows shows only those rows. Set `source:` explicitly when you want to narrow the vault.
+A base with no recognised `source` is a collection when the file holds rows, and otherwise shows every note in the vault. A collection's rows are the lines after line 1 of a `.base.jsonl` file, or the body of a markdown base. So the empty base `type: base` shows the whole vault, and a collection shows only its stored rows. Set `source:` explicitly when you want to narrow the vault.
 
 ## How do I list tasks from one set of notes?
 
@@ -61,7 +61,7 @@ If `keep/x.md` is tagged `keep` and holds `- [ ] scoped task`, and `other/y.md` 
 
 ## How do I build on another base's rows?
 
-`source: base` with a `ref` uses the rows of another base, which is how one set of rows gets a second view. The referenced base's own source is followed, so a `ref` to a base with `source: notes where file.hasTag("keep")` yields those notes, not the referenced file's body.
+`source: base` with a `ref` uses the rows of another base, which is how one set of rows gets a second layout. The referenced base's own source is followed, so a `ref` to a base with `source: notes where file.hasTag("keep")` yields those notes, not the referenced file's body.
 
 ```yaml
 ---
@@ -72,7 +72,7 @@ view: cards
 ---
 ```
 
-Only rows carry over. The referenced base's `filters`, `formulas`, `properties`, `sort` and `groupBy` are not applied, so restate any filter you need. [Bases overview](./overview.md#how-do-i-show-the-same-rows-in-a-second-view) has a worked example. A cycle (A refs B refs A), a missing base and a `source: base` with no `ref` all resolve to zero rows without an error.
+Only rows carry over. The referenced base's `filters`, `formulas`, `properties`, `sort` and `groupBy` are not applied, so restate any filter you need. [Bases overview](./overview.md#how-do-i-show-the-same-rows-in-a-second-layout) has a worked example. A cycle (A refs B refs A), a missing base and a `source: base` with no `ref` all resolve to zero rows without an error.
 
 ## How are wikilinks in `from` and `ref` found?
 
@@ -92,15 +92,15 @@ Write `file.hasTag("book")`: no `#`, and it matches the exact tag only, not `boo
 
 ## How does a tasks `where` differ from a notes `where`?
 
-Both are Bases expressions evaluated per row, so `source: tasks where !note.resolved && note.priority == "high"` works like a notes filter. A `tasks` `where` that holds Tasks-style text (`not done`, `due before tomorrow`, a `sort by` line) is translated into an expression when the base is read. A migrated query uses a plain expression plus a separate `sort`; see [the tasks query language](../tasks/query-dsl.md). Sorting a task source is the view's `sort`, which ranks a property named `priority` by urgency (`highest`, `high`, `medium`, `none`, `low`, `lowest`) rather than alphabetically.
+Both are Bases expressions evaluated per row, so `source: tasks where !note.resolved && note.priority == "high"` works like a notes filter. A `tasks` `where` that holds Tasks-style text (`not done`, `due before tomorrow`, a `sort by` line) is translated into an expression when the base is read. A migrated query uses a plain expression plus a separate `sort`; see [the tasks query language](../tasks/query-dsl.md). Sorting a task source is the layout's `sort`, which ranks a property named `priority` by urgency (`highest`, `high`, `medium`, `none`, `low`, `lowest`) rather than alphabetically.
 
 ## Can I edit the source without writing YAML?
 
-Open **Settings** in the view bar and use the **source** section. Its "rows from" choice writes:
+Open **Settings** in the pane's toolbar and use the **source** section. Its "rows from" choice writes:
 
 | Choice | Writes |
 |---|---|
-| this base's own rows | removes `source:` |
+| this base's own rows (a collection) | removes `source:` |
 | vault notes | `source: { kind: notes, where?, from? }` |
 | vault tasks | `source: { kind: tasks, where?, from? }` |
 | another base | `source: { kind: base, ref: "[[Other]]" }` |
@@ -115,7 +115,7 @@ Open **Settings** in the view bar and use the **source** section. Its "rows from
 | The whole vault shows. | The `source` is unrecognised, or a `#tag` was read as a comment. |
 | A composed base ignores the other base's filters. | Composition carries rows only; restate the filters. |
 | Zero rows from a `ref`. | A cycle, a missing base or no `ref`. |
-| Row `file.name` is empty. | The rows are stored in the base file; they are not separate notes. |
+| Row `file.name` is empty. | The base is a collection: its rows are stored in the base file, not separate notes. |
 | Changing an upstream base's `source` changes a downstream base. | `from` and `ref` re-run the upstream base's own source. |
 
 ## How it works
@@ -137,7 +137,7 @@ A `SourceSpec` also comes from a flat ` ```query ` block (`of:` becomes `base`, 
 - `notes`: the vault notes feed, intersected with `from`'s paths when set, then filtered by `where` through `passesFilter`.
 - `tasks`: with `from`, `buildTaskRows(root, paths)` extracts tasks from only those files, always fresh; without it, the global task feed, which a caller may cache. `where` then filters through the same `passesFilter`.
 
-`resolveBaseRows(path, ctx)` reads the base file, parses it (cached by file content, not mtime), and resolves its `source` recursively. With no `source`, it returns its own body rows, or every note when it has none. `ctx.seen` holds the real, symlink-resolved path of every base entered, so a config cycle or a symlink loop returns `[]` instead of throwing. A missing or unreadable base also returns `[]`. `SourceCtx` carries the vault `root`, an ISO `today` for relative dates, `seen`, and optional `vaultRows` and `vaultTasks` providers that let a server serve the unscoped feeds from a cache.
+`resolveBaseRows(path, ctx)` reads the base file, parses it (cached by file content, not mtime), and resolves its `source` recursively. With no `source`, it returns its stored rows, or every note when it has none. `ctx.seen` holds the real, symlink-resolved path of every base entered, so a config cycle or a symlink loop returns `[]` instead of throwing. A missing or unreadable base also returns `[]`. `SourceCtx` carries the vault `root`, an ISO `today` for relative dates, `seen`, and optional `vaultRows` and `vaultTasks` providers that let a server serve the unscoped feeds from a cache.
 
 ### How `POST /rows` resolves and caches
 
@@ -147,7 +147,7 @@ A `SourceSpec` also comes from a flat ` ```query ` block (`of:` becomes `base`, 
 2. The server keeps `rowsCache` and `tasksCache` (`createAsyncCache` in `core/src/asyncCache.ts`): concurrent callers share one build, and an invalidation that lands mid-build drops that build's result. After the file-watch debounce, `patchVaultRows` and `patchTaskRows` re-parse only the changed notes and splice them in; they fall back to a full invalidate when nothing safe can be patched, and a change with no specific paths invalidates outright. The patch is awaited before the SSE event is published, so a client that refetches sees the patched feed.
 3. The client's stale-while-revalidate `RowCache` (`app/src/bases/rowCache.ts`) serves a reopened base instantly and revalidates against the SSE version.
 
-`api.resolveRows` (`app/src/api.ts`) merges identical concurrent specs into one request, keyed by the serialized spec and the server version, so a write is never answered by an older in-flight request. `BaseView` resolves a base's own rows client-side from the already-parsed file and sends every other spec to `/rows`.
+`api.resolveRows` (`app/src/api.ts`) merges identical concurrent specs into one request, keyed by the serialized spec and the server version, so a write is never answered by an older in-flight request. `BaseView` resolves a collection's rows client-side from the already-parsed file and sends every other spec to `/rows`.
 
 ### How are body rows parsed?
 

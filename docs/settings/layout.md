@@ -15,7 +15,7 @@ layout:
 |---|---|---|---|
 | `sidebarSide` | `left` or `right` | `left` | Window edge the sidebar sits flush against. |
 | `tabRailSide` | `left` or `right` | `right` | Window edge the tab rail sits flush against. |
-| `sidebar` | list of `toolbar`, `files`, `graph` | `[toolbar, files, graph]` | Sidebar sections from top to bottom. Order and presence both count. |
+| `sidebar` | list of `toolbar`, `files`, `graph` | `[toolbar, files, graph]` | Sidebar sections from top to bottom: `toolbar` is the sidebar toolbar, `files` the file tree and `graph` the mini graph. Order and presence both count. |
 | `statusBar` | boolean | `true` | `false` removes the bottom bar, and the editor and sidebar then reach the window's bottom edge. |
 
 ## Change the layout without editing the file

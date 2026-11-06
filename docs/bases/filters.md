@@ -52,7 +52,7 @@ filters:
         - 'file.hasTag("archive")'
 ```
 
-Within one string you can combine conditions with `&&`, `||` and `!`. The words `and`, `or` and `not` are not operators inside an expression; they work only as the tree keys above. `filters` is the base's only filter: a base has one view and the view has none of its own.
+Within one string you can combine conditions with `&&`, `||` and `!`. The words `and`, `or` and `not` are not operators inside an expression; they work only as the tree keys above. `filters` is the base's only filter: a base has one layout and the layout has none of its own.
 
 An empty or absent `filters` keeps every row. An empty `and: []` keeps every row and an empty `or: []` keeps none.
 
@@ -130,7 +130,7 @@ A source's `where:` is a single string, not a tree, and uses the same expression
 
 A flat query block's `where:` is also one expression string; see [the query block](./query-block.md).
 
-A base that composes another with `source: base` does not receive the other base's `filters`, so restate them; see [bases overview](./overview.md#how-do-i-show-the-same-rows-in-a-second-view).
+A base that composes another with `source: base` does not receive the other base's `filters`, so restate them; see [bases overview](./overview.md#how-do-i-show-the-same-rows-in-a-second-layout).
 
 ## How does a filter use the note it is embedded in?
 
@@ -148,7 +148,7 @@ With a host whose frontmatter is `minPrice: 10` and `markup: 2`, only rows price
 
 ## Can I edit filters without writing YAML?
 
-Open **Settings** in the view bar and use the **filters** section. It edits the base's `filters:` and, with the same editor, a notes or tasks source's `where:`. Each is a list of conditions under one **match all / any** switch.
+Open **Settings** in the pane's toolbar and use the **filters** section. It edits the base's `filters:` and, with the same editor, a notes or tasks source's `where:`. Each is a list of conditions under one **match all / any** switch.
 
 - A condition is a property, an operator and a value. The operators follow the property's type: text, number, date, checkbox, tag or list.
 - An expression row holds any Bases expression as written. "Edit as expression" turns a condition into one.

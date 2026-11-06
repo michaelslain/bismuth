@@ -42,7 +42,7 @@ export const InSentence: Story = {
 export const InCallout: Story = {
     render: () => (
         <Callout>
-            This kanban view needs a "groupBy" property. Add e.g.{' '}
+            This kanban board needs a "groupBy" property. Add e.g.{' '}
             <InlineCode>groupBy: note.status</InlineCode> to the view.
         </Callout>
     ),

@@ -1,6 +1,6 @@
 # table
 
-A spreadsheet grid: one row per note or stored row, one column per property, with sort, groups, a summary footer, and drag-to-resize and drag-to-reorder columns. It is also the kind a base gets when `view:` is missing or names an unknown kind.
+A grid: one row per note or stored row, one column per property, with sort, groups, a summary footer, and drag-to-resize and drag-to-reorder columns. It is also the layout a base gets when `view:` is missing or names an unknown layout. A table is not a sheet: a sheet (`.sheet`) holds free-form cells and is not a base.
 
 ## Working example
 
@@ -34,7 +34,7 @@ limit: 200
 | `limit` | number | none | Maximum rows per group. |
 | `mode` | `"normal"` \| `"tasks"` | `"normal"` | `tasks` turns the `status` column into a checkbox and paints an overdue `due` red; the other columns stay ordinary cells. |
 
-`filters:` and `source:` are base-level keys, written beside `view:`, never inside a view.
+`filters:` and `source:` are base-level keys, written beside `view:`, never inside the layout.
 
 ## Failure modes
 

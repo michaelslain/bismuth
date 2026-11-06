@@ -1,8 +1,9 @@
 # Toolbar and commands
 
 A command is a named action: open a graph tab, split a pane, create a note.
-Every command appears in the command palette (Cmd+P), and the same command ids fill the buttons of the sidebar toolbar (`toolbar:`), the buttons beside the tab strip (`tabBar:`), a clickable [status bar](status-bar.md) segment (`command:`), and the `bismuth app run` CLI.
+Every command appears in the command palette (Cmd+P), and the same command ids fill the buttons of the sidebar toolbar (`toolbar:`), the tab rail toolbar (`tabBar:`), a clickable [status bar](status-bar.md) segment (`command:`), and the `bismuth app run` CLI.
 This page lists the commands and shows how to put them on a button.
+Every region has a toolbar on top: each pane, the mini graph and the tab rail have one too. The `toolbar:` key configures the sidebar toolbar, and `tabBar:` configures the buttons on the tab rail's toolbar.
 
 ```yaml
 toolbar:
@@ -58,7 +59,7 @@ The command `create-menu` (**Create new…**) is one button that opens a menu in
 
 1. New note
 2. New folder
-3. **New base**, a submenu with one entry per Bases view kind (the kinds are listed in [Bases overview](../bases/overview.md)); each creates `Untitled <kind>.md` with that view
+3. **New base**, a submenu with one entry per Bases layout (the layouts are listed in [Bases overview](../bases/overview.md)); each creates `Untitled <layout>.md` with that layout
 4. New spreadsheet
 5. New drawing
 6. New chat
@@ -178,7 +179,7 @@ Notes on individual commands:
 
 - `new-tab` and `open-graph`. `new-tab` always opens a fresh home tab, which is the knowledge graph. `open-graph` focuses an existing graph tab and opens one only if none is open.
 - `open-daemon` and `open-inbox`. Both open the daemon page, where the inbox lives. They keep separate ids so the default toolbar can carry the inbox button, with its badge.
-- `new-base`. As a plain command it creates a `type: base` note. As the create menu's **New base** submenu it offers one entry per view kind.
+- `new-base`. As a plain command it creates a `type: base` note. As the create menu's **New base** submenu it offers one entry per layout.
 - `archive-tasks` and `archive-all-tasks`. They permanently remove completed and cancelled tasks, from the active note or from every note.
 - `detect-ai`. It estimates how AI-generated the active page reads and shows the score in a toast. The detector runs on your device with no network call, other than a one-time model download of about 34 MB on first use. It needs at least 40 words of prose.
   It was trained on a corpus without Claude text, so treat the score as a rough hint and not as proof.

@@ -356,11 +356,11 @@ language label is fence text in that tone. YAML keys read muted in both blocks.
 
 Fixed desktop chrome on a vertical rhythm of 18px rows: a sidebar tree row, a tab's hit height,
 a graph list row and a line of note prose are all one `--row-h`. Controls (buttons, selects,
-inputs, chips) are `--h-control` (24px). Bands (the top strip, view bars, the sidebar toolzone)
+inputs, chips) are `--h-control` (24px). Bands (the top strip, the toolbars)
 are `--h-band` (36px, two rows), so a horizontal ruler through the app lands on a row boundary.
-Every view header and toolbar band is one primitive, `ui/Band`: `--h-band` tall, `--sp-5` (12px)
+Every toolbar (a pane's, the sidebar's, the mini graph's, the tab rail's) is one primitive, `ui/Band`: `--h-band` tall, `--sp-5` (12px)
 side padding, a `--rule-soft` bottom hairline. `ViewBar` and a `band` `IconBar` both render through
-it, so a toolbar and a view header stacked in one column start their first control on the same x.
+it, so the sidebar toolbar and a pane toolbar stacked in one column start their first control on the same x.
 A band never sets its own padding; a caller that needs one is a missing `Band` prop.
 
 Spacing runs on a dense 2/4/6/8 grid (`--sp-1` … `--sp-7`: 2, 4, 6, 8, 12, 16, 24px). It is denser
@@ -375,7 +375,7 @@ graph) show in a chosen order, and the status bar can be hidden. The default is 
 rail right; when both choose the same edge the sidebar is outermost and the rail sits between it
 and the editor.
 
-**`ViewBar` is the one view header** (graph, Bases, calendar, flashcards, chat), with six named
+**`ViewBar` is every pane's toolbar** (graph, bases, chat, previews), with six named
 slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. A control opts into dropping with `data-bar-drop`
 (level 4 goes first, 1 last); it drops only when the bar cannot hold it, and a dropped control moves
 into the bar's `[≡]` panel under its `data-bar-menu-label`. The `[≡]` shows only while something is
@@ -504,7 +504,7 @@ the accent. An outline appears only when it means something.
   mark), `aria-hidden` so they stay out of the accessible name, painted accent with the icon. An **`unselected`** member lays its brackets out invisibly, so it occupies the same
   width as when on — unless it is in a **pick-one** group (`pickOne`), where it draws no bracket
   space and every member takes the same side room, so unit gaps come out even (see Toggles). A
-  standalone icon that sits in a row of toggles (the preview bar's zoom steps, `to markdown`,
+  standalone icon that sits in a row of toggles (the preview toolbar's zoom steps, `to markdown`,
   open, reveal) passes `bracketRoom`: it lays out the same invisible brackets an off toggle does
   and drops its side room, so a plain icon and an off toggle share one footprint and the row's
   gaps do not depend on which kind sits where. It never paints them. Text buttons (`[label]`) and icon-text buttons (`[▣ label]`) are a worded
@@ -651,7 +651,7 @@ the accent. An outline appears only when it means something.
   with `8px` horizontal padding, selection in `--state-selected-bg` and accent text.
 
 ### Navigation
-- **ViewBar:** the single view header (see Layout). **Tab rail / top strip / sidebar:** `--fs-ui`
+- **ViewBar:** every pane's toolbar (see Layout). **Tab rail / top strip / sidebar:** `--fs-ui`
   mono on `--rail`, rows at `--row-h`. The rail's **active tab** is marked by accent `[`/`]` around
   its icon plus accent text — the same "on" mark as a selected icon button — with no fill and no
   edge bar; the brackets sit outside the icon's box, so the active icon stays on the column's axis,

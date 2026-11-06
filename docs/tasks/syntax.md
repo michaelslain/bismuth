@@ -167,7 +167,7 @@ produces
 
 ### Rescheduling a date field
 
-Dragging a task chip to another day in the calendar's tasks register rewrites exactly one date field to the day you dropped it on: the field that placed the chip, `scheduled` or `due`. Any other date on the line is left alone. A task with no `due` or `scheduled` date is not placed on the grid, so it has no chip to drag. See [the calendar view's tasks register](../bases/views/calendar.md#tasks-register).
+Dragging a task chip to another day in the calendar's tasks register rewrites exactly one date field to the day you dropped it on: the field that placed the chip, `scheduled` or `due`. Any other date on the line is left alone. A task with no `due` or `scheduled` date is not placed on the grid, so it has no chip to drag. See [the calendar layout's tasks register](../bases/views/calendar.md#tasks-register).
 
 ### Edit, delete and move a task
 
@@ -200,7 +200,7 @@ Completed tasks sink, fold and can be archived, per block. A block is a run of c
 
 ## How do tasks appear in bases?
 
-Tasks are a base source. A base with `source: tasks` produces one row per checkbox line in the vault, and `source: tasks` with `from: [[Some Base]]` scopes it to the notes that base reads. `mode: tasks` makes any view kind render its rows as tasks, whether they came from a checkbox line or from a task stored as a row in the base itself.
+Tasks are a base source. A view with `source: tasks` lists one row per checkbox line in the vault, and `source: tasks` with `from: [[Some Base]]` scopes it to the notes that base reads. `mode: tasks` makes any layout draw its rows as tasks, whether they came from a checkbox line or from a task stored as a row in a collection.
 
 ```yaml
 ---
@@ -220,7 +220,7 @@ Each task row exposes its fields under `note.`: `description`, `status`, `status
 | `note.placed` | `scheduled`, falling back to `due`; the date the calendar places the task on |
 | `note.recurring` | `true` when the task has a recurrence rule |
 
-Filtering uses the same filter language as every other base; see [Bases filters](../bases/filters.md). The source and mode axes are explained in [Bases overview](../bases/overview.md#three-axes-kind-mode-and-origin), and the calendar's tasks register in [the calendar view](../bases/views/calendar.md#tasks-register). To list tasks from the shell, run `bismuth task list [--query <expr>]`, where the query is a Bases filter expression.
+Filtering uses the same filter language as every other base; see [Bases filters](../bases/filters.md). The source, mode and kind choices are explained in [Bases overview](../bases/overview.md#three-choices-layout-mode-and-kind), and the calendar's tasks register in [the calendar layout](../bases/views/calendar.md#tasks-register). To list tasks from the shell, run `bismuth task list [--query <expr>]`, where the query is a Bases filter expression.
 
 ## Migrating from the emoji syntax
 

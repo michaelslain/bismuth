@@ -1,6 +1,6 @@
-# Map view
+# The map layout
 
-A map view plots a base's rows as pins on a world map, using each row's latitude and longitude. The map is drawn offline from built-in vector outlines, with no tile server or network access; for the other view kinds, start at [Bases overview](../overview.md).
+The map layout plots a base's rows as pins on a world map, using each row's latitude and longitude. The map is drawn offline from built-in vector outlines, with no tile server or network access; for the other layouts, start at [Bases overview](../overview.md).
 
 ```yaml
 ---
@@ -12,7 +12,7 @@ view: map
 
 Every note tagged `#location` with `lat` and `lng` in its frontmatter becomes a pin, labelled with its title.
 
-## Configuring a map view
+## Configuring the map layout
 
 Set `view: map` in a `type: base` file. With no other keys, the map reads the bare `lat` and `lng` frontmatter properties. Point it at other properties, or fix the opening framing, with the keys below.
 
@@ -34,7 +34,7 @@ center: { lat: 40.7, lng: -74 }
 | `zoom` | number | 1 to 18 | none | Opening zoom; used only together with `center` |
 | `center` | object | `{ lat: <number>, lng: <number> }` | none | Opening centre; used only together with `zoom` |
 
-The base settings panel (the gear in the view bar) has fields for all four keys. A coordinate can be a number or a numeric string (`"40.7"`).
+The base settings panel (the gear in the toolbar) has fields for all four keys. A coordinate can be a number or a numeric string (`"40.7"`).
 
 Two `.settings` keys also shape the map; both are in the [settings reference](../../settings/reference.md):
 
@@ -49,7 +49,7 @@ A row becomes a pin when both coordinates are numbers, latitude is within -85 to
 
 Any other row is unplaced: it draws no pin and shows no error, but the map's right-click menu offers to place it (see "Place, move and remove pins" below). When no row has a location, the map shows `add lat / lng properties to a note to pin it` over the bare basemap; when the query returns no rows at all, it shows `no matches`.
 
-A pin's label is the row's value in the view's first column, which is `file.name` unless `order` puts another property first.
+A pin's label is the row's value in the base's first column, which is `file.name` unless `order` puts another property first.
 
 ## Where the map opens
 
@@ -76,7 +76,7 @@ Zoom stays between 1 and 18. A scale bar in the bottom left shows a round distan
 
 ## Place, move and remove pins
 
-A map whose `lat` and `lng` are writable properties (bare or `note.` ids) can create and move pins. Clicking a pin opens the row editor for that row, with its title and the view's columns.
+A map whose `lat` and `lng` are writable properties (bare or `note.` ids) can create and move pins. Clicking a pin opens the row editor for that row, with its title and the base's columns.
 
 | Action | How | What is written |
 |---|---|---|
@@ -97,8 +97,8 @@ Written coordinates are rounded to six decimal places. A click past the edge of 
 The map cannot write coordinates in these cases, and hides or disables the controls that would:
 
 - `lat` or `lng` is a `formula.`, `file.` or `this.` property. The empty-map menu does not open, **Add pin** is disabled with the reason in its tooltip, and a pin's menu offers only **edit**.
-- The view has no base file behind it, such as an embedded ` ```query ` block. Clicking a pin opens its note.
-- The rows are stored in another base file (a `source:` that reads another base's rows). **Add pin** is disabled and names the file to add them in.
+- The map has no base file behind it, such as an embedded ` ```query ` block. Clicking a pin opens its note.
+- The base is a view of another base (`source: base`), so its rows are stored in that other file. **Add pin** is disabled and names the file to add them in.
 - A row is a task line. Clicking its pin opens the note.
 
 ## Silent failures

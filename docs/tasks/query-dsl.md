@@ -64,7 +64,7 @@ query's `today` when the block is read. `AND`/`OR` become `&&`/`||`; parentheses
   and raises no error; the rest of the line still applies. `bismuth base migrate-queries --dry-run`
   lists unrecognized leaves.
 - **Display lines are ignored.** `group by`, `limit`, `hide`, `show`, `short mode`, `full mode` and
-  `explain` are recognised and dropped; the view's own config controls display.
+  `explain` are recognised and dropped; the base's own config controls display.
 - **`sort by priority` ranks by urgency**, not alphabetically: `highest`, `high`, `medium`, `none`,
   `low`, `lowest`. The plain `sort: note.priority` key ranks the same way, so a rewritten block keeps
   its order.
@@ -73,7 +73,7 @@ query's `today` when the block is read. `AND`/`OR` become `&&`/`||`; parentheses
 
 `translateTaskDsl(dsl, today)` turns the text into a `where` string plus a `SortSpec` list;
 `looksLikeTaskDsl(text)` is the cheap check `source.ts` uses to decide whether a `tasks:` value needs
-translating, and `applyTaskSort` sorts at the source level through the same `compareForSort` the view
+translating, and `applyTaskSort` sorts at the source level through the same `compareForSort` the layout
 uses. `base migrate-queries` calls the translator with live (relative) dates and writes the result
 through `migrateQueryBody`.
 

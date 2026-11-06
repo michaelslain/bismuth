@@ -1,6 +1,6 @@
 # Calendar events, recurrence and categories
 
-A calendar is a Bases view kind, not a standalone page: a `type: base` file with `view: calendar` stores its events as rows and its categories in its config. An event is a row with a date, optional times, an optional repeat rule and optional categories. The grid, column bindings and tasks register are configured in [the calendar view](../bases/views/calendar.md); two-way sync with Google is in [Google Calendar sync](../gcal/overview.md).
+A calendar is a base drawn with the calendar layout, so it is a collection: a `type: base` file with `view: calendar` stores its events as rows and its categories in its config. An event is a row with a date, optional times, an optional repeat rule and optional categories. The grid, column bindings and tasks register are configured in [the calendar layout](../bases/views/calendar.md); two-way sync with Google is in [Google Calendar sync](../gcal/overview.md).
 
 A calendar is a `<name>.base.jsonl` file. Line 1 is the config object; every later line is one event. `Calendar.base.jsonl`:
 
@@ -12,7 +12,7 @@ A calendar is a `<name>.base.jsonl` file. Line 1 is the config object; every lat
 
 This file holds one event that repeats every weekday from 2026-05-04, drawn in the `Work` colour, and a single dentist event on the same day. You can write events by hand like this, edit them in the app, or drive them from the shell with [`bismuth calendar`](#how-do-i-edit-a-calendar-from-the-shell).
 
-A markdown calendar (`type: base` frontmatter with the events as a YAML list) works the same way and keeps its format on every save; the [bases overview](../bases/overview.md#where-are-a-bases-own-rows-stored) owns both formats.
+A markdown calendar (`type: base` frontmatter with the events as a YAML list) works the same way and keeps its format on every save; the [bases overview](../bases/overview.md#where-are-a-collections-rows-stored) owns both formats.
 
 ## What fields does an event have?
 
@@ -35,7 +35,7 @@ An event is one row. Only `id`, `title` and `date` are needed; every other field
 
 Dates and times are plain strings with no time zone. The app and the CLI write `recurrence` and `categories` as JSON strings in a single field, so in a `.base.jsonl` row they are strings holding escaped JSON, as in the example above. A `recurrence` that is not valid JSON is read as "does not repeat".
 
-The calendar view can bind other column names to the date, time, recurrence and category fields; see [the calendar view](../bases/views/calendar.md). Write rows with the standard names above so the grid, the export and the CLI all agree.
+The calendar layout can bind other column names to the date, time, recurrence and category fields; see [the calendar layout](../bases/views/calendar.md). Write rows with the standard names above so the grid, the export and the CLI all agree.
 
 ## How do I make an event repeat?
 

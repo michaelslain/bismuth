@@ -46,7 +46,7 @@ Add a picture three ways: the **Import image** button, pasting an image from the
 
 ## Ink on images and PDFs in place
 
-An image or PDF opens in a preview tab, and you draw on it right there. Press Mod+Shift+I (the `toggle-draw-mode` keybinding, Escape to leave) or the **Draw** button in the preview bar. The drawing toolbar docks at the bottom of the visible area with the pen, highlighter, eraser, colour, size, smoothing and undo controls. Entering draw mode deselects any text selected on the PDF's pages, and leaving it with the pen still down cancels that stroke.
+An image or PDF opens in the preview, and you draw on it right there. Press Mod+Shift+I (the `toggle-draw-mode` keybinding, Escape to leave) or the **Draw** button in the preview toolbar. The drawing toolbar docks at the bottom of the visible area with the pen, highlighter, eraser, colour, size, smoothing and undo controls. Entering draw mode deselects any text selected on the PDF's pages, and leaving it with the pen still down cancels that stroke.
 
 Your marks save to a sidecar named after the file with `.draw` added: `photo.png` becomes `photo.png.draw`, `report.pdf` becomes `report.pdf.draw`. The file tree hides the sidecar while its image or PDF exists, and the sidecar moves with it. Nothing is written until you draw something.
 
@@ -62,7 +62,7 @@ A sidecar created by drawing in place holds strokes on blank paper, without a co
 
 ## Highlight, bookmark and add a margin on a PDF
 
-A PDF's preview bar adds three more tools. Highlights are saved inside the PDF itself; bookmarks and the scratch strip are saved in the same `<file>.draw` sidecar as ink. The tools stay disabled until the sidecar has loaded.
+A PDF's preview toolbar adds three more tools. Highlights are saved inside the PDF itself; bookmarks and the scratch strip are saved in the same `<file>.draw` sidecar as ink. The tools stay disabled until the sidecar has loaded.
 
 | Control | What it does |
 |---|---|
@@ -98,7 +98,7 @@ A highlight you make on a PDF in Bismuth is a standard PDF highlight annotation 
 
 ## Read a PDF in dark mode
 
-PDF dark mode shows a PDF's pages inverted with their hues kept: white paper turns black, black text turns white, and a red figure stays red. Press the moon button in a PDF's preview bar to switch that PDF; the choice is remembered for that PDF alone, so it opens the same way next time. The moon stays disabled until the sidecar has loaded.
+PDF dark mode shows a PDF's pages inverted with their hues kept: white paper turns black, black text turns white, and a red figure stays red. Press the moon button in a PDF's preview toolbar to switch that PDF; the choice is remembered for that PDF alone, so it opens the same way next time. The moon stays disabled until the sidecar has loaded.
 
 The choice is saved in the PDF's `<file>.pdf.draw` sidecar, beside its ink, and undoes with Mod+Z like the scratch strip. The PDF itself is untouched. A PDF you have never switched follows the default in `.settings`, which the **Toggle PDF dark mode default** command also flips:
 
@@ -118,7 +118,7 @@ bismuth highlights "readings/week 8 reading 1.pdf"
 bismuth highlights "readings/week 8 reading 1.pdf" --json
 ```
 
-On an image, the scratch strip appears only when its sidecar already carries a `margin`; the preview bar has no scratch button for images. Dragging the line between the image and its strip resizes the strip, and a click on that line does nothing, since nothing in the bar could bring a hidden strip back.
+On an image, the scratch strip appears only when its sidecar already carries a `margin`; the preview toolbar has no scratch button for images. Dragging the line between the image and its strip resizes the strip, and a click on that line does nothing, since nothing in the bar could bring a hidden strip back.
 
 ## Scratch notes
 
@@ -285,7 +285,7 @@ PDF documents are cached by vault path (`pdfDocCache.ts`, 3 documents) and share
 
 `preview/previewViewMemory.ts` remembers each preview's view by vault path: a PDF's zoom, panel state and `PdfPosition`, and an image's zoom with the picture point under the centre of the view. Every save updates an in-memory map and a debounced write mirrors it to `localStorage` (`bismuth-preview-view::<api base>`, the 500 most recently saved paths), flushed on `pagehide`; a rename or delete re-keys or drops the entry. An image keeps that centre point as a live anchor: each explicit re-layout scrolls back to it, so the place survives a reflow such as the companion strip settling above a reopened image, and a scroll event that only echoes the anchor's own clamped offset does not move it.
 
-Scratch notes: `createCompanionStore.ts` is the one owner of a binary's companion note while its preview is open. Tags (`CompanionFrontmatter`) and blocks (`ScratchTextLayer`) both write through it, with one debounced write and one conflict-reload path, so neither drops the other's content. It also listens for server change events naming the companion (or naming nothing, an unknown-extent change), and once every write it has in flight has settled, it re-reads the file and loads any text that differs from what it last wrote. It skips that reload while an edit waits on the debounce. `core/src/scratchNotes.ts` parses and writes the block regions. Only pages within two of the current page mount a block editor.
+Scratch notes: `createCompanionStore.ts` is the one owner of an image's or PDF's companion note while its preview is open. Tags (`CompanionFrontmatter`) and blocks (`ScratchTextLayer`) both write through it, with one debounced write and one conflict-reload path, so neither drops the other's content. It also listens for server change events naming the companion (or naming nothing, an unknown-extent change), and once every write it has in flight has settled, it re-reads the file and loads any text that differs from what it last wrote. It skips that reload while an edit waits on the debounce. `core/src/scratchNotes.ts` parses and writes the block regions. Only pages within two of the current page mount a block editor.
 
 ### Export
 

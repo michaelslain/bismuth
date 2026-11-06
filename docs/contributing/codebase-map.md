@@ -39,9 +39,9 @@ Find the change in the table, then follow its steps in the section below. A test
 | A design token | `core/src/theme/designTokens.ts` | `tokenRegistry.test.ts`, `tokensDoc.test.ts` |
 | A command | `core/src/commands.ts` | `commands.test.ts` (catalog shape only) |
 | A keybinding | `core/src/keybindings.ts` | `keybindingCoverage.test.ts`, `schemaSnapshot.test.ts` |
-| A Bases view kind | `core/src/bases/types.ts` | `guides.test.ts` |
+| A Bases layout | `core/src/bases/types.ts` | `guides.test.ts` |
 | A Bases function | `core/src/bases/functions.ts` | `functions.test.ts` |
-| A pane file type | `app/src/PaneContent.tsx` | none |
+| A file type a pane shows | `app/src/PaneContent.tsx` | none |
 | A shell component | `app/src/shell/` | design-system gate |
 | A chat backend | `core/src/agentBackends/catalog.ts` | `catalogParity.test.ts` |
 | A CLI command | `cli/src/commands/<group>.ts` | `guideCommands.test.ts` |
@@ -88,12 +88,12 @@ Find the change in the table, then follow its steps in the section below. A test
 2. In the handler that runs the action, test the event with `matchesKeybinding(e, <the setting>)` from `app/src/keybindings.ts`. Never write a key literal: `keybindingCoverage.test.ts` fails on one.
 3. Run `bun run test:bless-schema`, and document the binding in `docs/settings/keybindings.md`.
 
-### Add a Bases view kind
+### Add a Bases layout
 
-1. Add the kind to `VIEW_TYPE_VALUES` in `core/src/bases/types.ts`.
+1. Add the layout to `VIEW_TYPE_VALUES` in `core/src/bases/types.ts`.
 2. Write the renderer in `app/src/bases/` and add a `<Match>` arm in `ViewRenderer.tsx`. `calendar` and `flashcards` are mounted by `BaseView.tsx` itself.
 3. Add a menu entry to `BASE_VIEW_KINDS` in `app/src/baseViews.ts`.
-4. Write `docs/bases/views/…` and `docs/bases/authoring/<kind>.md`, and mention the kind in `docs/bases/authoring.md`. `core/test/guides.test.ts` requires exactly one authoring page per kind.
+4. Write `docs/bases/views/…` and `docs/bases/authoring/<layout>.md`, and mention the layout in `docs/bases/authoring.md`. `core/test/guides.test.ts` requires exactly one authoring page per layout.
 
 ### Add a Bases function
 
@@ -101,7 +101,7 @@ Find the change in the table, then follow its steps in the section below. A test
 2. Test it in `core/test/bases/functions.test.ts`.
 3. Add a row to `docs/bases/functions.md`.
 
-### Add a pane file type
+### Add a file type a pane shows
 
 1. Make `listTree` in `core/src/files.ts` list the extension.
 2. Give it a label and icon in `app/src/tabIds.ts`.
@@ -185,8 +185,9 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | Area | Files |
 |---|---|
 | Boot | `index.tsx` mounts `App` or, on first run, `intro/VaultIntro`; `fonts.ts`; `global.css` |
-| Panes and tabs | `panes.ts` (the pure Leaf/Split tree), `PaneTree.tsx`, `PaneLeaf.tsx`, `PaneHeader.tsx`, `PaneContent.tsx` (routes a leaf to its view), `tabIds.ts` (sentinel ids such as `::graph`) |
-| Views a pane can show | `Editor.tsx`, `GraphView.tsx`, `Terminal.tsx`, `PreviewView.tsx`, `SheetView.tsx`, `ExportView.tsx`, `FileView.tsx`, `InboxPageView.tsx` |
+| Panes and tabs | `panes.ts` (the pure Leaf/Split tree), `PaneTree.tsx`, `PaneLeaf.tsx`, `PaneHeader.tsx`, `PaneContent.tsx` (routes a leaf to the file or page it shows), `tabIds.ts` (the ids of pages, such as `::graph`) |
+| Files a pane shows | `Editor.tsx` (notes), `FileView.tsx` (routes a `.md` file to a base, an inbox page or the editor), `InboxPageView.tsx`, `PreviewView.tsx` (images, PDFs, code files), `SheetView.tsx` |
+| Pages a pane shows | `GraphView.tsx`, `Terminal.tsx`, `ExportView.tsx` |
 | File tree | `FileTree.tsx`, `fileTree*.ts`, `treeStore.ts`, `dropIntake.ts`, `fileIntake.ts` |
 | Backend client | `api.ts` (a swappable `Transport`), `serverVersion.ts` (SSE plus a `/version` poll), `serverError.ts` |
 | Settings and theme | `settings.ts`, `settingsDiff.ts`, `settingsCssVars.ts`, `themes.ts`, `customThemes.ts`, `effectiveTokens.ts` |
@@ -197,10 +198,10 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 | Directory | Holds | Open first |
 |---|---|---|
 | `shell/` | The slot-driven app chrome: frame, top strip, tab rail, sidebar, status bar | `AppFrame.tsx` |
-| `ui/` | The primitives (`Text`, `Heading`, `Button` family, `Modal`, `Field`, `ViewBar` …), `ascii/`, `popover/`, `gallery/`, and the `_*` story fixtures | `Text.tsx` |
+| `ui/` | The primitives (`Text`, `Heading`, `Button` family, `Modal`, `Field`, `ViewBar` (a pane's toolbar) …), `ascii/`, `popover/`, `gallery/`, and the `_*` story fixtures | `Text.tsx` |
 | `editor/` | The CodeMirror extension set for notes: live preview, tables, tasks, query blocks, ink, completion | `livePreview.ts` |
 | `milkdown/` | The Milkdown WYSIWYG bridge used by `ui/MilkdownField.tsx` | `milkdownEditor.ts` |
-| `bases/` | The Bases view renderers, editors and `BaseView.tsx`, which owns the single `ViewBar` | `BaseView.tsx`, `ViewRenderer.tsx` |
+| `bases/` | The Bases layout renderers, editors and `BaseView.tsx`, which owns the pane's single toolbar (`ViewBar`) | `BaseView.tsx`, `ViewRenderer.tsx` |
 | `calendar/` | Calendar state, `EventStore`, and the calendar and task-calendar components | `state.ts` |
 | `graph/` | The ASCII graph renderer, camera, layers and label selection | `graphRenderer.ts` |
 | `chat/` | The chat UI and `chatSessions.ts`, the registry that keeps each chat's socket and transcript alive | `chatSessions.ts` |

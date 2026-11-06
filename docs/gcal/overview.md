@@ -20,7 +20,7 @@ Sync runs in the installed Bismuth app. A development build, a test run or a hea
 
 Connect from the calendar you want to sync.
 
-1. Open the calendar base and open its settings with the gear in the view bar.
+1. Open the calendar base and open its settings with the gear in the pane's toolbar.
 2. In the **google calendar sync** section, choose **connect google calendar**.
 3. Paste the client ID and client secret and choose **sign in with google**. Bismuth opens Google's consent page in your system browser.
 4. Approve access. The browser shows "Connected as <account>. You can close this tab and return to Bismuth."

@@ -318,8 +318,8 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `sp-6` | length | `16px` | Spacing step 6. |
 | `sp-7` | length | `24px` | Spacing step 7. |
 | `optical-nudge` | length | `1px` | One-pixel nudge that centres glyphs optically. |
-| `bar-icon-gap` | length | `var(--sp-4)` | Gap between icons in a view bar. |
-| `bar-crumb-gap` | length | `var(--sp-5)` | Gap between breadcrumbs in a view bar. |
+| `bar-icon-gap` | length | `var(--sp-4)` | Gap between icons in a toolbar. |
+| `bar-crumb-gap` | length | `var(--sp-5)` | Gap between breadcrumbs in a toolbar. |
 
 ### size
 
@@ -334,12 +334,12 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `note-gutter` | length | `40px` | Side padding of a note: the editor content inset that the title, frontmatter and chat transcript line up with. |
 | `chat-column` | length | `680px` | Reading width of a chat transcript and its composer. |
 | `daemon-list-max` | length | `100ch` | Widest an opened daemon section list (crons, services, inbox, log) grows, so all four end at one x. |
-| `view-gutter` | length | `var(--sp-5)` | Side gutter of a Bases view body; matches the view bar. |
+| `view-gutter` | length | `var(--sp-5)` | Side gutter of a base layout body; matches the toolbar. |
 | `rail-w-collapsed` | length | `46px` | Width of the tab rail when collapsed. |
 | `skeleton-bar-h` | length | `var(--sp-5)` | Height of one placeholder bar in a skeleton. |
 | `list-max-h` | length | `320px` | Tallest a dropdown list grows before scrolling. |
 | `icon` | length | `12px` | Size of every icon, 11 to 20px. Also set by appearance.iconSize. |
-| `bar-icon-size` | length | `18px` | Size of icons in a view bar. |
+| `bar-icon-size` | length | `18px` | Size of icons in a toolbar. |
 | `ascii-dash-pitch` | number | `2` | Cells between dashes of an ASCII dashed line. |
 
 ### radius

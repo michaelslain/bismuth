@@ -1,17 +1,17 @@
 # Converting Obsidian bases
 
-An Obsidian base is a `.base` YAML file with a list of views; a Bismuth base is a `type: base` markdown note or a `<name>.base.jsonl` file, with exactly one view. Use this page to turn each `.base` file and each ` ```base ` fence into Bismuth form. The vault-wide procedure is in [the conversion guide](../converting-obsidian-to-bismuth.md).
+An Obsidian base is a `.base` YAML file with a list of views (Obsidian's word for a named rendering); a Bismuth base is a `type: base` markdown note or a `<name>.base.jsonl` file, with exactly one layout. Use this page to turn each `.base` file and each ` ```base ` fence into Bismuth form. The vault-wide procedure is in [the conversion guide](../converting-obsidian-to-bismuth.md).
 
 ## Sources
 
-- Bismuth: `docs/bases/overview.md` (format, one view per base, composition), `docs/bases/filters.md`, `docs/bases/functions.md`, `docs/bases/query-syntax.md`, `docs/bases/query-block.md` (the ` ```query ` fence), `docs/bases/sources.md`, the per-kind pages under `docs/bases/views/`, and `docs/cli/reference.md` (the `base` commands).
+- Bismuth: `docs/bases/overview.md` (format, one layout per base, composition), `docs/bases/filters.md`, `docs/bases/functions.md`, `docs/bases/query-syntax.md`, `docs/bases/query-block.md` (the ` ```query ` fence), `docs/bases/sources.md`, the per-layout pages under `docs/bases/views/`, and `docs/cli/reference.md` (the `base` commands).
 - Obsidian: https://obsidian.md/help/bases/syntax (file format), https://obsidian.md/help/bases/views (layouts, embedding), https://obsidian.md/help/bases/functions, https://obsidian.md/help/bases/views/table, https://obsidian.md/help/bases/views/cards, https://obsidian.md/help/bases/views/list, https://obsidian.md/help/bases/views/kanban, https://obsidian.md/help/bases/views/map
 
 ## Format differences
 
 The tables orient you; where a linked live page disagrees, follow the live page and note the difference in the report.
 
-An Obsidian base is a `.base` file of pure YAML with top-level `filters`, `formulas`, `properties`, `summaries` and a `views:` list. A Bismuth markdown base is a `.md` note with `type: base` in its frontmatter and one view written flat: `view: <kind>` plus the view's keys at the top level. The Obsidian layouts are table, cards, list, kanban (the Views page names the Obsidian version it needs) and map (needs the Maps plugin).
+An Obsidian base is a `.base` file of pure YAML with top-level `filters`, `formulas`, `properties`, `summaries` and a `views:` list. A Bismuth markdown base is a `.md` note with `type: base` in its frontmatter and one layout written flat: `view: <layout>` plus the layout's keys at the top level. The Obsidian layouts are table, cards, list, kanban (the Views page names the Obsidian version it needs) and map (needs the Maps plugin).
 
 | Obsidian `.base` | Bismuth base note |
 |---|---|
@@ -19,7 +19,7 @@ An Obsidian base is a `.base` file of pure YAML with top-level `filters`, `formu
 | top-level `filters`, `formulas` | same keys, same `and`/`or`/`not` trees and leaf strings; `file.hasTag("a")` is an exact match and does not match `a/b` (Convert step 7) |
 | top-level `properties: {id: {displayName}}` | `properties:` with the same shape, honoured when the key matches an id used in `order` |
 | top-level `summaries` (custom formulas) | not read; drop and report |
-| `views[0].type` | `view: <kind>`: `table`, `cards`, `list`, `kanban` and `map` all exist |
+| `views[0].type` | `view: <layout>`: `table`, `cards`, `list`, `kanban` and `map` all exist |
 | `views[0].name` | dropped |
 | `views[0].order`, `sort`, `groupBy`, `limit`, `summaries` | same key names, flattened to the top level; `summaries` values are limited to Bismuth's eight names (see Lossy) |
 | `views[0].filters` | AND them with the global `filters` |
@@ -68,7 +68,7 @@ To store converted bases as `.base.jsonl` files, run `bismuth base migrate --all
    ---
    ```
    Always write `source: notes` to make the scope explicit. A source-less base note with no body rows resolves to every vault note anyway (app, `base render`, and a base that `ref`s it); only a source-less ` ```query ` fence is empty, so the fence always needs it. An Obsidian base with no filter shows every file; omit `filters` then. Quote any filter value containing `#` or `:`.
-2. For each extra view `V`, create `P/Name - V.md` with `type: base`, `source: base`, `ref: "[[P/Name]]"` (vault-relative path, no `.md`; the plain `[[Name]]` also works), `filters:` restated (global AND this view's own), `view: <kind>`, and that view's keys flattened. Only the referenced base's rows carry over, so the restated filters are required. A `ref` resolves like a wikilink: an exact vault path wins, otherwise the target is found by file name (fewest path segments first), so the full path is the unambiguous spelling when two bases share a name in different folders.
+2. For each extra view `V`, create `P/Name - V.md` with `type: base`, `source: base`, `ref: "[[P/Name]]"` (vault-relative path, no `.md`; the plain `[[Name]]` also works), `filters:` restated (global AND this view's own), `view: <layout>`, and that view's keys flattened. Only the referenced base's rows carry over, so the restated filters are required. A `ref` resolves like a wikilink: an exact vault path wins, otherwise the target is found by file name (fewest path segments first), so the full path is the unambiguous spelling when two bases share a name in different folders.
 3. Delete `P/Name.base` from `$OUT`; a `.base` file is invisible in the Bismuth tree and never read. Then fix every plain link to it: `[[Name.base]]`, `[[P/Name.base]]` and `[[Name.base|text]]` (not only `![[...]]` embeds) dangle. Rewrite each to `[[Name]]`, keeping the path and alias, which opens the converted base note:
    ```bash
    grep -rnE --include='*.md' '(^|[^!])\[\[[^]|#]+\.base[]|#]' "$OUT"   # plain links to find
@@ -85,11 +85,11 @@ To store converted bases as `.base.jsonl` files, run `bismuth base migrate --all
 - Views beyond the first become separate files; their only relationship is the `ref`.
 - Every view `name` is dropped, including the first view's, because a Bismuth base has no place to keep it. List each dropped name and its base path in the report.
 - Summary names: Bismuth computes only `Sum`, `Average`, `Min`, `Max`, `Count`, `Empty`, `Filled` and `Unique`. Any other name (for example Median, Range, Stddev, Earliest, Latest, Checked, Unchecked) renders an empty string with no validation error. List each unsupported summary name per base in the report.
-- Custom `summaries` and card sizing are not read. Cards image settings are partly read: the top-level view keys `image` (a property id), `imageFit` (`cover` or `contain`) and `imageAspectRatio` (a number) work (`docs/bases/views/cards.md`). The Obsidian-side key names are unverified, so read them from the real `.base` and map them by hand.
+- Custom `summaries` and card sizing are not read. Cards image settings are partly read: the top-level layout keys `image` (a property id), `imageFit` (`cover` or `contain`) and `imageAspectRatio` (a number) work (`docs/bases/views/cards.md`). The Obsidian-side key names are unverified, so read them from the real `.base` and map them by hand.
 - Obsidian-only functions pass `bismuth base validate` and evaluate to nothing at render time. Inside `filters`, an unknown function makes the base match zero rows: `bismuth base render` shows 0 rows for `nosuchfn(file.name)` and 1 for a valid filter on the same vault.
 - Nested tags: Obsidian's `file.hasTag("a")` also matches `a/b` and Bismuth's does not, so step 7 lists each subtag explicitly, and a subtag created later is not matched.
 - An embedded `![[X.base]]` becomes an inline query fence, so it does not follow later edits to the base file.
-- A merged note's prose body stays on disk but Bismuth does not show it: a `type: base` note opens as the base view only, and the body is read as rows only when the base has no `source` or a `source: base` (`docs/bases/overview.md`, "Where are a base's own rows stored?"). The prose is reachable by editing the file or from another note. Report each merged note.
+- A merged note's prose body stays on disk but Bismuth does not show it: a `type: base` note opens as the base only, and the body is read as rows only when the base has no `source` or a `source: base` (`docs/bases/overview.md`, "Where are a collection's rows stored?"). The prose is reachable by editing the file or from another note. Report each merged note.
 
 ## Validate
 

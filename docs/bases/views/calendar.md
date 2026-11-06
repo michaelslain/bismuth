@@ -1,8 +1,8 @@
-# Calendar view
+# The calendar layout
 
-The calendar view draws a base's rows on a month, week, 3-day or day grid. It has two registers: the events register draws events stored in the base file, and the tasks register (`mode: tasks`) draws checkbox tasks on the same grid. Use this page to configure a calendar base. Event fields, recurrence rules and categories live in [calendar overview](../../calendar/overview.md); Google sync lives in [Google Calendar sync](../../gcal/overview.md).
+The calendar layout draws a base's rows on a month, week, 3-day or day grid. It has two registers: the events register draws events stored in a [collection](../overview.md), and the tasks register (`mode: tasks`) draws tasks, either from a view whose source is `tasks` or stored in a collection. Use this page to configure a calendar base. Event fields, recurrence rules and categories live in [calendar overview](../../calendar/overview.md); Google sync lives in [Google Calendar sync](../../gcal/overview.md).
 
-A calendar is an ordinary `type: base` file with `view: calendar`. This `Calendar.base.jsonl` holds its own events: line 1 is the config, every later line is one event.
+A calendar is an ordinary `type: base` file with `view: calendar`. This `Calendar.base.jsonl` is a collection of events: line 1 is the config, every later line is one event.
 
 ```json
 {"type":"base","view":"calendar","categories":[{"name":"Work","color":"#b00020"},{"name":"Personal","color":"teal"}]}
@@ -16,15 +16,15 @@ This base shows every open task in the vault instead; it is a single config line
 {"type":"base","source":"tasks","view":"calendar","mode":"tasks"}
 ```
 
-A markdown calendar keeps working: the same keys sit in frontmatter and the events are a YAML list in the body. The [bases overview](../overview.md#where-are-a-bases-own-rows-stored) owns both formats, and the calendar keeps whichever one it is in on every save.
+A markdown calendar keeps working: the same keys sit in frontmatter and the events are a YAML list in the body. The [bases overview](../overview.md#where-are-a-collections-rows-stored) owns both formats, and the calendar keeps whichever one it is in on every save.
 
 ## Config keys
 
-A calendar reads these top-level config keys: line 1 of a `.base.jsonl` file, or the frontmatter of a markdown calendar. The settings gear in the view bar writes the register-specific ones for you.
+A calendar reads these top-level config keys: line 1 of a `.base.jsonl` file, or the frontmatter of a markdown calendar. The settings gear in the calendar's toolbar writes the register-specific ones for you.
 
 | Key | Type | Default | Effect |
 |---|---|---|---|
-| `view` | `calendar` | `table` | Selects the calendar renderer |
+| `view` | `calendar` | `table` | Picks the calendar layout |
 | `mode` | `normal` or `tasks` | `normal` | `normal` draws events; `tasks` draws task rows |
 | `categories` | list of `{name, color}` | none | Declared category names and colours; a colour is a hex string or a palette token (`accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`) |
 | `dateField` | string | `date` (events), unset (tasks) | Events: the date column. Tasks: pins placement to one field and turns off the `scheduled`-then-`due` fallback |
@@ -35,24 +35,24 @@ A calendar reads these top-level config keys: line 1 of a `.base.jsonl` file, or
 | `googleCalendarSync` | boolean | `false` | Turns on two-way sync for this calendar |
 | `googleCalendarId` | string | `primary` | Google calendar this base syncs with |
 | `taskFile` | wikilink or path | none | Tasks: the note a new task is appended to in a `source:` base |
-| `defaultCategory` | string | none | Tasks: the category preselected for a new task in an own-rows base |
+| `defaultCategory` | string | none | Tasks: the category preselected for a new task in a collection |
 
 Global display preferences (default view, week start, 24-hour time) live in `.settings`; see [Display settings](#display-settings).
 
 ## Which register does a calendar draw?
 
-A calendar draws events when `mode` is absent or `normal`, and tasks when `mode: tasks`. Changing `mode` in the file while the pane is open swaps registers immediately. Both registers share the same four grid layouts and the same date navigation.
+A calendar draws events when `mode` is absent or `normal`, and tasks when `mode: tasks`. Changing `mode` in the file while the pane is open swaps registers immediately. Both registers share the same four grids and the same date navigation.
 
 | | Events register | Tasks register |
 |---|---|---|
-| Rows | The base's own event rows | Task rows from `source: tasks`, or the base's own rows |
+| Rows | Event rows stored in the collection | Task rows from a view with `source: tasks`, or stored in a collection |
 | Time | Timed or all-day | All-day only |
 | Create | Click a cell or drag on the time grid | Click a cell and type |
-| View bar | Categories button and a new-event button | Date navigation and grid layout only |
+| Toolbar | Categories button and a new-event button | Date navigation and grid toggle only |
 
 ## Move around the calendar
 
-The view bar's grid toggle switches between month, week, 3 day and day. Each calendar base keeps its own grid and date: picking 3 day on one calendar leaves every other calendar on its own grid, and reopening a calendar or switching back to its tab brings back what it showed, until the app reloads. A calendar you have not switched shows the `defaultView` setting. The arrows step by one grid unit: a month, 7 days, 3 days or 1 day. The date between the arrows names the visible range and, when clicked, jumps to today; a **today** button beside the arrows does the same. In a narrow pane the **today** word gives way to a bare calendar icon with the same action, in a narrower pane the bar's title hides so the four grid buttons stay whole, and when even that is not enough the grid buttons move into the bar's `[≡]` menu.
+The toolbar's grid toggle switches between month, week, 3 day and day. Each calendar base keeps its own grid and date: picking 3 day on one calendar leaves every other calendar on its own grid, and reopening a calendar or switching back to its tab brings back what it showed, until the app reloads. A calendar you have not switched shows the `defaultView` setting. The arrows step by one grid unit: a month, 7 days, 3 days or 1 day. The date between the arrows names the visible range and, when clicked, jumps to today; a **today** button beside the arrows does the same. In a narrow pane the **today** word gives way to a bare calendar icon with the same action, in a narrower pane the toolbar's title hides so the four grid buttons stay whole, and when even that is not enough the grid buttons move into the toolbar's `[≡]` menu.
 
 A week, 3-day or day grid opens scrolled so its earliest timed event sits at the top, just under the header. Each new range scrolls once, when its events load; a range with no timed events leaves the scroll where it is.
 
@@ -60,7 +60,7 @@ The first grid shown is the `defaultView` setting. Switching the grid by hand wi
 
 ## Events register
 
-The events register reads and writes the event rows stored in the base file itself, one per event. It writes them in the file's own format: one JSON object per line in a `.base.jsonl` calendar, a YAML list in a markdown one.
+The events register reads and writes the event rows stored in the collection, one per event. It writes them in the file's own format: one JSON object per line in a `.base.jsonl` calendar, a YAML list in a markdown one.
 
 ### Event columns
 
@@ -92,16 +92,16 @@ The settings gear opens the calendar settings dialog. It sets the five column-bi
 
 ## Tasks register
 
-The tasks register draws task rows as all-day chips on the grid. A chip is a checkbox, a description and, when the task is overdue, an `Nd late` label. Week, 3-day and day layouts show one tall all-day strip per day instead of an hourly grid.
+The tasks register draws task rows as all-day chips on the grid. A chip is a checkbox, a description and, when the task is overdue, an `Nd late` label. Week, 3-day and day grids show one tall all-day strip per day instead of an hourly grid.
 
 ### Where a task's rows come from
 
-A tasks calendar works over either kind of base.
+A tasks calendar works over either kind of base: a view or a collection.
 
 | The base | Rows come from |
 |---|---|
-| `source: tasks` | Checkbox lines in the vault's notes; see [task syntax](../../tasks/syntax.md) |
-| no `source:` | The base file's own rows |
+| a view with `source: tasks` | Checkbox lines in the vault's notes; see [task syntax](../../tasks/syntax.md) |
+| a collection (no `source:`) | The rows stored in the base file |
 
 A stored row needs `description` and a `scheduled` or `due` date under those exact names. `status` defaults to `todo`. A row that uses `title` and `date` as an events base would draws nothing in this register, because nothing maps those names.
 
@@ -139,11 +139,11 @@ A name declared in `categories` uses its declared colour. Every other name gets 
 
 A drag or an `Alt` shortcut rewrites the field that placed the task (`scheduled` or `due`, or `dateField`). For a checkbox line it always writes bracket form; see [task syntax](../../tasks/syntax.md#rescheduling-a-date-field). Keyboard focus follows the task to its new cell after a write. A reschedule scrolls the grid to the task's new cell; marking a task done or setting its status keeps the grid where it is, even when the task moves, such as an overdue task going back from today to its own day.
 
-Only a task with a place to write is editable from the grid: a checkbox line in a note, or a row in the base's own rows. Any other chip draws a dimmed checkbox and ignores toggling, dragging and the shortcuts, though `Enter` still opens it.
+Only a task with a place to write is editable from the grid: a checkbox line in a note, or a row stored in a collection. Any other chip draws a dimmed checkbox and ignores toggling, dragging and the shortcuts, though `Enter` still opens it.
 
 ### Create a task
 
-Hover a day cell and click the `+` in its corner, or click empty space in the cell. An inline composer opens after the cell's chips with a checkbox and a text input. In week, 3-day and day layouts, when the strip is scrolled past a day's chips, that day's composer pins just under the day headers, so opening it and creating tasks keep the strip where you scrolled it.
+Hover a day cell and click the `+` in its corner, or click empty space in the cell. An inline composer opens after the cell's chips with a checkbox and a text input. In week, 3-day and day grids, when the strip is scrolled past a day's chips, that day's composer pins just under the day headers, so opening it and creating tasks keep the strip where you scrolled it.
 
 | Key or event | Result |
 |---|---|
@@ -156,8 +156,8 @@ Under the input, a `→` line names where the task will be written. With two or 
 
 | The base | The picker offers | A new task is |
 |---|---|---|
-| `source: tasks` | Each note already on the grid, plus `taskFile` | A line `<text> [scheduled <date>]` appended to the chosen note |
-| no `source:` | Each category in play, plus "no category" | A stored row `{description, status: todo, scheduled, <categoryField>}` |
+| a view with `source: tasks` | Each note already on the grid, plus `taskFile` | A line `<text> [scheduled <date>]` appended to the chosen note |
+| a collection | Each category in play, plus "no category" | A stored row `{description, status: todo, scheduled, <categoryField>}` |
 
 `taskFile` accepts a wikilink (`[[Inbox]]`), a bare name or a path. A name resolves against the vault like a wikilink does, so a note in a subfolder is found rather than a stray copy created at the vault root. A `source: tasks` base with no `taskFile` and no task on the grid has nowhere to write: committing opens the task calendar settings and shows a toast asking you to set a destination note.
 
@@ -165,7 +165,7 @@ Under the input, a `→` line names where the task will be written. With two or 
 {"type":"base","source":"tasks","view":"calendar","mode":"tasks","taskFile":"[[Inbox]]"}
 ```
 
-A task written outside the view's own filters is still written. A toast names the file it went to and says it will not appear in this view.
+A task written outside the base's own filters is still written. A toast names the file it went to and says it will not appear in this base.
 
 A task composed on a day before today is written with that day as its `scheduled` date, and, being unfinished, it draws on today as overdue instead of in the cell you clicked. A toast names the file and the date and says the task shows on today.
 
@@ -176,9 +176,9 @@ In the tasks register the settings gear opens a task calendar settings dialog. C
 | Section | Field | Writes |
 |---|---|---|
 | placement | date column | `dateField` |
-| new tasks | destination note (`source:` bases) | `taskFile`, as a wikilink |
-| new tasks | default category (own-rows bases) | `defaultCategory` |
-| categories | category column (own-rows bases) | `categoryField` |
+| new tasks | destination note (views with `source: tasks`) | `taskFile`, as a wikilink |
+| new tasks | default category (collections) | `defaultCategory` |
+| categories | category column (collections) | `categoryField` |
 | categories | a colour swatch per category in play | the whole `categories` list, with the picked entry updated or appended |
 
 ## Display settings
@@ -197,11 +197,11 @@ These `.settings` keys under `calendar:` change how every calendar looks. They a
 ## Failure modes
 
 - A calendar base with only a config line has no events, even when the config looks complete. Add one event object per line below line 1 (in a markdown calendar, below the closing `---`).
-- `bismuth base create --view calendar` writes `source: notes` into the config, which makes the base read vault notes instead of its own rows. For an own-rows calendar, remove the `source` key before adding event rows, or scaffold with `bismuth calendar create` instead.
+- `bismuth base create --view calendar` writes `source: notes` into the config, which makes the base read vault notes instead of stored rows. For a collection calendar, remove the `source` key before adding event rows, or scaffold with `bismuth calendar create` instead.
 - A `.base.jsonl` calendar with a line that is not a JSON object cannot be rewritten: `bismuth calendar` commands fail with `PARSE_ERROR` and the app refuses to save. Fix the line; nothing is dropped meanwhile.
-- Only one calendar renders at a time. Two calendar panes visible together share the same date and grid layout.
-- An own-rows tasks calendar whose rows lack `description` or the `scheduled` and `due` names draws nothing.
-- `taskFile` naming a note outside the base's `from:` scope writes tasks that never appear in the view. `bismuth base validate` reports it.
+- Only one calendar renders at a time. Two calendar panes visible together share the same date and grid.
+- A tasks calendar stored in a collection whose rows lack `description` or the `scheduled` and `due` names draws nothing.
+- `taskFile` naming a note outside the base's `from:` scope writes tasks that never appear in the calendar. `bismuth base validate` reports it.
 - A palette-token category colour (`teal`) follows the app theme. A tool outside Bismuth that reads the file sees the word, not a colour.
 
 ## How it works
@@ -210,8 +210,8 @@ These `.settings` keys under `calendar:` change how every calendar looks. They a
 
 The opening scroll of the week, 3-day and day grids is `firstEventTop` (`app/src/calendar/components/views/timeGridLayout.ts`), applied by `TimeGrid` once per date range.
 
-The calendar contributes controls to the base's single view bar through `calendarSlots()`, which `BaseView` reads; the view renders no bar of its own. Each calendar's grid and date are a `CalendarNav` (`app/src/calendar/state.ts`): `BaseView` takes one per base path from `calendarNavFor`, hands it to `calendarSlots()` for the bar and to `CalendarView`, which provides it to the grid through `CalendarNavContext`. The navs live in a module-level map, so they survive a remount but not a reload. A nav's view reads `defaultView` until a pick is written to it. The loaded events, categories and open dialogs are module-level signals in the same file, shared by every events calendar.
+The calendar contributes controls to the base's single toolbar through `calendarSlots()`, which `BaseView` reads; the layout renders no bar of its own. Each calendar's grid and date are a `CalendarNav` (`app/src/calendar/state.ts`): `BaseView` takes one per base path from `calendarNavFor`, hands it to `calendarSlots()` for the bar and to `CalendarView`, which provides it to the grid through `CalendarNavContext`. The navs live in a module-level map, so they survive a remount but not a reload. A nav's view reads `defaultView` until a pick is written to it. The loaded events, categories and open dialogs are module-level signals in the same file, shared by every events calendar.
 
-Task placement, the overdue carry and category colours are pure functions in `app/src/calendar/taskPlacement.ts` and `taskCategory.ts`. The chip's writability, the drag payload and the reschedule target all come from `isWritableTask` and `taskRowRef`, so the marker, the drag and the shortcuts cannot disagree. Writes go through the same endpoints as the other task views: `POST /tasks/toggle`, `POST /tasks/reschedule` and `POST /tasks/create` for checkbox lines, and `POST /rows/update` and `POST /rows` for a base's own rows; see [HTTP API reference](../../api/http-reference.md). `POST /tasks/create` resolves `taskFile` server-side in `resolveTaskFilePath`. An own-rows base runs each row through `normalizeStoredTaskRow` before the tasks register sees it.
+Task placement, the overdue carry and category colours are pure functions in `app/src/calendar/taskPlacement.ts` and `taskCategory.ts`. The chip's writability, the drag payload and the reschedule target all come from `isWritableTask` and `taskRowRef`, so the marker, the drag and the shortcuts cannot disagree. Writes go through the same endpoints as the other task views: `POST /tasks/toggle`, `POST /tasks/reschedule` and `POST /tasks/create` for checkbox lines, and `POST /rows/update` and `POST /rows` for a collection's rows; see [HTTP API reference](../../api/http-reference.md). `POST /tasks/create` resolves `taskFile` server-side in `resolveTaskFilePath`. A collection runs each row through `normalizeStoredTaskRow` before the tasks register sees it.
 
 Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/EventsCalendar.tsx`, `app/src/bases/TasksCalendar.tsx`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/bases/tasksCalendarWrites.ts`, `app/src/calendar/state.ts`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskCategory.ts`, `app/src/calendar/taskCompose.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/components/TaskCellComposer.tsx`, `app/src/calendar/components/TaskCalendarSettings.tsx`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/timeGridLayout.ts`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/ui/chipKeys.ts`, `core/src/bases/taskRow.ts`, `core/src/taskCreate.ts`, `core/src/schema/settingsSchema.ts`

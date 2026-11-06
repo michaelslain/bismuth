@@ -1,10 +1,31 @@
 # CLAUDE.md
 
 Bismuth is a local-first knowledge vault (an Obsidian-like app): markdown notes on disk, a live
-knowledge graph, Bases (queries rendered as views), tasks, flashcards, calendar, drawing, sheets,
-in-app terminals and AI chat. This file holds the commands, the rules that fail silently, the traps,
-and where to read more. Detail lives in `docs/` (start at `docs/README.md`), which the MCP server
-also serves to agents.
+knowledge graph, bases (rows drawn as tables, boards, calendars, charts and more), tasks, flashcards,
+drawing, sheets, in-app terminals and AI chat. This file holds the commands, the rules that fail
+silently, the traps, and where to read more. Detail lives in `docs/` (start at `docs/README.md`),
+which the MCP server also serves to agents.
+
+## Terms
+
+Use these words in code comments, docs, UI text and chat; `docs/overview/glossary.md` owns them.
+
+- **Window**: top strip; **sidebar** (toolbar, file tree, mini graph); **tab rail** (toolbar, tabs);
+  a **tab** holds split **panes**; status bar. Sidebar and tab rail are named by role: either can
+  sit on either edge ("left/right sidebar" are aliases only).
+- **Toolbar** (alias: view bar): the bar on top of any region: every pane, the sidebar, the mini
+  graph, the tab rail. A pane's toolbar is `ViewBar`.
+- **A pane shows one file or one page.** A **page** has no file behind it: graph, terminal, chat,
+  daemon, export, feedback (`::` ids).
+- **File types**: note (`.md`), base, **sheet** (`.sheet`, the spreadsheet; not a base), drawing
+  (`.draw`), config file, and previewed files (image, PDF, code file, unsupported). A PDF is not an
+  image; "binary" in code means image or PDF.
+- **Base** is the umbrella. Its **kind**: a **view** (rows from a `source`: notes, tasks, another
+  base) or a **collection** (rows stored in the file). Its **layout** (the `view:` key): row layouts
+  (table, cards, list, bullets, kanban, calendar, map, flashcards) or **charts** (stat, bar, line,
+  heatmap). Calendar and stats are layouts, so each is a base. Never "view kind".
+- **Task**: a checkbox line in a note, or a row of a base in `mode: tasks`. **Query block**: a base
+  written inside a note in a ` ```query ` fence.
 
 ## Workspaces
 
@@ -84,8 +105,8 @@ They override framework habits, and most violations compile, render and pass tes
 - **One button family**: `TextButton`, `IconButton`, `IconTextButton`, `SegmentedToggle`,
   `ChipToggle`. Never a raw `<button>` or `ui/Button` directly (`ui/oneButton.test.ts`).
 - **Variants are props; accept an optional `className`** merged onto the root.
-- **`ViewBar` is the one view header** (graph, bases, calendar, flashcards, chat), with six named
-  slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. A Bases view kind
+- **`ViewBar` is every pane's toolbar** (graph, bases, chat, previews), with six named
+  slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. A base layout
   returns `ViewBarSlots` instead of stacking its own bar. A control drops only when the bar
   cannot hold it, into the bar's `[≡]` panel: opt in with `data-bar-drop` + `data-bar-menu-label`;
   words shorten with `<BarLabel long short drop>` (`ui/barDropLevels.test.ts`).
@@ -130,7 +151,7 @@ They override framework habits, and most violations compile, render and pass tes
 - **Commands and keybindings are pure data in `core/` plus a binding in `app/`**:
   `COMMAND_CATALOG` + `bindCommands`; `KEYBINDING_CATALOG` + `matchesKeybinding`. No key literal in
   an app command path (`keybindingCoverage.test.ts`).
-- **A base has ONE flat view** (`view: <kind>`, keys top-level) and two on-disk forms: a
+- **A base has ONE flat layout** (`view: <layout>`, keys top-level) and two on-disk forms: a
   `<name>.base.jsonl` file (line 1 the config object, one row per line; what new bases use) or a
   `type: base` md file. The format is sniffed from content (`core/src/bases/baseFile.ts`), so
   text-in/text-out code dispatches; anything that lists, routes or names files must handle
@@ -167,7 +188,7 @@ They override framework habits, and most violations compile, render and pass tes
 | to work on | read |
 |---|---|
 | anything, first time | `docs/README.md`, then `docs/overview/architecture.md` |
-| where to add an endpoint, setting, command, keybinding, view kind, token, pane type | `docs/contributing/codebase-map.md` ("Where do I add things?") |
+| where to add an endpoint, setting, command, keybinding, layout, token, page | `docs/contributing/codebase-map.md` ("Where do I add things?") |
 | tests and gates | `docs/contributing/testing.md` |
 | Storybook and `bench/` visual checks | `docs/contributing/visual-checks.md` |
 | HTTP routes | `docs/api/http-reference.md` |

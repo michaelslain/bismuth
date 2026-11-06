@@ -1,6 +1,6 @@
-# Flashcards view
+# The flashcards layout
 
-A flashcards view reviews a base's rows as spaced-repetition cards: each row is one card with a front, a back and three scheduling columns the reviewer fills in. How grades change the schedule (SM-2), and the separate markdown-card syntax, live in [Flashcards and spaced repetition](../../flashcards/srs.md).
+The flashcards layout reviews a base's rows as spaced-repetition cards: each row is one card with a front, a back and three scheduling columns the reviewer fills in. How grades change the schedule (SM-2), and the separate markdown-card syntax, live in [Flashcards and spaced repetition](../../flashcards/srs.md).
 
 ```markdown
 ---
@@ -13,11 +13,11 @@ view: flashcards
   back: house
 ```
 
-The rows sit in the base file's own body, as a YAML list. Both cards are new, so both are due now. Grading one writes `due`, `ease` and `interval` onto its row.
+The base is a collection: its rows sit in the file's body, as a YAML list. Both cards are new, so both are due now. Grading one writes `due`, `ease` and `interval` onto its row.
 
 ## Flashcards config keys
 
-Every key below is a top-level frontmatter key beside `view: flashcards`. Each names a row column; the base settings panel (the gear in the view bar) binds all of them without editing YAML.
+Every key below is a top-level frontmatter key beside `view: flashcards`. Each names a row column; the base settings panel (the gear in the toolbar) binds all of them without editing YAML.
 
 | Key | Type | Allowed values | Default | Effect |
 |---|---|---|---|---|
@@ -39,7 +39,7 @@ A card is due when its due column is missing, empty, or a date on or before toda
 | front → back | `due` | `ease` | `interval` |
 | back → front | `dueBack` | `easeBack` | `intervalBack` |
 
-The companion name always follows the configured name: `dueField: nextReview` gives `nextReviewBack`. Each direction is due on its own, so a row can be due one way and not the other. The view bar shows **front → back** or **back → front** for the card in front of you.
+The companion name always follows the configured name: `dueField: nextReview` gives `nextReviewBack`. Each direction is due on its own, so a row can be due one way and not the other. The toolbar shows **front → back** or **back → front** for the card in front of you.
 
 ## Review a deck
 
@@ -54,13 +54,13 @@ The stage shows one card at a time and a progress meter. Flip the card, then gra
 
 The grade keys work only after the card is flipped. All four are rebindable keybindings (`flashcard-flip`, `flashcard-hard`, `flashcard-good`, `flashcard-easy`); see [Keybindings](../../settings/keybindings.md). The grade buttons show the current key under each label.
 
-A grade moves the card out of the queue straight away and writes its new schedule to the row. The view bar shows your position (`n / total`) and a running **hard**, **good** and **easy** tally. When the queue empties, the stage shows **Deck complete**; **No cards due** means nothing is due today.
+A grade moves the card out of the queue straight away and writes its new schedule to the row. The toolbar shows your position (`n / total`) and a running **hard**, **good** and **easy** tally. When the queue empties, the stage shows **Deck complete**; **No cards due** means nothing is due today.
 
 Your place in a deck (position, tally, cram state) survives switching tabs, but not reloading the app.
 
 ## Cram a deck
 
-Click **cram** in the view bar to review every card regardless of due date. Cram never writes a schedule.
+Click **cram** in the toolbar to review every card regardless of due date. Cram never writes a schedule.
 
 - Cards loop until each one is graded **easy**; **good** and **hard** bring the card back on a later pass.
 - The progress meter and the position count show cards mastered so far.
@@ -79,7 +79,7 @@ Each of the three buttons, and grading, is ignored until the previous edit, rese
 
 ## Manage every card in the deck
 
-Click **cards** in the view bar to open the **edit cards** modal. It has two tabs.
+Click **cards** in the toolbar to open the **edit cards** modal. It has two tabs.
 
 **cards** lists every card with editable front and back cells (markdown preview, raw text while focused). Drag the `#` handle, or use Up and Down on it, to reorder. Each row has reset and delete buttons, and a draft row at the bottom adds a card: Enter in front moves to back, Enter in back adds it. **reset all progress** in the footer resets every card after a second click within four seconds.
 
@@ -100,8 +100,8 @@ The modal saves each edit as you make it and refreshes the review queue when it 
 
 ## Silent failures
 
-- The view grades and edits rows in the base file's own body, addressed by position. A base with a `source:` lists its resolved rows, but a grade or edit then targets the base file's own body instead of the card's note: it fails with "row not found" when the body is empty, or writes a different row when it is not. Keep a deck's cards in the base file.
-- The view ignores the base's `filters`, `sort` and `limit`; every row is a card.
+- The layout grades and edits the rows stored in the base file's body, addressed by position. A view (a base with a `source:`) lists its resolved rows, but a grade or edit then targets the base file's own body instead of the card's note: it fails with "row not found" when the body is empty, or writes a different row when it is not. Keep a deck's cards in the base file.
+- The layout ignores the base's `filters`, `sort` and `limit`; every row is a card.
 - In an embedded ` ```query ` block nothing is written: grades are not saved, and the edit, reset and delete buttons and **cards** are hidden.
 - Cram never saves a schedule. A deck reviewed only in cram is still due afterwards.
 - The `flashcards` tag plays no part here. It only selects notes for markdown cards, described in [Flashcards and spaced repetition](../../flashcards/srs.md).
@@ -114,6 +114,6 @@ The queue is pure and unit-tested in `flashcardsQueue.ts`: `buildQueue` (due fil
 
 Writes go to the base file by row index: a grade is `POST /cards/review` with `file` and `index` (`api.reviewCardRow`, which runs `applyReviewToRow` in `core/src/srs/reviewRow.ts`); edits and resets are `api.rowUpdate`, reset all is `api.rowUpdateMany`, adds are `api.rowCreate`, deletes `api.rowDelete`, reorders `api.rowReorder`. The bulk parser is `parseBulk` in `cardsEdit.ts`.
 
-After an edit, reset or delete the view awaits `onReviewed`, which BaseView wires to `revalidateAfterWrite`: it marks this base's document and rows entries stale (`RowCache.markStale`) before refetching, because the write's SSE version bump can arrive after the write's own response and both caches still count as fresh at the old version until it does. The view's write lock (`writing`) holds edit, reset, delete and grade until that refetch resolves. A delete also shifts the pending-grade overlay with `reindexPendingAfterDelete`, so an in-flight grade keeps hiding the card it graded rather than the row that slid into its index.
+After an edit, reset or delete the layout awaits `onReviewed`, which BaseView wires to `revalidateAfterWrite`: it marks this base's document and rows entries stale (`RowCache.markStale`) before refetching, because the write's SSE version bump can arrive after the write's own response and both caches still count as fresh at the old version until it does. The view's write lock (`writing`) holds edit, reset, delete and grade until that refetch resolves. A delete also shifts the pending-grade overlay with `reindexPendingAfterDelete`, so an in-flight grade keeps hiding the card it graded rather than the row that slid into its index.
 
 Source: `app/src/bases/FlashcardsView.tsx`, `app/src/bases/flashcardsQueue.ts`, `app/src/bases/flashcardsActions.ts`, `app/src/bases/EditCardsModal.tsx`, `app/src/bases/CardsListEditor.tsx`, `app/src/bases/cardsEdit.ts`, `app/src/bases/BaseView.tsx`, `core/src/routes/bases.ts`, `core/src/srs/reviewRow.ts`

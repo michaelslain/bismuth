@@ -2,7 +2,7 @@
 
 Bismuth turns markdown into flashcards and schedules reviews with SM-2, a spaced-repetition algorithm that shows a card again after a longer gap each time you answer well. A note yields cards only if it carries the `flashcards` tag; an untagged note with perfect card syntax yields nothing.
 
-Cards also live as rows of a base shown in the flashcards view, which is how the app reviews them. See [the flashcards view](../bases/views/flashcards.md) for that view's configuration and review screen.
+Cards also live as rows of a base drawn with the flashcards layout, which is how the app reviews them. See [the flashcards layout](../bases/views/flashcards.md) for that layout's configuration and review screen.
 
 ```markdown
 ---
@@ -54,7 +54,7 @@ If a note carries several flashcard tags, all its cards go in the deck of the fi
 
 ## How do I review markdown cards?
 
-Markdown cards are listed and reviewed with the `bismuth card` commands or the `/cards/*` HTTP routes; the app's flashcards view reviews base rows.
+Markdown cards are listed and reviewed with the `bismuth card` commands or the `/cards/*` HTTP routes; the app's flashcards layout reviews base rows.
 
 ```bash
 bismuth card decks --vault ~/vault --pretty
@@ -69,11 +69,11 @@ Cards from notes hidden from agents are left out of agent-run commands; see [vis
 
 ## What does cram mode do?
 
-Cram mode reviews every card in a deck regardless of due date and writes nothing. Toggle it with the CRAM button in the flashcards view. A card graded good or hard comes back later in the session, and the session ends when every card has been graded easy. Cram applies to base-row decks; markdown cards have no cram mode. Details are on the [flashcards view page](../bases/views/flashcards.md).
+Cram mode reviews every card in a deck regardless of due date and writes nothing. Toggle it with the CRAM button in the flashcards layout. A card graded good or hard comes back later in the session, and the session ends when every card has been graded easy. Cram applies to base-row decks; markdown cards have no cram mode. Details are on the [flashcards layout page](../bases/views/flashcards.md).
 
 ## How do base-row cards schedule?
 
-A row in a flashcards base keeps its schedule in its own columns: `due` (a date, empty for a new card), `ease` and `interval`. Grading rewrites those columns on the row and leaves every other column alone. The column names are configurable per view (`dueField`, `easeField`, `intervalField`), as set out on the [flashcards view page](../bases/views/flashcards.md).
+A row in a flashcards base keeps its schedule in its own columns: `due` (a date, empty for a new card), `ease` and `interval`. Grading rewrites those columns on the row and leaves every other column alone. The column names are configurable in the layout's config (`dueField`, `easeField`, `intervalField`), as set out on the [flashcards layout page](../bases/views/flashcards.md).
 
 With `bidirectional: true` each row is reviewed in both directions. The reverse direction schedules in a second set of columns named by adding `Back` to each: `dueBack`, `easeBack`, `intervalBack`. A row `{front: red, back: אדום, due: 2026-05-01, interval: 5, ease: 250}` with an empty `dueBack` shows the reverse as a new card, and grading it moves only the `*Back` columns.
 

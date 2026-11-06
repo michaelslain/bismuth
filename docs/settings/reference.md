@@ -602,7 +602,7 @@ A button without a non-empty `icon`, or with neither `command` nor `commands`, i
 
 ## `tabBar`
 
-The action buttons right of the tab strip, in order. It has the same item shape as `toolbar`.
+The buttons in the tab rail toolbar, in order. It has the same item shape as `toolbar`.
 
 Default:
 

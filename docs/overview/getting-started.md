@@ -64,7 +64,7 @@ The knowledge graph is the home tab: it is the first tab on a fresh start, and B
 2. Find the `Reading list` and `Ideas` nodes with a line between them, plus a tag node for `books`.
 3. Click the `Ideas` node.
 
-You should see the note open as a tab. Press `Z` while hovering a node to focus it, and `Escape` to reset the view. The graph header switches between modes; the 2nd brain mode shows your vault and its tags. [Graph overview](../graph/overview.md) covers the modes and rendering.
+You should see the note open as a tab. Press `Z` while hovering a node to focus it, and `Escape` to reset the view. The graph's toolbar switches between modes; the 2nd brain mode shows your vault and its tags. [Graph overview](../graph/overview.md) covers the modes and rendering.
 
 ## Step 6: Find anything with the switcher
 
@@ -78,7 +78,7 @@ You should land in the chosen note. Notes that match your query light up in the 
 
 ## Step 7: Use tabs and split panes
 
-Every open item lives in a tab, and each tab holds one or more panes. Tabs sit in a vertical rail along a window edge.
+Every open item lives in a tab, and each tab holds one or more panes. A pane shows one file or one page under its toolbar. A page is what a pane shows when no file sits behind it: the graph, a terminal, a chat, the daemon page, export or feedback. Tabs sit in the tab rail along a window edge.
 
 1. Press `Mod+T` for a new tab. A window holds one new tab at a time, so with one already open, `Mod+T` goes to it.
 2. With a note open, press `Mod+D` to split the pane to the right, or `Mod+Shift+D` to split downward.

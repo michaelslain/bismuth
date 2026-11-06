@@ -22,7 +22,7 @@ groupBy: stage
 
 ## How do I label or hide a property?
 
-In the map form, `properties` maps a property name to a definition. Without a `properties` list, a view without `order` shows the union of the rows' own frontmatter keys, which suits a base that reads existing notes.
+In the map form, `properties` maps a property name to a definition. Without a `properties` list, a base without `order` shows the union of the rows' own frontmatter keys, which suits a base that reads existing notes.
 
 ```yaml
 properties:
@@ -35,13 +35,13 @@ properties:
 | Field | Type | Effect |
 |---|---|---|
 | `displayName` | string | Header label for the column. |
-| `hidden` | `true` | Leaves the property out of the automatically derived columns. A view `order:` that lists it still shows it. |
+| `hidden` | `true` | Leaves the property out of the automatically derived columns. An `order:` that lists it still shows it. |
 | `type` | a type string | The property's value type; see [property types](#what-property-types-are-there). |
 | `default` | any non-null value | Seeded onto new cards in the list form; tolerated as metadata here. |
 
 ## How do I declare a base's own fields?
 
-In the list form each entry is a bare name or a map. The list declares the base's property set, so a view without `order:` shows exactly these properties in this order.
+In the list form each entry is a bare name or a map. The list declares the base's property set, so a base without `order:` shows exactly these properties in this order.
 
 ```yaml
 properties:
@@ -72,7 +72,7 @@ A declaration changes these things:
 3. A kanban's add-card action writes every declared writable property that has a `default`, then the values shared by all sibling cards (so the new card matches the base's filter), then the clicked column's group value.
 4. The settings pickers offer declared fields, so a declared field with no data yet can be sorted, grouped or bound straight away.
 
-A declaration shapes display and creation. It is not a validation schema: filters, sorts and groups can still use undeclared properties, and bases that read existing notes keep reflecting the notes' own frontmatter. Calendar and flashcards views use their own field bindings, not declared columns.
+A declaration shapes display and creation. It is not a validation schema: filters, sorts and groups can still use undeclared properties, and bases that read existing notes keep reflecting the notes' own frontmatter. The calendar and flashcards layouts use their own field bindings, not declared columns.
 
 ## What property types are there?
 
@@ -155,19 +155,19 @@ The value appears as the column `formula.total`. It is read-only, and a stray `d
 
 ## Can I edit properties without writing YAML?
 
-Open the base's **Settings** in the view bar. The properties section writes the list form for you, for every view kind. Each declared property is one line with its name, type and visibility; click one to expand its editor (name, type, type-specific extras, default, up and down arrows, delete). **add property** appends an entry, and the eye icon toggles `hidden`. The same panel edits `formulas:` and the rest of the base; see [filters](./filters.md#can-i-edit-filters-without-writing-yaml) and [sources](./sources.md#can-i-edit-the-source-without-writing-yaml). Saving writes only the keys that changed.
+Open the base's **Settings** in the pane's toolbar. The properties section writes the list form for you, for every layout. Each declared property is one line with its name, type and visibility; click one to expand its editor (name, type, type-specific extras, default, up and down arrows, delete). **add property** appends an entry, and the eye icon toggles `hidden`. The same panel edits `formulas:` and the rest of the base; see [filters](./filters.md#can-i-edit-filters-without-writing-yaml) and [sources](./sources.md#can-i-edit-the-source-without-writing-yaml). Saving writes only the keys that changed.
 
 Map-form entries are not shown in the list; adding a row converts the key to list form and replaces the map. For a kanban, this section is also where the board's fields live.
 
 ## How it works
 
-`normalizeProperties` in `core/src/bases/parse.ts` reads both forms. A list sets `BaseConfig.declaredProperties` (names in declaration order); its presence is the flag that the base declares its own set, and the map form never sets it. `parseBasePropertyType` in `core/src/bases/properties.ts` turns `type` and its carriers into a `BasePropertyType`, and `propertyType`, `validatePropertyValue`, `coercePropertyValue`, `declaredDefaults`, `declaredFormulas` and `declaredPropertyKeys` are the helpers views call.
+`normalizeProperties` in `core/src/bases/parse.ts` reads both forms. A list sets `BaseConfig.declaredProperties` (names in declaration order); its presence is the flag that the base declares its own set, and the map form never sets it. `parseBasePropertyType` in `core/src/bases/properties.ts` turns `type` and its carriers into a `BasePropertyType`, and `propertyType`, `validatePropertyValue`, `coercePropertyValue`, `declaredDefaults`, `declaredFormulas` and `declaredPropertyKeys` are the helpers layouts call.
 
 `runView` in `core/src/bases/query.ts` resolves columns from the declaration and merges `declaredFormulas(base)` into `base.formulas` before computing formulas, so a declared formula runs through the same per-row pass as a top-level one. A formula property canonicalizes to a `formula.<name>` id, and every write path treats a `formula.` id as non-writable, which is what makes it read-only.
 
-The kanban card's inline editor (`app/src/bases/KanbanCard.tsx`, `PropertyValueEditor.tsx`, `propertyEdit.ts`) picks its editor from the declared kind:
+The kanban card's inline editor (`app/src/bases/KanbanCard.tsx`, `PropertyValueEditor.tsx`, `propertyEdit.ts`) picks its editor from the declared type:
 
-| Declared kind | Editor |
+| Declared type | Editor |
 |---|---|
 | `text` | single-line input |
 | `markdown` | multiline textarea, rendered as block markdown |

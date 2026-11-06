@@ -1,6 +1,6 @@
 # Make your first base
 
-A base is a file whose config describes a live view of other notes: a table, board, calendar or chart that updates as the notes change. This guide builds a reading list from book notes: you create the base, point it at the right notes, filter, sort and group the rows, check them, then switch the view to cards. It takes about ten minutes and needs a vault with a few notes that carry frontmatter properties.
+A base is a file whose config describes a live display of other notes: a table, board, calendar or chart that updates as the notes change. This guide builds a reading list from book notes: you create the base, point it at the right notes, filter, sort and group the rows, check them, then switch the layout to cards. It takes about ten minutes and needs a vault with a few notes that carry frontmatter properties.
 
 ## What the sample notes look like
 
@@ -34,7 +34,7 @@ The file `Books.base.jsonl` holds one line, the base's config as a JSON object:
 {"type":"base","view":"table","source":"notes where file.hasTag(\"book\")"}
 ```
 
-`type: base` makes the file open as a base instead of text. `view` picks the renderer. `source` says where the rows come from; a base made in the app starts with `source: notes`, which is every note in the vault. The format is described in [bases overview](./overview.md).
+`type: base` makes the file open as a base instead of text. `view` picks the layout. `source` says where the rows come from; a base made in the app starts with `source: notes`, which is every note in the vault. The format is described in [bases overview](./overview.md).
 
 ## 2. Point it at the right notes
 
@@ -46,7 +46,7 @@ bismuth prop set Books.base.jsonl source 'notes where file.hasTag("book")'
 
 `file.hasTag("book")` matches the exact tag `book` (not `book/fiction`), without a `#`. The play drops out of the table. Every later edit in this guide works the same way: `bismuth prop set <file> <key> <value>`, where the value is read as JSON and otherwise as a string. `prop set` changes only line 1 of the file.
 
-You can make the same edit in **Settings** in the view bar, under the **source** section. Both write the same config key.
+You can make the same edit in **Settings** in the pane's toolbar, under the **source** section. Both write the same config key.
 
 ## 3. Add a filter
 
@@ -95,18 +95,18 @@ reading
 
 `Emma` is absent because of the filter. Rows are sorted by rating, highest first, then by name.
 
-## 6. Change the view
+## 6. Change the layout
 
-Change `view` to another kind and the same rows render differently:
+Change `view` to another layout and the same rows render differently:
 
 ```bash
 bismuth prop set Books.base.jsonl view cards
 bismuth prop set Books.base.jsonl cardContent properties
 ```
 
-Each kind reads its own extra keys, so delete the keys the old kind owned (a table's `columnWidths`, for example) when you switch, with `bismuth prop delete Books.base.jsonl columnWidths`. The kinds and their pages are listed in [bases overview](./overview.md#what-view-kinds-are-there).
+Each layout reads its own extra keys, so delete the keys the old layout owned (a table's `columnWidths`, for example) when you switch, with `bismuth prop delete Books.base.jsonl columnWidths`. The layouts and their pages are listed in [bases overview](./overview.md#what-layouts-are-there).
 
-To keep the table and add a card view, make a second base that reads the first one's rows. Create `Book cards.base.jsonl`:
+To keep the table and add a cards layout, make a second base that reads the first one's rows. Create `Book cards.base.jsonl`:
 
 ```bash
 bismuth base create "Book cards" --view cards --source base
@@ -119,7 +119,7 @@ bismuth prop set "Book cards.base.jsonl" cardContent properties
 {"type":"base","view":"cards","source":"base","ref":"[[Books]]","filters":"status != \"to-read\"","cardContent":"properties"}
 ```
 
-A base that references another receives its rows only. Its `filters`, `sort` and `groupBy` do not carry over, so `Book cards` repeats the filter. A base holds exactly one view.
+A base that references another receives its rows only. Its `filters`, `sort` and `groupBy` do not carry over, so `Book cards` repeats the filter. A base holds exactly one layout.
 
 ## 7. Verify the base
 
@@ -131,13 +131,13 @@ bismuth base validate Books
 {"ok":true,"errors":[]}
 ```
 
-The command exits 0 when the base is sound and 1 otherwise. It catches an invalid `view` kind, a `source` that points at a missing base, and filters or formulas that fail to parse. A mistyped view key (`sorrt:`) or an invalid value such as `aggregate: median` is not an error: the key is ignored and the default applies. Run `bismuth base render` and check that the rows are the ones you meant.
+The command exits 0 when the base is sound and 1 otherwise. It catches an invalid `view` value, a `source` that points at a missing base, and filters or formulas that fail to parse. A mistyped layout key (`sorrt:`) or an invalid value such as `aggregate: median` is not an error: the key is ignored and the default applies. Run `bismuth base render` and check that the rows are the ones you meant.
 
 ## Failure modes
 
 - If every note in the vault appears, then `source` is missing or misspelled. An unrecognised `source` falls back to all notes without an error.
 - If no rows appear, then a filter failed to parse and counts as false for every row. Run `bismuth base validate`.
-- If the base renders as a table when you asked for another kind, then `view` is misspelled; the app falls back to `table`. Validate names the bad value.
+- If the base renders as a table when you asked for another layout, then `view` is misspelled; the app falls back to `table`. Validate names the bad value.
 - If a base opens as plain text, then `type: base` is missing from its config: line 1 of a `.base.jsonl` file, or the frontmatter block at the top of a markdown base.
 
 Next, read [sources](./sources.md) to compose bases and scope tasks, and [bases overview](./overview.md) for every top-level key.

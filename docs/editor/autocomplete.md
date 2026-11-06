@@ -164,7 +164,7 @@ Inside a `query` fence, the popup depends on the line:
 | Line so far | Offers |
 |---|---|
 | A partial key with no `:` | The keys `of`, `tasks`, `from`, `where`, `sort`, `view`, `group`, `limit`, each with a one-line help tooltip |
-| `view: ` or `as: ` | Every view kind; the kinds are listed on [Bases overview](../bases/overview.md) |
+| `view: ` or `as: ` | Every layout; the layouts are listed on [Bases overview](../bases/overview.md) |
 | `where: ` | Starter filters such as `!note.resolved`, `note.due == today()`, `note.priority == "high"`, `file.hasTag("book")` |
 | `group: ` | `status`, `priority`, `due`, `scheduled`, `file.folder`, `file.name` |
 | `of: ` or `from: ` with no value | A `[[ ]]` skeleton, then the wikilink popup for base and note names |

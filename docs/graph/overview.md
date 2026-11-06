@@ -1,6 +1,6 @@
 # Knowledge graph
 
-The knowledge graph is Bismuth's home tab: every note, tag and (when the daemon is on) memory in your vault drawn as one map, laid out so linked things sit together. This page is for anyone who wants to read or drive that map, and for engineers who change how it is built, laid out or drawn.
+The knowledge graph is a page (no file sits behind it) and Bismuth's home tab: every note, tag and (when the daemon is on) memory in your vault drawn as one map, laid out so linked things sit together. This page is for anyone who wants to read or drive that map, and for engineers who change how it is built, laid out or drawn.
 
 In the app, a node is a character on a grid, not a dot: `@` for a hub, `o` for a linked note and `.` for a leaf. The same graph is available as JSON from the shell, here for a vault with `Index.md` and `reading/My Note.md`:
 
@@ -23,7 +23,7 @@ The command prints the 2nd-brain graph, plus the memory graph when you pass `--m
 
 The graph is the first tab of every window, and it reopens if you close every tab. Click a node to open that note. Hover a node to dim everything except it and the edges touching it.
 
-The view bar above the graph holds these controls.
+The graph's toolbar holds these controls.
 
 | Control | What it does |
 |---|---|
@@ -51,9 +51,9 @@ Each brain mode has its own layout, so a memory linked to a vault note does not 
 
 ## Show only the open note's neighbourhood
 
-The `local` mode narrows the 2nd-brain graph to the note you have open and every note one link away, in either direction. It is a lens over the sidebar mini-graph, not a fourth switcher segment. Click `local` at the top of the mini-graph to turn it on and click it again to return to the mode you were in.
+The `local` mode narrows the 2nd-brain graph to the note you have open and every note one link away, in either direction. It is a lens over the mini graph in the sidebar, not a fourth switcher segment. Click `local` at the top of the mini graph to turn it on and click it again to return to the mode you were in.
 
-The `graph-local` command (**Graph: Local (open note)**) switches to the same lens. If you promote the mini-graph to a full pane while `local` is on, the pane returns to the mode you were in. With no note open, `local` shows an empty graph.
+The `graph-local` command (**Graph: Local (open note)**) switches to the same lens. If you promote the mini graph to a full pane while `local` is on, the pane returns to the mode you were in. With no note open, `local` shows an empty graph.
 
 ## Zoom, pan and keys
 
@@ -222,7 +222,7 @@ The pure compute is `computeLayoutPair()` in `core/src/layoutCompute.ts`. `core/
 
 ### Renderer
 
-`AsciiGraphRenderer.ts` draws to a plain Canvas 2D context. It is the one renderer behind every host: the full-pane graph, the sidebar mini-graph, the first-run intro and the embedded ` ```graph ` block. Hosts hold it only as the `GraphRenderer` interface in `graphRenderer.ts`. Nodes and labels are glyphs snapped to grid cells, and edges are anti-aliased vector strokes beneath them. In 3D, depth is cued by glyph weight (`glyphTier()` in `asciiGrid.ts`: a far hub drops from `@` to `o`): nodes and edges draw at full alpha at every distance from the camera.
+`AsciiGraphRenderer.ts` draws to a plain Canvas 2D context. It is the one renderer behind every host: the full-pane graph, the mini graph, the first-run intro and the embedded ` ```graph ` block. Hosts hold it only as the `GraphRenderer` interface in `graphRenderer.ts`. Nodes and labels are glyphs snapped to grid cells, and edges are anti-aliased vector strokes beneath them. In 3D, depth is cued by glyph weight (`glyphTier()` in `asciiGrid.ts`: a far hub drops from `@` to `o`): nodes and edges draw at full alpha at every distance from the camera.
 
 `render(g)` computes `structuralGraphSig()` and skips a rebuild when only coordinates changed. On a structural change, `respace.ts`'s `scaleToSpacing()` measures the median nearest-neighbour distance and applies one uniform scale so the cloud hits `RESPACE_TARGET_SPACING` (14). A uniform scale preserves order, and the renderer shares no spacing constants with the backend.
 

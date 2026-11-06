@@ -140,7 +140,7 @@ A `GET /file` for `.settings` first fills in any missing defaults, so a vault th
 
 `POST /set-property`, `/delete-property` and `/set-properties` preserve other keys and comments.
 Deleting a note's last key removes the whole frontmatter block.
-A property write to a base that lists more than one view in `views:` fails with `BASE_VIEWS_FORMAT_ERROR` (`400`) and writes nothing.
+A property write to a base that lists more than one layout in `views:` fails with `BASE_VIEWS_FORMAT_ERROR` (`400`) and writes nothing.
 A write to the `visibility` key also re-gates open chat sessions.
 
 `POST /move` also remaps the cached graph layout positions of the moved note or folder, so a rename does not cold-start the layout.
@@ -633,7 +633,7 @@ A failed upgrade is `400 upgrade failed`; success is the Bun-managed `101`.
 |---|---|---|
 | `GET /chat` | `chatId?`, `rebind?` | The in-app visual chat. |
 | `GET /ui` | `w?` | The per-window app-control channel. |
-| `GET /terminal` | `cols`, `rows`, `termId?` | A terminal tab over a PTY. |
+| `GET /terminal` | `cols`, `rows`, `termId?` | A terminal page over a PTY. |
 
 ### GET /chat
 

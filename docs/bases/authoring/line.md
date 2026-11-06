@@ -1,6 +1,6 @@
 # line
 
-A `line` view draws the series as an ASCII line plot with a y-axis gutter and a least-squares trend. Use it to read a trend over time.
+The `line` layout draws the series as an ASCII line plot with a y-axis gutter and a least-squares trend. Use it to read a trend over time.
 
 ## Working example
 
@@ -34,4 +34,4 @@ bin: week
 - When more points exist than fit the pane, the plot shows only the most recent ones and the readout adds `last K of N`.
 - Values are not shown on hover tooltips; hovering a point updates the readout line above the plot.
 
-Full reference: [docs/bases/views/charts.md](../views/charts.md#line-view)
+Full reference: [docs/bases/views/charts.md](../views/charts.md#line-layout)

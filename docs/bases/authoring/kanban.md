@@ -20,7 +20,7 @@ order: [note.author, description]
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `groupBy` | `{ property, direction? }` or a property string | required | Picks a card's column. Without it the view shows a hint, not a board. |
+| `groupBy` | `{ property, direction? }` or a property string | required | Picks a card's column. Without it the layout shows a hint, not a board. |
 | `columns` | `string[]` | value order | Column order. Every listed value shows as a column even with no cards. |
 | `groupColors` | `Record<value, cssColor>` | auto palette | Per-column colour, hex or `var(--token)`. |
 | `order` | `string[]` | declared `properties:` minus `groupBy` | Properties shown under each card's title. With neither, cards show the title only. |

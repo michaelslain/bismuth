@@ -1,6 +1,6 @@
-# Chart views: bar, line, stat, heatmap
+# The chart layouts: bar, line, stat, heatmap
 
-The four chart view kinds turn a base's rows into an aggregated series: `bar` and `line` plot one value per bucket, `stat` shows big-number tiles, and `heatmap` lays days out on a calendar grid. Every chart is typed on a character grid, not drawn; for how a base and its one view are declared, start with the [Bases overview](../overview.md).
+The four chart layouts (`bar`, `line`, `stat`, `heatmap`) are the **charts**: they summarize a base's rows into numbers or shapes, unlike the row layouts (table, cards, list, bullets, kanban, calendar, map, flashcards), which keep every row a visible, editable item. A chart turns the rows into an aggregated series: `bar` and `line` plot one value per bucket, `stat` shows big-number tiles, and `heatmap` lays days out on a calendar grid. Every chart is typed on a character grid, not drawn; for how a base and its one layout are declared, start with the [Bases overview](../overview.md).
 
 ```yaml
 ---
@@ -16,18 +16,18 @@ bin: week
 
 That base sums the `pages` frontmatter value of every `#reading` note into one bar per week of its `date`.
 
-## Pick a chart kind
+## Pick a chart layout
 
-All four kinds read the same keys and bucket rows the same way; they differ in what they draw.
+All four layouts read the same keys and bucket rows the same way; they differ in what they draw.
 
-| kind | draws | reach for it when |
+| layout | draws | reach for it when |
 |---|---|---|
 | `bar` | one full-width row of `#` fill per bucket, value printed at the right | comparing categories, or a handful of periods |
 | `line` | an ASCII line plot with a y-axis gutter and a least-squares trend | reading a trend over time |
 | `stat` | one tile per metric: the number, a this-period/last-period split, a 12-bin sparkline | headline numbers |
 | `heatmap` | a week-column grid of days, intensity as a glyph, plus streak counts | a daily habit or log |
 
-## Chart config keys shared by every kind
+## Chart config keys shared by every chart layout
 
 A chart reads these keys from the base's frontmatter, beside `view:`. Every key is optional.
 
@@ -76,9 +76,9 @@ An aggregate combines the `y` values that land in one bucket; values that are no
 
 A bucket whose rows have no numeric `y` at all gets `0`.
 
-## Bar view
+## Bar layout
 
-The `bar` view draws one row per bucket across the full width of the pane: the label, a run of `#` fill in the accent colour, a `.` track out to a shared right edge, and the value right-aligned.
+The `bar` layout draws one row per bucket across the full width of the pane: the label, a run of `#` fill in the accent colour, a `.` track out to a shared right edge, and the value right-aligned.
 
 ```yaml
 ---
@@ -95,9 +95,9 @@ A header row names both axes, for example `due (week)` over the labels and `sum 
 - Bar length is the value as a share of the largest value; a negative value draws an empty bar.
 - All bars use one colour. Hovering a row brightens its fill; clicking it marks the label with `>`, dims every other row and opens the [drill list](#see-the-notes-behind-a-bucket).
 
-## Line view
+## Line layout
 
-The `line` view draws the series as an ASCII plot that fills the pane: data points as `o`, connected by `-` `/` `\` `|`, with a y-axis gutter of three ticks (the maximum, the midpoint and `0`) and x labels under the baseline.
+The `line` layout draws the series as an ASCII plot that fills the pane: data points as `o`, connected by `-` `/` `\` `|`, with a y-axis gutter of three ticks (the maximum, the midpoint and `0`) and x labels under the baseline.
 
 ```yaml
 ---
@@ -125,9 +125,9 @@ y(t) = \sum_{n \in B_t} n.\text{priority} \qquad B_t = \{\, n : \operatorname{we
 When `y` is a `formula.*` column, the definition line also shows that formula as math.
 The trend line and its math appear only on a date axis with at least 3 points that do not all share one bucket.
 
-## Stat view
+## Stat layout
 
-The `stat` view shows one tile per metric. Each tile has the number, its label, the current bin against the previous one (`3 this week // 1 last week`, or `today`/`yesterday` for day bins), a 12-bin sparkline (`▁▂▃▄▅▆▇█`) and the metric written as math. The first tile's number is in the accent colour.
+The `stat` layout shows one tile per metric. Each tile has the number, its label, the current bin against the previous one (`3 this week // 1 last week`, or `today`/`yesterday` for day bins), a 12-bin sparkline (`▁▂▃▄▅▆▇█`) and the metric written as math. The first tile's number is in the accent colour.
 
 ```yaml
 ---
@@ -144,10 +144,10 @@ stats:
 ---
 ```
 
-- Without `stats:`, the view shows one tile: `count()` labelled `notes` when the aggregate is `count` or no `y` resolves, otherwise `<aggregate>(<y>)` labelled `<aggregate> of <y>` (`average of` for `avg`).
+- Without `stats:`, the layout shows one tile: `count()` labelled `notes` when the aggregate is `count` or no `y` resolves, otherwise `<aggregate>(<y>)` labelled `<aggregate> of <y>` (`average of` for `avg`).
 - The period split and the sparkline appear only when `x` is a date axis; with a category `x`, tiles show the number, label and math only.
 - The sparkline names its window under the glyphs (`last 12 weeks // Jul 6 – Sep 21`), and hovering a glyph replaces the period line with that bin's value (`week of Sep 14 // 3`).
-- A `stat` view's `bin` defaults to `week`, unlike the other kinds, so the same base with no `bin` buckets differently as a `bar`.
+- A `stat` layout's `bin` defaults to `week`, unlike the other charts, so the same base with no `bin` buckets differently as a `bar`.
 
 ### Write a stat metric
 
@@ -169,9 +169,9 @@ A property name outside an aggregate call, such as a bare `priority`, fails: a m
 `bismuth base validate` only checks that each metric parses, so it passes this mistake; read the `metrics` entry from `bismuth base render` to see it.
 A failing metric affects only its own tile.
 
-## Heatmap view
+## Heatmap layout
 
-The `heatmap` view lays days out GitHub-style: one column per week (Monday at the top), a month label over the column holding each month's 1st, and a glyph per day for its intensity.
+The `heatmap` layout lays days out GitHub-style: one column per week (Monday at the top), a month label over the column holding each month's 1st, and a glyph per day for its intensity.
 
 ```yaml
 ---
@@ -187,10 +187,10 @@ aggregate: sum
   words: 610
 ```
 
-That base owns its rows (it has no `source:`), so clicking a day logs a value straight into the file; no daily notes are needed.
+That base is a collection (it has no `source:`), so clicking a day logs a value straight into the file; no daily notes are needed.
 
-- The grid is always one cell per day: `bin` is ignored and the view bar has no `bin` picker.
-- `x` must be a date column. With a category `x`, or no dated rows yet, the view shows `set an x date column in view settings` and no grid. Bar, line and stat views with nothing to plot show `no matches`.
+- The grid is always one cell per day: `bin` is ignored and the toolbar has no `bin` picker.
+- `x` must be a date column. With a category `x`, or no dated rows yet, the heatmap shows `set an x date column in view settings` and no grid. Bar, line and stat layouts with nothing to plot show `no matches`.
 - The grid shows as many weeks as fit the pane, up to 53, and ends at today or the latest dated row, whichever is later.
 - Under the grid, one line counts days with a value above 0 and the current and longest runs of consecutive days: `18 days logged // current streak 0 days // longest streak 18 days`. The current streak is 0 unless the latest logged day is today or yesterday.
 
@@ -214,7 +214,7 @@ Left-clicking a heatmap day edits it, and what it writes depends on where the ba
 | a notes or tasks source | a numeric `y`, exactly one note that day | opens the number field; saving sets `y` in that note's frontmatter |
 | a notes or tasks source | anything else | opens the drill and says why: `no note on Sep 14`, `2 notes — open one to edit` |
 
-In the number field on an own-rows base, a value on an empty day adds a row with `x` and `y`, a value on a filled day updates that row, and an empty field or `0` deletes it.
+In the number field on a collection, a value on an empty day adds a row with `x` and `y`, a value on a filled day updates that row, and an empty field or `0` deletes it.
 A day that already holds several rows opens the drill with `N entries — edit in the table`.
 A heatmap inside a ```` ```query ```` block has no file to write to, so a click only opens the drill.
 
@@ -225,19 +225,19 @@ At rest the readout gives the chart's caption and its peak, such as `sum of prio
 
 Clicking a bucket opens the drill list: a `<label> // N notes` header with a `[ clear ]` button, then one link per note behind the bucket. Clicking the same bucket again or `[ clear ]` closes it, and the list scrolls past 12 rows.
 
-## Change a chart's axes from the view bar
+## Change a chart's axes from the toolbar
 
-A chart's view bar carries pickers that write straight to the base file's frontmatter: `x`, `y`, `agg` and `bin`.
+A chart's toolbar carries pickers that write straight to the base file's frontmatter: `x`, `y`, `agg` and `bin`.
 
 - Choosing `(count rows)` for `y` deletes the `y` key and sets `aggregate: count`; choosing a column while counting also sets `aggregate: sum`.
-- A `heatmap` has no `bin` picker. A `stat` view with `stats:` shows only `x` and `bin`.
+- A `heatmap` has no `bin` picker. A `stat` layout with `stats:` shows only `x` and `bin`.
 - A chart in a ```` ```query ```` block shows no pickers, because there is no file to write.
 
 The gear's settings panel offers the same columns under **column mapping** (**X axis** and **Value**), plus **aggregate**, **date bucket** (not for a heatmap) and **row limit**, which writes `limit`.
 
 ## Inspect a chart from the CLI
 
-`bismuth base render <path>` returns a chart view's computed series instead of raw rows: a `chart` object with every bucket and the rows behind it, plus `heatmapWeeks` for a heatmap and `metrics` (each tile's value, period split, sparkline and any error) for a stat view.
+`bismuth base render <path>` returns a chart's computed series instead of raw rows: a `chart` object with every bucket and the rows behind it, plus `heatmapWeeks` for a heatmap and `metrics` (each tile's value, period split, sparkline and any error) for a stat view.
 Without a pane width, the CLI's heatmap weeks run from the Monday before the first dated row to the last one.
 
 `bismuth base validate <path>` reports a `stats:` entry that does not parse as `stats[<j>].value: "<expr>" failed to parse — <reason>`.
@@ -246,12 +246,12 @@ Without a pane width, the CLI's heatmap weeks run from the Monday before the fir
 
 `buildChartData(rows, view)` in `core/src/bases/chart.ts` is the one bucketing pass every chart runs: it resolves `x`/`y` (`autoX`/`autoY`, property lookup through `resolveProperty` in `query.ts`), detects a date axis, buckets with `binKey`/`binLabel` from `core/src/dates.ts`, aggregates, and sorts. Each `ChartPoint` carries `rows`, the indices of the rows behind it, which is what the drill list and the heatmap writes use. The resolved `x`, `y`, `aggregate` and `bin` come back on `ChartData` and feed the view bar's fallback values.
 
-The views are `BarView.tsx` (row layout in `barRows.ts`), `LineView.tsx` (plot layout in `asciiLine.ts`), `StatView.tsx` with `StatTiles.tsx`/`StatTile.tsx`/`SparklineChart.tsx`, and `HeatmapView.tsx` with `heatmapLayout.ts` (`heatmapRange`, `levelOf`/`levelEdges`, `legendRanges`, `monthLabels`, `streaks`). `ChartFrame.tsx` lays out the readout, body, footer and drill around each view, measures the body's character grid, and shows the shared empty state. `ChartDrill.tsx` is the drill list.
+The layouts are drawn by `BarView.tsx` (bar rows in `barRows.ts`), `LineView.tsx` (the plot in `asciiLine.ts`), `StatView.tsx` with `StatTiles.tsx`/`StatTile.tsx`/`SparklineChart.tsx`, and `HeatmapView.tsx` with `heatmapLayout.ts` (`heatmapRange`, `levelOf`/`levelEdges`, `legendRanges`, `monthLabels`, `streaks`). `ChartFrame.tsx` lays out the readout, body, footer and drill around each view, measures the body's character grid, and shows the shared empty state. `ChartDrill.tsx` is the drill list.
 
 `HeatmapView` calls `buildChartData` with `bin: 'day'`, then `buildHeatmapWeeks(points, range)` snaps the range to whole Monday–Sunday columns. What a click does is `dayAction` in `heatmapWrites.ts`, and what it writes is `planSetValue`/`planToggle`; `BaseView.tsx` builds the `HeatmapWriteSeam` (origin `base` when the base has no `source:`) and runs the writes with `api.rowCreate`/`rowUpdate`/`rowDelete` or `api.setProperty`.
 
 Stat metrics are `metricResults(rows, view, today)` in `core/src/bases/metrics.ts`; `defaultMetric` synthesizes the fallback tile. Trend fitting is `fitTrend` in `trend.ts`. The math comes from `chartDefinitionLatex`, `trendLatex` and `metricToLatex` in `chartLatex.ts`, rendered by `ui/Tex.tsx`; captions and readouts come from `chartCaption`, `bucketReadout` and `formatValue` in `chartText.ts`.
 
-The view bar's pickers are `ChartConfigBar.tsx`, wired by `BaseView`'s chart config slot to `api.setProperty`/`api.deleteProperty`. The settings panel's chart fields are `ChartFields.tsx` and the `x`/`y` entries of `baseSettingsPlan.ts`. Keys are parsed by `normalizeView` in `parse.ts`. The CLI payloads come from `base render` and `base validate` in `cli/src/commands/base.ts`.
+The toolbar's pickers are `ChartConfigBar.tsx`, wired by `BaseView`'s chart config slot to `api.setProperty`/`api.deleteProperty`. The settings panel's chart fields are `ChartFields.tsx` and the `x`/`y` entries of `baseSettingsPlan.ts`. Keys are parsed by `normalizeView` in `parse.ts`. The CLI payloads come from `base render` and `base validate` in `cli/src/commands/base.ts`.
 
 Source: `core/src/bases/chart.ts`, `core/src/bases/metrics.ts`, `core/src/bases/trend.ts`, `core/src/bases/chartLatex.ts`, `core/src/bases/chartText.ts`, `core/src/bases/parse.ts`, `app/src/bases/BarView.tsx`, `app/src/bases/LineView.tsx`, `app/src/bases/StatView.tsx`, `app/src/bases/HeatmapView.tsx`, `app/src/bases/heatmapLayout.ts`, `app/src/bases/heatmapWrites.ts`, `app/src/bases/ChartFrame.tsx`, `app/src/bases/ChartDrill.tsx`, `app/src/bases/ChartConfigBar.tsx`, `app/src/bases/BaseView.tsx`, `cli/src/commands/base.ts`

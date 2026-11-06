@@ -1,6 +1,6 @@
 # Vault structure
 
-A vault is an ordinary folder on disk that Bismuth reads as your notes: markdown files, plus drawings, spreadsheets, images, PDFs and a few configuration files.
+A vault is an ordinary folder on disk that Bismuth reads as your notes: markdown files, plus bases, drawings, sheets, images, PDFs and a few configuration files.
 There is no database and no index file, so any editor can open the same files.
 Read [Getting started](../overview/getting-started.md) to choose a vault, and [Storage](../overview/storage.md) for what the app keeps outside it.
 
@@ -11,7 +11,7 @@ my-vault/
     Dune.md                 a note in a folder
     cover.png               an image
     cover.png.md            the image's companion note (holds its tags)
-  Budget.sheet              a spreadsheet
+  Budget.sheet              a sheet
   Sketch.draw               a drawing
   .settings                 the vault's configuration
 ```
@@ -23,8 +23,9 @@ Put any of the file types below in a vault, at any depth. The sidebar lists them
 | File | What it is |
 |---|---|
 | `.md` | A note. A note whose frontmatter says `type: base` is a base |
+| `.base.jsonl` | A base: line 1 is its config, each later line a row |
 | `.draw` | A vector drawing |
-| `.sheet` | A spreadsheet |
+| `.sheet` | A sheet, a spreadsheet of free-form cells |
 | `.yaml`, `.yml` | A YAML file, shown beside your notes |
 | `.png` `.jpg` `.jpeg` `.gif` `.webp` `.avif` `.bmp` `.ico` `.svg` `.heic` `.heif` `.tif` `.tiff` | An image |
 | `.pdf` | A PDF |
@@ -40,7 +41,7 @@ The sidebar shows every folder and every file type in the table above, and hides
 
 - Files and folders whose name starts with a dot are hidden, except `.settings`, `.themes` and (when enabled) `.daemon`. That keeps `.trash` and `.git` out of sight.
 - The exports `Sketch.draw.png` and `Sketch.draw.pdf` are hidden, so they never sit beside their drawing.
-- A binary's companion note and ink sidecar are hidden while the binary exists. See the next section.
+- An image's or PDF's companion note and ink sidecar are hidden while the file exists. See the next section.
 - Folders sort before files, and the system entries (`.settings`, `.daemon`) sort last.
 
 The sidebar drops the `.md`, `.yaml` and `.yml` extensions from displayed names and keeps every other extension.
@@ -51,17 +52,27 @@ Inside `.daemon/`, every file is listed whatever its extension, so you can hand-
 
 An image or PDF has no frontmatter of its own, so Bismuth keeps two sidecar files next to it:
 
-- `<file>.md`, the companion note: an ordinary note whose frontmatter holds the binary's `tags`. It is created the first time you edit tags on the binary's preview tab.
+- `<file>.md`, the companion note: an ordinary note whose frontmatter holds the file's `tags`. It is created the first time you edit tags in the file's preview.
 - `<file>.draw`, the ink sidecar: the strokes you draw on the image or PDF. See [Drawing](../drawing/overview.md).
 
-While `<file>` exists, its row in the sidebar stands for all three files, and opening the companion note opens the binary's preview instead.
-If you delete the binary outside the app, the orphaned companion and ink files reappear as normal files.
-Moving, trashing and restoring the binary carries both sidecars with it.
+While `<file>` exists, its row in the sidebar stands for all three files, and opening the companion note opens the image or PDF in the preview instead.
+If you delete the image or PDF outside the app, the orphaned companion and ink files reappear as normal files.
+Moving, trashing and restoring the image or PDF carries both sidecars with it.
 The tagging contract, including the `bismuth prop set` command for agents, is in [Frontmatter](frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs).
+
+## What opens in the preview?
+
+The preview is the read-only surface for files that have no editor of their own. Opening a file in a pane picks it by extension:
+
+- An image shows rendered, SVG included. A PDF shows its pages, and both take ink and tags. A PDF is not an image: it also has highlights, bookmarks, an outline and dark mode ([Drawing](../drawing/overview.md)).
+- A code file such as `.ts`, `.json` or `.py` shows as read-only monospace text.
+- An unsupported file such as `.psd` or `.fig` shows a "preview not available" state with an option to open it in its default app.
+
+The sidebar lists only the file types in the table above, so a code or unsupported file reaches a pane another way, for example `bismuth app open <path>` ([CLI reference](../cli/reference.md)).
 
 ## How do I manage files in the sidebar?
 
-Right-click a row, or use the **+** button at the top of the sidebar, to create a note, folder, base, spreadsheet or drawing. A new entry gets a placeholder name such as `Untitled.md` and opens straight into rename.
+Right-click a row, or use the **+** button at the top of the sidebar, to create a note, folder, base, sheet or drawing. A new entry gets a placeholder name such as `Untitled.md` and opens straight into rename.
 
 Right-clicking a tab that shows a file opens the same menu as that file's sidebar row, including **Export…**, followed by the tab's own actions: **Rename tab…**, **Pin tab** and **Reset name**.
 

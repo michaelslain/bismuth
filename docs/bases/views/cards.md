@@ -1,6 +1,6 @@
-# Cards view
+# The cards layout
 
-The cards view shows each row of a base as a card. It has three faces for a note: a book-cover grid (the default), a Keep-style masonry of live-editable note bodies, and a masonry of live-editable checklists. It suits collections you browse by look, such as books, projects, or notes you edit without opening them. The other [view kinds](../overview.md) show the same rows differently.
+The cards layout shows each row of a base as a card. It has three faces for a note: a book-cover grid (the default), a Keep-style masonry of live-editable note bodies, and a masonry of live-editable checklists. It suits rows you browse by look, such as books, projects, or notes you edit without opening them. The other [layouts](../overview.md) show the same rows differently.
 
 ## Minimal working base
 
@@ -14,11 +14,11 @@ Each card gets a cover from the `cover` property (a URL or a vault image path), 
 
 ## Config keys
 
-All keys sit at the top level of the base's config (line 1 of a `.base.jsonl` file, or the frontmatter of a markdown base). The shared keys `filters`, `source`, `order`, `sort`, `groupBy`, `limit` and `columns` work as in the [table view](table.md#config-keys).
+All keys sit at the top level of the base's config (line 1 of a `.base.jsonl` file, or the frontmatter of a markdown base). The shared keys `filters`, `source`, `order`, `sort`, `groupBy`, `limit` and `columns` work as in the [table layout](table.md#config-keys).
 
 | Key | Type | Allowed values | Default | Effect |
 |---|---|---|---|---|
-| `view` | string | `cards` | none | Selects the cards renderer. |
+| `view` | string | `cards` | none | Picks the cards layout. |
 | `cardContent` | string | `properties`, `body`, `tasks` | `properties` | What a note's card shows: its properties, its whole body, or its checklist. |
 | `image` | property id | any property | none | Property holding the cover image, in properties mode. |
 | `imageFit` | string | `cover`, `contain` | `cover` | CSS `object-fit` of the cover image. |
@@ -69,13 +69,13 @@ Writing a URL directly as `image: "https://..."` looks up a property with that n
 
 A card with no image gets a neutral ground typed over with a sparse field of the app's own glyphs, with the title and author on a cleared band at the foot. The pattern comes from the note's path, so each note keeps its own cover however you sort or filter.
 
-Colour appears only when the view is grouped. Each card's glyphs take its group's hue, by the same rule a kanban column uses, and a `groupColors` entry overrides it. An ungrouped view stays neutral.
+Colour appears only when the base is grouped. Each card's glyphs take its group's hue, by the same rule a kanban column uses, and a `groupColors` entry overrides it. An ungrouped base stays neutral.
 
 ## Open, add, edit and delete cards
 
 - **Click a card.** In a saved base, a click or Enter on an editable card opens the property editor, for a note card and a stored row alike. Right-click does the same. The editor of a note card has an **open note** button.
 - **Read-only blocks.** Where a base cannot be edited, such as an embedded `query` block, a click opens the note in its own tab. A stored row with no note is inert there.
-- **Add a card.** Click **New row** in the view bar (normal mode). A base that owns its rows appends a row to its body; a notes-sourced base creates an `Untitled` note in the base's folder and opens its editor. A toast warns when the base's filters would hide the new card.
+- **Add a card.** Click **New row** in the toolbar (normal mode). A collection appends a row to its body; a notes-sourced base creates an `Untitled` note in the base's folder and opens its editor. A toast warns when the base's filters would hide the new card.
 - **Delete a card.** Use delete in the property editor's footer. A stored row is removed and a note goes to the trash, each with an Undo toast.
 
 ## Body and tasks modes
@@ -95,7 +95,7 @@ Edits autosave after the `editor.autoSaveDelay` setting. If the note changes on 
 
 ## Tasks mode
 
-With `mode: tasks`, each row is a task rendered by the same task row the [list and bullets views](list-bullets.md#tasks-mode-rendering-shared-by-both-views) use. A task card has a checkbox, a description and field chips, with no cover and no open-on-click. Task cards use a narrower grid (minimum 180 px) that `ui.cardGridMinWidth` does not affect.
+With `mode: tasks`, each row is a task rendered by the same task row the [list and bullets layouts](list-bullets.md#tasks-mode-rendering-shared-by-both-layouts) use. A task card has a checkbox, a description and field chips, with no cover and no open-on-click. Task cards use a narrower grid (minimum 180 px) that `ui.cardGridMinWidth` does not affect.
 
 ## Group headers
 

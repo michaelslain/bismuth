@@ -979,7 +979,7 @@ export const SETTINGS_SCHEMA: Schema = {
             { command: 'open-daemon', icon: 'Bot' },
             { command: 'terminal', icon: 'SquareTerminal' },
         ],
-        doc: 'Buttons in the tab bar (right of the tab strip), in order. Same shape as `toolbar`.',
+        doc: 'Buttons in the tab rail toolbar, in order. Same shape as `toolbar`.',
     },
     statusBar: {
         type: {

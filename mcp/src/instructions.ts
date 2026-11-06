@@ -9,8 +9,8 @@
 // terse on purpose.
 export const SERVER_INSTRUCTIONS =
     'EVERY time you create, edit or debug a Bismuth base (a `.base.jsonl` file, a `type: base` note, or a ```query ' +
-    'block), first read bases/authoring.md with bismuth_docs_read, then bases/authoring/<view ' +
-    'kind>.md for the kind you are writing. Converting a vault between Obsidian and Bismuth: ' +
+    'block), first read bases/authoring.md with bismuth_docs_read, then bases/authoring/<layout>.md ' +
+    'for the layout you are writing. Converting a vault between Obsidian and Bismuth: ' +
     'first read guides/converting-obsidian-to-bismuth.md or ' +
     'guides/converting-bismuth-to-obsidian.md. ' +
     'Making or changing a colour theme: first read guides/custom-themes.md. ' +

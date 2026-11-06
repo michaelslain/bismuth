@@ -1,6 +1,6 @@
 # flashcards
 
-A spaced-repetition (SM-2) review screen over a base's rows. Each row stored in the base file's own body is one card.
+A spaced-repetition (SM-2) review screen over a base's rows. The base is a collection: each row stored in the file's body is one card.
 
 ## Working example
 
@@ -35,8 +35,8 @@ The `flashcards` tag is not needed. It only selects notes for markdown cards (se
 
 ## Failure modes
 
-- If the base has a `source:`, the view lists the resolved rows but writes grades and edits to the base file's own body by position: a grade fails with "row not found", or lands on a different row. Keep the cards in the base file's body and leave `source:` out.
-- The view ignores `filters`, `sort` and `limit`. Every row is a card.
+- If the base is a view (it has a `source:`), the layout lists the resolved rows but writes grades and edits to the base file's own body by position: a grade fails with "row not found", or lands on a different row. Keep the cards in the base file's body and leave `source:` out.
+- The layout ignores `filters`, `sort` and `limit`. Every row is a card.
 - In an embedded ` ```query ` block grades are not saved and the editing buttons are hidden. Use a saved base file.
 - Cram never writes a schedule, so a deck reviewed only in cram stays due.
 - A renamed scheduling column renames its companion too: `dueField: nextReview` pairs with `nextReviewBack`.

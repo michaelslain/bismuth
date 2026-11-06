@@ -2,7 +2,7 @@
 
 Bismuth is a local-first knowledge vault: your notes are plain markdown files in a folder you
 choose, with wikilinks, tags and YAML frontmatter, and the app builds a live graph and queryable
-views from them. There is no account, sync service or database. These docs serve three readers:
+bases from them. There is no account, sync service or database. These docs serve three readers:
 people using the app, engineers working on it, and AI agents, which read them through Bismuth's MCP
 server.
 
@@ -37,7 +37,7 @@ bun run build:app
 
 - [Getting started](overview/getting-started.md) — first run: pick a vault, write and link notes, open the graph
 - [Install and run Bismuth](overview/install.md) — install the macOS app, or build and run it from source
-- [Glossary](overview/glossary.md) — one-line definitions of every Bismuth term, linked to its page
+- [Glossary](overview/glossary.md) — the terms everyone uses for the app, the docs and the code, each defined in a line and linked to its page
 - [Troubleshooting](overview/troubleshooting.md) — symptom to fix, for the problems people actually hit
 - [Migrating from an older version](overview/migrating.md) — what an older vault or install contains and what to do
 
@@ -64,17 +64,17 @@ bun run build:app
 - [The graph block](editor/graph-block.md) — a ` ```graph ` fence that renders an editable graph inside a note
 - [Template tokens and daily notes](templates/syntax.md) — `{{date}}`-style tokens, templates, and the daily note
 
-**Bases: queries and views**
+**Bases: queries and layouts**
 
-- [Make your first base](bases/first-base.md) — step by step: a base note, a source, a filter, a view
-- [Bases overview](bases/overview.md) — what a base is, its keys, and the list of view kinds
+- [Make your first base](bases/first-base.md) — step by step: a base note, a source, a filter, a layout
+- [Bases overview](bases/overview.md) — what a base is, its keys, and the list of layouts
 - [Base sources](bases/sources.md) — where rows come from: notes, tasks, or another base
 - [Base filters](bases/filters.md) — `where:` filters, filter trees, and how values count as true
 - [Bases expression syntax](bases/query-syntax.md) — the expression grammar: operators, equality, dates, durations
 - [Bases functions and methods](bases/functions.md) — every built-in function and method, and footer summaries
 - [Base properties](bases/properties.md) — declaring a base's own property set and editors
 - [The query block](bases/query-block.md) — embed a base or a task query inside a note
-- View kinds: [table](bases/views/table.md) · [cards](bases/views/cards.md) · [list and bullets](bases/views/list-bullets.md) · [kanban](bases/views/kanban.md) · [calendar](bases/views/calendar.md) · [flashcards](bases/views/flashcards.md) · [map](bases/views/map.md) · [bar, line, stat, heatmap](bases/views/charts.md)
+- Layouts: [table](bases/views/table.md) · [cards](bases/views/cards.md) · [list and bullets](bases/views/list-bullets.md) · [kanban](bases/views/kanban.md) · [calendar](bases/views/calendar.md) · [flashcards](bases/views/flashcards.md) · [map](bases/views/map.md) · [bar, line, stat, heatmap](bases/views/charts.md)
 
 **Tasks, cards and time**
 
@@ -143,7 +143,7 @@ bun run build:app
 
 Agents read these before acting; the MCP server's instructions name each one.
 
-- [Authoring bases](bases/authoring.md) — read before creating, editing or debugging a base or query block; one page per view kind under `bases/authoring/`
+- [Authoring bases](bases/authoring.md) — read before creating, editing or debugging a base or query block; one page per layout under `bases/authoring/`
 - [Converting an Obsidian vault to Bismuth](guides/converting-obsidian-to-bismuth.md) — with topic pages under `guides/converting-obsidian-to-bismuth/`
 - [Converting a Bismuth vault to Obsidian](guides/converting-bismuth-to-obsidian.md) — with topic pages under `guides/converting-bismuth-to-obsidian/`
 - [Make a custom colour theme](guides/custom-themes.md) — the `.themes/<name>.yaml` format and its validate loop

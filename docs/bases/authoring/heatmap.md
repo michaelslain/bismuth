@@ -1,6 +1,6 @@
 # heatmap
 
-A `heatmap` view lays days out as a week-column grid with one glyph per day for its intensity, plus a streak line. Use it for a daily habit or log; a base that owns its rows lets the reader log a day by clicking it.
+The `heatmap` layout lays days out as a week-column grid with one glyph per day for its intensity, plus a streak line. Use it for a daily habit or log; a collection lets the reader log a day by clicking it.
 
 ## Working example
 
@@ -31,11 +31,11 @@ aggregate: sum
 
 ## Failure modes
 
-- If `x` is not a date column, or the base has no dated rows yet, the view shows `set an x date column in view settings` and no grid, so there is no day to click. Seed a base that owns its rows with one dated row, as in the working example.
+- If `x` is not a date column, or the base has no dated rows yet, the layout shows `set an x date column in view settings` and no grid, so there is no day to click. Seed a collection with one dated row, as in the working example.
 - A `bin:` key is ignored, with no error.
 - Clicking writes only when the target is unambiguous. On a base with a `source:`, a click edits only a day with exactly one note and a numeric `y`, and writes that note's frontmatter; every other day opens the drill list instead.
 - On a base that owns its rows, entering an empty value or `0` deletes that day's row, and a day holding several rows opens the drill list instead of editing.
 - The current streak is 0 unless the latest logged day is today or yesterday; a day with a value of 0 or less breaks a streak.
 - Inside a ```` ```query ```` block the heatmap is read-only.
 
-Full reference: [docs/bases/views/charts.md](../views/charts.md#heatmap-view)
+Full reference: [docs/bases/views/charts.md](../views/charts.md#heatmap-layout)

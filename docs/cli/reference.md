@@ -133,7 +133,7 @@ Run `app windows` for window ids and `app tabs` for tab ids.
 |---|---|---|---|
 | `app windows` | `[--api <url>]` | Lists open windows: id, label, active tab, tab count. | yes |
 | `app tabs` | `[--window <id>]` | Lists the open tabs and panes in a window. | yes |
-| `app open` | `<content> [--new-tab] [--window <id>]` | Opens a vault file of any type (vault-relative path) or a sentinel (`::graph`, `::daemon`, `.settings`, `::term:<uuid>`) in its own tab. A path that names no file exits `1`. | yes |
+| `app open` | `<content> [--new-tab] [--window <id>]` | Opens a vault file of any type (vault-relative path) or a page such as `::graph`, `::daemon` or `::term:<uuid>` in its own tab. `.settings` opens as text in the editor. A path that names no file exits `1`. | yes |
 | `app close` | `<tabId> [--window <id>]` | Closes a tab. | yes |
 | `app focus` | `<tabId> [--window <id>]` | Activates a tab. | yes |
 | `app rename` | `<tabId> <name> [--window <id>]` | Sets a custom tab label. | yes |
@@ -162,19 +162,19 @@ Reads, validates and edits Bases, and resolves a source to rows. A base is a `<n
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
-| `base create` | `<path> --view <kind> [--source <spec>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]` | Creates a base with one view. A path with no `.md` or `.base.jsonl` extension gets `.base.jsonl` appended; an explicit `.md` path writes a markdown base. Fails if the path exists. | no |
+| `base create` | `<path> --view <layout> [--source <spec>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]` | Creates a base with one layout. A path with no `.md` or `.base.jsonl` extension gets `.base.jsonl` appended; an explicit `.md` path writes a markdown base. Fails if the path exists. | no |
 | `base read` | `<path>` | Prints the parsed config and the table rows. | no |
-| `base validate` | `<path>` | Checks view kind, property defaults, sources, filters, formulas and stat expressions. Prints `{ok, errors}` and exits `1` when `ok` is false. | no |
-| `base render` | `<path>` | Resolves the rows and runs the view's grouping, sorting and summaries. Chart kinds (`bar`, `line`, `stat`, `heatmap`) return a computed series. | no |
+| `base validate` | `<path>` | Checks the layout, property defaults, sources, filters, formulas and stat expressions. Prints `{ok, errors}` and exits `1` when `ok` is false. | no |
+| `base render` | `<path>` | Resolves the rows and runs the layout's grouping, sorting and summaries. The charts (`bar`, `line`, `stat`, `heatmap`) return a computed series. | no |
 | `base migrate` | `<basePath> \| --all [--dry-run]` | Converts a markdown base to `<name>.base.jsonl` and moves the `.md` to the vault trash. `--all` converts every markdown base in the vault. `--dry-run` prints the plan and writes nothing. | no |
 | `base migrate-queries` | `[--dry-run]` | Rewrites `query` blocks whose `tasks:` holds Tasks-query text into `tasks:` plus `where:` and `sort:`. | no |
 | `rows` | `[--of '[[Base]]' \| --where EXPR \| --tasks EXPR]` | Resolves one source to rows. Without a selector it returns every note. | no |
-| `row add` | `<basePath> --json '{...}'` | Appends a row to the base's table. | no |
+| `row add` | `<basePath> --json '{...}'` | Appends a row to a collection. | no |
 | `row update` | `<basePath> <index> --json '{...}'` | Replaces the row at a 0-based index. | no |
 | `row delete` | `<basePath> <index>` | Removes the row at an index. | no |
 | `row reorder` | `<basePath> <from> <to>` | Moves a row between indices. | no |
 
-`base create` writes a blank value and lists the key under `missing` when its view needs configuration it was not given: `kanban` needs `--group-by`, `map` needs `--lat` and `--lng`, and `bar`, `line`, `stat` and `heatmap` need `--x`. `source` defaults to `notes`.
+`base create` writes a blank value and lists the key under `missing` when its layout needs configuration it was not given: `kanban` needs `--group-by`, `map` needs `--lat` and `--lng`, and `bar`, `line`, `stat` and `heatmap` need `--x`. `source` defaults to `notes`.
 
 A `<basePath>` or `<path>` argument to `base read`, `base validate`, `base render`, `base migrate`, every `row` command, every `calendar` command and `card review --file` is used as written when it ends in `.md` or `.jsonl`. With no extension it resolves to `<path>.base.jsonl` when that file exists, otherwise to `<path>.md`.
 
@@ -185,7 +185,7 @@ bismuth base migrate Trips.md --dry-run --vault <vault>
 bismuth base migrate --all --vault <vault>
 ```
 
-`base validate` reads the raw config (frontmatter or line 1), because the normal parser silently turns an unknown `view:` into `table`. It also reports a YAML comment that truncated a value (`#` after a space starts a comment inside a plain scalar) and a base that lists more than one view.
+`base validate` reads the raw config (frontmatter or line 1), because the normal parser silently turns an unknown `view:` into `table`. It also reports a YAML comment that truncated a value (`#` after a space starts a comment inside a plain scalar) and a base that lists more than one layout.
 
 A hidden `--of` base answers like a missing one: no rows, no refusal. `base migrate-queries` and `--dry-run` print `{changed, files, unconvertible, degraded, skipped}`; blocks that already carry their own `where:` or `sort:` are left alone and counted under `unconvertible`.
 

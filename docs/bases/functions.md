@@ -109,7 +109,7 @@ title.length                  // 11; a member, no parentheses
 | `a.map(f)`, `a.filter(f)` | list | Projects or keeps elements with a lambda or a property path. |
 | `a.reduce(f, seed?)` | any | A true reduce with a two-parameter lambda; otherwise sums a projection. |
 
-`sort` and `reverse` leave the original untouched. A view's `sort:` key, by contrast, orders numbers numerically and dates chronologically.
+`sort` and `reverse` leave the original untouched. A layout's `sort:` key, by contrast, orders numbers numerically and dates chronologically.
 
 `map`, `filter` and `reduce` take either form:
 
@@ -144,9 +144,9 @@ d.minus("30m")                     // thirty minutes earlier
 
 Duration strings and the `+` and `-` rules for dates are in [expression syntax](./query-syntax.md#how-do-dates-and-durations-work).
 
-## Which summaries can a view show?
+## Which summaries can a layout show?
 
-A view's `summaries:` map asks for a footer aggregate over a column. These are separate from the per-row functions above. The value is computed over the filtered rows before `limit` and shown as text.
+A layout's `summaries:` map asks for a footer aggregate over a column. These are separate from the per-row functions above. The value is computed over the filtered rows before `limit` and shown as text.
 
 ```yaml
 view: table

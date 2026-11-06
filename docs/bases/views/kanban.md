@@ -1,6 +1,6 @@
-# Kanban view
+# The kanban layout
 
-A kanban view shows a base's rows as a board of columns, one column per distinct value of its `groupBy` property. Dragging a card to another column writes that column's value into the card's note; for the other view kinds and the base file format, start at [Bases overview](../overview.md).
+The kanban layout shows a base's rows as a board of columns, one column per distinct value of its `groupBy` property. Dragging a card to another column writes that column's value into the card's note; for the other layouts and the base file format, start at [Bases overview](../overview.md).
 
 ```yaml
 ---
@@ -18,7 +18,7 @@ This board shows four columns in that order, even when one is empty. Each card i
 
 ## Required configuration
 
-A kanban view needs `groupBy`. Without it the view shows a hint instead of a board: *This kanban view needs a "group by" property. Open `Settings` (the gear in the view bar) and set group by.*
+The kanban layout needs `groupBy`. Without it the layout shows a hint instead of a board: *This kanban board needs a "group by" property. Open `Settings` (the gear in the toolbar) and set group by.*
 
 ```yaml
 ---
@@ -34,7 +34,7 @@ Pick a property with a few repeating values (`status`, `stage`, `priority`). Eac
 
 ## Kanban config keys
 
-Every key below is a top-level frontmatter key beside `view: kanban`. The base's `filters`, `source`, `formulas` and `properties` apply as for any view.
+Every key below is a top-level frontmatter key beside `view: kanban`. The base's `filters`, `source`, `formulas` and `properties` apply as for any layout.
 
 | Key | Type | Allowed values | Default | Effect |
 |---|---|---|---|---|
@@ -128,7 +128,7 @@ Accepted types are the image extensions the app recognises (`png`, `jpg`, `jpeg`
 
 ## Show a board as tasks
 
-`mode: tasks` declares that every row is a task. Each card becomes the shared task line: a checkbox, the description as inline markdown, and the priority, date and recurrence chips, exactly as in the [list and bullets views](list-bullets.md).
+`mode: tasks` declares that every row is a task. Each card becomes the shared task line: a checkbox, the description as inline markdown, and the priority, date and recurrence chips, exactly as in the [list and bullets layouts](list-bullets.md).
 
 ```yaml
 ---

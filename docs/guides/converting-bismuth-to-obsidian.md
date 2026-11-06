@@ -7,7 +7,7 @@ Wikilinks, embeds, callouts, math, frontmatter, tags and attachments are the sam
 | Bismuth | Obsidian | Topic page |
 |---|---|---|
 | `.settings`, `.daemon/`, `.trash/` | `.obsidian/*.json`, nothing | `vault-and-settings` |
-| `.base.jsonl` file, or `type: base` markdown note (a flat view, or a `views:` list) | `.base` YAML file (many views) + a note for any prose body of a markdown base | `bases` |
+| `.base.jsonl` file, or `type: base` markdown note (one layout, or a `views:` list) | `.base` YAML file (many Obsidian views) + a note for any prose body of a markdown base | `bases` |
 | bracket task fields `[due 2026-09-14] [high]` | Tasks-plugin emoji `⏫ 📅 2026-09-14` | `tasks` |
 | `::`/`:::` cards, row-card bases | Spaced Repetition plugin cards | `flashcards` |
 | `.draw` files, ` ```draw ` ink fences | PNG pictures, or dropped | `drawings` |
@@ -68,13 +68,13 @@ The excluded paths are not note content. `.settings` becomes `.obsidian/` config
 Find out which features this vault uses, so you read only the topic pages you need. Run these from anywhere; each prints nothing when the feature is absent.
 
 ```bash
-# bases: every type: base note, then how many use each view kind
+# bases: every type: base note, then how many use each layout
 grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$OUT"
 find "$OUT" -name '*.base.jsonl'   # JSONL bases: line 1 is the config, later lines are rows; Obsidian cannot open them
-find "$OUT" -name '*.base.jsonl' -exec head -qn1 {} + | jq -r '.view // "table"' | sort | uniq -c | sort -rn   # view kinds of JSONL bases
+find "$OUT" -name '*.base.jsonl' -exec head -qn1 {} + | jq -r '.view // "table"' | sort | uniq -c | sort -rn   # layouts of JSONL bases
 grep -rhE '^view:' --include='*.md' "$OUT" | sort | uniq -c | sort -rn
 grep -rlE '^views:' --include='*.md' "$OUT"   # multi-entry views: lists: `base read` shows only the first
-grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$SRC" | while read -r f; do echo "== $f"; bismuth base validate "${f#"$SRC"/}" --vault "$SRC"; done   # silent hazards: bad view kind, extra views, #-truncated filters, dangling ref; exit 1 per problem base
+grep -rlE '^type:[[:space:]]*base[[:space:]]*$' --include='*.md' "$SRC" | while read -r f; do echo "== $f"; bismuth base validate "${f#"$SRC"/}" --vault "$SRC"; done   # silent hazards: bad layout, extra views, #-truncated filters, dangling ref; exit 1 per problem base
 grep -rlE '^mode:[[:space:]]*tasks' --include='*.md' "$OUT"   # task bases (a `mode: tasks` base with no source stores its tasks as body rows: `bases` B7)
 grep -rlE '^type:[[:space:]]*base' --include='*.md' "$OUT" | while read -r f; do grep -lE '^```query' "$f"; done   # "bases" that are notes holding a query
 
@@ -118,7 +118,7 @@ For each feature the inventory found, read both sides before writing any convers
 Do the steps in this order; later steps depend on earlier ones.
 
 1. Settings to `.obsidian/` (`vault-and-settings`). They are independent, so do them first so attachments resolve.
-2. Binary side-files and ink: render `.draw` files to PNG and handle ` ```draw ` fences (`drawings`), then settle companion notes (`companion-notes`). Files come before the notes that reference them.
+2. Image and PDF side-files and ink: render `.draw` files to PNG and handle ` ```draw ` fences (`drawings`), then settle companion notes (`companion-notes`). Files come before the notes that reference them.
 3. Bases to `.base` files (`bases`). This comes before step 4, because converted ` ```query ` blocks embed the new `.base` names, and inbound `[[Base]]` links need rewriting.
 4. ` ```query ` blocks to ` ```base ` or ` ```tasks ` (`bases`, `tasks`).
 5. Tasks to emoji (`tasks`). Run the rewrite after bases, so the task-bearing notes you generate get converted too.
@@ -166,15 +166,15 @@ Write `$OUT.conversion-report.md` beside the vault (not inside it) and summarise
   - Tasks (community plugin), if any task lines or ` ```tasks ` blocks were written.
   - Spaced Repetition (community plugin), if any flashcard notes exist, plus the settings changes `flashcards` lists.
   - Maps (an official community plugin), if any `type: map` view was written.
-  - Bases is a core plugin; check the Obsidian version the live docs name for each view type.
+  - Bases is a core plugin; check the Obsidian version the live docs name for each Obsidian view type.
 - The settings the user must apply by hand because no config key could be confirmed.
 
 ## Failure modes
 
 - If two Bismuth tags differ only by case, they merge silently in Obsidian (`#Book` and `#book` are two tags in Bismuth and one in Obsidian). List every case-variant pair in the report; do not rewrite them.
 - If a `.base.jsonl` file is left in `$OUT`, Obsidian shows it as an unopenable file, because it is neither markdown nor an Obsidian `.base`. The `bases` topic page converts each one to a `.base` and deletes the JSONL copy; check (a) below counts any that remain.
-- If a Bismuth base has a multi-entry `views:` list, convert it entry by entry (`bases`, B4). Bases that compose another (`source: base` + `ref`) over the same rows may be folded back into one `.base` with several views, which is optional. The default is one `.base` per Bismuth base, which is always correct.
+- If a Bismuth base has a multi-entry `views:` list, convert it entry by entry (`bases`, B4). Bases that compose another (`source: base` + `ref`) over the same rows may be folded back into one `.base` with several Obsidian views, which is optional. The default is one `.base` per Bismuth base, which is always correct.
 - If a note has ink in a ` ```draw ` fence, Obsidian cannot show it: Obsidian has no stroke format. The fence is stripped (or flattened to a picture of the whole note) and reported.
-- If a base's `ref` names no file, it resolves to zero rows; report it (`bismuth base validate` flags it). The other zero-row trap is a base that spells `source: base` with no `ref:`: `base render` and `rows --of` return nothing for it, though it has body rows. Read a body-row base's rows with `base read` (`bases`).
+- If a base's `ref` names no file, it resolves to zero rows; report it (`bismuth base validate` flags it). The other zero-row trap is a base that spells `source: base` with no `ref:`: `base render` and `rows --of` return nothing for it, though it has body rows. Read a collection's rows with `base read` (`bases`).
 - If daemon memory is copied, it may hold content derived from `hidden` notes: visibility is applied when memory is read, not when it is written. Copy memory only on request, and honour every `visibility` rule (`other-features`).
 - If a note is `visibility: hidden` or `chat-only`, Obsidian treats it as an ordinary note and the copy includes it. The report lists every `hidden` and `chat-only` note so the user can delete them from `$OUT` before handing the vault to anyone.

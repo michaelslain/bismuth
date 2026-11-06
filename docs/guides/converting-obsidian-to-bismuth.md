@@ -110,7 +110,7 @@ Write `$OUT.conversion-report.md` and summarise it to the user, with these secti
 
 - Inventory: the step 2 counts.
 - Converted: what changed, per step, with paths.
-- Lossy: each item with its path, including dropped base view names, dropped task query lines, and links rewritten by hand.
+- Lossy: each item with its path, including dropped Obsidian view names, dropped task query lines, and links rewritten by hand.
 - Defaults taken: every choice made without asking, for example migrating emoji tasks with no Tasks plugin.
 - Left as-is: plugin syntax, and features the vault uses that nothing converted.
 - Source disagreements: where a live source differed from a topic page.
@@ -118,8 +118,8 @@ Write `$OUT.conversion-report.md` and summarise it to the user, with these secti
 ## Failure modes
 
 - If a base filters on `#x`, it matches nothing. The tag filter is `file.hasTag("x")`, and tags are case-sensitive in Bismuth (`#Foo` is not `#foo`).
-- If an Obsidian base has several views, only the first becomes the base. A Bismuth base has one view; each extra view becomes its own `source: base` + `ref` base with its filters restated, because only rows carry over.
+- If an Obsidian base has several views (Obsidian's word for its named renderings), only the first becomes the base. A Bismuth base has one layout; each extra Obsidian view becomes its own `source: base` + `ref` base, a Bismuth view, with its filters restated, because only rows carry over.
 - If a base is left as a `.base` file, Bismuth never reads it. A base is a `<Name>.md` note with `type: base`, and a ` ```base ` fence becomes a ` ```query ` fence. Bismuth renders no ` ```tasks ` fence.
-- If a binary's tags are written to a `<file>.md` that embeds the binary, that note is a duplicate. Tags for a binary live in its companion note `<file>.<ext>.md` (`photo.png.md`).
+- If an image or PDF's tags are written to a `<file>.md` that embeds the file, that note is a duplicate. Tags for an image or PDF live in its companion note `<file>.<ext>.md` (`photo.png.md`).
 - If a ` ```query ` fence has no `source:`, it renders empty. A source-less base note with no body rows resolves to every vault note (in the app, in `base render`, and through a `ref`), but write `source: notes` in every converted base so the scope is explicit.
 - If a filter calls an unknown function, `base validate` still passes and the function evaluates to nothing. Check function names against `docs/bases/functions.md`.

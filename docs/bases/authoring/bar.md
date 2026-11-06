@@ -1,6 +1,6 @@
 # bar
 
-A `bar` view draws one full-width row of `#` fill per bucket, with the value printed at the right. Use it to compare categories or a handful of periods.
+The `bar` layout draws one full-width row of `#` fill per bucket, with the value printed at the right. Use it to compare categories or a handful of periods.
 
 ## Working example
 
@@ -35,4 +35,4 @@ bin: week
 - On a date axis, a row with an empty or non-date `x` is skipped, not charted as zero.
 - A negative value draws an empty bar.
 
-Full reference: [docs/bases/views/charts.md](../views/charts.md#bar-view)
+Full reference: [docs/bases/views/charts.md](../views/charts.md#bar-layout)

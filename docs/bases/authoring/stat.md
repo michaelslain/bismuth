@@ -1,6 +1,6 @@
 # stat
 
-A `stat` view shows one tile per metric: the number, a this-period/last-period split, a 12-bin sparkline and the metric as math. Declare the tiles with `stats:`, or let the view build one tile from `x`/`y`/`aggregate`.
+The `stat` layout shows one tile per metric: the number, a this-period/last-period split, a 12-bin sparkline and the metric as math. Declare the tiles with `stats:`, or let the layout build one tile from `x`/`y`/`aggregate`.
 
 ## Working example
 
@@ -36,8 +36,8 @@ A metric expression uses the aggregates `count()`, `count(<expr>)`, `sum(<expr>)
 
 - If a metric names a property outside an aggregate call (a bare `priority`), the tile shows `—` and `cannot read: priority must be inside sum, avg, min, max or count`. `bismuth base validate` only checks that the metric parses, so it passes; run `bismuth base render <path>` and read `metrics` to see the error.
 - If `x` is not a date column, every tile silently drops its period split and sparkline.
-- Without `stats:`, the view shows exactly one tile: `count()` labelled `notes` when the aggregate is `count` or no `y` resolves, else `<aggregate>(<y>)`.
-- `bin` defaults to `week` here but to `day` in `bar`/`line`, so the same base buckets differently across kinds; set `bin` explicitly.
+- Without `stats:`, the layout shows exactly one tile: `count()` labelled `notes` when the aggregate is `count` or no `y` resolves, else `<aggregate>(<y>)`.
+- `bin` defaults to `week` here but to `day` in `bar`/`line`, so the same base buckets differently across charts; set `bin` explicitly.
 - A failing metric affects only its own tile; the other tiles still render.
 
-Full reference: [docs/bases/views/charts.md](../views/charts.md#stat-view)
+Full reference: [docs/bases/views/charts.md](../views/charts.md#stat-layout)
