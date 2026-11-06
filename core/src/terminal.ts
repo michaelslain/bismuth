@@ -13,6 +13,7 @@ import {
 export { HOST_CLAUDE_SESSION_VARS }
 import { BACKEND_LIST } from './agentBackends/catalog'
 import { prune as relayPrune } from './relay'
+import { agentShellEnv } from './agentEnvFile'
 
 export interface Session {
     id: string
@@ -303,6 +304,10 @@ export interface PtyEnvParams {
      * otherwise an empty dir would be added to PATH for no reason.
      */
     wrapperShimDir?: string
+    /** CLAUDE_ENV_FILE and its companions (core/src/agentEnvFile.ts agentShellEnv), so a `claude`
+     *  typed in the tab keeps `bismuth` on its Bash tool's PATH. Built by the caller, since it writes
+     *  the env file and this builder is pure. */
+    agentEnv?: Record<string, string>
 }
 
 /**
@@ -352,6 +357,7 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
     // is the gate (recall/collect hooks + memory MCP tools no-op without it). The caller only
     // sets memoryDir when settings.daemon.enabled, so "off" simply omits it.
     if (p.memoryDir) env.BISMUTH_MEMORY_DIR = p.memoryDir
+    if (p.agentEnv) Object.assign(env, p.agentEnv)
     // Deliberately NOT stamped here: BISMUTH_AGENT_CHANNEL (core/src/visibilityCliGate.ts's
     // CLI-dispatch gate). A terminal tab is the OWNER's own interactive shell — the same threat model
     // that keeps visibility from restricting "your own interactive terminal Claude sessions"
@@ -437,6 +443,7 @@ function spawnSession(opts: SpawnOpts): Session {
         memoryDir: opts.memoryDir,
         shimSpecs: SHIM_SPECS,
         wrapperShimDir: WRAPPER_SHIM_DIR,
+        agentEnv: agentShellEnv(process.env),
     })
 
     const pty = spawnPty(shell, loginShellArgs(), {

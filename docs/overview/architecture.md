@@ -25,7 +25,7 @@ Each workspace is a directory in the root `package.json` `workspaces` list.
 | `app/` | `@bismuth/app` | Tauri shell plus a Solid and Vite single-page app: editor, graph, panes, bases |
 | `cli/` | `@bismuth/cli` | The `bismuth` binary; most commands call core functions directly with no server running |
 | `relay/` | `@bismuth/relay` | A Claude Code plugin of hook scripts that report terminal sessions to core and fetch memory |
-| `mcp/` | `@bismuth/mcp` | A stdio MCP server that serves `docs/` and the `bismuth` CLI to agents |
+| `mcp/` | `@bismuth/mcp` | A stdio MCP server, a thin adapter over the `bismuth` CLI: `bismuth_cli` plus the memory tools |
 | `memory/` | `@bismuth/memory` | The pure 3rd-brain memory graph: note CRUD, backlinks, keyword search, query language |
 | `daemon/` | `@bismuth/daemon` | One machine process that runs every enabled vault's memory, crons, processes and session |
 
@@ -68,7 +68,7 @@ Settings are one hidden, extensionless YAML file at the vault root, `.settings`,
 Three channels reach an agent:
 
 - **Terminal tabs** run the user's own `claude` through a shell shim that loads the relay plugin, so each session and subagent reports to core's in-process relay registry. The registry feeds `bismuth relay list` and the chat view's subagent tracking, and when the daemon is enabled the hooks also recall memory and collect transcripts. It lives only while core runs.
-- **MCP** is a stdio server. The relay plugin's `.mcp.json` auto-attaches it to those sessions, and the bundled app installs it machine-wide. It serves the docs and the CLI in token-frugal slices; vault features go through the `bismuth_cli` tool, which runs the `bismuth` binary. See [MCP server](../mcp/overview.md).
+- **MCP** is a stdio server and a thin adapter: the `bismuth` CLI owns every feature. An agent with a shell runs `bismuth …` (Bismuth puts the CLI on the PATH of every Claude Code session it starts); a host with no shell calls the `bismuth_cli` tool, which runs the same binary. Inside a daemon-enabled vault the server also lists the memory tools. The relay plugin's `.mcp.json` auto-attaches it to terminal sessions, and the bundled app installs it machine-wide. See [MCP server](../mcp/overview.md).
 - **Chat** runs a long-lived agent session per chat over a provider seam that supports several backends. See [Chat](../chat/overview.md).
 
 The agent guides (writing a base, converting a vault between Obsidian and Bismuth, making a theme) are ordinary `docs/` pages. The MCP server's instructions, which a client reads before its first tool call, tell an agent which page to read before each task, so every backend gets the same trigger through one channel.
@@ -85,7 +85,7 @@ Storybook mounts individual components with the real theme tokens and an in-memo
 - **app**: `app/scripts/dev.ts` starts core and Vite together and mints the token; `app/src/api.ts` resolves the backend URL and the token; `app/src/index.tsx` code-splits between `App` and the first-run intro. On first run the bundled shell sets `window.__BISMUTH_FIRST_RUN__` and starts no backend.
 - **cli**: `cli/src/registry.ts` merges the command groups and `cli/src/index.ts` dispatches them; `cli/src/commands/api.ts` is the passthrough for server-only routes.
 - **relay**: `relay/hooks/hooks.json` declares the hooks; each script in `relay/bin/` posts to `/relay/*` and no-ops without `CLAUDE_TERMINAL_ID`. The registry is `core/src/relay.ts`.
-- **mcp**: `mcp/src/server.ts` (tools), `mcp/src/docs.ts` (index, search, read), `mcp/src/cli.ts` (CLI bridge), `mcp/src/instructions.ts` (`SERVER_INSTRUCTIONS`).
+- **mcp**: `mcp/src/server.ts` (tools), `mcp/src/cli.ts` (the `bismuth_cli` bridge), `mcp/src/memory.ts` (memory tools), `mcp/src/docs.ts` (docs index, search and read, which `bismuth docs` calls), `mcp/src/instructions.ts` (`SERVER_INSTRUCTIONS`).
 - **settings**: `core/src/schema/settingsSchema.ts` (schema), `core/src/settings.ts` (`reconcileSettings`, `setSettingInFile`), `app/src/settings.ts` (store), `app/src/settingsCssVars.ts` (projection onto `:root`).
 
 Source: `package.json`, `core/package.json`, `core/src/server.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/community.ts`, `core/src/relay.ts`, `core/src/visibilityCliGate.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `cli/src/registry.ts`, `relay/hooks/hooks.json`, `mcp/src/server.ts`, `mcp/src/instructions.ts`, `app/scripts/dev.ts`, `app/src/api.ts`, `app/src/index.tsx`, `app/src/settings.ts`

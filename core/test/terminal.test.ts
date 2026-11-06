@@ -46,6 +46,16 @@ const ENV_BASE = {
     zdotDir: '/repo/relay/shim/zdotdir',
 }
 
+test('buildPtyEnv carries the agent env, so a claude typed in the tab keeps bismuth on its Bash PATH', () => {
+    const env = buildPtyEnv({
+        ...ENV_BASE,
+        realClaude: null,
+        agentEnv: { CLAUDE_ENV_FILE: '/home/.bismuth/agent-env.sh' },
+    })
+    expect(env.CLAUDE_ENV_FILE).toBe('/home/.bismuth/agent-env.sh')
+    expect('CLAUDE_ENV_FILE' in buildPtyEnv({ ...ENV_BASE, realClaude: null })).toBe(false)
+})
+
 test('buildPtyEnv points ZDOTDIR at the zsh init dir whenever the shim is available', () => {
     expect(
         buildPtyEnv({ ...ENV_BASE, realClaude: '/usr/local/bin/claude' })

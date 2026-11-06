@@ -21,11 +21,11 @@ The conversion is lossy because Bismuth has more kinds of thing than Obsidian. N
 - Write to `<source>-obsidian` next to the source. If that folder already exists, stop and ask; never merge into it.
 - Treat the topic pages as procedure plus pointers, not a copy of either format. Both Bismuth and Obsidian (and its plugins) change, so a claim in a topic page is a lead to confirm in step 3. A claim marked unverified has not been checked against Obsidian itself: confirm it or leave the feature out and report it. When a topic page and a live source disagree, the live source wins.
 - Read Bismuth docs in this order:
-  1. `bismuth_docs_read` with `path` set to the cited path minus `docs/`, for example `docs/bases/overview.md` becomes `{path: "bases/overview.md"}`. An optional `section` takes a heading.
+  1. `bismuth docs read <page>` with the cited path minus `docs/`, for example `docs/bases/overview.md` becomes `bismuth docs read bases/overview.md`. `--section <heading>` returns one section. With no shell, call the MCP tool `bismuth_cli` with the same arguments.
   2. The file `~/.bismuth/docs/<path>` on a machine with the Bismuth app.
   3. `docs/<path>` in a Bismuth checkout.
 
-  `bismuth_docs_search {query}` finds a page by keyword, and `bismuth <group> --help` lists commands.
+  `bismuth docs search <words>` finds a page by keyword, and `bismuth <group> --help` lists commands.
 - Obsidian docs live at <https://help.obsidian.md> (Bases, properties, tags, templates, daily notes). The Tasks plugin docs are at <https://publish.obsidian.md/tasks/Introduction> and the Spaced Repetition plugin docs at <https://stephenmwangi.com/obsidian-spaced-repetition/>. Each topic page lists its exact pages.
 - The Bismuth CLI has no export-to-Obsidian command. It reads only: `tree`, `base read`, `base render`, `rows`, `task list`, `card all`, `render`, `export`, `settings get`, `graph`. You do the rewriting with `sed`, `grep`, `find` and small `bun` scripts; the topic pages give exact, tested ones where it matters.
 - Needs: `bun` (1.2.21 or later), `jq`, `rsync`, `perl`, and `bismuth` (otherwise `~/.bismuth/bin/bismuth`). Check with the line below, which must print a version and `{ a: 1 }`. Without bun, port the scripts to `node`.
@@ -34,7 +34,7 @@ The conversion is lossy because Bismuth has more kinds of thing than Obsidian. N
   ```
 - The Bismuth CLI is headless (no server needed): `bismuth <command> --vault "$SRC"`. Output is JSON, and `jq` is handy. If `bismuth` refuses with a visibility message, run it from the owner's own shell.
 
-Each topic page is `guides/converting-bismuth-to-obsidian/<topic>.md`. Read one with `bismuth_docs_read {path: "guides/converting-bismuth-to-obsidian/<topic>.md"}`, or open the file directly:
+Each topic page is `guides/converting-bismuth-to-obsidian/<topic>.md`. Read one with `bismuth docs read guides/converting-bismuth-to-obsidian/<topic>.md`, or open the file directly:
 [vault-and-settings](converting-bismuth-to-obsidian/vault-and-settings.md) · [bases](converting-bismuth-to-obsidian/bases.md) · [tasks](converting-bismuth-to-obsidian/tasks.md) · [flashcards](converting-bismuth-to-obsidian/flashcards.md) · [drawings](converting-bismuth-to-obsidian/drawings.md) · [companion-notes](converting-bismuth-to-obsidian/companion-notes.md) · [other-features](converting-bismuth-to-obsidian/other-features.md)
 
 ## Workflow

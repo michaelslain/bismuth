@@ -28,9 +28,9 @@
 //
 // The hole this half closes: `bismuth read Private/secret.md` (or, worse, `bismuth api GET
 // '/file?path=Private/secret.md'`) returns a hidden note's contents verbatim when run as a Bash
-// subprocess — a calling convention `disallowedTools: ["mcp__bismuth__bismuth_cli"]` cannot touch,
-// because that SDK setting only blocks the MCP *tool*, not the same binary invoked as a plain
-// subprocess, and Bash is deliberately never disallowed (the daemon needs `bismuth checkpoint`).
+// subprocess. No tool-level setting can block that: Bash is deliberately never disallowed (the
+// daemon needs `bismuth checkpoint`, and agents reach Bismuth through its CLI). This gate is why the
+// chat and the daemon leave both `bash` and the `bismuth_cli` MCP tool enabled in a restricted vault.
 //
 // Design notes (unchanged from this file's original spike — restated because they explain choices
 // a "simplify this" pass might otherwise undo):
@@ -74,6 +74,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { realpathLoose } from './realPath'
 import { readRunRecords } from './runRegistry'
+import { findVaultRoot } from './findVaultRoot'
 import {
     buildDenyPaths,
     findDeniedEntry,
@@ -668,6 +669,9 @@ function candidateRoots(
     env: Record<string, string | undefined>,
 ): string[] {
     const all = [argFlag(args, 'dir'), argFlag(args, 'vault'), env.BISMUTH_VAULT]
+    // No root named: the CLI falls back to the vault the working directory sits in
+    // (cli/src/args.ts optionalVault), so the gate checks that same vault.
+    if (!all.some(Boolean)) all.push(findVaultRoot(process.cwd()) ?? undefined)
     // HTTP-routed groups reach whichever registered core `call()` resolves, with the owner token —
     // so every running core's vault is gated, not only the one argv/env names.
     if (HTTP_COMMANDS.has((args[0] ?? '').toLowerCase()))

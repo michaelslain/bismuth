@@ -6,10 +6,9 @@ installed, and pending vault migrations, and `--fix` repairs them. Run it when t
 is missing after an update, or when the daemon will not start; [troubleshooting](troubleshooting.md)
 maps other symptoms to fixes.
 
-It is one engine with four surfaces, so they never disagree:
+It is one engine behind every surface, so they never disagree:
 
-- the CLI: `bismuth doctor`
-- the MCP tool `bismuth_doctor`, which runs that same CLI command
+- the CLI: `bismuth doctor`, which an agent runs in its shell or through the `bismuth_cli` MCP tool
 - two core routes, `GET /doctor` and `POST /doctor/fix` ([HTTP reference](../api/http-reference.md))
 - the app's launch toast, and a boot pass that applies the safe repairs
 
@@ -69,7 +68,7 @@ legacy.claude-bot-home // delete /Users/you/.claude-bot // backup 3f9c2ab in /Us
 
 A run with a vault logs to that vault; a run without one (the boot pass with no vault, or the CLI
 without `--vault`) logs to every vault Bismuth has registered. A vault whose daemon has never run
-has no log, so it gets no event. The MCP twin is `daemon_logs` with `kind: "doctor"`. A dry run, and a
+has no log, so it gets no event. A dry run, and a
 repair that `--only` or `--safe-only` left out, logs nothing.
 
 ## Restore what a destructive repair removed

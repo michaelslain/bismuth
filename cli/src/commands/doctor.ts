@@ -1,6 +1,6 @@
 // Doctor command for the `bismuth` CLI — the ONE entry point for "is this machine (and this vault)
-// in the state the current build expects?". All logic lives in core/src/doctor/; the MCP's
-// bismuth_doctor tool bridges this exact command, so the two never drift.
+// in the state the current build expects?". All logic lives in core/src/doctor/; an agent reaches it
+// through its shell or the MCP's `bismuth_cli`, both of which run this command.
 //
 // AGENT MODE. The visibility gate classes `doctor` always-safe (it never prints a note body), which
 // leaves two things for the command itself to hold: an agent must not be able to apply DESTRUCTIVE

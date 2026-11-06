@@ -725,7 +725,7 @@ describe('toolCallInput', () => {
     })
 
     test('an EMPTY rawInput contributes nothing, and on its own yields no empty-object chip', () => {
-        // A real goose `bismuth_docs_list` call sends exactly this — the tool takes no arguments.
+        // A real goose call to a tool with no arguments sends exactly this.
         expect(
             toolCallInput({
                 title: 'bismuth: bismuth docs list',

@@ -8,6 +8,7 @@ import { isOwner } from '../lib/owner.ts'
 import { whichClaude } from '../lib/claudeWhich.ts'
 import { augmentPath } from '../lib/childEnv.ts'
 import { withoutHostClaudeSession } from '../../../core/src/claudeWhich.ts'
+import { agentShellEnv } from '../../../core/src/agentEnvFile.ts'
 import {
     buildDenyPaths,
     buildManagedSettingsDeny,
@@ -250,6 +251,10 @@ export function buildQueryOptions(
             ...withoutHostClaudeSession(process.env),
             BISMUTH_MEMORY_DIR: ctx.memoryDir,
             PATH: augmentPath(process.env.PATH),
+            // PATH alone does not reach the Bash tool: Claude Code swaps in the login shell's PATH.
+            // CLAUDE_ENV_FILE puts the CLI back, and BISMUTH_VAULT aims a flagless `bismuth` and the
+            // visibility gate at this vault (core/src/agentEnvFile.ts).
+            ...agentShellEnv(process.env, ctx.root),
             ...(tools.cli ? { BISMUTH_CLI: tools.cli } : {}),
             // The signal core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell this daemon
             // session's OWN Bash-tool `bismuth` invocations from the vault owner's (unstamped) ones. This
@@ -366,12 +371,11 @@ export function buildQueryOptions(
                 denyRead: buildSandboxDenyPaths(denyEntries, ctx.root),
             },
         }
-        // When ANY file is restricted, hard-disable the bismuth_cli MCP tool (its `file read` can
-        // target any vault, escaping the managedSettings deny) AND Grep/Glob (an unscoped whole-vault
-        // scan returns a hidden file's lines — the daemon has no canUseTool second layer, so an
-        // outright disable is the only reliable gate). An UNrestricted vault keeps bismuth_cli so the
-        // daemon can drive app-control / create pages; a restricted vault trades that for the gate.
-        options.disallowedTools = ['mcp__bismuth__bismuth_cli', 'Grep', 'Glob']
+        // When ANY file is restricted, hard-disable Grep/Glob: an unscoped whole-vault scan returns a
+        // hidden file's lines, and the daemon has no canUseTool second layer, so an outright disable is
+        // the only reliable gate. The bismuth_cli MCP tool stays: it runs through the same visibility
+        // gate as `bismuth` in the session's own Bash (core/src/visibilityCliGate.ts gateCliArgs).
+        options.disallowedTools = ['Grep', 'Glob']
     }
 
     return options

@@ -32,7 +32,7 @@ Rules that apply to the file as a whole:
 
 ## Steps to create a theme
 
-Run these from the shell with `--vault <dir>`, or with `BISMUTH_VAULT` set. Through MCP, call `bismuth_cli` with one CLI token per array element, for example `{"args": ["theme","create","dusk","--from","paper","--label","Dusk"]}`.
+Run these from the shell inside the vault, with `--vault <dir>`, or with `BISMUTH_VAULT` set. Through MCP, call `bismuth_cli` with one CLI token per array element, for example `{"args": ["theme","create","dusk","--from","paper","--label","Dusk"]}`.
 
 1. Scaffold from the built-in closest to the look you want:
    ```bash

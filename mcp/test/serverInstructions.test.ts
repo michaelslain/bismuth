@@ -22,9 +22,18 @@ import { server } from '../src/server'
 // read the PDF page by page, saw no marks (they live in the .draw sidecar) and said there were none.
 // Raised 350 → 380 for the app open pointer: asked to open a textbook, a chat grepped the shell's
 // `bismuth --help`, found the CLI was not on its PATH, and only then reached `app open`.
+// Raised 380 → 460 for the lead paragraph naming the CLI as the way in: chats searched for MCP tools
+// that were not there, then ran the app binary inside Bismuth.app and opened a second window.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(380)
+    expect(words).toBeLessThan(460)
+})
+
+test('SERVER_INSTRUCTIONS leads with the CLI as the way in, and bismuth_cli for a host with no shell', () => {
+    expect(SERVER_INSTRUCTIONS.startsWith('Bismuth is driven by its `bismuth` CLI')).toBe(true)
+    expect(SERVER_INSTRUCTIONS).toContain('bismuth --help')
+    expect(SERVER_INSTRUCTIONS).toContain('call bismuth_cli with the same arguments')
+    expect(SERVER_INSTRUCTIONS).toContain('Never run anything inside Bismuth.app')
 })
 
 test('SERVER_INSTRUCTIONS sends open-a-file requests to bismuth app open', () => {
@@ -48,8 +57,8 @@ test('SERVER_INSTRUCTIONS answers "what is hidden from AI" with the deny-list co
     expect(SERVER_INSTRUCTIONS).toContain('vault/visibility.md')
 })
 
-test('SERVER_INSTRUCTIONS sends a misbehaving install to bismuth_doctor first', () => {
-    expect(SERVER_INSTRUCTIONS).toContain('run bismuth_doctor first')
+test('SERVER_INSTRUCTIONS sends a misbehaving install to bismuth doctor first', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('run `bismuth doctor` first')
 })
 
 test('SERVER_INSTRUCTIONS tells an agent to read the bases guide every time it touches a base', () => {
@@ -83,7 +92,7 @@ test('SERVER_INSTRUCTIONS points an agent at the companion note instead of a new
 
 test('SERVER_INSTRUCTIONS names the ink sidecar and points at the frontmatter doc for more', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/<file>\.<ext>\.draw/)
-    expect(SERVER_INSTRUCTIONS).toContain('bismuth_docs_read')
+    expect(SERVER_INSTRUCTIONS).toContain('bismuth docs read')
     expect(SERVER_INSTRUCTIONS).toContain('vault/frontmatter.md')
 })
 

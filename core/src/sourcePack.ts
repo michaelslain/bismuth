@@ -35,7 +35,7 @@ function render(h: SourceHit, vault: string): string {
         case 'chat':
             return `- ${h.date ? `${defang(h.date)} — ` : ''}"${excerptOf(h)}" (open: \`bismuth history show ${id}\`)`
         case 'docs':
-            return `- ${id}${h.title ? ` — ${defang(h.title.replace(/\s+/g, ' ').trim())}` : ''} (read: \`bismuth_docs_read ${id}\`)`
+            return `- ${id}${h.title ? ` — ${defang(h.title.replace(/\s+/g, ' ').trim())}` : ''} (read: \`bismuth docs read ${id}\`)`
         default: {
             const label = h.kind === 'pdf' && h.page ? `pdf, page ${h.page}` : h.kind
             return `## ${id} (${label})\nPath: ${defang(join(vault, h.id))}\n${excerptOf(h)}`

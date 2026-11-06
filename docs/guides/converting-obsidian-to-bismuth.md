@@ -10,12 +10,12 @@ Wikilinks, embeds, tags, frontmatter, callouts, math and `::` flashcards work un
 - Look formats up before converting. Both Bismuth and Obsidian (and its plugins) change, so the tables in the topic pages under `guides/converting-obsidian-to-bismuth/` orient you and the live sources win.
 - Apply only the rewrites the topic pages specify. Never edit a note's own content to make a check pass. A validation failure caused by the note itself (a typo, a stray `[[`) goes in the report's Lossy section as a known item, and the check stays failing for that item.
 - Read Bismuth docs (cited below as `docs/<path>.md`) in this order:
-  1. The `bismuth_docs_read` MCP tool, with `path` set to the page without the `docs/` prefix, for example `{path: "bases/overview.md"}`. An optional `section` heading returns one section.
+  1. `bismuth docs read <page>`, with the page path minus the `docs/` prefix, for example `bismuth docs read bases/overview.md`. `--section <heading>` returns one section. With no shell, call the MCP tool `bismuth_cli` with the same arguments.
   2. The file `~/.bismuth/docs/<path>.md`.
   3. `docs/<path>.md` in a Bismuth checkout.
 
-  `bismuth_docs_search {query}` finds a page by keyword, and `bismuth --help` lists every CLI command.
-- Read a topic page the same way: each `<name>.md` cited below is `guides/converting-obsidian-to-bismuth/<name>.md`, for example `bismuth_docs_read {path: "guides/converting-obsidian-to-bismuth/tasks.md"}`.
+  `bismuth docs search <words>` finds a page by keyword, and `bismuth --help` lists every CLI command.
+- Read a topic page the same way: each `<name>.md` cited below is `guides/converting-obsidian-to-bismuth/<name>.md`, for example `bismuth docs read guides/converting-obsidian-to-bismuth/tasks.md`.
 - Every command below takes `--vault "$OUT"`; add `--pretty` to read the JSON. From a checkout, run the CLI as `bun run cli/src/index.ts`. On an installed machine `bismuth` may not be on PATH; the binary is at `~/.bismuth/bin/bismuth`.
 
 ## Workflow

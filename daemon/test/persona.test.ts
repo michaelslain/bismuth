@@ -10,6 +10,7 @@ import {
 } from '../src/daemon/persona.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 import { BACKEND_LIST } from '../../core/src/agentBackends/catalog.ts'
+import { AGENT_CLI_NOTE } from '../../core/src/agentCliNote.ts'
 
 async function withIdentity(
     content: string | null,
@@ -28,18 +29,26 @@ async function withIdentity(
 test('persona uses the identity.md body under a You are <name> prefix', async () => {
     await withIdentity('---\nname: Atlas\n---\nBe terse.\n', async ctx => {
         expect(await buildDaemonPersona(ctx, [])).toBe(
-            'You are Atlas.\n\nBe terse.',
+            `You are Atlas.\n\nBe terse.\n\n${AGENT_CLI_NOTE}`,
         )
     })
 })
 
 test('persona falls back to the default identity when identity.md is absent or empty', async () => {
-    const want = `You are Atlas.\n\n${DEFAULT_DAEMON_IDENTITY}`
+    const want = `You are Atlas.\n\n${DEFAULT_DAEMON_IDENTITY}\n\n${AGENT_CLI_NOTE}`
     await withIdentity(null, async ctx => {
         expect(await buildDaemonPersona(ctx, [])).toBe(want)
     })
     await withIdentity('---\nname: Atlas\n---\n\n', async ctx => {
         expect(await buildDaemonPersona(ctx, [])).toBe(want)
+    })
+})
+
+test('persona tells the session the bismuth CLI is its way into Bismuth, right after the identity', async () => {
+    await withIdentity('Be terse.\n', async ctx => {
+        const out = await buildDaemonPersona(ctx, [], async () => null)
+        expect(out).toContain('`bismuth --help`')
+        expect(out.indexOf('Be terse.')).toBeLessThan(out.indexOf(AGENT_CLI_NOTE))
     })
 })
 
@@ -82,7 +91,7 @@ test('persona appends the daemon brain after identity and the restricted list', 
 
 test('a brain that throws or returns null leaves the persona exactly as before', async () => {
     await withIdentity('Be terse.\n', async ctx => {
-        const want = 'You are Atlas.\n\nBe terse.'
+        const want = `You are Atlas.\n\nBe terse.\n\n${AGENT_CLI_NOTE}`
         expect(await buildDaemonPersona(ctx, [], async () => null)).toBe(want)
         const orig = console.error
         console.error = () => {}

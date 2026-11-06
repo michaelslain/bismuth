@@ -11,14 +11,26 @@ export interface CliResult {
     code: number
 }
 
-const DEFAULT_TIMEOUT_MS = 30_000
+const DEFAULT_TIMEOUT_MS = 120_000
+/** OCR and PDF conversion run Marker's models over every page: minutes on a long file. */
+export const LONG_TIMEOUT_MS = 30 * 60_000
+const LONG_COMMANDS = new Set(['ocr', 'pdf'])
+
+/** PURE: how long a `bismuth_cli` call with these args may run before it is killed. */
+export function cliTimeoutMs(args: string[]): number {
+    return LONG_COMMANDS.has((args[0] ?? '').toLowerCase())
+        ? LONG_TIMEOUT_MS
+        : DEFAULT_TIMEOUT_MS
+}
 
 /**
  * Run the bismuth CLI. In a machine-wide install, BISMUTH_CLI points at the compiled
  * `bismuth` binary (no Bun/repo on disk), so we exec it directly; otherwise fall back to
  * `bun run <repoRoot>/cli/src/index.ts` (the dev repo). Inherits process.env (so
- * BISMUTH_VAULT/BISMUTH_MEMORY carry through). On timeout the child is killed and the result has
- * code -1 plus a stderr note. Never throws.
+ * BISMUTH_VAULT/BISMUTH_MEMORY carry through) and this server's working directory, which is the
+ * agent session's, so a flagless command resolves the vault the agent sits in, the same root the
+ * gate above checked. On timeout the child is killed and the result has code -1 plus a stderr
+ * note. Never throws.
  */
 export async function runCli(
     repoRoot: string,
@@ -38,7 +50,7 @@ export async function runCli(
         }
     }
 
-    const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    const timeoutMs = opts?.timeoutMs ?? cliTimeoutMs(args)
     const cliBin = process.env.BISMUTH_CLI
     const cmd = cliBin
         ? [cliBin, ...args]
@@ -46,13 +58,14 @@ export async function runCli(
 
     try {
         const proc = Bun.spawn(cmd, {
-            cwd: opts?.cwd ?? repoRoot,
+            cwd: opts?.cwd ?? process.cwd(),
             // Anything this server spawns is an agent's hand: stamp BISMUTH_MCP_CHANNEL so the CLI
             // (doctor's isAgent) never mistakes it for the owner. Unset means some agent, the
             // same default as mcpChannel(); a spawner that declared a channel keeps it.
             env: {
                 ...process.env,
-                BISMUTH_MCP_CHANNEL: process.env.BISMUTH_MCP_CHANNEL || 'daemon',
+                BISMUTH_MCP_CHANNEL:
+                    process.env.BISMUTH_MCP_CHANNEL || 'daemon',
             },
             stdin: 'ignore',
             stdout: 'pipe',
@@ -93,8 +106,7 @@ export async function runCli(
 
 /**
  * Format a CliResult into the single text blob the MCP tools return: stdout, then stderr,
- * then a `[exit N]` marker on failure. Shared by the `bismuth_cli` tool and the daemon tools
- * so their output shape stays identical. Falls back to "(no output)" when everything is empty.
+ * then a `[exit N]` marker on failure. Used by the `bismuth_cli` tool. Falls back to "(no output)" when everything is empty.
  */
 export function formatCliResult(r: CliResult): string {
     let text = r.stdout ?? ''
@@ -110,7 +122,7 @@ export function formatCliResult(r: CliResult): string {
 /**
  * Wrap a CLI result as an MCP tool result. `isError` is what an agent's control flow reads — a
  * non-zero exit (including a visibility refusal, which exits 1) MUST set it, or the agent treats
- * a refusal as a successful no-op. Mirrors runDaemonTool's contract in daemon.ts.
+ * a refusal as a successful no-op.
  */
 export function cliToolResult(r: CliResult): {
     content: { type: 'text'; text: string }[]
@@ -120,44 +132,4 @@ export function cliToolResult(r: CliResult): {
         content: [{ type: 'text', text: formatCliResult(r) }],
         isError: r.code !== 0,
     }
-}
-
-/**
- * Discriminated result of fetching CLI help text. `ok` is explicit rather than inferred from
- * content, because the failure path itself returns non-empty text ("bismuth CLI help is
- * unavailable.") — a length check on `text` can never distinguish success from failure. Callers
- * (server.ts) must read `ok`, not the text, to decide `isError`.
- */
-export interface CliHelpResult {
-    text: string
-    ok: boolean
-}
-
-/**
- * Fetch the CLI's own help text. For a group, tries `<group> --help` — the CLI (cli/src/index.ts)
- * recognizes an unmatched first word that PREFIXES one or more registered commands (e.g. `task`
- * prefixing `task list`/`task toggle`/…) followed by `--help`/`-h` and prints only that group's
- * entries, exit 0. This is the actual token-frugal path: it's what makes `group` on the MCP
- * `bismuth_cli_help` tool return a short, scoped listing instead of the full registry. Falls back
- * to the global `--help` (which the CLI also prints on `--help`/`-h`/`help`/no args) when the
- * group scoping fails for any reason — an unknown group, or the CLI exiting non-zero/empty for
- * some other cause — so the tool still returns something useful. Returns trimmed stdout with
- * `ok: true`, or a short message with `ok: false` on total failure (e.g. the CLI can't be spawned
- * at all).
- */
-export async function cliHelp(
-    repoRoot: string,
-    group?: string,
-): Promise<CliHelpResult> {
-    if (group) {
-        const scoped = await runCli(repoRoot, [group, '--help'])
-        const out = scoped.stdout.trim()
-        if (scoped.code === 0 && out) return { text: out, ok: true }
-    }
-
-    const global = await runCli(repoRoot, ['--help'])
-    const out = global.stdout.trim()
-    if (out) return { text: out, ok: true }
-
-    return { text: 'bismuth CLI help is unavailable.', ok: false }
 }

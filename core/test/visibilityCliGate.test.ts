@@ -19,9 +19,9 @@ import { doctorAgentOptions } from '../../cli/src/commands/doctor'
 // The hole this gate closes, restated so a future reader knows what not to "simplify" away:
 // `bismuth read Private/secret.md` returns a hidden note verbatim, whether run through the
 // `bismuth_cli` MCP tool (gateCliArgs) OR as a bare Bash subprocess with no MCP layer at all
-// (gateCliInvocation, hooked at the CLI's own dispatch point). Claude sessions were protected by
-// the SDK-specific `disallowedTools: ["mcp__bismuth__bismuth_cli"]`, which touches only the MCP
-// calling convention — Bash is deliberately never disallowed (the daemon needs `bismuth checkpoint`).
+// (gateCliInvocation, hooked at the CLI's own dispatch point). No SDK tool setting can stand in for
+// it: Bash is deliberately never disallowed (agents reach Bismuth through the CLI), so the gate is
+// the one control for both calling conventions.
 
 const RESTRICTED = [
     { rel: 'Private/secret.md', abs: '/vaults/v/Private/secret.md' },
@@ -419,6 +419,27 @@ describe("gateCliInvocation (the CLI's own dispatch-point gate)", () => {
         writeFileSync(join(root, 'open.md'), 'ordinary\n')
         return root
     }
+
+    test('no --vault, --dir or BISMUTH_VAULT: the vault the working directory sits in is gated, as the CLI resolves it', async () => {
+        const root = makeVault()
+        writeFileSync(join(root, '.settings'), 'daemon:\n    enabled: false\n')
+        const sub = join(root, 'Private')
+        const origCwd = process.cwd()
+        try {
+            process.chdir(sub)
+            const hidden = await gateCliInvocation(['read', 'Private/secret.md'], {
+                BISMUTH_AGENT_CHANNEL: 'chat',
+            })
+            expect(hidden.allowed).toBe(false)
+            expect(hidden.reason).toContain('Private/secret.md')
+            const open = await gateCliInvocation(['read', 'open.md'], {
+                BISMUTH_AGENT_CHANNEL: 'chat',
+            })
+            expect(open.allowed).toBe(true)
+        } finally {
+            process.chdir(origCwd)
+        }
+    })
 
     test("BISMUTH_AGENT_CHANNEL unset — the OWNER's own hand — reads a hidden note straight through", async () => {
         const root = makeVault()

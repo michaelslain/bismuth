@@ -238,19 +238,24 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
  * The content Codex's AGENTS.md-managed block carries (see ../../agentBackends/agentsMd.ts) —
  * exported so core/test/agentBackends/agentsMd.test.ts can assert on it directly rather than
  * re-deriving it. This managed block is a channel Codex reliably reads, so it repeats the MCP
- * server instructions' guide triggers (mcp/src/instructions.ts): the bases authoring guide and the
- * two Obsidian conversion guides, all served by `bismuth_docs_read`.
+ * server instructions' lead and guide triggers (mcp/src/instructions.ts): the `bismuth` CLI as the
+ * way in, the bases authoring guide and the two Obsidian conversion guides, all read with
+ * `bismuth docs read`.
  */
 export const CODEX_AGENTS_MD_CONTENT = [
     'This is a Bismuth-managed vault: a personal knowledge base of markdown notes linked with',
     "[[wikilinks]] and #tags. Treat it as the user's second brain — read existing notes before",
     'creating new ones, and prefer linking to an existing note over duplicating its content.',
     '',
-    '**Every time you create, edit or debug a Bismuth base** (a `.base.jsonl` file whose first line is the `type: base` config; older markdown `type: base` notes still read; or a ```query block),',
-    'first call the `bismuth_docs_read` MCP tool with `{path: "bases/authoring.md"}`, then',
-    '`{path: "bases/authoring/<layout>.md"}` for the layout you are writing.',
+    'The `bismuth` CLI does everything Bismuth does (tasks, bases, search, memory, the running app).',
+    'Run it in your shell; `bismuth --help` lists every command and `bismuth docs search <words>`',
+    'finds the docs.',
     '',
-    '**Converting a vault between Obsidian and Bismuth?** First read `{path: "guides/converting-obsidian-to-bismuth.md"}` or `{path: "guides/converting-bismuth-to-obsidian.md"}` via `bismuth_docs_read`.',
+    '**Every time you create, edit or debug a Bismuth base** (a `.base.jsonl` file whose first line is the `type: base` config; older markdown `type: base` notes still read; or a ```query block),',
+    'first run `bismuth docs read bases/authoring.md`, then `bismuth docs read',
+    'bases/authoring/<layout>.md` for the layout you are writing.',
+    '',
+    '**Converting a vault between Obsidian and Bismuth?** First run `bismuth docs read guides/converting-obsidian-to-bismuth.md` or `bismuth docs read guides/converting-bismuth-to-obsidian.md`.',
 ].join('\n')
 
 /**

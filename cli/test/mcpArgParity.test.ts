@@ -1,14 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import {
-    ALL_TOOLS,
-    vaultMapCliArgs,
-    doctorCliArgs,
-    ocrCliArgs,
-    pdfToMarkdownCliArgs,
-    type ToolDef,
-} from '../../mcp/src/server'
+import { ALL_TOOLS, type ToolDef } from '../../mcp/src/server'
 import { CLI_TWINS, ARG_EXCEPTIONS } from '../../mcp/src/cliTwins'
-import { daemonCliArgs, isDaemonTool } from '../../mcp/src/daemon'
 import { registry } from '../src/registry'
 import type { FlagDecl } from '../src/types'
 import { scanRun } from './commandArgScan'
@@ -159,15 +151,10 @@ describe('mcp <=> cli argument parity', () => {
 
     // The audits above compare declarations. This one runs the mcp side's argv builder, so a param
     // the schema offers but the builder drops (or a flag it invents) fails too.
-    const MAPPERS: Record<string, (a: Record<string, unknown>) => string[]> = {
-        vault_map: vaultMapCliArgs,
-        bismuth_doctor: doctorCliArgs,
-        ocr: a => ocrCliArgs(a, '/v'),
-        pdf_to_markdown: a => pdfToMarkdownCliArgs(a, '/v'),
-    }
-    for (const [tool] of twins) if (isDaemonTool(tool)) MAPPERS[tool] = a => daemonCliArgs(tool, a, '/v')
+    // A named tool that spawns its twin registers its argv builder here; none does today.
+    const MAPPERS: Record<string, (a: Record<string, unknown>) => string[]> = {}
     /** Tools that call the same function as their CLI twin instead of spawning it; there is no argv to check. */
-    const IN_PROCESS = ['bismuth_docs_list', 'bismuth_docs_search', 'bismuth_docs_read', 'brain', 'remember', 'recall', 'forget']
+    const IN_PROCESS = ['remember', 'recall', 'forget']
 
     const sample = (p: Param, i = 0): unknown => {
         if (p.enum) return p.enum[0]

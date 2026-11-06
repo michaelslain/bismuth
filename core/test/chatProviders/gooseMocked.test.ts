@@ -54,7 +54,7 @@ if (!HAS_GOOSE) {
  * side effect of the desktop app having installed its machine-wide tools at least once
  * (`core/src/bismuthInstall.ts`), NOT something this test file can create for itself (that binary
  * is a real compiled artifact, not a stub). Without it, `goose` would never learn about a
- * "bismuth__bismuth_docs_list" tool at all (confirmed live in this task's own research — see
+ * "bismuth__bismuth_cli" tool at all (confirmed live in this task's own research — see
  * gooseToolUse test below), so the tool-call fixture couldn't be driven meaningfully. A missing
  * install here is a missing-PRECONDITION skip, same spirit as HAS_GOOSE's missing-BINARY skip —
  * never a missing-account skip.
@@ -185,24 +185,22 @@ describeOrSkip(
          * through Bismuth's own production driver, using `core/test/fixtures/llm/tool-call.json`'s
          * `response.toolCalls` + a `match.toolCallId` follow-up (aimock's own tool-call fixture shape).
          *
-         * WHY `bismuth__bismuth_docs_list` OF ALL TOOLS: `goose acp` is spawned with no `--with-builtin`
+         * WHY `bismuth__bismuth_cli` WITH `docs list`: `goose acp` is spawned with no `--with-builtin`
          * extension (`chatProviders/acp/agents.ts`'s goose entry is plain `["acp"]`), so it registers NO
          * tools at all UNLESS `session/new`'s `mcpServers` gives it one — and `buildMcpServers()`
          * (driver.ts) only does that when `~/.bismuth/bin/bismuth-mcp` exists (HAS_BISMUTH_MCP above).
-         * `bismuth_docs_list` is read-only (lists doc pages; see mcp/src/server.ts) — the only tool this
-         * test could drive that is both REAL (goose actually declares and executes it, not a name it
-         * invents) and safe to actually execute for real (no writes, no shell, no network).
+         * `bismuth_cli` is the MCP server's one always-listed tool, and `docs list` is read-only (lists
+         * doc pages) — REAL (goose actually declares and executes it, not a name it invents) and safe to
+         * execute for real (no writes, no network).
          *
          * REAL DIVERGENCE FOUND HERE, FIXED SINCE: a real goose ACP `tool_call` update carries `rawInput`
          * (ACP's OWN spec'd field for the tool's structured arguments — populated live here as
-         * `rawInput:{}` since bismuth_docs_list takes none, and as the REAL query object for a tool that
-         * takes arguments, e.g. `rawInput:{"query":"gcal"}` for bismuth_docs_search), and
+         * the REAL arguments object, e.g. `rawInput:{"args":["docs","list"]}` for this call), and
          * `chatProviders/acp/protocol.ts`'s `toolCallInput()` could not see it — its parameter type
          * declared only `title`/`kind`, so callers handed it the whole update and the arguments were
          * dropped, leaving every ACP tool chip showing a JSON restatement of its own heading. It now
          * merges `rawInput`; see its doc for the precedence rule and acpProtocol.test.ts for the
-         * assertions pinning it. This test's own call is the zero-argument case (`rawInput:{}`), so its
-         * frames are unchanged by that fix.
+         * assertions pinning it.
          *
          * Also observed live, NOT a divergence (both are spec-legal — ACP's `kind` is optional, and this
          * one real agent simply never sends it): goose's own `tool_call` notification never carries a
@@ -210,7 +208,7 @@ describeOrSkip(
          * branch of Task 2's `kind`-optional design, distinct from the fake-agent test's populated case.
          */
         test.if(HAS_BISMUTH_MCP)(
-            'a real goose ACP tool call (bismuth__bismuth_docs_list, a genuine Bismuth MCP tool) yields tool-use then tool-result with equal ids, then completes normally',
+            'a real goose ACP tool call (bismuth__bismuth_cli docs list, a genuine Bismuth MCP tool) yields tool-use then tool-result with equal ids, then completes normally',
             async () => {
                 await setup()
 
@@ -260,9 +258,9 @@ describeOrSkip(
                 expect(toolUse.kind).toBeUndefined()
 
                 expect(toolResult.isError).toBe(false)
-                // The real MCP tool's real output — bismuth_docs_list against an EMPTY cwd (no docs there)
-                // returns an empty JSON array, verbatim, as the tool_call_update's content text.
-                expect(toolResult.content).toBe('[]')
+                // The real MCP tool's real output — `bismuth docs list`'s JSON array of doc pages,
+                // verbatim, as the tool_call_update's content text.
+                expect(toolResult.content.trimStart().startsWith('[')).toBe(true)
 
                 // Ordering: tool-result strictly after tool-use, result strictly after tool-result, done after
                 // result — same three-part ordering discipline as the fake-agent half's test.

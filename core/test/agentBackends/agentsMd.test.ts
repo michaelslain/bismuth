@@ -76,7 +76,7 @@ describe('upsertAgentsMdBlock (pure)', () => {
 })
 
 describe("Codex's composed AGENTS.md content points at the docs guides", () => {
-    test('names every guide page and the bismuth_docs_read tool', () => {
+    test('names every guide page, the bismuth CLI and bismuth docs read', () => {
         expect(CODEX_AGENTS_MD_CONTENT).toContain('bases/authoring.md')
         expect(CODEX_AGENTS_MD_CONTENT).toContain(
             'guides/converting-obsidian-to-bismuth.md',
@@ -84,7 +84,9 @@ describe("Codex's composed AGENTS.md content points at the docs guides", () => {
         expect(CODEX_AGENTS_MD_CONTENT).toContain(
             'guides/converting-bismuth-to-obsidian.md',
         )
-        expect(CODEX_AGENTS_MD_CONTENT).toContain('bismuth_docs_read')
+        expect(CODEX_AGENTS_MD_CONTENT).toContain('bismuth docs read')
+        expect(CODEX_AGENTS_MD_CONTENT).toContain('bismuth --help')
+        expect(CODEX_AGENTS_MD_CONTENT).not.toContain('bismuth_docs_read')
         expect(CODEX_AGENTS_MD_CONTENT).not.toContain('bismuth_skill')
     })
 

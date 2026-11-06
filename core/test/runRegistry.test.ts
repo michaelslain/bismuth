@@ -15,6 +15,7 @@ import {
     writeRunRecord,
     readRunRecords,
     deleteRunRecord,
+    releaseRunRecord,
     resolveRunRegistryBase,
     runKey,
     runRecordPath,
@@ -278,4 +279,42 @@ test('two vaults stay distinct under spelling normalisation', () => {
         rmSync(a, { recursive: true, force: true })
         rmSync(b, { recursive: true, force: true })
     }
+})
+
+// Two cores on one vault: the app's own, and a second one (the app binary run with arguments, a dev
+// server, a test). The second overwrote the first's record; its exit must not leave the first, still
+// running, unreachable.
+test('an exiting core leaves a record a newer core wrote since', () => {
+    const vault = '/vaults/shared'
+    writeRunRecord({ port: 1111, vault, pid: process.pid })
+    const sleeper = Bun.spawn(['sleep', '30'])
+    try {
+        writeFileSync(runRecordPath(vault), JSON.stringify({ port: 2222, vault, pid: sleeper.pid }))
+        releaseRunRecord(vault, process.pid)
+        expect(JSON.parse(readFileSync(runRecordPath(vault), 'utf8')).port).toBe(2222)
+    } finally {
+        sleeper.kill()
+    }
+})
+
+test('an exiting core that replaced a live core puts that core\'s record back', () => {
+    const vault = '/vaults/shared-2'
+    const sleeper = Bun.spawn(['sleep', '30'])
+    try {
+        const app = { port: 1111, vault, pid: sleeper.pid }
+        writeFileSync(runRecordPath(vault), JSON.stringify(app))
+        writeRunRecord({ port: 2222, vault, pid: process.pid })
+        expect(resolveRunRegistryBase(vault)).toBe('http://localhost:2222')
+        releaseRunRecord(vault, process.pid, app)
+        expect(resolveRunRegistryBase(vault)).toBe('http://localhost:1111')
+    } finally {
+        sleeper.kill()
+    }
+})
+
+test('an exiting core whose predecessor is dead removes its own record', () => {
+    const vault = '/vaults/shared-3'
+    writeRunRecord({ port: 2222, vault, pid: process.pid })
+    releaseRunRecord(vault, process.pid, { port: 1111, vault, pid: DEAD_PID })
+    expect(readRunRecords().some(r => r.vault === vault)).toBe(false)
 })

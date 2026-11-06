@@ -1,12 +1,13 @@
 import { test, expect, afterEach, afterAll } from 'bun:test'
 import { tempDir, sweepTempDirs } from './tempDirs'
-import { writeFileSync, chmodSync } from 'node:fs'
+import { writeFileSync, chmodSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
-import { handleCallTool, doctorCliArgs, ocrCliArgs, pdfToMarkdownCliArgs, OCR_TIMEOUT_MS, server, ALL_TOOL_NAMES } from '../src/server'
+import { handleCallTool, server, ALL_TOOL_NAMES } from '../src/server'
+import { cliTimeoutMs, LONG_TIMEOUT_MS } from '../src/cli'
 
-// Reviewer's point: reverting just the one-line `bismuth_cli`/`bismuth_cli_help` wiring in
-// server.ts (while leaving cliToolResult/cliHelp themselves intact) passed every test in
+// Reviewer's point: reverting just the one-line `bismuth_cli` wiring in
+// server.ts (while leaving cliToolResult itself intact) passed every test in
 // cli.test.ts, because those only exercise the helpers directly — never the actual switch/case
 // dispatch an agent's tool call goes through. These tests call the exported `handleCallTool`
 // (the same function `server.setRequestHandler(CallToolRequestSchema, ...)` registers) with a
@@ -42,21 +43,7 @@ test('dispatching bismuth_cli through the real handler leaves a clean help call 
     expect(result.isError).not.toBe(true)
 }, 30_000)
 
-test('dispatching bismuth_cli_help through the real handler flags an unreachable CLI as isError', async () => {
-    process.env.BISMUTH_CLI = '/definitely/not/a/real/bismuth-binary-xyz'
-    const result = await callTool('bismuth_cli_help', {})
-    expect(result.isError).toBe(true)
-}, 30_000)
-
-test('dispatching bismuth_cli_help through the real handler leaves a normal lookup unflagged', async () => {
-    delete process.env.BISMUTH_CLI
-    const result = await callTool('bismuth_cli_help', {})
-    expect(result.isError).not.toBe(true)
-}, 30_000)
-
-// --- bismuth_doctor + the always-on set --------------------------------------------------------
-
-test('outside a daemon-enabled vault the server lists exactly the eight always-on tools', async () => {
+test('outside a daemon-enabled vault the server lists only bismuth_cli', async () => {
     const saved = { mem: process.env.BISMUTH_MEMORY_DIR, vault: process.env.BISMUTH_VAULT, cwd: process.cwd() }
     const empty = tempDir('mcp-tools-')
     delete process.env.BISMUTH_MEMORY_DIR
@@ -67,18 +54,7 @@ test('outside a daemon-enabled vault the server lists exactly the eight always-o
             _requestHandlers: Map<string, (r: unknown, e: unknown) => Promise<{ tools: { name: string }[] }>>
         })._requestHandlers
         const { tools } = await handlers.get('tools/list')!({ method: 'tools/list' }, {})
-        expect(tools.map(t => t.name)).toEqual([
-            'bismuth_docs_list',
-            'bismuth_docs_search',
-            'bismuth_docs_read',
-            'bismuth_doctor',
-            'vault_map',
-            'brain',
-            'ocr',
-            'pdf_to_markdown',
-            'bismuth_cli',
-            'bismuth_cli_help',
-        ])
+        expect(tools.map(t => t.name)).toEqual(['bismuth_cli'])
     } finally {
         process.chdir(saved.cwd)
         if (saved.mem !== undefined) process.env.BISMUTH_MEMORY_DIR = saved.mem
@@ -100,38 +76,33 @@ test('remember type description lists profile and hub', () => {
     })
 })
 
-test('ALL_TOOL_NAMES covers the always-on, memory and daemon tools with no duplicates', () => {
-    expect(new Set(ALL_TOOL_NAMES).size).toBe(ALL_TOOL_NAMES.length)
-    expect(ALL_TOOL_NAMES).toEqual(expect.arrayContaining(['bismuth_doctor', 'remember', 'recall', 'forget', 'daemon_status', 'page_resolve']))
-    expect(ALL_TOOL_NAMES).toHaveLength(10 + 3 + 11)
+test('ALL_TOOL_NAMES is bismuth_cli plus the memory tools, with no duplicates', () => {
+    expect([...ALL_TOOL_NAMES].sort()).toEqual(['bismuth_cli', 'forget', 'recall', 'remember'])
 })
 
-test('doctorCliArgs: no input is a bare json report', () => {
-    expect(doctorCliArgs({})).toEqual(['doctor', '--json'])
-})
-
-test('doctorCliArgs maps every input to its CLI flag', () => {
-    expect(
-        doctorCliArgs({ fix: true, safeOnly: true, only: ['a.b', 'c.d'], section: ['legacy'], vault: '/v' }),
-    ).toEqual(['doctor', '--json', '--fix', '--safe-only', '--only', 'a.b,c.d', '--section', 'legacy', '--vault', '/v'])
-})
-
-test('doctorCliArgs ignores false/empty inputs', () => {
-    expect(doctorCliArgs({ fix: false, safeOnly: false, only: [], section: [], vault: '' })).toEqual(['doctor', '--json'])
-})
-
-test('dispatching bismuth_doctor runs the CLI with the mapped argv', async () => {
-    // A stand-in `bismuth` that echoes the argv it was given, so the test sees exactly what
-    // handleCallTool -> runCli executed.
-    const dir = tempDir('mcp-doctor-')
+test('bismuth_cli runs the CLI in the session working directory, so a flagless command reaches its vault', async () => {
+    const dir = tempDir('mcp-cwd-')
     const bin = join(dir, 'bismuth')
-    writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do echo "$a"; done\n')
+    writeFileSync(bin, '#!/bin/sh\npwd -P\n')
     chmodSync(bin, 0o755)
     process.env.BISMUTH_CLI = bin
-    const result = await callTool('bismuth_doctor', { fix: true, only: ['a.b'] })
-    expect(result.isError).toBe(false)
-    const text = (result.content[0] as { text: string }).text
-    expect(text.trim().split('\n')).toEqual(['doctor', '--json', '--fix', '--only', 'a.b'])
+    const vault = tempDir('mcp-cwd-vault-')
+    const origCwd = process.cwd()
+    try {
+        process.chdir(vault)
+        const result = await callTool('bismuth_cli', { args: ['task', 'list'] })
+        expect((result.content[0] as { text: string }).text.trim()).toBe(realpathSync(vault))
+    } finally {
+        process.chdir(origCwd)
+    }
+})
+
+test('ocr and pdf get minutes through bismuth_cli, everything else two', () => {
+    expect(cliTimeoutMs(['ocr', 'x.pdf'])).toBe(LONG_TIMEOUT_MS)
+    expect(cliTimeoutMs(['pdf', 'md', 'x.pdf'])).toBe(LONG_TIMEOUT_MS)
+    expect(LONG_TIMEOUT_MS).toBeGreaterThan(10 * 60_000)
+    expect(cliTimeoutMs(['task', 'list'])).toBe(120_000)
+    expect(cliTimeoutMs([])).toBe(120_000)
 })
 
 test('the spawned CLI always sees a BISMUTH_MCP_CHANNEL, so doctor treats MCP calls as an agent', async () => {
@@ -149,107 +120,4 @@ test('the spawned CLI always sees a BISMUTH_MCP_CHANNEL, so doctor treats MCP ca
     expect((chat.content[0] as { text: string }).text.trim()).toBe('channel=chat')
     if (saved === undefined) delete process.env.BISMUTH_MCP_CHANNEL
     else process.env.BISMUTH_MCP_CHANNEL = saved
-})
-
-test('bismuth_doctor flags a failing doctor run as isError', async () => {
-    process.env.BISMUTH_CLI = '/definitely/not/a/real/bismuth-binary-xyz'
-    const result = await callTool('bismuth_doctor', {})
-    expect(result.isError).toBe(true)
-})
-
-test('bismuth_docs_read through the real handler outlines a page over 20000 chars and returns it whole with full', async () => {
-    const dir = tempDir('bismuth-mcp-bigdoc-')
-    writeFileSync(join(dir, 'big.md'), `# Big\n\nintro\n\n## Part One\n\n${'x'.repeat(21_000)}\n`)
-    const saved = process.env.BISMUTH_DOCS_DIR
-    process.env.BISMUTH_DOCS_DIR = dir
-    try {
-        const { handleCallTool: handle } = await import(`../src/server?bigdoc=${Date.now()}`)
-        const call = (args: Record<string, unknown>) =>
-            handle({ method: 'tools/call', params: { name: 'bismuth_docs_read', arguments: args } })
-        const outline = await call({ path: 'big.md' })
-        const outlineText = outline.content[0].text as string
-        expect(outlineText).toContain('- Part One (')
-        expect(outlineText.length).toBeLessThan(5_000)
-        const whole = await call({ path: 'big.md', full: true })
-        expect((whole.content[0].text as string).length).toBeGreaterThan(21_000)
-    } finally {
-        if (saved === undefined) delete process.env.BISMUTH_DOCS_DIR
-        else process.env.BISMUTH_DOCS_DIR = saved
-    }
-})
-
-test('vault_map and brain resolve the vault from cwd when BISMUTH_VAULT is unset', async () => {
-    const vault = tempDir('vault-brain-')
-    writeFileSync(join(vault, '.settings'), '{}\n')
-    const origVault = process.env.BISMUTH_VAULT
-    const origMem = process.env.BISMUTH_MEMORY_DIR
-    const origCwd = process.cwd()
-    delete process.env.BISMUTH_VAULT
-    delete process.env.BISMUTH_MEMORY_DIR
-    try {
-        process.chdir(vault)
-        for (const name of ['vault_map', 'brain']) {
-            const r = await callTool(name)
-            const text = JSON.stringify(r)
-            expect(text).not.toContain('no vault — pass --vault')
-            expect(text).not.toContain('Not in a Bismuth vault')
-            expect(r.isError).toBeFalsy()
-        }
-    } finally {
-        process.chdir(origCwd)
-        if (origVault !== undefined) process.env.BISMUTH_VAULT = origVault
-        if (origMem !== undefined) process.env.BISMUTH_MEMORY_DIR = origMem
-    }
-}, 60_000)
-
-test('vault_map and brain outside any vault say so without erroring', async () => {
-    const dir = tempDir('no-vault-')
-    const origVault = process.env.BISMUTH_VAULT
-    const origMem = process.env.BISMUTH_MEMORY_DIR
-    const origCwd = process.cwd()
-    delete process.env.BISMUTH_VAULT
-    delete process.env.BISMUTH_MEMORY_DIR
-    try {
-        process.chdir(dir)
-        for (const name of ['vault_map', 'brain']) {
-            const r = await callTool(name)
-            expect(r.isError).toBeFalsy()
-            expect(JSON.stringify(r)).toContain('Not in a Bismuth vault')
-        }
-    } finally {
-        process.chdir(origCwd)
-        if (origVault !== undefined) process.env.BISMUTH_VAULT = origVault
-        if (origMem !== undefined) process.env.BISMUTH_MEMORY_DIR = origMem
-    }
-}, 60_000)
-
-test('ocrCliArgs maps every input to its CLI flag and pins the vault', () => {
-    expect(ocrCliArgs({ path: 'p/x.pdf' }, '/v')).toEqual(['ocr', 'p/x.pdf', '--vault', '/v'])
-    expect(
-        ocrCliArgs({ path: 'x.pdf', math: true, force: true, replace: true, lang: 'eng+deu', pages: '1-3' }, '/v'),
-    ).toEqual(['ocr', 'x.pdf', '--math', '--force', '--replace', '--lang', 'eng+deu', '--pages', '1-3', '--vault', '/v'])
-    expect(ocrCliArgs({ path: 'x.pdf', math: false, lang: '', pages: '' }, '/v')).toEqual(['ocr', 'x.pdf', '--vault', '/v'])
-})
-
-test('ocr outlives bismuth_cli by minutes', () => {
-    expect(OCR_TIMEOUT_MS).toBeGreaterThan(10 * 60_000)
-})
-
-test('dispatching ocr without a path is an error, not a CLI run', async () => {
-    const result = await callTool('ocr', {})
-    expect(result.isError).toBe(true)
-    expect(result.content[0]).toMatchObject({ text: 'ocr needs a path.' })
-})
-
-test('pdfToMarkdownCliArgs maps every input to its CLI flag and pins the vault', () => {
-    expect(pdfToMarkdownCliArgs({ path: 'p/x.pdf' }, '/v')).toEqual(['pdf', 'md', 'p/x.pdf', '--vault', '/v'])
-    expect(
-        pdfToMarkdownCliArgs({ path: 'x.pdf', force: true, replace: true, pages: '1-3' }, '/v'),
-    ).toEqual(['pdf', 'md', 'x.pdf', '--force', '--replace', '--pages', '1-3', '--vault', '/v'])
-})
-
-test('dispatching pdf_to_markdown without a path is an error, not a CLI run', async () => {
-    const result = await callTool('pdf_to_markdown', {})
-    expect(result.isError).toBe(true)
-    expect(result.content[0]).toMatchObject({ text: 'pdf_to_markdown needs a path.' })
 })

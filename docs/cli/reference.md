@@ -15,12 +15,27 @@ bismuth calendar add Calendar.md --date 2026-11-02 --title "Dentist" --start 09:
 
 ## Set the vault and other global flags
 
-Most commands need a vault. The vault comes from `--vault <dir>`, then the `BISMUTH_VAULT` environment variable. With neither, the command exits `1` with `error: no vault — pass --vault <dir> or set BISMUTH_VAULT`.
+Most commands need a vault. The vault comes from the first of these that applies:
+
+1. `--vault <dir>`
+2. The `BISMUTH_VAULT` environment variable
+3. The vault the working directory sits in: the nearest ancestor directory (or the directory itself) holding a `.settings` file
+
+With none of the three, the command exits `1` with `error: no vault — run inside a vault, pass --vault <dir> or set BISMUTH_VAULT`. Only `.settings` marks a vault for this lookup; a `settings.yaml` does not.
+
+Inside a vault, run `bismuth` with no vault flag:
+
+```bash
+cd ~/vault/Projects
+bismuth task list --pretty
+```
+
+The visibility gate for agents checks the same root when no `--vault`, `--dir` or `BISMUTH_VAULT` is given, so an agent's shell in a vault is gated on that vault.
 
 | Flag or variable | Applies to | Effect |
 |---|---|---|
-| `--vault <dir>` | nearly every command | Vault directory. Wins over `BISMUTH_VAULT`. |
-| `BISMUTH_VAULT` | nearly every command | Vault directory when `--vault` is absent. |
+| `--vault <dir>` | nearly every command | Vault directory. Wins over `BISMUTH_VAULT` and the working directory. |
+| `BISMUTH_VAULT` | nearly every command | Vault directory when `--vault` is absent. Wins over the working directory. |
 | `--memory <dir>` | `graph`, `serve` | Memory (3rd brain) directory. Falls back to `BISMUTH_MEMORY`. The `memory` commands take `--memory` too but fall back to `BISMUTH_MEMORY_DIR`. |
 | `--pretty` | every command that prints JSON | Indents JSON with two spaces. |
 | `--api <url>` | server commands | Base URL of a running server. See [Which commands need a running server](#which-commands-need-a-running-server). |
@@ -32,7 +47,7 @@ Most commands need a vault. The vault comes from `--vault <dir>`, then the `BISM
 | `BISMUTH_DOCS_DIR` | `docs` | Directory of doc pages to read. Falls back to the repo's `docs/`, then `~/.bismuth/docs`. |
 | `BISMUTH_INSTALL_SRC` | `install` | Source directory when `--src` is absent. |
 
-`bismuth`, `bismuth --help` and `bismuth help` print every command with its summary. `bismuth help <word>` and `bismuth <word> --help` print only the commands that start with that word, such as `bismuth task --help`. An unknown command prints `unknown command: …` plus the full list and exits `1`.
+`bismuth`, `bismuth --help` and `bismuth help` print every command with its summary, then the hint `most commands need a vault: run inside one, pass --vault <dir> or set BISMUTH_VAULT.`. `bismuth help <word>` and `bismuth <word> --help` print only the commands that start with that word, such as `bismuth task --help`. An unknown command prints `unknown command: …` plus the full list and exits `1`.
 
 ## Which commands need a running server
 
@@ -52,8 +67,10 @@ The server address resolves in this order:
 1. `--api <url>`
 2. `BISMUTH_API`
 3. `CLAUDE_RELAY_URL` (set inside the app's terminal tabs)
-4. The run registry in `~/.bismuth/run`, matched by `--vault` or `BISMUTH_VAULT` (a relative path, a trailing slash or a symlink matches the same vault), else the single running core
+4. The run registry in `~/.bismuth/run`, matched by the vault from the resolution order above (`--vault`, `BISMUTH_VAULT`, or the vault the working directory sits in; a relative path, a trailing slash or a symlink matches the same vault), else the single running core
 5. `http://localhost:4321`
+
+Inside a vault, `bismuth app tabs` therefore reaches the app serving that vault, even with several apps running.
 
 A non-2xx reply fails with `<METHOD> <path> → <status>: <message>`, using the reply's `error` text when it has one.
 
@@ -81,6 +98,8 @@ Errors print `error: <message>` to stderr and exit `1`. `base validate`, `theme 
 ## Use the CLI as an AI agent
 
 A process is an agent when `BISMUTH_AGENT_CHANNEL` is set to a non-empty value (`chat`, or anything else, which counts as `daemon`) or `BISMUTH_MCP_CHANNEL` is set. Bismuth sets these when it spawns an agent or the MCP server. A person's own shell sets neither and is never filtered.
+
+The MCP tool `bismuth_cli` runs the same CLI in the agent session's working directory, through the same gate as `bismuth` typed in the session's shell. A flagless command there finds the vault the session sits in.
 
 Channel `chat` hides notes marked `hidden`; channel `daemon` hides `hidden` and `chat-only`. The CLI sorts commands into four tiers when the vault restricts anything:
 
@@ -315,7 +334,7 @@ Setup is in [daemon setup](../daemon/setup.md) and the file formats in [crons an
 
 ## docs
 
-Reads Bismuth's own documentation, the same pages the MCP docs tools serve. The docs directory is `BISMUTH_DOCS_DIR`, else the repo's `docs/`, else `~/.bismuth/docs`.
+Reads Bismuth's own documentation. The docs directory is `BISMUTH_DOCS_DIR`, else the repo's `docs/`, else `~/.bismuth/docs`.
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
@@ -323,9 +342,11 @@ Reads Bismuth's own documentation, the same pages the MCP docs tools serve. The 
 | `docs search` | `<query…> [--limit <n>]` | Prints ranked `{path, heading, snippet}` hits. | no |
 | `docs read` | `<path> [--section <heading>]` | Prints one page raw, or one `##` section. | no |
 
+An agent in a shell runs `bismuth docs search <words>` and `bismuth docs read <page> [--section <heading>]`. A host with no shell calls the MCP tool `bismuth_cli` with the same arguments, for example `{"args": ["docs", "read", "bases/overview.md"]}`.
+
 ## doctor
 
-Checks the machine and, when a vault is given, the vault for leftovers from older builds, version skew and pending migrations. The MCP tool `bismuth_doctor` runs this same command. Findings and fixes are described in [doctor](../overview/doctor.md).
+Checks the machine and, when a vault is given, the vault for leftovers from older builds, version skew and pending migrations. Findings and fixes are described in [doctor](../overview/doctor.md).
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
@@ -434,7 +455,7 @@ bismuth map --around "Projects/Launch.md" --vault ~/vault
 ```
 
 `similar` is best effort: with embeddings off, unavailable or slower than two seconds, the output is unchanged and the exit code stays `0`.
-For an agent, restricted notes are absent from the map, the neighbourhood, the `similar` list and the brain. `BISMUTH_AGENT_CHANNEL=daemon` (or an MCP-spawned daemon channel) selects the narrower daemon view; every other caller gets the chat view. The MCP server exposes the same commands as `vault_map` and `brain`; see [the MCP server](../mcp/overview.md).
+For an agent, restricted notes are absent from the map, the neighbourhood, the `similar` list and the brain. `BISMUTH_AGENT_CHANNEL=daemon` (or an MCP-spawned daemon channel) selects the narrower daemon view; every other caller gets the chat view.
 
 ## graph
 
@@ -499,7 +520,7 @@ Installs or removes the CLI and MCP server machine-wide. Neither touches the vau
 
 ## memory
 
-Saves, searches and removes notes in the vault's memory graph (the 3rd brain). The MCP server exposes the same operations as `remember`, `recall` and `forget`; see [daemon tools](../mcp/daemon-tools.md).
+Saves, searches and removes notes in the vault's memory graph (the 3rd brain). The MCP server exposes the same operations as `remember`, `recall` and `forget` in a vault whose daemon is on; see [the MCP server](../mcp/overview.md).
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
@@ -540,7 +561,7 @@ Gives a PDF a selectable text layer, and transcribes a PDF or image into a note 
 |---|---|---|---|
 | `ocr` | `<file> [--math] [--force] [--lang <codes>] [--pages <spec>] [--replace] [--vault <dir>]` | Adds the text layer to a PDF in place; `--math`, or any image, also writes `<name>.ocr.md`. Prints `{ok, path, layer?, note?, engine?}`. | no |
 
-`ocr` refuses with `EEXIST` when `<name>.ocr.md` exists, unless `--replace` is given. The MCP tool `ocr` runs this command with a 30-minute timeout. `ocr` is path-scoped.
+`ocr` refuses with `EEXIST` when `<name>.ocr.md` exists, unless `--replace` is given. Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes. `ocr` is path-scoped.
 
 ## pdf
 
@@ -550,7 +571,7 @@ Converts a PDF into a new markdown note beside it, with math as LaTeX and a `sou
 |---|---|---|---|
 | `pdf md` | `<file.pdf> [--pages <spec>] [--force] [--replace] [--vault <dir>]` | Writes `<name>.md` beside the PDF. Prints `{ok, path, note}`. | no |
 
-`pdf md` refuses with `EEXIST` when `<name>.md` exists, unless `--replace` is given. The MCP tool `pdf_to_markdown` runs this command with a 30-minute timeout. `pdf md` is path-scoped.
+`pdf md` refuses with `EEXIST` when `<name>.md` exists, unless `--replace` is given. Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes. `pdf md` is path-scoped.
 
 ## page
 
@@ -716,16 +737,16 @@ Everything after the matched words is the command's `args`.
 Each group lives in `cli/src/commands/<group>.ts` and exports a `CommandMap`; the merge order in `registry.ts` is load-bearing, because a later group's key overwrites an earlier one.
 The same registry backs `cli/test/mcpParity.test.ts`, which requires every MCP tool to have a CLI twin, `cli/test/mcpArgParity.test.ts`, which pairs their arguments, and `cli/test/guideCommands.test.ts`, which checks that every `bismuth …` phrase in the agent guides resolves.
 
-Argument parsing is in `cli/src/args.ts`.
+Argument parsing is in `cli/src/args.ts`; `optionalVault` there applies the vault order, with `findVaultRoot` in `core/src/findVaultRoot.ts` walking up from the working directory to the first `.settings`.
 A command with an MCP twin declares its arguments in `args` (`CommandArgs` in `cli/src/types.ts`): its positionals by the MCP param they carry, and its flags as `'value'`, `'bool'` or `{ kind, param }` when the MCP param is spelled differently (`--off` carries `enabled`).
 `cli/test/mcpArgParity.test.ts` scans the source of `run` (`cli/test/commandArgScan.ts`) and fails when the body reads a flag the declaration omits, declares a flag the body never reads, or hands `args` to a helper that `ARG_HELPERS` does not list.
 `cli/src/baseResolve.ts` resolves an extensionless base path for `base`, `row`, `calendar` and `card review --file`.
 The visibility gate in `core/src/visibilityCliGate.ts` runs once in `index.ts` before any command, so no invocation skips it.
 Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `call` attaches the owner token and turns failures into messages.
-The run registry is `core/src/runRegistry.ts`.
+The run registry is `core/src/runRegistry.ts`; a core that exits removes only a record naming its own pid, and restores the record of a live core it had replaced for the same vault.
 `history` parses each session log with `memory/src/sessionHistory.ts`, which reuses the turn folding in `memory/src/transcript.ts`.
 `image describe` calls `describeImage` in `core/src/imageDescribe.ts`, which sends the bytes to Haiku through the Agent SDK and records a content hash in `describedHash`.
 `cli/src/ocr.ts` builds the engine argv for `ocr`; Marker and engine lookup, shared with `pdf md`, are in `core/src/marker.ts`.
 `cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
 
-Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `core/src/imageDescribe.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `core/src/findVaultRoot.ts`, `core/src/runRegistry.ts`, `core/src/imageDescribe.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`

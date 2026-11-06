@@ -59,7 +59,7 @@ Transcript notes (`auto-*`) are skipped, and a restricted note never appears. `b
 
 ## Write, find and remove notes
 
-These tools edit memory. Agents get them as MCP tools named `remember`, `recall` and `forget` whenever the daemon is on for the vault ([the MCP daemon tools](../mcp/daemon-tools.md#memory-tools)). You get the same operations as `bismuth memory …` commands, which work headlessly against `--vault`.
+These tools edit memory. Agents get them as MCP tools named `remember`, `recall` and `forget` whenever the daemon is on for the vault ([the MCP server](../mcp/overview.md)). You and any agent with a shell get the same operations as `bismuth memory …` commands, which work headlessly against `--vault` ([CLI reference](../cli/reference.md#memory)).
 
 | Tool | CLI | Effect |
 |---|---|---|

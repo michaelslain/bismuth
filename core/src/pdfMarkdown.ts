@@ -1,8 +1,8 @@
 // core/src/pdfMarkdown.ts
 // PDF → markdown: Marker (core/src/marker.ts) transcribes a vault PDF into a NEW note beside it,
 // `papers/x.pdf` → `papers/x.md`, whose frontmatter `source` links back to the PDF. The PDF itself
-// is never written. Three surfaces run it: `bismuth pdf md` (cli/src/commands/pdf.ts), the
-// `pdf_to_markdown` MCP tool, and the PDF bar's button through `POST /convert/pdf-markdown`.
+// is never written. Two surfaces run it: `bismuth pdf md` (cli/src/commands/pdf.ts) and the PDF bar's
+// button through `POST /convert/pdf-markdown`.
 //
 // A long PDF takes minutes, past Bun's 255 s request idle timeout, so the HTTP route does not hold
 // the request open: it starts a job here and returns, and the app polls `GET /convert/pdf-markdown` for the

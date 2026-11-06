@@ -111,7 +111,7 @@ In dark mode, highlights show as a tint behind the white text, pen ink in the de
 
 ## Read a PDF's highlights from the shell or an agent
 
-A PDF's highlights are standard annotations inside the file, so other PDF apps show them. `bismuth highlights <file.pdf>` prints the highlighted text page by page, including any still in the `<file>.draw` sidecar; `bismuth highlights migrate <file.pdf>` moves those into the PDF. An agent reaches both through the `bismuth_cli` MCP tool. The [CLI reference](../cli/reference.md#export-and-render) has its flags and output.
+A PDF's highlights are standard annotations inside the file, so other PDF apps show them. `bismuth highlights <file.pdf>` prints the highlighted text page by page, including any still in the `<file>.draw` sidecar; `bismuth highlights migrate <file.pdf>` moves those into the PDF. An agent runs both in its shell, or through the `bismuth_cli` MCP tool. The [CLI reference](../cli/reference.md#export-and-render) has its flags and output.
 
 ```bash
 bismuth highlights "readings/week 8 reading 1.pdf"

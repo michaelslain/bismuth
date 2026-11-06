@@ -4,7 +4,7 @@ import { join, relative } from 'node:path'
 import { VIEW_TYPES } from '../src/bases/types'
 
 // The agent guides live in docs/ and are reached through the MCP server instructions +
-// bismuth_docs_read (mcp/src/instructions.ts). They are the pages an agent trusts most — it was
+// `bismuth docs read` (mcp/src/instructions.ts). They are the pages an agent trusts most — it was
 // TOLD to read them before acting — so they get drift tests ordinary docs pages do not.
 
 // Repo root: core/test/guides.test.ts -> ../.. -> repo root.
@@ -47,7 +47,7 @@ test('every reference file points at a docs/bases/views/*.md page that exists on
 })
 
 // bases/authoring.md tells agents every kind page has these three sections, so
-// `bismuth_docs_read {path, section}` can fetch just one — the promise has to hold.
+// `bismuth docs read <page> --section <heading>` can fetch just one — the promise has to hold.
 test('every kind page has Working example, Config keys and Failure modes sections', () => {
     for (const kind of VIEW_TYPES) {
         const text = readFileSync(join(REFERENCES_DIR, `${kind}.md`), 'utf-8')

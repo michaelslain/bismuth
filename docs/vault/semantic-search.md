@@ -47,7 +47,7 @@ Run `bismuth search <query> --semantic [--limit n] [--json]`. `--limit` defaults
 similar: chatty.md, a/b.md
 ```
 
-An agent reaches both through the MCP `bismuth_cli` tool (`search` with `--semantic`) and through `vault_map` with `around`.
+An agent runs `bismuth search <query> --semantic` and `bismuth map --around <note>` in its shell, or calls the `bismuth_cli` MCP tool with the same arguments.
 
 ## What does an unavailable answer mean?
 

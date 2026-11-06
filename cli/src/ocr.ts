@@ -1,5 +1,5 @@
-// OCR for vault PDFs and images, behind `bismuth ocr` (cli/src/commands/ocr.ts) and the MCP `ocr`
-// tool. Two external engines do the work:
+// OCR for vault PDFs and images, behind `bismuth ocr` (cli/src/commands/ocr.ts). Two external
+// engines do the work:
 //
 //  - ocrmypdf (tesseract underneath) puts an invisible, selectable text layer into a PDF, in place.
 //    It runs with `--redo-ocr`, never `--skip-text`: a scanned page whose only real text is a

@@ -1,6 +1,6 @@
 // core/src/marker.ts
 // The external-engine plumbing shared by `bismuth ocr` (cli/src/commands/ocr.ts) and PDF → markdown
-// (pdfMarkdown.ts, behind `bismuth pdf md`, the `pdf_to_markdown` MCP tool and the PDF bar's
+// (pdfMarkdown.ts, behind `bismuth pdf md` and the PDF bar's
 // button): finding an engine binary on a short PATH, running it, and Marker (marker-pdf, run
 // through llama.cpp's llama-server), which transcribes a PDF or image to markdown with math as
 // `$…$` / `$$…$$` LaTeX.

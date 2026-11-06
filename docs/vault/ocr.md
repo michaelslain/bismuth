@@ -1,6 +1,6 @@
 # OCR for PDFs and images
 
-OCR reads the words off a scanned PDF or an image. In Bismuth it does two jobs: it gives a PDF an invisible text layer so its text selects and highlights in the PDF viewer, and it transcribes a PDF or image into a markdown note with math written as LaTeX. Install the engines first (see the section on installing them); then a person runs `bismuth ocr` and an agent calls the `ocr` MCP tool.
+OCR reads the words off a scanned PDF or an image. In Bismuth it does two jobs: it gives a PDF an invisible text layer so its text selects and highlights in the PDF viewer, and it transcribes a PDF or image into a markdown note with math written as LaTeX. Install the engines first (see the section on installing them); then a person or an agent runs `bismuth ocr`.
 
 ```bash
 bismuth ocr "readings/week 8 reading 2.pdf" --math --vault ~/vault --pretty
@@ -69,21 +69,21 @@ An image (png, jpg, jpeg, tif, tiff, webp, bmp) has no text layer to add, so `bi
 
 ## Options
 
-Every option applies to both the CLI command and the MCP tool.
-
-| Flag | MCP argument | Effect |
-|---|---|---|
-| `--math` | `math: true` | Also write `<name>.ocr.md` with Marker. Images always get the note |
-| `--force` | `force: true` | OCR every page even where text exists; the PDF grows |
-| `--lang <codes>` | `lang` | Tesseract languages, `eng` by default, several joined with `+` (`eng+deu`) |
-| `--pages <spec>` | `pages` | 1-based pages, such as `3`, `1-4` or `1-3,7`. Page 0 and backwards ranges are refused |
-| `--replace` | `replace: true` | Rewrite an existing `<name>.ocr.md` |
+| Flag | Effect |
+|---|---|
+| `--math` | Also write `<name>.ocr.md` with Marker. Images always get the note |
+| `--force` | OCR every page even where text exists; the PDF grows |
+| `--lang <codes>` | Tesseract languages, `eng` by default, several joined with `+` (`eng+deu`) |
+| `--pages <spec>` | 1-based pages, such as `3`, `1-4` or `1-3,7`. Page 0 and backwards ranges are refused |
+| `--replace` | Rewrite an existing `<name>.ocr.md` |
 
 The path is vault-relative. A path outside the vault fails with `path escapes vault`, and a missing file with `ocr: no such file`. To OCR a download, move it into the vault first.
 
 ## Run OCR as an agent
 
-An agent calls the `ocr` MCP tool with `path` and the arguments listed in the options table. It is its own tool rather than a `bismuth_cli` call because a long PDF takes minutes, and `bismuth_cli` gives up after 30 seconds; `ocr` waits up to 30 minutes. The tool resolves the vault the way `vault_map` does and fails outside a vault.
+An agent runs `bismuth ocr <path>` in its shell with the flags listed in the options table. A host with no shell calls the `bismuth_cli` MCP tool with the same arguments, such as `["ocr", "papers/scan.pdf", "--math"]`; `bismuth_cli` gives `ocr` and `pdf` commands 30 minutes and every other command 2 minutes, because a long PDF takes minutes.
+
+In either route the command finds the vault from the session's working directory when no `--vault` or `BISMUTH_VAULT` is given, and fails with `no vault` outside one.
 
 `ocr` is path-scoped under the vault's visibility settings: an agent can OCR any file it can see, and a hidden file is refused like any other read. See [visibility](visibility.md).
 
@@ -93,6 +93,6 @@ An agent calls the `ocr` MCP tool with `path` and the arguments listed in the op
 
 The text layer comes from `ocrmypdf --redo-ocr --output-type pdf`. `--redo-ocr` keeps visible vector text and OCRs the rest without rasterising the page; `--skip-text` would skip any page with a watermark. `--output-type pdf` skips the PDF/A conversion through Ghostscript. ocrmypdf writes a hidden `.<file>.ocr-tmp.pdf` beside the original, which is renamed over it, so the watcher sees one change and a reader never sees a half-written file.
 
-With `--math`, Marker runs before the text layer is added and always with `--strip_existing_ocr`, so tesseract's reading of an equation from an earlier run never reaches the note. `tidyMarkdown` collapses Marker's padding around inline math. The MCP tool is `ocr` in `mcp/src/server.ts`; `ocrCliArgs` builds its argv and `OCR_TIMEOUT_MS` sets its timeout. `ocr` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
+With `--math`, Marker runs before the text layer is added and always with `--strip_existing_ocr`, so tesseract's reading of an equation from an earlier run never reaches the note. `tidyMarkdown` collapses Marker's padding around inline math. `bismuth_cli` runs the command with the long timeout `cliTimeoutMs` in `mcp/src/cli.ts` picks for `ocr` and `pdf`. `ocr` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
 
-Source: `cli/src/commands/ocr.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `mcp/src/server.ts`, `core/src/visibilityCliGate.ts`
+Source: `cli/src/commands/ocr.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `mcp/src/cli.ts`, `core/src/visibilityCliGate.ts`

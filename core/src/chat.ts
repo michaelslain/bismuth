@@ -49,6 +49,9 @@ import {
 } from './agentBackends/localModelProbe'
 import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
 import { CHAT_RENDERING_NOTE } from './chatRenderingNote'
+import { agentShellEnv } from './agentEnvFile'
+import { AGENT_CLI_NOTE } from './agentCliNote'
+import { findVaultRoot } from './findVaultRoot'
 import {
     detachSessionSink,
     emit,
@@ -1347,17 +1350,16 @@ function spawnChatQuery(
         })
     }
 
-    // Blocks the CLI-bridge MCP tool's file-read escape hatch (bismuth_cli can target ANY vault via
-    // its own --vault/--dir flags) — always. When ANY file is restricted, ALSO hard-disable Grep and
-    // Glob: their per-file managedSettings deny only matches a call whose OWN `path` argument is the
-    // denied file, but an UNSCOPED Grep(pattern, path: undefined) scans the whole vault (including a
-    // hidden file) and returns its matching lines — the per-file deny can't stop that, so the only
-    // reliable gate for a broad scan is to forbid the tools outright (an honesty boundary: no
-    // vault-wide scan can reach a hidden file). Cost: a restricted vault's chat loses grep/glob.
-    const disallowedTools =
-        denyEntries.length > 0
-            ? ['mcp__bismuth__bismuth_cli', 'Grep', 'Glob']
-            : ['mcp__bismuth__bismuth_cli']
+    // When ANY file is restricted, hard-disable Grep and Glob: their per-file managedSettings deny
+    // only matches a call whose OWN `path` argument is the denied file, but an UNSCOPED
+    // Grep(pattern, path: undefined) scans the whole vault (including a hidden file) and returns its
+    // matching lines — the per-file deny can't stop that, so the only reliable gate for a broad scan
+    // is to forbid the tools outright (an honesty boundary: no vault-wide scan can reach a hidden
+    // file). Cost: a restricted vault's chat loses grep/glob. The `bismuth_cli` MCP tool stays: it
+    // runs through the same visibility gate as `bismuth` in the session's own shell
+    // (core/src/visibilityCliGate.ts gateCliArgs, every --vault/--dir/env/cwd root checked), so
+    // blocking it closed nothing and left a chat with no way into Bismuth.
+    const disallowedTools = denyEntries.length > 0 ? ['Grep', 'Glob'] : []
 
     let q: Query
     try {
@@ -1383,6 +1385,13 @@ function spawnChatQuery(
                             : process.env,
                     ),
                     ...session.local?.env,
+                    // CLAUDE_ENV_FILE puts `bismuth` back on the Bash tool's PATH, which Claude Code
+                    // replaces with the login shell's; BISMUTH_VAULT aims a flagless command (and the
+                    // visibility gate) at this chat's vault (core/src/agentEnvFile.ts).
+                    ...agentShellEnv(
+                        process.env,
+                        findVaultRoot(session.cwd) ?? undefined,
+                    ),
                     BISMUTH_AGENT_CHANNEL: 'chat',
                 },
                 includePartialMessages: true,
@@ -1428,11 +1437,14 @@ function spawnChatQuery(
                 // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
                 // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
                 // relative paths resolve against $HOME instead of `cwd`. The append says how the chat
-                // transcript renders the reply (KaTeX math), which a terminal tab's TUI never gets.
+                // transcript renders the reply (KaTeX math), which a terminal tab's TUI never gets,
+                // and, in a vault, that the `bismuth` CLI is the way into Bismuth (agentCliNote.ts).
                 systemPrompt: {
                     type: 'preset',
                     preset: 'claude_code',
-                    append: CHAT_RENDERING_NOTE,
+                    append: findVaultRoot(session.cwd)
+                        ? `${CHAT_RENDERING_NOTE}\n\n${AGENT_CLI_NOTE}`
+                        : CHAT_RENDERING_NOTE,
                 },
                 // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
                 // closure to it. (canUseTool ALSO carries the AskUserQuestion interactive-question flow — see

@@ -36,7 +36,7 @@ A Bun-workspaces monorepo. `docs/overview/architecture.md` owns how they fit tog
 | `core` | backend server: vault, graph, Bases, tasks, settings, HTTP/SSE/WS routes |
 | `app` | Tauri + Solid + TypeScript frontend; desktop and iPad (in-process backend on mobile) |
 | `cli` | the `bismuth` binary; file commands run headless, `app` commands drive a running window |
-| `mcp` | stdio MCP server: docs tools, `bismuth_cli`, daemon-gated memory tools |
+| `mcp` | stdio MCP server, a thin adapter over the CLI: `bismuth_cli`, daemon-gated memory tools |
 | `relay` | hooks-only Claude Code plugin reporting app-terminal sessions to core |
 | `memory` | `@bismuth/memory`, the pure 3rd-brain memory graph; every entry point takes an explicit dir |
 | `daemon` | `@bismuth/daemon`, one machine process running every enabled vault's brain (launchd/systemd) |
@@ -132,15 +132,23 @@ They override framework habits, and most violations compile, render and pass tes
   `walkDir`, which skips dot-entries unless `allowDot` opts them in.
 - **A mutation marks the paths it writes** (`core/src/selfWriteMarks.ts`) so the watcher drops its
   own echo.
-- **An agent guide is a docs page plus one line in `mcp/src/instructions.ts`** naming when to read
-  it. Every MCP tool has a CLI twin (`mcp/src/cliTwins.ts`, `cli/test/mcpParity.test.ts`), and every
-  tool parameter pairs with a flag of its twin, or an `ARG_EXCEPTIONS` entry says why not
+- **The CLI owns every feature; MCP is a thin adapter.** A new capability is a `bismuth` command,
+  reachable from a shell and through `bismuth_cli`; never a new MCP tool. The only named tools are the
+  daemon-gated memory tools. Each has a CLI twin (`mcp/src/cliTwins.ts`, `cli/test/mcpParity.test.ts`),
+  and every tool parameter pairs with a flag of its twin, or an `ARG_EXCEPTIONS` entry says why not
   (`cli/test/mcpArgParity.test.ts`).
+- **An agent guide is a docs page plus one line in `mcp/src/instructions.ts`** naming when to read
+  it, with a `bismuth …` command.
 
 ## Traps
 
 - **`dev:app` must not be started by `tauri.conf.json`'s `beforeDevCommand`**: that re-runs
   `dev:browser` and collides a second core + Vite pair on :4321/:1420.
+- **A flagless `bismuth` command finds its vault** from `--vault`, then `BISMUTH_VAULT`, then the
+  nearest ancestor of the working directory holding `.settings` (`core/src/findVaultRoot.ts`).
+- **A Claude Code session's Bash tool ignores the PATH it was spawned with** and uses the login
+  shell's. Every agent Bismuth starts gets `bismuth` back through `CLAUDE_ENV_FILE`
+  (`core/src/agentEnvFile.ts`); a new spawn site uses `agentShellEnv`.
 - **`PORT=` does nothing.** `core/src/server.ts` takes `--port` and otherwise uses 4321; a second
   `dev:browser` dies with `EADDRINUSE`. Two instances: `docs/overview/install.md`.
 - **Dev needs one owner token for both halves** (`app/scripts/dev.ts` mints it). Without it, content
@@ -192,7 +200,7 @@ They override framework habits, and most violations compile, render and pass tes
 | tests and gates | `docs/contributing/testing.md` |
 | Storybook and `bench/` visual checks | `docs/contributing/visual-checks.md` |
 | HTTP routes | `docs/api/http-reference.md` |
-| CLI commands | `docs/cli/reference.md` (MCP↔CLI parity: `docs/mcp/overview.md`) |
+| CLI commands | `docs/cli/reference.md` (MCP↔CLI parity, `bismuth_cli`: `docs/mcp/overview.md`) |
 | file watch, caches, SSE | `docs/overview/data-flow.md` |
 | Bases | `docs/bases/overview.md`; agents writing a base: `docs/bases/authoring.md` |
 | tasks / flashcards / calendar | `docs/tasks/syntax.md`, `docs/flashcards/srs.md`, `docs/calendar/overview.md` |
@@ -206,8 +214,8 @@ They override framework habits, and most violations compile, render and pass tes
 | feedback page, `bismuth feedback`, the hosted relay in `services/feedback/` | `docs/overview/feedback.md` |
 | visibility (what agents may read) | `docs/vault/visibility.md` |
 | vault semantic search (notes, PDFs, images, chats), embeddings switch, `bismuth image describe` | `docs/vault/semantic-search.md` |
-| OCR of PDFs and images, `bismuth ocr`, the `ocr` MCP tool | `docs/vault/ocr.md` |
-| PDF → markdown note, `bismuth pdf md`, the `pdf_to_markdown` MCP tool, the PDF bar's button | `docs/vault/pdf-to-markdown.md` |
+| OCR of PDFs and images, `bismuth ocr` | `docs/vault/ocr.md` |
+| PDF → markdown note, `bismuth pdf md`, the PDF bar's button | `docs/vault/pdf-to-markdown.md` |
 | ` ```button ` fences in notes and chat replies, `bismuth button`, `.daemon/buttons/` | `docs/editor/buttons.md` |
 | mobile | `docs/mobile/overview.md` |
 | on-disk layout | `docs/overview/storage.md` |

@@ -156,7 +156,7 @@ notes/plan.md:4:budget for the trip
 
 A hidden file's contents never appear in a result. Its name does: `find` lists it and the warning line names it, which matches the [threat model](#what-does-visibility-protect-and-what-does-it-not).
 
-Claude Code builds that ship dedicated `Grep` and `Glob` tools have them switched off in a restricted vault, because an unscoped scan through those tools runs outside the sandbox and a per-file rule cannot stop it. Builds without those tools search through Bash as shown and lose nothing. The daemon also gives up the `bismuth_cli` MCP tool in a restricted vault; the chat never has it.
+Claude Code builds that ship dedicated `Grep` and `Glob` tools have them switched off in a restricted vault, because an unscoped scan through those tools runs outside the sandbox and a per-file rule cannot stop it. Builds without those tools search through Bash as shown and lose nothing. The `bismuth_cli` MCP tool stays available in a restricted vault, in the chat and the daemon alike: it runs through the same [visibility gate](#agents-and-the-bismuth-cli-filtered-not-refused) as `bismuth` in the session's own shell.
 
 ## Agents and the `bismuth` CLI: filtered, not refused
 
@@ -214,6 +214,7 @@ If visibility cannot be determined for an agent (an unparseable `.settings`, an 
 These apply to the CLI's own dispatch and to the MCP `bismuth_cli` tool alike. They share one decision function. The owner, with neither `BISMUTH_AGENT_CHANNEL` nor `BISMUTH_MCP_CHANNEL` set, is never gated.
 
 - Every candidate vault is checked. The gate collects each value of `--dir`, `--vault` and `BISMUTH_VAULT`, builds the deny list for each, and refuses if any refuses. Pointing `--dir` at an empty folder does not swap which vault is checked.
+- The working directory's vault is checked when no root is named. With none of `--dir`, `--vault` or `BISMUTH_VAULT` set, the gate checks the nearest ancestor directory of the working directory that holds a `.settings` file, the same vault the CLI falls back to. An agent whose shell sits in a vault is gated on that vault with no flags.
 - A subfolder cannot stand in for the vault. Outside the always-safe tier, a root inside a vault that holds the `.settings` file is refused, because it would drop the vault's folder rules. A root at or under `<vault>/.daemon/memory` is exempt.
 - Rule files and runnable definitions are off-limits. `.settings`, `settings.yaml`, `.daemon/processes` and the `.daemon` folder itself are refused for every command that is not always-safe, even in a vault that restricts nothing. A process definition is code the daemon runs outside any sandbox.
 - Folder arguments are checked.
@@ -355,7 +356,7 @@ For a restricted vault, `spawnChatQuery` in `core/src/chat.ts` and `buildQueryOp
 - `sandbox.filesystem.denyRead`: the OS-level deny for the same files, `.git` and the token file. This is what stops a Bash `cat`, `python3 -c` or `bismuth read`; `managedSettings` only covers the tool-call convention.
 - `sandbox.failIfUnavailable`: `true` whenever anything is restricted, so a sandbox that cannot start refuses the session instead of running it unprotected. An unrestricted vault omits the whole sandbox block.
 - `sandbox.allowUnsandboxedCommands: false`: the model cannot switch its sandbox off with the Bash tool's `dangerouslyDisableSandbox` parameter.
-- `disallowedTools`: `bismuth_cli`, `Grep` and `Glob`. The chat disallows `bismuth_cli` in every vault.
+- `disallowedTools`: `Grep` and `Glob`, set only when the vault restricts at least one note. An unrestricted vault disallows nothing. `bismuth_cli` is never disallowed.
 - `canUseTool` (chat): an in-process check that denies, with no prompt and no "always allow", any tool whose `file_path`, `notebook_path` or `path` is restricted.
 - Environment: `BISMUTH_AGENT_CHANNEL` and `BISMUTH_MCP_CHANNEL` set to `chat` or `daemon`.
 
@@ -400,4 +401,4 @@ Memory frontmatter is parsed by hand; a duplicate `visibility` key resolves to t
 Recall injects no past chats in a vault that restricts any note or folder, because a transcript may quote a restricted note; per-chat levels alone do not stop it.
 Recall drops a note hidden a moment ago at once: the server clears its cached deny plans whenever the file watcher reports a change.
 
-Source: `core/src/visibility.ts`, `core/src/chatLogs.ts`, `memory/src/chatVisibility.ts`, `relay/lib/memory.ts`, `cli/src/commands/history.ts`, `core/src/ownerToken.ts`, `core/src/visibilityCliGate.ts`, `core/src/visibilityFilter.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/routes/vault.ts`, `core/src/vaultEmbed.ts`, `core/src/vaultMap.ts`, `core/src/settings.ts`, `daemon/src/lib/visibility.ts`, `daemon/src/daemon/session.ts`, `memory/src/graph.ts`, `memory/src/search.ts`, `memory/src/query.ts`, `mcp/src/cli.ts`, `cli/src/index.ts`, `cli/src/semantic.ts`, `cli/src/commands/settings.ts`, `app/src/FileTree.tsx`, `app/src/VisibilityBadge.tsx`, `app/src/chat/ChatSetupGate.tsx`
+Source: `core/src/visibility.ts`, `core/src/chatLogs.ts`, `memory/src/chatVisibility.ts`, `relay/lib/memory.ts`, `cli/src/commands/history.ts`, `core/src/ownerToken.ts`, `core/src/visibilityCliGate.ts`, `core/src/findVaultRoot.ts`, `core/src/visibilityFilter.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/chat.ts`, `core/src/chatProviders/index.ts`, `core/src/routes/vault.ts`, `core/src/vaultEmbed.ts`, `core/src/vaultMap.ts`, `core/src/settings.ts`, `daemon/src/lib/visibility.ts`, `daemon/src/daemon/session.ts`, `memory/src/graph.ts`, `memory/src/search.ts`, `memory/src/query.ts`, `mcp/src/cli.ts`, `cli/src/index.ts`, `cli/src/semantic.ts`, `cli/src/commands/settings.ts`, `app/src/FileTree.tsx`, `app/src/VisibilityBadge.tsx`, `app/src/chat/ChatSetupGate.tsx`

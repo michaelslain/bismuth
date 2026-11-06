@@ -1,6 +1,6 @@
 # Authoring Bismuth bases
 
-Read this page every time you create, edit or debug a Bismuth base: a `.base.jsonl` file, or a `type: base` markdown note, whose config declares a source, filters, formulas and one layout over the vault, or a ` ```query ` block in a note. It covers what every layout shares. Then read one page for the layout you are writing, `bases/authoring/<layout>.md` (for example `bismuth_docs_read {path: "bases/authoring/kanban.md"}`). There is one page per layout, and each has the same three sections, `## Working example`, `## Config keys` and `## Failure modes`, so you can fetch just one.
+Read this page every time you create, edit or debug a Bismuth base: a `.base.jsonl` file, or a `type: base` markdown note, whose config declares a source, filters, formulas and one layout over the vault, or a ` ```query ` block in a note. It covers what every layout shares. Then read one page for the layout you are writing, `bases/authoring/<layout>.md` (for example `bismuth docs read bases/authoring/kanban.md`). There is one page per layout, and each has the same three sections, `## Working example`, `## Config keys` and `## Failure modes`, so you can fetch just one with `bismuth docs read bases/authoring/<layout>.md --section "Config keys"`.
 
 ## The model
 

@@ -1,6 +1,5 @@
 // `bismuth map`: the vault's structural overview (folders, clusters, hubs, tags, surfaces) as the
-// markdown an agent reads, or its neighbourhood view of one note with --around. The CLI twin of
-// the MCP `vault_map` tool.
+// markdown an agent reads, or its neighbourhood view of one note with --around.
 import type { CommandMap } from '../types'
 import { BOOLEAN_FLAGS, bool, fail, flag, out, positionals, requireVault } from '../args'
 import {

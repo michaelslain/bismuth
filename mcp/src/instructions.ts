@@ -8,8 +8,13 @@
 // unit-testable and its size stays pinned — every session on the machine loads this, so it stays
 // terse on purpose.
 export const SERVER_INSTRUCTIONS =
+    'Bismuth is driven by its `bismuth` CLI, which owns every feature. With a shell, run ' +
+    '`bismuth <command>` (also at $BISMUTH_CLI); without one, call bismuth_cli with the same ' +
+    'arguments. Inside a vault no --vault is needed. `bismuth --help` lists commands, `bismuth ' +
+    '<group> --help` one group, `bismuth docs search <words>` and `bismuth docs read <page>` the ' +
+    'docs. Never run anything inside Bismuth.app: that binary is the app and opens a second window. ' +
     'EVERY time you create, edit or debug a Bismuth base (a `.base.jsonl` file, a `type: base` note, or a ```query ' +
-    'block), first read bases/authoring.md with bismuth_docs_read, then bases/authoring/<layout>.md ' +
+    'block), first run `bismuth docs read bases/authoring.md`, then bases/authoring/<layout>.md ' +
     'for the layout you are writing. Converting a vault between Obsidian and Bismuth: ' +
     'first read guides/converting-obsidian-to-bismuth.md or ' +
     'guides/converting-bismuth-to-obsidian.md. ' +
@@ -22,20 +27,19 @@ export const SERVER_INSTRUCTIONS =
     "'not done and due before <date>'` and read the descriptions, never grep for the user's " +
     'wording; tasks live in any note and a task names its deliverable, not its project ' +
     '(tasks/syntax.md). ' +
-    "An image or PDF has no frontmatter of its own — its tags/properties live in its companion " +
+    'An image or PDF has no frontmatter of its own — its tags/properties live in its companion ' +
     'note <file>.<ext>.md (e.g. paper.pdf.md), a hidden file the app opens as the binary itself. ' +
-    "To tag or set a property on a binary, run `bismuth prop set <file.pdf> tags '[\"a\",\"b\"]'` " +
+    'To tag or set a property on a binary, run `bismuth prop set <file.pdf> tags \'["a","b"]\'` ' +
     '(creates the companion if needed) — NEVER create a separate <name>.md that just embeds the ' +
     'file (e.g. `![[paper.pdf]]`) to hold tags; that makes a duplicate note, not a companion. ' +
-    'See bismuth_docs_read on ' +
-    'vault/frontmatter.md for more. Asked about what the user highlighted or marked in a PDF or ' +
+    'See vault/frontmatter.md for more. Asked about what the user highlighted or marked in a PDF or ' +
     'image: run `bismuth highlights <file.pdf>`; a PDF holds its highlights as standard annotations (other apps see them); ink lives in ' +
     '<file>.<ext>.draw. Asked what is hidden or off-limits to AI: run `bismuth ' +
     'settings deny-list`, never grep; an agent gets only a count by design, so give it and have ' +
     'the user run it for paths (vault/visibility.md). If Bismuth misbehaves after an update (missing CLI, stale MCP, ' +
-    'daemon not running), run bismuth_doctor first. ' +
-    'Asked to open or show a file in Bismuth: bismuth_cli `app open <vault-relative path>` opens it ' +
-    'in its own tab in the running app; `app tabs` lists what is open. ' +
+    'daemon not running), run `bismuth doctor` first. ' +
+    'Asked to open or show a file in Bismuth: `bismuth app open <vault-relative path>` opens it ' +
+    'in its own tab in the running app; `bismuth app tabs` lists what is open. ' +
     'In a Bismuth vault, when your session context holds no `# Vault map` section inside a `<bismuth-memory>` block, ' +
-    'call `brain` once at the start; use `vault_map` with `around` to see where a note sits ' +
+    'run `bismuth brain` once at the start; `bismuth map --around <note>` shows where a note sits ' +
     'before reorganising or linking it.'

@@ -29,7 +29,7 @@ function printHelp(): void {
     )
     printCommandList(ALL_KEYS)
     console.log(
-        '\nmost commands need a vault: pass --vault <dir> or set BISMUTH_VAULT.',
+        '\nmost commands need a vault: run inside one, pass --vault <dir> or set BISMUTH_VAULT.',
     )
 }
 
@@ -44,7 +44,7 @@ function printGroupHelp(group: string, keys: string[]): void {
     console.log(`bismuth ${group} — matching commands\n`)
     printCommandList(keys)
     console.log(
-        '\nmost commands need a vault: pass --vault <dir> or set BISMUTH_VAULT.',
+        '\nmost commands need a vault: run inside one, pass --vault <dir> or set BISMUTH_VAULT.',
     )
 }
 

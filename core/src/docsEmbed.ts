@@ -86,7 +86,7 @@ const entry = (id: string, title: string, text: string): MemoryNote =>
 
 /** One entry per `##` section of a page (deeper headings stay inside their `##`); a page with no `##`
  *  is one entry. Anchors are counted across every heading depth 2-6, exactly as `readDoc` does, so a
- *  duplicate heading gets the `-1` suffix `bismuth_docs_read` expects. Pure. */
+ *  duplicate heading gets the `-1` suffix `bismuth docs read` expects. Pure. */
 export function docSections(rel: string, text: string, fallbackTitle: string): MemoryNote[] {
     const lines = text.split(/\r?\n/)
     const pageTitle = lines.map(l => /^#\s+(.+?)\s*$/.exec(l)?.[1]).find(Boolean)?.trim() ?? fallbackTitle

@@ -51,14 +51,33 @@ export function runRecordPath(vault: string): string {
 
 let cleanupVault: string | null = null
 let cleanupInstalled = false
+/** The live record this core's write replaced: another core already serving the same vault. */
+let replacedRecord: RunRecord | null = null
+
+/** The record on disk for `vault`, or null when missing or unreadable. */
+function readRunRecordFile(vault: string): RunRecord | null {
+    try {
+        const rec = JSON.parse(readFileSync(runRecordPath(vault), 'utf8')) as RunRecord
+        return rec && typeof rec.pid === 'number' && typeof rec.port === 'number' ? rec : null
+    } catch {
+        return null
+    }
+}
 
 /** Write this core's discovery record atomically (temp+rename) and arrange best-effort cleanup on
- *  exit/termination. Never throws — a failure just means discovery falls back to :4321. */
+ *  exit/termination. Never throws — a failure just means discovery falls back to :4321.
+ *
+ *  Two cores can serve one vault at once (the app's own core, and a second one started by the app
+ *  binary run with arguments, a dev server or a test). The second overwrites the first's record, and
+ *  remembers it: on exit it puts that record back when its core is still alive, so the app that
+ *  keeps running stays reachable. */
 export function writeRunRecord(rec: RunRecord): void {
     try {
         const dir = runRegistryDir()
         mkdirSync(dir, { recursive: true })
         const file = runRecordPath(rec.vault)
+        const prior = readRunRecordFile(rec.vault)
+        replacedRecord = prior && prior.pid !== rec.pid && pidAlive(prior.pid) ? prior : null
         // 0600: this record now carries the boot's owner token (ownerToken.ts) — a per-process
         // secret that must not be world-readable. writeFileAtomicSync applies the mode to a fresh
         // tmp file at CREATE time and renames that inode onto `file`, so the mode survives rather
@@ -68,7 +87,8 @@ export function writeRunRecord(rec: RunRecord): void {
         if (!cleanupInstalled) {
             cleanupInstalled = true
             const clean = () => {
-                if (cleanupVault) deleteRunRecord(cleanupVault)
+                if (cleanupVault)
+                    releaseRunRecord(cleanupVault, process.pid, replacedRecord)
             }
             process.on('exit', clean)
             for (const sig of ['SIGINT', 'SIGTERM'] as const)
@@ -77,6 +97,33 @@ export function writeRunRecord(rec: RunRecord): void {
     } catch {
         /* best-effort — discovery is a convenience, not a requirement */
     }
+}
+
+/**
+ * An exiting core's cleanup. The record is removed only when it is still `pid`'s own: a record a
+ * newer core wrote since is left alone. When this core had replaced a live core's record
+ * (`previous`), that record is written back instead, so the core still running stays reachable.
+ */
+export function releaseRunRecord(
+    vault: string,
+    pid: number,
+    previous: RunRecord | null = null,
+): void {
+    const current = readRunRecordFile(vault)
+    if (current && current.pid !== pid) return
+    if (previous && previous.pid !== pid && pidAlive(previous.pid)) {
+        try {
+            writeFileAtomicSync(
+                runRecordPath(vault),
+                JSON.stringify(previous, null, 2),
+                { mode: 0o600 },
+            )
+            return
+        } catch {
+            /* fall through to delete our own */
+        }
+    }
+    if (current) deleteRunRecord(vault)
 }
 
 export function deleteRunRecord(vault: string): void {

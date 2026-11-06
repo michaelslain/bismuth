@@ -72,9 +72,9 @@ Surfaces show a base count with the folders holding most of them, the number of 
 An agent gets the map in two places:
 
 - **At session start.** In a vault with the daemon enabled, the memory block an agent receives when a session starts, resumes, clears or compacts carries a `# Vault map (N notes)` section, after the `# Who you are working with` profile and before the memory index. [Memory injection](../daemon/communication.md) describes the block.
-- **On demand.** The `vault_map` MCP tool runs `bismuth map`, and the `brain` MCP tool runs `bismuth brain`. An agent whose context has no `# Vault map` section calls `brain` once at the start.
+- **On demand.** `bismuth map` prints the map and `bismuth brain` prints the whole session-start block. An agent whose context has no `# Vault map` section runs `bismuth brain` once at the start. Over MCP the same commands go through the `bismuth_cli` tool.
 
-The MCP tools run against the session's vault and the session's visibility channel, so an agent reads the same restricted view it gets everywhere else.
+The commands run against the session's vault and the session's visibility channel, so an agent reads the same restricted view it gets everywhere else.
 
 ## How do I print the map?
 
@@ -184,6 +184,6 @@ Concurrent callers share one build. A caller waits up to a limit (1 second by de
 ### Channels and tools
 
 `bismuth map` reads its deny list with `agentDenyEntries` (`core/src/visibilityFilter.ts`), which is empty for the owner and fails closed for an agent. `bismuth brain` picks the `daemon` channel when either environment signal says so and the `chat` channel otherwise.
-The `vault_map` and `brain` tools in `mcp/src/server.ts` spawn the same CLI commands with `--vault` set to the daemon vault root, which is why the CLI and the tools never drift. A session outside a vault gets `Not in a Bismuth vault: no vault map available.`
+The `bismuth_cli` tool in `mcp/src/server.ts` runs these same commands in the MCP server's working directory, which is the agent session's, so the CLI finds the vault the way it does in a shell (`--vault`, then `BISMUTH_VAULT`, then the nearest ancestor holding `.settings`).
 
 Source: `core/src/vaultMap.ts`, `core/src/brain.ts`, `core/src/community.ts`, `core/src/visibilityFilter.ts`, `cli/src/commands/map.ts`, `cli/src/commands/brain.ts`, `mcp/src/server.ts`

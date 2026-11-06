@@ -360,8 +360,10 @@ Several tests exist to fail when two things that must agree drift apart. If one 
 | `app/src/ui/barDropLevels.test.ts` | A `data-bar-drop` level is not one `barFit.ts` defines, or the toolbar hides controls by width instead of by fit |
 | `core/test/guides.test.ts` | A Bases authoring page is missing for a layout, lacks its three fixed sections, or cites a missing docs page |
 | `cli/test/guideCommands.test.ts` | A `bismuth …` command shown in a guide is not a real CLI command |
-| `cli/test/mcpParity.test.ts` | An MCP tool has no CLI twin in `CLI_TWINS`, or a twin names a missing command |
+| `cli/test/mcpParity.test.ts` | An MCP tool has no CLI twin in `CLI_TWINS`, a twin names a missing command, or the server lists a tool other than `bismuth_cli` and the memory tools |
 | `cli/test/mcpArgParity.test.ts` | A tool parameter or a twin command's flag or positional has no partner and no `ARG_EXCEPTIONS` entry, a command's `args` disagrees with what its `run` reads, or an argv mapper drops a parameter |
+| `cli/test/vaultFromCwd.test.ts` | A flagless command inside a vault stops resolving that vault, `--vault` or `BISMUTH_VAULT` stops winning over the working directory, or the run registry stops matching that vault to its app |
+| `core/test/agentEnvFile.test.ts` | The env file `CLAUDE_ENV_FILE` names stops putting the bismuth bin directory on `PATH`, drops the user's own env file, or `agentShellEnv` stops aiming at the vault |
 | `mcp/test/serverInstructions.test.ts` | The MCP server instructions grow past their size pin or name a missing docs page |
 | `core/test/agentBackends/catalogParity.test.ts` | A backend's capability flag in `catalog.ts` is true but its `CHAT_BACKENDS` entry lacks the matching verb, or the reverse |
 | `core/test/noRawMkdtemp.test.ts` | A test calls `mkdtemp` instead of `tempDir` |

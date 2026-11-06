@@ -49,8 +49,8 @@ bun run build:app
 - [Vault map](vault/map.md) — the folders, hubs, clusters and surfaces overview agents get at session start, and `bismuth map`
 - [Semantic search](vault/semantic-search.md) — find notes by meaning with `bismuth search --semantic`, the `embeddings.enabled` switch and what it costs
 - [Frontmatter and properties](vault/frontmatter.md) — YAML properties, their types, and companion notes for images and PDFs
-- [Convert a PDF to markdown](vault/pdf-to-markdown.md) — a new note beside the PDF with LaTeX math and a `source` link back, from the PDF bar, `bismuth pdf md` or the `pdf_to_markdown` MCP tool
-- [OCR for PDFs and images](vault/ocr.md) — make a scanned PDF's text selectable and transcribe PDFs and images to notes with LaTeX math, with `bismuth ocr` or the `ocr` MCP tool
+- [Convert a PDF to markdown](vault/pdf-to-markdown.md) — a new note beside the PDF with LaTeX math and a `source` link back, from the PDF bar or `bismuth pdf md`
+- [OCR for PDFs and images](vault/ocr.md) — make a scanned PDF's text selectable and transcribe PDFs and images to notes with LaTeX math, with `bismuth ocr`
 - [Wikilinks and tags](vault/wikilinks-tags.md) — `[[links]]` matched by file name, `#tags`, and how each resolves
 - [Attachments and embeds](vault/attachments.md) — `![[file]]` and `![](url)` embeds, sizing, and where pasted files go
 
@@ -99,9 +99,8 @@ bun run build:app
 - [opencode providers](chat/opencode-providers.md) — connect a model provider to opencode chats from the app
 - [Local models](chat/local-models.md) — run chats on LM Studio or Ollama models
 - [Terminal tabs and the relay](terminal/overview.md) — in-app terminals and how agent sessions report back
-- [MCP server](mcp/overview.md) — the tools any MCP client gets: docs, the CLI, memory
-- [MCP daemon tools](mcp/daemon-tools.md) — crons, processes and the inbox, for agents
-- [App control](mcp/app-control.md) — drive a running window's tabs from a shell or an agent
+- [MCP server](mcp/overview.md) — a thin adapter over the CLI: `bismuth_cli` for hosts with no shell, plus the memory tools
+- [App control](mcp/app-control.md) — drive a running window's tabs with `bismuth app`
 - [Visibility controls](vault/visibility.md) — hide notes and folders from agents, per channel
 - [Visibility acceptance](vault/visibility-acceptance.md) — which routes are verified to honour visibility, and which are not
 

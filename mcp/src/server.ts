@@ -7,9 +7,8 @@ import {
     type CallToolRequest,
     type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js'
-import { DOC_READ_MAX_CHARS, listDocs, searchDocs, readDoc } from './docs'
 import { SERVER_INSTRUCTIONS } from './instructions'
-import { runCli, cliHelp, cliToolResult } from './cli'
+import { runCli, cliToolResult } from './cli'
 import {
     memoryDir,
     remember,
@@ -18,19 +17,13 @@ import {
     MEMORY_UNAVAILABLE,
 } from './memory'
 import { mcpChannel } from '../../core/src/visibilityCliGate'
-import {
-    daemonTools,
-    daemonEnabled,
-    daemonVaultRoot,
-    isDaemonTool,
-    runDaemonTool,
-} from './daemon'
 
-// mcp/src → repo root → docs/. In a machine-wide install the compiled binary lives in
-// ~/.bismuth (import.meta.dir is virtual), so the installer sets BISMUTH_DOCS_DIR (→ the staged
-// docs) and BISMUTH_CLI (→ the compiled cli binary, consumed in cli.ts).
+// The MCP server is a thin adapter over the `bismuth` CLI, which owns every feature: an agent with a
+// shell runs `bismuth …` itself, and `bismuth_cli` carries the same argv for a host with no shell.
+// Only the memory tools are named tools, because their content is a structured note rather than
+// argv. mcp/src → repo root, for the dev-repo CLI fallback; in a machine-wide install the installer
+// sets BISMUTH_CLI (→ the compiled cli binary, consumed in cli.ts).
 const repoRoot = resolve(import.meta.dir, '..', '..')
-const docsRoot = process.env.BISMUTH_DOCS_DIR ?? repoRoot + '/docs'
 // `instructions` reaches the client BEFORE any tool call — see mcp/src/instructions.ts's header
 // comment for why the tagging guidance lives there specifically.
 export const server = new Server(
@@ -41,183 +34,9 @@ export const server = new Server(
 // Raw JSON Schema tool definitions. Kept terse on purpose — token-frugal.
 const tools = [
     {
-        name: 'bismuth_docs_list',
-        description:
-            'List all Bismuth doc pages (path + title). Start here to discover docs.',
-        inputSchema: {
-            type: 'object',
-            properties: {},
-        },
-    },
-    {
-        name: 'bismuth_docs_search',
-        description:
-            'Search the Bismuth docs; returns matching {path, heading, snippet} (NOT full text) — cheap. Then read only the page you need.',
-        inputSchema: {
-            type: 'object',
-            properties: {
-                query: { type: 'string', description: 'Search terms.' },
-                limit: { type: 'number', description: 'Max results.' },
-            },
-            required: ['query'],
-        },
-    },
-    {
-        name: 'bismuth_docs_read',
-        description:
-            "Read one Bismuth doc page (or a single section). path is relative like 'bases/overview.md'.",
-        inputSchema: {
-            type: 'object',
-            properties: {
-                path: {
-                    type: 'string',
-                    description:
-                        "Doc path relative to docs/, e.g. 'bases/overview.md'.",
-                },
-                section: {
-                    type: 'string',
-                    description:
-                        'Optional heading (or #anchor slug) to return just that section.',
-                },
-                full: {
-                    type: 'boolean',
-                    description:
-                        'Return the whole page even when it is over the length limit (default: long pages return an outline).',
-                },
-            },
-            required: ['path'],
-        },
-    },
-    {
-        name: 'bismuth_doctor',
-        description:
-            'Check this machine (and a vault) for leftovers from older Bismuth builds, version skew and pending migrations; fix:true repairs. Repairs already applied (by boot or an earlier fix) are in daemon_logs with kind "doctor". (bismuth doctor)',
-        inputSchema: {
-            type: 'object',
-            properties: {
-                fix: {
-                    type: 'boolean',
-                    description: 'Apply the repairs. Omit to only report.',
-                },
-                safeOnly: {
-                    type: 'boolean',
-                    description:
-                        'With fix: apply only repairs that cannot lose data.',
-                },
-                only: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    description: 'Only these finding ids, e.g. legacy.claude-bot-service.',
-                },
-                section: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    description:
-                        'Only these sections: legacy, install, daemon, runtime, vault, backends.',
-                },
-                vault: {
-                    type: 'string',
-                    description: 'Vault path to include the vault checks.',
-                },
-            },
-        },
-    },
-    {
-        name: 'vault_map',
-        description:
-            "The vault's structure: folders, clusters, hub notes, tags, surfaces. around:<note> shows where one note sits (links, siblings, memories). (bismuth map)",
-        inputSchema: {
-            type: 'object',
-            properties: {
-                folder: {
-                    type: 'string',
-                    description: 'Limit to this folder subtree.',
-                },
-                around: {
-                    type: 'string',
-                    description:
-                        "A note path: show its neighbourhood instead of the whole map.",
-                },
-            },
-        },
-    },
-    {
-        name: 'brain',
-        description:
-            'The session-start context: who you work with, the vault map and the memory index. Call once at the start when your context has no vault map. (bismuth brain)',
-        inputSchema: {
-            type: 'object',
-            properties: {},
-        },
-    },
-    {
-        name: 'ocr',
-        description:
-            "OCR a vault PDF or image. A PDF gets a selectable, highlightable text layer in place; math:true also transcribes it, math as LaTeX, to <name>.ocr.md beside it; an image always gets that note. Minutes on a long file. (bismuth ocr)",
-        inputSchema: {
-            type: 'object',
-            properties: {
-                path: {
-                    type: 'string',
-                    description: "Vault-relative PDF or image, e.g. 'papers/x.pdf'.",
-                },
-                math: {
-                    type: 'boolean',
-                    description:
-                        'Also write <name>.ocr.md: markdown with $LaTeX$ math (Marker).',
-                },
-                force: {
-                    type: 'boolean',
-                    description:
-                        'OCR every page even where text exists; for a garbage text layer. Grows the PDF.',
-                },
-                lang: {
-                    type: 'string',
-                    description: "Tesseract languages, e.g. 'eng+deu'. Default eng.",
-                },
-                pages: {
-                    type: 'string',
-                    description: "1-based pages, e.g. '1-3,7'. Default all.",
-                },
-                replace: {
-                    type: 'boolean',
-                    description: 'Rewrite an existing <name>.ocr.md.',
-                },
-            },
-            required: ['path'],
-        },
-    },
-    {
-        name: 'pdf_to_markdown',
-        description:
-            "Convert a vault PDF to a new markdown note beside it (x.pdf → x.md): headings, lists, tables, math as $LaTeX$ (Marker), with a `source` property linking back. The PDF is not modified. Minutes on a long file. (bismuth pdf md)",
-        inputSchema: {
-            type: 'object',
-            properties: {
-                path: {
-                    type: 'string',
-                    description: "Vault-relative PDF, e.g. 'papers/x.pdf'.",
-                },
-                pages: {
-                    type: 'string',
-                    description: "1-based pages, e.g. '1-3,7'. Default all.",
-                },
-                force: {
-                    type: 'boolean',
-                    description: 'OCR every page even where text exists; for a garbage text layer.',
-                },
-                replace: {
-                    type: 'boolean',
-                    description: 'Rewrite an existing x.md.',
-                },
-            },
-            required: ['path'],
-        },
-    },
-    {
         name: 'bismuth_cli',
         description:
-            "Run the bismuth CLI with these args (e.g. ['task','list','--vault','/path']; ['app','open','notes/x.md'] opens a file as a tab in the running app). Returns stdout/stderr/exit code.",
+            "Run the bismuth CLI, which does everything Bismuth does: one argument per array element, exactly as you would type after `bismuth` in a shell. ['--help'] lists every command, ['task','--help'] one group, ['docs','search','<words>'] and ['docs','read','<page>'] read the docs, ['app','open','notes/x.md'] opens a file as a tab in the running app. The vault is the one your session runs in unless you pass --vault. Returns stdout, stderr and the exit code.",
         inputSchema: {
             type: 'object',
             properties: {
@@ -228,20 +47,6 @@ const tools = [
                 },
             },
             required: ['args'],
-        },
-    },
-    {
-        name: 'bismuth_cli_help',
-        description:
-            "Show the bismuth CLI reference (all commands, or one group like 'task').",
-        inputSchema: {
-            type: 'object',
-            properties: {
-                group: {
-                    type: 'string',
-                    description: "Optional command group, e.g. 'task'.",
-                },
-            },
         },
     },
 ] as const
@@ -333,10 +138,6 @@ const memoryTools = [
     },
 ] as const
 
-// The memory tools AND the daemon-management tools share ONE gate — the daemon being enabled
-// for this vault (memoryDir()/daemonEnabled(), i.e. BISMUTH_MEMORY_DIR is injected). Outside a
-// daemon-enabled session the server exposes only the always-on set; a machine-wide session
-// with no daemon never sees remember/recall/forget nor the crons/processes/pages tools.
 /** The slice of a tool definition the parity audits read: its name and its input parameters. */
 export type ToolDef = {
     name: string
@@ -344,76 +145,23 @@ export type ToolDef = {
         required?: readonly string[]
         properties: Record<
             string,
-            { type?: string; enum?: readonly string[]; items?: { type?: string } }
+            {
+                type?: string
+                enum?: readonly string[]
+                items?: { type?: string }
+            }
         >
     }
 }
 
-/** Every tool this server can ever list — the always-on set plus the daemon-gated memory and
- *  daemon tools. `cli/test/mcpParity.test.ts` checks each against CLI_TWINS (./cliTwins.ts) and
+/** Every tool this server can ever list — `bismuth_cli` plus the daemon-gated memory tools. `cli/test/mcpParity.test.ts` checks each against CLI_TWINS (./cliTwins.ts) and
  *  `cli/test/mcpArgParity.test.ts` checks each one's input parameters against its twin's arguments. */
-export const ALL_TOOLS = [...tools, ...memoryTools, ...daemonTools] as readonly ToolDef[]
+export const ALL_TOOLS = [...tools, ...memoryTools] as readonly ToolDef[]
 
 export const ALL_TOOL_NAMES: string[] = ALL_TOOLS.map(t => t.name)
 
-/** PURE: the CLI argv a vault_map call runs. */
-export function vaultMapCliArgs(a: Record<string, unknown>): string[] {
-    const argv = ['map']
-    if (typeof a.folder === 'string' && a.folder.length > 0)
-        argv.push('--folder', a.folder)
-    if (typeof a.around === 'string' && a.around.length > 0)
-        argv.push('--around', a.around)
-    return argv
-}
-
-/** PURE: the CLI argv a bismuth_doctor call runs. Always `--json`, so the agent gets the full
- *  report (findings, fixed, failed, pending) rather than the terminal table. */
-export function doctorCliArgs(a: Record<string, unknown>): string[] {
-    const argv = ['doctor', '--json']
-    if (a.fix === true) argv.push('--fix')
-    if (a.safeOnly === true) argv.push('--safe-only')
-    const list = (v: unknown): string | undefined => {
-        const items = Array.isArray(v)
-            ? v.map(String).filter(x => x.length > 0)
-            : []
-        return items.length > 0 ? items.join(',') : undefined
-    }
-    const only = list(a.only)
-    if (only) argv.push('--only', only)
-    const section = list(a.section)
-    if (section) argv.push('--section', section)
-    if (typeof a.vault === 'string' && a.vault.length > 0)
-        argv.push('--vault', a.vault)
-    return argv
-}
-
-/** OCR and pdf_to_markdown run Marker's models over every page, far past bismuth_cli's 30 s. */
-export const OCR_TIMEOUT_MS = 30 * 60_000
-
-/** PURE: the CLI argv an ocr call runs against `vault`. */
-export function ocrCliArgs(a: Record<string, unknown>, vault: string): string[] {
-    const argv = ['ocr', String(a.path ?? '')]
-    if (a.math === true) argv.push('--math')
-    if (a.force === true) argv.push('--force')
-    if (a.replace === true) argv.push('--replace')
-    if (typeof a.lang === 'string' && a.lang.length > 0) argv.push('--lang', a.lang)
-    if (typeof a.pages === 'string' && a.pages.length > 0) argv.push('--pages', a.pages)
-    argv.push('--vault', vault)
-    return argv
-}
-
-/** PURE: the CLI argv a pdf_to_markdown call runs against `vault`. */
-export function pdfToMarkdownCliArgs(a: Record<string, unknown>, vault: string): string[] {
-    const argv = ['pdf', 'md', String(a.path ?? '')]
-    if (a.force === true) argv.push('--force')
-    if (a.replace === true) argv.push('--replace')
-    if (typeof a.pages === 'string' && a.pages.length > 0) argv.push('--pages', a.pages)
-    argv.push('--vault', vault)
-    return argv
-}
-
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools,
+    tools: memoryDir() ? [...tools, ...memoryTools] : tools,
 }))
 
 function asText(result: unknown): string {
@@ -454,7 +202,7 @@ const memoryHandlers: Record<
 
 // Exported (rather than left as an inline callback) so tests can dispatch a fabricated
 // CallToolRequest straight through the real switch/case wiring — the thing that actually
-// determines isError — instead of only exercising the helpers (cliToolResult, cliHelp) it calls.
+// determines isError — instead of only exercising the helpers (cliToolResult) it calls.
 export async function handleCallTool(
     request: CallToolRequest,
 ): Promise<CallToolResult> {
@@ -462,73 +210,11 @@ export async function handleCallTool(
     const args = (rawArgs ?? {}) as Record<string, unknown>
     try {
         switch (name) {
-            case 'bismuth_docs_list':
-                return textResult(asText(await listDocs(docsRoot)))
-            case 'bismuth_docs_search': {
-                const query = args.query as string
-                const limit =
-                    typeof args.limit === 'number' ? args.limit : undefined
-                return textResult(
-                    asText(await searchDocs(docsRoot, query, limit)),
-                )
-            }
-            case 'bismuth_docs_read': {
-                const path = args.path as string
-                const section =
-                    typeof args.section === 'string' ? args.section : undefined
-                return textResult(
-                    asText(
-                        await readDoc(docsRoot, path, section, {
-                            maxChars: DOC_READ_MAX_CHARS,
-                            full: args.full === true,
-                        }),
-                    ),
-                )
-            }
-            case 'bismuth_doctor':
-                return cliToolResult(await runCli(repoRoot, doctorCliArgs(args)))
-            case 'vault_map':
-            case 'brain': {
-                const root = daemonVaultRoot()
-                if (!root) return textResult('Not in a Bismuth vault: no vault map available.')
-                const argv =
-                    name === 'brain' ? ['brain'] : vaultMapCliArgs(args)
-                return cliToolResult(await runCli(repoRoot, [...argv, '--vault', root]))
-            }
-            case 'ocr': {
-                if (typeof args.path !== 'string' || args.path.length === 0)
-                    return textResult('ocr needs a path.', true)
-                const root = daemonVaultRoot()
-                if (!root) return textResult('Not in a Bismuth vault: ocr needs one.', true)
-                return cliToolResult(
-                    await runCli(repoRoot, ocrCliArgs(args, root), {
-                        timeoutMs: OCR_TIMEOUT_MS,
-                    }),
-                )
-            }
-            case 'pdf_to_markdown': {
-                if (typeof args.path !== 'string' || args.path.length === 0)
-                    return textResult('pdf_to_markdown needs a path.', true)
-                const root = daemonVaultRoot()
-                if (!root)
-                    return textResult('Not in a Bismuth vault: pdf_to_markdown needs one.', true)
-                return cliToolResult(
-                    await runCli(repoRoot, pdfToMarkdownCliArgs(args, root), {
-                        timeoutMs: OCR_TIMEOUT_MS,
-                    }),
-                )
-            }
             case 'bismuth_cli': {
                 const cliArgs = Array.isArray(args.args)
                     ? (args.args as unknown[]).map(String)
                     : []
                 return cliToolResult(await runCli(repoRoot, cliArgs))
-            }
-            case 'bismuth_cli_help': {
-                const group =
-                    typeof args.group === 'string' ? args.group : undefined
-                const { text, ok } = await cliHelp(repoRoot, group)
-                return textResult(text, !ok)
             }
             case 'remember':
             case 'recall':
@@ -540,23 +226,6 @@ export async function handleCallTool(
                 return textResult(asText(await memoryHandlers[name](args, dir)))
             }
             default:
-                // Daemon-management tools (crons/processes/pages/status/devices/owner) bridge the
-                // bismuth CLI. They're only listed when the daemon is enabled; guard the call path too
-                // so an out-of-context invocation degrades gracefully instead of hitting "Unknown tool".
-                if (isDaemonTool(name)) {
-                    if (!daemonEnabled()) {
-                        return textResult(
-                            'Daemon tools are unavailable — the daemon is not enabled for this vault.',
-                            true,
-                        )
-                    }
-                    const { text, isError } = await runDaemonTool(
-                        repoRoot,
-                        name,
-                        args,
-                    )
-                    return textResult(text, isError)
-                }
                 return textResult(`Unknown tool: ${name}`, true)
         }
     } catch (err) {

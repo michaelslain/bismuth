@@ -124,7 +124,7 @@ Claude Code is the only backend whose chat and daemon enforcement is verified.
 | The sandbox block is omitted when nothing is restricted, and sets `failIfUnavailable: true` and `allowUnsandboxedCommands: false` when something is | Yes, as option shape | `core/test/chat.test.ts`, `daemon/test/session.test.ts` |
 | The deny list carries the vault's `.git` and the owner-token file | Yes | `core/test/visibility.test.ts`, `core/test/ownerToken.test.ts` |
 | A direct `canUseTool` check denies a restricted path in any case spelling | Yes | `core/test/visibility.test.ts` (`isDeniedPath`) |
-| The chat and daemon disable Grep, Glob and `bismuth_cli` in a restricted vault | No | Wired in `core/src/chat.ts` and `daemon/src/daemon/session.ts`; no test asserts the list |
+| The chat and daemon disable Grep and Glob, and only those, in a restricted vault | Daemon only | `daemon/test/session.test.ts` asserts the daemon's list and that an unrestricted vault disables nothing; the chat's list is wired in `core/src/chat.ts` and no test asserts it |
 | A visibility change respawns the chat with a fresh deny list | No | Wired through `invalidateChatVisibility` and `respawnSession`; no test asserts it |
 | The OS sandbox blocks a Bash `cat`, `python3 -c` or `bismuth read` of a hidden file | Observed by hand | An `EPERM` from the kernel in a live probe; the suite tests the same primitive only for the token file |
 | `sandbox.failIfUnavailable: true` refuses a session whose sandbox cannot start | No | The condition could not be forced; the claim rests on the SDK's documented default for `Options.sandbox` and on the option-shape tests |

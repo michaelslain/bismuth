@@ -52,13 +52,11 @@ A sentence Marker splits before an inline equation is joined back into one parag
 
 ## Options
 
-Every option applies to the CLI command and the MCP tool.
-
-| Flag | MCP argument | Effect |
-|---|---|---|
-| `--pages <spec>` | `pages` | 1-based pages, such as `3`, `1-4` or `1-3,7` |
-| `--force` | `force: true` | Read every page as an image even where text exists; use it when copied text from the PDF is garbage |
-| `--replace` | `replace: true` | Rewrite an existing note |
+| Flag | Effect |
+|---|---|
+| `--pages <spec>` | 1-based pages, such as `3`, `1-4` or `1-3,7` |
+| `--force` | Read every page as an image even where text exists; use it when copied text from the PDF is garbage |
+| `--replace` | Rewrite an existing note |
 
 Without `--replace`, an existing note is refused with `EEXIST` and left as it is, so a note you edited is never overwritten. A path that is not a PDF is refused with `not a PDF`, and a missing file with `no such file`.
 
@@ -70,7 +68,7 @@ PDFs whose pages hold both text and images convert like any other.
 
 ## Convert as an agent
 
-An agent calls the `pdf_to_markdown` MCP tool with `path` and the arguments in the options table. It is its own tool rather than a `bismuth_cli` call because a long PDF takes minutes and `bismuth_cli` gives up after 30 seconds; `pdf_to_markdown` waits up to 30 minutes. It is path-scoped under the vault's visibility settings: a hidden PDF is refused like any other read. See [visibility](visibility.md).
+An agent runs `bismuth pdf md <path>` in its shell with the flags in the options table. A host with no shell calls the `bismuth_cli` MCP tool with the same arguments, such as `["pdf", "md", "papers/scan.pdf"]`; `bismuth_cli` gives `pdf` and `ocr` commands 30 minutes and every other command 2 minutes, because a long PDF takes minutes. The command finds the vault from the session's working directory when no `--vault` or `BISMUTH_VAULT` is given. It is path-scoped under the vault's visibility settings: a hidden PDF is refused like any other read. See [visibility](visibility.md).
 
 To give a scanned PDF a selectable text layer instead, which does change the PDF, use [`bismuth ocr`](ocr.md).
 
@@ -80,10 +78,10 @@ To give a scanned PDF a selectable text layer instead, which does change the PDF
 
 marker-pdf 2.0.0 reads an image's box with `PdfObject.get_pos`, a method the pypdfium2 5 it pins names `get_bounds`, and it reaches that call on any page with text and an image, because `markerArgs` passes `--strip_existing_ocr`. `markerTranscribe` therefore runs Marker with `markerShimEnv`, which puts a `sitecustomize.py` holding `MARKER_SHIM` first on `PYTHONPATH`; the shim adds `get_pos` as an alias of `get_bounds` only when `get_pos` is missing. `markerFailure` turns a non-zero exit into the one-line message, with `MARKER_REPAIR` as the command.
 
-The CLI command is `pdf md` in `cli/src/commands/pdf.ts`. The MCP tool is `pdf_to_markdown` in `mcp/src/server.ts`, which runs the command through `pdfToMarkdownCliArgs` with `OCR_TIMEOUT_MS`. `pdf` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
+The CLI command is `pdf md` in `cli/src/commands/pdf.ts`. `bismuth_cli` runs it with the long timeout `cliTimeoutMs` in `mcp/src/cli.ts` picks for `pdf` and `ocr`. `pdf` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
 
 The button cannot hold one HTTP request open for the whole run, since Bun drops a request idle for 255 seconds. `POST /convert/pdf-markdown` calls `startPdfMarkdownJob`, which starts the conversion in the background and answers at once; `GET /convert/pdf-markdown` reads the job's state from `pdfMarkdownJob`. A start while a job for the same PDF runs joins it. `POST /convert/pdf-markdown/cancel` calls `cancelPdfMarkdownJob`, which marks the job `cancelled` and aborts it; a start that follows waits for the stopped run to settle, because the stopping Marker would tear down the llama-server a new run attaches to.
 
 Marker ignores SIGINT, and it stops the llama-server it spawned only from a Python `atexit`. So `runTool` in `core/src/marker.ts` stops an engine by freezing it, listing its descendants with `descendants`, killing it, and sending each descendant SIGTERM, then SIGKILL after `STOP_GRACE_MS`. Surya replaces the llama-server sentinel the killed run leaves behind on its next start. `app/src/preview/pdfMarkdownJobs.ts` polls the job, raises the toasts and opens the note, and `cancelConversion` wakes the poll so the bar clears at once; it is module-level, so a job outlives the PDF's tab. The note is written like any external write, and the file watcher picks it up.
 
-Source: `core/src/pdfMarkdown.ts`, `core/src/marker.ts`, `core/src/routes/vault.ts`, `cli/src/commands/pdf.ts`, `mcp/src/server.ts`, `app/src/preview/pdfMarkdownJobs.ts`, `app/src/preview/PreviewBar.tsx`
+Source: `core/src/pdfMarkdown.ts`, `core/src/marker.ts`, `core/src/routes/vault.ts`, `cli/src/commands/pdf.ts`, `mcp/src/cli.ts`, `app/src/preview/pdfMarkdownJobs.ts`, `app/src/preview/PreviewBar.tsx`

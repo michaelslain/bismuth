@@ -69,7 +69,7 @@ It prints `{"path":".daemon/pages/reply-drafts.md","slug":"reply-drafts"}`. The 
 | `bismuth page reply <path> <text...> --vault <vault>` | Answer in plain words, as the reply prompt does |
 | `bismuth page mark-failed <path> --vault <vault>` | Force a stuck page to `failed` |
 
-The same operations are the `page_list`, `page_create` and `page_resolve` tools in [the MCP daemon tools](../mcp/daemon-tools.md).
+An agent with only the MCP server runs these through `bismuth_cli`, for example with the arguments `["page","list"]`; the [CLI reference](../cli/reference.md#page) lists every flag.
 
 ## When a page is due
 

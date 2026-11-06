@@ -152,15 +152,18 @@ OpenClaw shows why that is worth doing on its own: a weak chat backend whose MCP
 The daemon runs unattended against the vault, which makes it the one surface with a security constraint rather than a capability question.
 
 A vault's [visibility gate](../vault/visibility.md) is enforced by three Claude Code mechanisms working together: `managedSettings.permissions.deny`, `sandbox.filesystem.denyRead` and `disallowedTools`.
+In a vault that restricts any note, `disallowedTools` holds `Grep` and `Glob` and nothing else, in the daemon and in the chat. The `bismuth_cli` MCP tool stays available, because it runs through the same CLI visibility gate as `bismuth` in the session's own shell.
 The system-prompt appendix that names hidden notes is advisory, defence in depth and never the gate.
 
 No other CLI has that combination. So for a vault with any hidden note, only the Claude backend may run the brain. `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) is the pure chokepoint that enforces this, and every backend selection passes through it.
 It degrades to Claude with a logged reason rather than throwing, because the daemon is always on and its crons must keep firing.
 
 The persona is a per-backend channel too.
-Every daemon backend gets the same persona text (`You are <name>.` plus the vault's `identity.md` body, plus the advisory deny-list appendix when notes are hidden) through its own channel, declared in `DAEMON_PERSONA_CHANNELS` (`daemon/src/daemon/persona.ts`).
+Every daemon backend gets the same persona text (`You are <name>.`, the vault's `identity.md` body, the `AGENT_CLI_NOTE` paragraph that names the `bismuth` CLI as the way into Bismuth, and the advisory deny-list appendix when notes are hidden) through its own channel, declared in `DAEMON_PERSONA_CHANNELS` (`daemon/src/daemon/persona.ts`).
 Claude appends it through `systemPrompt: { type: 'preset', preset: 'claude_code', append }`; Codex receives `--config developer_instructions=<persona>` on every `codex exec` call. A backend with no declared channel cannot run as a daemon, and `sendMessage` refuses it.
-The AGENTS.md block (`settings.codex.writeAgentsMd`) is optional and is not the daemon's persona channel.
+The AGENTS.md block (`settings.codex.writeAgentsMd`) is optional and is not the daemon's persona channel. It names the `bismuth` CLI as the way in, and points to `bismuth docs read` for the bases authoring and Obsidian conversion guides.
+
+A Claude daemon session and a Claude chat both reach the CLI from their shell: the spawn env sets `CLAUDE_ENV_FILE` to `~/.bismuth/agent-env.sh`, which puts `~/.bismuth/bin` on the Bash tool's `PATH`, plus `BISMUTH_VAULT` and `BISMUTH_CLI` (`agentShellEnv` in `core/src/agentEnvFile.ts`).
 
 ### The visibility gate is per channel
 
@@ -188,4 +191,4 @@ A flag, a payload field or a generated type that asserts a capability should fai
 - Do not trust generated types over the running server: opencode's SDK types disagree with its server on the delta and permission events, so those events are read as untyped JSON.
 - A flag nobody reads asserts nothing: `visibilityGate` has real consumers: `resolveDaemonBackend` and the chat router's `resolveVisibilityGate` branch on it.
 
-Source: `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/bismuthInstall.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/terminal.ts`, `core/src/relay.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/persona.ts`, `app/src/chat/chatProvider.ts`, `app/src/chat/agentAvailability.ts`, `cli/src/commands/backends.ts`
+Source: `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/bismuthInstall.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/terminal.ts`, `core/src/relay.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/persona.ts`, `core/src/agentEnvFile.ts`, `core/src/agentCliNote.ts`, `app/src/chat/chatProvider.ts`, `app/src/chat/agentAvailability.ts`, `cli/src/commands/backends.ts`

@@ -94,7 +94,7 @@ The brain reaches each kind of session in its own way:
 | Visual chat | A `SessionStart` hook that asks the same recall service in-process. It is sent again after `compact` and `clear` |
 | opencode chat | The system field of every turn. It is kept for the session only once it holds a `# Vault map` section; until then (a timeout, or a map still building) the next turn asks again |
 | Daemon cron and page sessions | Appended to the daemon's persona: Claude gets it in the system prompt, Codex in its developer instructions |
-| Any agent using the MCP server | The `brain` and `vault_map` tools, and an instruction telling the agent to call `brain` when its context has no `# Vault map` section |
+| Any agent using the MCP server or a shell | `bismuth brain` and `bismuth map` (through `bismuth_cli` over MCP), and an instruction telling the agent to run `bismuth brain` when its context has no `# Vault map` section |
 
 `daemon.recall.enabled` off stops the terminal, visual chat and opencode injections. Print the same text yourself with `bismuth brain`, and one note's surroundings with `bismuth map --around <note>`; the [CLI reference](../cli/reference.md#map-and-brain) has the flags.
 
@@ -133,7 +133,7 @@ Scaled dot-product attention divides by the square root of the key dimension…
 
 # Bismuth docs
 
-- bases/authoring/calendar.md — Calendar (read: `bismuth_docs_read bases/authoring/calendar.md`)
+- bases/authoring/calendar.md — Calendar (read: `bismuth docs read bases/authoring/calendar.md`)
 ```
 
 | Source | Heading | What an item shows | Prompt cap | Subagent cap |
@@ -242,7 +242,7 @@ The reranker judges each passage against `rerankQuery`. That is the prompt itsel
 
 `formatSessionStart` (`memory/src/pack.ts`) takes the profile and map as `lead`. It tries the lead with the map, then the profile alone, then none, and returns the first block within `BRAIN_BUDGET_CHARS`. If even the index does not fit, the lead alone is cut at a line boundary and the envelope is closed. Index lines sort hubs first, then by in-link count, `updated`, type (`INDEX_TYPE_ORDER`) and name. Preference bodies are bounded by `PREFERENCE_BODY_MAX`, `PREFERENCE_BODIES_BUDGET` and, with a lead, a `PREFERENCE_BODIES_FLOOR` of 1,500 above a reserve of 3,000 characters for the other lines. `noteDescription` (`memory/src/graph.ts`) falls back to the first prose sentence and skips headings, fences, tables and short `Label:` prefixes.
 
-The recall service's `session-start` mode calls `composeBrain` with the request's channel (`RecallRequest.channel`, default `daemon`) and falls back to the memory index alone when there is no vault or composing fails. An empty memory dir with a vault still reaches `composeBrain`. The route (`core/src/routes/memory.ts`) asks `requestChannel`: an `x-bismuth-channel: chat` header or the owner token means `chat`, anything else `daemon`. The relay (`relay/lib/recall.ts`) sends the chat header, and `chat.ts` and opencode pass `channel: 'chat'` in-process. `buildDaemonPersona` (`daemon/src/daemon/persona.ts`) calls it with the `daemon` channel and `DAEMON_BRAIN_WAIT_MS` (30 s); a failure leaves the persona unchanged. `DAEMON_PERSONA_CHANNELS` maps each daemon backend to `systemPromptAppend` or `developerInstructions`. The visual chat's hook is in `core/src/chat.ts` and opencode's in `core/src/chatProviders/opencode/opencode.ts`. The MCP `brain` and `vault_map` tools run the CLI twins `bismuth brain` and `bismuth map`.
+The recall service's `session-start` mode calls `composeBrain` with the request's channel (`RecallRequest.channel`, default `daemon`) and falls back to the memory index alone when there is no vault or composing fails. An empty memory dir with a vault still reaches `composeBrain`. The route (`core/src/routes/memory.ts`) asks `requestChannel`: an `x-bismuth-channel: chat` header or the owner token means `chat`, anything else `daemon`. The relay (`relay/lib/recall.ts`) sends the chat header, and `chat.ts` and opencode pass `channel: 'chat'` in-process. `buildDaemonPersona` (`daemon/src/daemon/persona.ts`) calls it with the `daemon` channel and `DAEMON_BRAIN_WAIT_MS` (30 s); a failure leaves the persona unchanged. `DAEMON_PERSONA_CHANNELS` maps each daemon backend to `systemPromptAppend` or `developerInstructions`. The visual chat's hook is in `core/src/chat.ts` and opencode's in `core/src/chatProviders/opencode/opencode.ts`.
 
 ### Link-aware recall
 
@@ -264,4 +264,4 @@ The file deny plan for the caller's channel is cached per vault and channel for 
 
 Ownership is two plain files in the machine directory, so devices see each other's entries only when they share that directory (`BISMUTH_DAEMON_DIR`). `devices.json` gets this device's entry on every scheduler tick, owner or not. `owner.json` is written by core's `setOwner`; the daemon only reads it. `isOwner()` is true when the file is absent, otherwise `ownerDeviceId` must equal this device's id. The check sits at the top of `sendMessage`, the scheduler tick, boot recovery and every trigger consumer. These files coordinate which device does the work; no message passes between devices. [Storage](storage.md) has their formats.
 
-Source: `relay/{bin,lib,hooks}/*`, `core/src/{memoryRecall,memoryLinkBoost,memoryEmbed,memoryRerank,embedWorker,brain,vaultMap,terminal,chat}.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/routes/memory.ts`, `memory/src/{rank,pack,graph,rerankGate,recall,transcript}.ts`, `mcp/src/{instructions,server}.ts`, `daemon/src/daemon/persona.ts`, `daemon/src/lib/{owner,device}.ts`, `daemon/src/daemon/session.ts`, `cli/src/commands/daemon.ts`
+Source: `relay/{bin,lib,hooks}/*`, `core/src/{memoryRecall,memoryLinkBoost,memoryEmbed,memoryRerank,embedWorker,brain,vaultMap,terminal,chat}.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/routes/memory.ts`, `memory/src/{rank,pack,graph,rerankGate,recall,transcript}.ts`, `mcp/src/{instructions,server}.ts`, `core/src/{sourcePack,agentCliNote}.ts`, `daemon/src/daemon/persona.ts`, `daemon/src/lib/{owner,device}.ts`, `daemon/src/daemon/session.ts`, `cli/src/commands/daemon.ts`

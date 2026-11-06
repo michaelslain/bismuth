@@ -4,7 +4,7 @@
       "match": { "userMessage": "please list the bismuth docs" },
       "response": {
         "toolCalls": [
-          { "name": "bismuth__bismuth_docs_list", "arguments": {}, "id": "toolu_task12_docslist" }
+          { "name": "bismuth__bismuth_cli", "arguments": { "args": ["docs", "list"] }, "id": "toolu_task12_docslist" }
         ]
       }
     },

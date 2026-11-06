@@ -39,7 +39,7 @@ test('renders the acceptance text glyph for glyph, sections in order', () => {
             '',
             '# Bismuth docs',
             '',
-            '- bases/authoring/calendar.md#views — Calendar views (read: `bismuth_docs_read bases/authoring/calendar.md#views`)',
+            '- bases/authoring/calendar.md#views — Calendar views (read: `bismuth docs read bases/authoring/calendar.md#views`)',
             '',
             '',
         ].join('\n'),

@@ -15,6 +15,7 @@ import { buildCodexEnv } from '../src/daemon/codexSession.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 import { ownerTokenDenyPath } from '../src/lib/bismuthPaths.ts'
 import { HOST_CLAUDE_SESSION_VARS } from '../../core/src/claudeWhich.ts'
+import { agentEnvFilePath } from '../../core/src/agentEnvFile.ts'
 
 const ctx = {
     root: '/vault',
@@ -192,6 +193,27 @@ test('buildQueryOptions: sandbox.failIfUnavailable is true when the vault restri
         (o.sandbox as { failIfUnavailable?: boolean } | undefined)
             ?.failIfUnavailable,
     ).toBe(true)
+})
+
+test('buildQueryOptions: a restricted vault disables Grep and Glob but keeps bismuth_cli, which the visibility gate covers', () => {
+    const o = buildQueryOptions(ctx, undefined, undefined, { persona: 'x' }, [
+        { rel: 'secret.md', abs: '/vault/secret.md' },
+    ])
+    expect(o.disallowedTools).toEqual(['Grep', 'Glob'])
+    const open = buildQueryOptions(ctx, undefined, undefined, { persona: 'x' }, [])
+    expect(open.disallowedTools).toBeUndefined()
+})
+
+test("buildQueryOptions gives the session's Bash the CLI: CLAUDE_ENV_FILE survives Claude Code's PATH swap, BISMUTH_VAULT aims flagless commands", () => {
+    const o = buildQueryOptions(ctx, undefined, undefined, {
+        persona: 'x',
+        cli: '/opt/bismuth/bin/bismuth',
+    })
+    const env = o.env as Record<string, string>
+    expect(env.CLAUDE_ENV_FILE).toBe(agentEnvFilePath())
+    expect(env.BISMUTH_VAULT).toBe('/vault')
+    // The wired CLI path wins over the default install location.
+    expect(env.BISMUTH_CLI).toBe('/opt/bismuth/bin/bismuth')
 })
 
 test('buildQueryOptions: sandbox is omitted entirely (not merely failIfUnavailable:false) when nothing is restricted — an unrestricted vault must not risk failing on a machine with no sandbox support', () => {

@@ -107,7 +107,7 @@ The activity log is the daemon's history: every cron outcome, background-process
 | `daemon` | `cron-retired` | `reconcileSeeds` renamed a merged cron to `.disabled` |
 | `doctor` | `repair` | The doctor applied one repair. `outcome` is `success` or `failed`; `detail` is the finding id, what the repair did, the backup commit for a destructive one, and the first warning of a failed one, joined with ` // ` |
 
-Read it with `bismuth daemon logs --vault <vault>` (flags `--limit`, `--kind`, `--name`, `--since`), `GET /daemon/logs`, or the `daemon_logs` MCP tool. Files older than 30 days are deleted when a vault's brain starts, unless the vault sets [`daemon.keepLogs`](#keep-every-log-with-daemonkeeplogs). The daemon only appends, so a crash costs at most a truncated last line, and a full disk never fails a cron. A log row's `[x]` or `[ delete ]` on the daemon page removes one entry by rewriting its day file; the rewrite starts over when the daemon appended meanwhile, so no new line is lost.
+Read it with `bismuth daemon logs --vault <vault>` (flags `--limit`, `--kind`, `--name`, `--since`), or `GET /daemon/logs`. Files older than 30 days are deleted when a vault's brain starts, unless the vault sets [`daemon.keepLogs`](#keep-every-log-with-daemonkeeplogs). The daemon only appends, so a crash costs at most a truncated last line, and a full disk never fails a cron. A log row's `[x]` or `[ delete ]` on the daemon page removes one entry by rewriting its day file; the rewrite starts over when the daemon appended meanwhile, so no new line is lost.
 
 ## Keep every log with `daemon.keepLogs`
 
@@ -138,7 +138,7 @@ Bismuth's local git snapshots of a vault (`vault.backupOnSave`) track `identity.
 ## How it works
 
 - `enabled` defaults to true for a cron or process. Only an explicit `enabled: false` disables one. The daemon's parsers compare the raw string to `"false"`, and core's readers compare to the boolean.
-- Two keys per cron or process. The file name (the slug) identifies it everywhere in memory, in trigger files and pid files, and in the HTTP, CLI and MCP surfaces. The display name (`name:` in the frontmatter, else the slug) keys `.last-fired.json`, `.running.json` and the activity log. Editing `name:` by hand therefore orphans a cron's history, and a catch-up-eligible cron fires again on the next tick.
+- Two keys per cron or process. The file name (the slug) identifies it everywhere in memory, in trigger files and pid files, and in the HTTP and CLI surfaces. The display name (`name:` in the frontmatter, else the slug) keys `.last-fired.json`, `.running.json` and the activity log. Editing `name:` by hand therefore orphans a cron's history, and a catch-up-eligible cron fires again on the next tick.
 - Disable pauses. Turning a vault's daemon off, or dropping it from `vaults.json`, stops its processes and watchers and deletes nothing.
 - Memory has no index. The graph is recomputed from the markdown on every read. The daemon passes `<vault>/.daemon/memory` explicitly, and tools read it from `BISMUTH_MEMORY_DIR`.
 - Core writes only control files. Bismuth writes `owner.json`, a cron or process's `enabled` frontmatter, trigger files, pages and their sidecars, button states, and the vault registry. Every reader in core tolerates a missing or malformed file and returns an empty value.

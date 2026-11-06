@@ -1,6 +1,7 @@
 // Shared argument-parsing + output helpers for the `bismuth` CLI.
 // Pure and dependency-free so every command group imports a stable contract.
 import { todayISO } from '../../core/src/dates'
+import { findVaultRoot } from '../../core/src/findVaultRoot'
 
 /** Value of a `--name <value>` or `--name=value` flag, or undefined if absent. The first
  *  occurrence in `args` wins; `--name=` yields ''. A bare trailing `--name` has no value. */
@@ -69,17 +70,28 @@ export function fail(msg: string): never {
 }
 
 /**
- * Resolve the vault dir: `--vault <dir>` flag wins, then `BISMUTH_VAULT` env. Fails if none is set.
+ * Resolve the vault dir: `--vault <dir>` flag wins, then `BISMUTH_VAULT` env, then the vault the
+ * working directory sits in. Fails if none applies.
  */
 export function requireVault(args: string[]): string {
     const v = optionalVault(args)
-    if (!v) fail('no vault — pass --vault <dir> or set BISMUTH_VAULT')
+    if (!v)
+        fail(
+            'no vault — run inside a vault, pass --vault <dir> or set BISMUTH_VAULT',
+        )
     return v
 }
 
-/** The vault dir if given: `--vault <dir>` flag, then `BISMUTH_VAULT` env, else undefined. */
+/** The vault dir: `--vault <dir>` flag, then `BISMUTH_VAULT` env, then the nearest ancestor of the
+ *  working directory holding `.settings` (findVaultRoot), else undefined. The visibility gate
+ *  (core/src/visibilityCliGate.ts candidateRoots) falls back to the same root. */
 export function optionalVault(args: string[]): string | undefined {
-    return flag(args, 'vault') ?? process.env.BISMUTH_VAULT
+    return (
+        flag(args, 'vault') ??
+        process.env.BISMUTH_VAULT ??
+        findVaultRoot(process.cwd()) ??
+        undefined
+    )
 }
 
 /** Resolve the memory dir (optional): `--memory` flag, then BISMUTH_MEMORY. */

@@ -1,6 +1,6 @@
 # App control
 
-App control lets an AI agent or a shell script operate a running Bismuth window: list windows and tabs, open, close, focus, rename, pin and reorder tabs, scroll a pane, run a safe command, and author an inbox page. It is the only outside route into the live window. It adds no MCP tools: an agent reaches it through `bismuth_cli`, using the `app` command group for window operations and the `page` group for inbox pages. See [the MCP overview](overview.md) for why the tool list stays short.
+App control lets an AI agent or a shell script operate a running Bismuth window: list windows and tabs, open, close, focus, rename, pin and reorder tabs, scroll a pane, run a safe command, and author an inbox page. It is the only outside route into the live window. It adds no MCP tools: an agent runs `bismuth app …` in its own shell, using the `app` command group for window operations and the `page` group for inbox pages. A host with no shell calls the MCP tool `bismuth_cli` with the same words as `args`, as `["app","open","::daemon"]`. See [the MCP overview](overview.md) for why the tool list stays short.
 
 ```bash
 bismuth app windows --pretty
@@ -32,7 +32,7 @@ A path that names no file fails with exit code 1 and `404: no file "<path>" in t
 
 With one window open, every command targets it. With none, the command fails with `no Bismuth window is open`; with several it fails and asks for `--window <id>`, which `app windows` lists.
 
-Which running app the command reaches is decided in this order: `--api <url>`, the `BISMUTH_API` variable, `CLAUDE_RELAY_URL`, the app registered for `--vault` or `BISMUTH_VAULT` (else the only running app) in `~/.bismuth/run`, and finally `http://localhost:4321`. A terminal tab inside the app already has `BISMUTH_API` set, so `bismuth app …` there drives its own window with no flags.
+Which running app the command reaches is decided in this order: `--api <url>`, the `BISMUTH_API` variable, `CLAUDE_RELAY_URL`, the app registered for the command's vault in `~/.bismuth/run`, and finally `http://localhost:4321`. The command's vault is `--vault`, else `BISMUTH_VAULT`, else the nearest ancestor of the working directory holding a `.settings` file; with no vault at all, the only running app. So `bismuth app …` run anywhere inside a vault reaches the app serving that vault, even with several apps running. A terminal tab inside the app already has `BISMUTH_API` set, so `bismuth app …` there drives its own window with no flags.
 
 ## Inbox pages without a window
 
@@ -46,7 +46,7 @@ The `page` group works on the daemon inbox with no running app. `page create` wr
 | `bismuth page reply <page-path> <text...>` | Answer a page in plain words |
 | `bismuth page mark-failed <page-path>` | Force a stuck `working` page to `failed` |
 
-All of them take `--vault <dir>`. The format and lifecycle are in [pages](../daemon/pages.md).
+All of them take `--vault <dir>`, which defaults to the vault the working directory sits in. The format and lifecycle are in [pages](../daemon/pages.md).
 
 ## Scroll a pane
 
@@ -104,6 +104,8 @@ Both refusals return HTTP 403 with a message. `app commands` lists the ids that 
 bismuth app <verb>  --HTTP-->  core /ui/command  --WebSocket-->  the window  --reply-->  back out
 ```
 
+The CLI finds a core through the run record each core writes to `~/.bismuth/run/<vault>.json`. A core that exits removes the record only when it still names its own pid. When a second core for the same vault had overwritten a live core's record, it writes that record back on exit, so the running app stays reachable (`core/src/runRegistry.ts`).
+
 Each open window holds a control WebSocket to core at `/ui?w=<windowId>` (`app/src/uiControlClient.ts`), keyed by a stable window id; the primary window is `main`. The window reports its tab layout through the same effect that persists tabs, and `GET /ui/windows` reads that report.
 
 `POST /ui/command` takes `{windowId?, action, args?}`. Core picks the window (`windowId` if given and connected, else the only one: 404 for none, 409 for several), sends `{type: "command", reqId, action, args}`, and waits for the window's `{type: "reply", reqId, ok, result | error}`. A window that does not answer within 8 seconds resolves `{ok: false}` instead of hanging (`core/src/uiControl.ts`). Both routes are read-table routes with no cache invalidation; any vault change a command causes runs its own invalidation.
@@ -128,4 +130,4 @@ Each open window holds a control WebSocket to core at `/ui?w=<windowId>` (`app/s
 
 Before dispatching `open-tab`, the route resolves `content` against the vault with `resolveOpenTarget` (`core/src/openTarget.ts`) and sends the window the vault-relative result; a path that names no file returns 404 without reaching the window. The two refusals run twice, in the route before dispatch and again in the window's handler. `UI_CONTROL_BLOCKLIST` in `core/src/commands.ts` holds the blocked command ids, and the commands that only open a dialog carry `interactive: true` in `COMMAND_CATALOG` in the same file.
 
-Source: `core/src/uiControl.ts`, `core/src/openTarget.ts`, `core/src/routes/relay.ts`, `core/src/runRegistry.ts`, `core/src/commands.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `app/src/paneScroll.ts`, `cli/src/commands/{app,page}.ts`, `cli/src/http.ts`
+Source: `core/src/uiControl.ts`, `core/src/openTarget.ts`, `core/src/routes/relay.ts`, `core/src/runRegistry.ts`, `core/src/findVaultRoot.ts`, `core/src/commands.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `app/src/paneScroll.ts`, `cli/src/commands/{app,page}.ts`, `cli/src/http.ts`

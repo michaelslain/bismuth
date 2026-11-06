@@ -7,7 +7,7 @@
 // touches only events + categories (core/src/calendar.ts, ported from BaseBackend). All
 // commands are headless — the app's vault watcher picks up the writes live.
 //
-// Bridged to the MCP as `bismuth_cli` (no new MCP tool) so `bismuth_cli_help` lists these.
+// Reached from MCP through `bismuth_cli` (no MCP tool of its own), like every CLI command.
 import type { CommandMap } from '../types'
 import { fail, flag, out, parseJsonFlag, positionals, requireVault } from '../args'
 import {

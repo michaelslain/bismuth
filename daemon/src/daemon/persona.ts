@@ -4,6 +4,7 @@ import type { VaultContext } from '../lib/config.ts'
 import type { DenyEntry } from '../lib/visibility.ts'
 import { composeBrain } from '../lib/coreBrain.js'
 import { DEFAULT_DAEMON_IDENTITY } from '../../../core/src/daemonIdentity.ts'
+import { AGENT_CLI_NOTE } from '../../../core/src/agentCliNote.ts'
 
 type ComposeBrain = (opts: {
     vaultDir: string
@@ -64,7 +65,9 @@ export async function buildDaemonPersona(
     } catch {
         // no identity.md (or unreadable) → default
     }
-    let prompt = `You are ${ctx.name}.\n\n${identity}`
+    // AGENT_CLI_NOTE follows the identity: how this session reaches Bismuth (its CLI), for Claude and
+    // Codex alike.
+    let prompt = `You are ${ctx.name}.\n\n${identity}\n\n${AGENT_CLI_NOTE}`
     if (denyEntries.length > 0) {
         const list = denyEntries.map(e => `- ${e.rel}`).join('\n')
         prompt +=

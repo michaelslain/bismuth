@@ -83,7 +83,7 @@ test('resolveDocsRoot: bismuthHome docs wins over the repo docs, which take over
     }
 })
 
-test('one entry per ## section, id and title shaped for bismuth_docs_read', () => {
+test('one entry per ## section, id and title shaped for bismuth docs read', () => {
     const notes = docSections('a/b.md', '# Page\n\nintro\n\n## One\nx\n### Deep\ny\n\n## Two\nz\n', 'b')
     expect(notes.map(n => n.name)).toEqual(['a/b.md', 'a/b.md#one', 'a/b.md#two'])
     expect(notes[1]!.frontmatter.description).toBe('Page // One')
