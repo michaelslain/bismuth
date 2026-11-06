@@ -58,7 +58,7 @@ Both hooks live in `.githooks/`. A fresh clone enables them with `bun run hooks:
 | Hook | Runs | Scope |
 |---|---|---|
 | `pre-commit` | `scripts/gate.ts` | Typecheck of every workspace and the fast tests your change can reach, then the design-system steps |
-| `pre-push` | `scripts/check-docs.ts --pre-push`, then `bun run gate:tree --full` | Docs check (links, anchors, history lint, cited commands, workspace parity), then the typecheck and every test the push can reach, slow suites included |
+| `pre-push` | `scripts/check-docs.ts --pre-push`, then `bun run gate:tree --full` | Docs check (links, anchors, history lint, cited commands, workspace parity), then the typecheck and every test the push can reach, slow suites included; a tree that already passed the fast tier runs only its slow suites |
 
 The commit gate runs these steps and stops at the first failure:
 
@@ -126,7 +126,9 @@ bun run gate:tree --no-cache        # ignore and do not write pass records
 ```
 
 When `HEAD`'s tree already passed, it prints `already passed` and runs nothing.
-When the base passed, it runs only the tests the diff from the base selects; otherwise it runs every test.
+When `HEAD` is a merge commit and both parents' trees passed, it runs only the tests that both sides' diffs select, and the typecheck only when both sides changed code: a test that one side's diff alone reaches sees the same files as on the other parent, where it passed. A merge of a branch whose commits passed their own gates therefore runs the always-run tests and the tests both sides touch.
+Otherwise, when the base passed, it runs only the tests the diff from the base selects; with no passed base it runs every test.
+With `--full` on a clean tree that already passed the fast tier, it runs only the slow suites in the selection and no typecheck, since everything else already passed on those exact files.
 The pre-commit gate (`bun run gate`) checks nothing on a merged tip with nothing staged, so a merge uses `gate:tree`.
 
 ## Wait for another test run
@@ -135,7 +137,9 @@ A gate, `bun run test:fast` and `bun run gate:tree` take a machine-wide test loc
 Parallel suites from several checkouts make the watcher tests time out, so only one suite runs at a time; a single `bun test <file>` takes no lock.
 While waiting, the gate prints `[test lock] waiting` and the holder's owner line every 30 seconds.
 
-The lock is the directory `.claude/coord/test.lock` in the main checkout, shared by every worktree; its `owner` file names the holder.
+The lock is the directory `.claude/coord/test.lock` in the main checkout, shared by every worktree; its `owner` file names the holder and, as `at=`, when it took the lock in epoch milliseconds.
+A run waiting for the lock writes `test.lock.waiting/<pid>` beside it, removed once it takes the lock or exits.
+Each release appends a JSON line to `.claude/coord/test-lock-history.jsonl` with the label, the checkout, and how long the run held the lock and waited for it; tools read the holder, the waiters and that history to estimate when the lock frees up.
 A lock whose holder process has exited is taken over.
 A lock made by hand (`mkdir` of the directory, with no `pid=` in its owner line) is waited on until it is removed or an hour old; a session holding one runs its gates with `BISMUTH_TEST_LOCK_HELD=1`, or they wait on its own lock.
 

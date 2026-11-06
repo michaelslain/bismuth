@@ -5,9 +5,17 @@
 //
 //   1. HEAD's tree already passed this tier (scripts/passCache.ts) and the working tree is clean →
 //      nothing runs.
-//   2. A base tree that passed this tier → only the tests the diff from it can affect
+//   2. HEAD is a merge commit whose two parents' trees both passed this tier → only the tests BOTH
+//      sides' diffs can affect. A test only one side's diff reaches has the same inputs as on the
+//      other parent, where it passed. A branch's own commits already ran its tests, so a merge of
+//      disjoint work runs the always-run tests and nothing else.
+//   3. A base tree that passed this tier → only the tests the diff from it can affect
 //      (scripts/testGraph.ts), plus the always-run tests.
-//   3. Otherwise → the whole tier.
+//   4. Otherwise → the whole tier.
+//
+// In the full tier (pre-push), a clean tree that already passed the fast tier runs only the slow
+// suites in the selection, and no typecheck: every other test, and the typecheck, already passed
+// on these exact files.
 //
 // The typecheck runs across every workspace (they import each other's source) at the same time as
 // the tests, and is skipped when no code file changed. A clean working tree records its pass, so the
@@ -125,7 +133,7 @@ export function startTypecheck(env = sanitizeGitEnv(process.env)): {
 }
 
 /** Files that import core/test/slowGate.ts: their slow suites run only in the full tier. */
-function slowFiles(graph: ReturnType<typeof buildGraph>): string[] {
+export function slowFiles(graph: ReturnType<typeof buildGraph>): string[] {
     return graph.tests.filter(t =>
         graph.deps.get(t)?.has('core/test/slowGate.ts'),
     )
@@ -138,28 +146,70 @@ export type TestPlan = {
     summary: string
 }
 
+/** The tests both sides of a merge can affect: only those can fail on the merged tree when each
+ *  side's tree passed. Pure. */
+export function intersectSelections(a: Selection, b: Selection): Selection {
+    if (a.all && b.all) return a
+    if (a.all) return b
+    if (b.all) return a
+    const inB = new Set(b.files)
+    return {
+        all: false,
+        files: a.files.filter(f => inB.has(f)),
+        reasons: [...a.reasons, ...b.reasons],
+    }
+}
+
+/** A selection narrowed to the slow-suite files, for a full-tier run on a tree whose fast tier
+ *  already passed. Pure. */
+export function onlySlowFiles(sel: Selection, slow: string[]): Selection {
+    const files = sel.all ? [...slow] : sel.files.filter(f => slow.includes(f))
+    return {
+        all: false,
+        files: files.sort(),
+        reasons: sel.all ? [] : sel.reasons,
+    }
+}
+
+export type PlanOptions = {
+    /** A merge: the second parent's changed paths. Only tests both diffs select run. */
+    otherSide?: string[] | 'all'
+    /** The tree passed the fast tier: run only the selection's slow suites. */
+    onlySlow?: boolean
+}
+
 /** The phases for a selection (or the whole tier). */
 export function planTests(
     changed: string[] | 'all',
     tier: Tier,
     why: string,
+    opts: PlanOptions = {},
 ): TestPlan {
     const graph = buildGraph(snapshotRepo())
-    const selection: Selection =
-        changed === 'all'
-            ? { all: true, reason: why }
-            : selectTests(changed, graph, alwaysTests(graph))
+    const always = alwaysTests(graph)
+    const select = (c: string[] | 'all'): Selection =>
+        c === 'all' ? { all: true, reason: why } : selectTests(c, graph, always)
+    let selection = select(changed)
+    if (opts.otherSide !== undefined)
+        selection = intersectSelections(selection, select(opts.otherSide))
+    const slow = slowFiles(graph)
+    if (opts.onlySlow) selection = onlySlowFiles(selection, slow)
     const timings = timingsFile()
     ensureTimings(timings)
     const phases = testPhases({
         files: selection.all ? 'all' : selection.files,
         slow: tier === 'full',
-        slowFiles: slowFiles(graph),
+        slowFiles: slow,
         timings,
     })
+    const what = opts.onlySlow ? 'slow-suite file(s)' : 'test file(s)'
+    const reach =
+        opts.otherSide !== undefined
+            ? 'both sides of the merge can reach'
+            : 'the change can reach'
     const summary = selection.all
         ? `all tests (${selection.reason})`
-        : `${selection.files.length} test file(s) the change can reach`
+        : `${selection.files.length} ${what} ${reach}`
     return { selection, phases, summary }
 }
 
@@ -246,6 +296,15 @@ export function changedSince(base: string): string[] {
     ]
 }
 
+/** A merge commit's two parents, or undefined for any other commit. */
+export function mergeParents(rev = 'HEAD'): [string, string] | undefined {
+    const r = spawnSync('git', ['rev-list', '--parents', '-n', '1', rev], {
+        encoding: 'utf8',
+    })
+    const ids = (r.stdout ?? '').trim().split(/\s+/).slice(1)
+    return r.status === 0 && ids.length === 2 ? [ids[0], ids[1]] : undefined
+}
+
 /** The first candidate base whose tree passed `tier`, or undefined. */
 export function greenBase(
     candidates: string[],
@@ -293,21 +352,45 @@ async function main(): Promise<void> {
         )
         return
     }
-    const candidates = args.base
-        ? [args.base]
-        : ['@{upstream}', 'HEAD~1'].filter(r => treeOf(r))
-    const base = args.noCache ? undefined : greenBase(candidates, tier)
-    const changed = base ? changedSince(base.rev) : 'all'
-    const why = args.noCache
-        ? '--no-cache'
-        : `no passed base among ${candidates.join(', ') || '(none)'}`
-    const plan = planTests(changed, tier, why)
+    const passes = args.noCache ? [] : readPasses()
+    // Full tier on a tree whose fast tier passed: the slow suites are all that is left.
+    const onlySlow = tier === 'full' && clean && isGreen(tree, 'fast', passes)
+    const parents = mergeParents()
+    const both = parents?.map(p => ({ rev: p, tree: treeOf(p) }))
+    const mergeGreen =
+        !!both && both.every(p => p.tree && isGreen(p.tree, tier, passes))
+    let base: { rev: string; tree: string } | undefined
+    let changed: string[] | 'all'
+    let otherSide: string[] | 'all' | undefined
+    if (mergeGreen) {
+        base = { rev: both![0].rev, tree: both![0].tree! }
+        changed = changedSince(both![0].rev)
+        otherSide = changedSince(both![1].rev)
+    } else {
+        const candidates = args.base
+            ? [args.base]
+            : ['@{upstream}', 'HEAD~1'].filter(r => treeOf(r))
+        base = args.noCache ? undefined : greenBase(candidates, tier)
+        changed = base ? changedSince(base.rev) : 'all'
+    }
+    const why = args.noCache ? '--no-cache' : 'no passed base'
+    const plan = planTests(changed, tier, why, { otherSide, onlySlow })
+    const from = mergeGreen
+        ? `both merge parents passed → `
+        : base
+          ? `base ${base.rev} (${short(base.tree)}) passed → `
+          : ''
     process.stdout.write(
         dim(
-            `[${prefix}] ${base ? `base ${base.rev} (${short(base.tree)}) passed → ` : ''}${plan.summary}\n`,
+            `[${prefix}] ${from}${plan.summary}${onlySlow ? ' (fast tier already passed: no typecheck)' : ''}\n`,
         ),
     )
-    const ok = await runChecks(prefix, plan, needsTypecheck(changed), tier)
+    // The typecheck reads every file: it can only change when both sides changed code.
+    const typecheck =
+        !onlySlow &&
+        needsTypecheck(changed) &&
+        (otherSide === undefined || needsTypecheck(otherSide))
+    const ok = await runChecks(prefix, plan, typecheck, tier)
     if (!ok) {
         process.stdout.write(`\x1b[31m[${prefix}] failed\x1b[0m\n`)
         process.exit(1)

@@ -6,7 +6,14 @@
 // `<main checkout>/.claude/coord/test.lock`, shared by every worktree of the repo; `mkdir` is the
 // atomic test-and-set. Its `owner` file names the holder:
 //
-//   gate pid=4242 since 13:02:11 /Users/m/Documents/dev/bismuth/.claude/worktrees/x
+//   gate pid=4242 since 13:02:11 at=1793000531000 /Users/m/Documents/dev/bismuth/.claude/worktrees/x
+//
+// `at=` is the epoch milliseconds the lock was taken. A run waiting for the lock leaves a file
+// `test.lock.waiting/<pid>` beside it (`<label> pid=<pid> at=<ms since waiting> <cwd>`), removed once
+// it takes the lock or exits. Each release appends one JSON line to `test-lock-history.jsonl` in the
+// same folder: label, cwd, when the lock was taken and released, and how long it was held and
+// waited for. Together they let a tool (the main-merger skill's merge queue) estimate when the lock
+// frees up.
 //
 // A lock whose `pid=` process is gone is stale and is taken over. A hand-made lock (a session's
 // `mkdir` with a free-text owner line and no pid) is waited on until it is removed, or until it is
@@ -16,7 +23,9 @@
 // that made the lock by hand sets BISMUTH_TEST_LOCK_HELD=1 for the runs inside it.
 import { spawnSync } from 'node:child_process'
 import {
+    appendFileSync,
     mkdirSync,
+    readdirSync,
     readFileSync,
     rmSync,
     statSync,
@@ -28,6 +37,8 @@ const HELD_ENV = 'BISMUTH_TEST_LOCK_HELD'
 const POLL_MS = 2000
 const REPORT_MS = 30_000
 const HAND_LOCK_STALE_MS = 60 * 60_000
+/** History lines kept: trimmed back to HISTORY_KEEP once it passes twice that. */
+const HISTORY_KEEP = 500
 
 /** The lock directory for the repo containing `cwd`: under the MAIN checkout, so all worktrees share it. */
 export function lockPath(cwd = process.cwd()): string {
@@ -44,6 +55,73 @@ export function lockPath(cwd = process.cwd()): string {
 export function ownerPid(owner: string): number | undefined {
     const m = owner.match(/\bpid=(\d+)\b/)
     return m ? Number(m[1]) : undefined
+}
+
+/** When the holder took the lock (epoch ms), or undefined for an owner line without `at=`. */
+export function ownerAt(owner: string): number | undefined {
+    const m = owner.match(/\bat=(\d+)\b/)
+    return m ? Number(m[1]) : undefined
+}
+
+/** The folder of waiter files beside a lock directory. */
+export function waitingPath(lock: string): string {
+    return `${lock}.waiting`
+}
+
+/** The release history beside a lock directory. */
+export function historyPath(lock: string): string {
+    return join(dirname(lock), 'test-lock-history.jsonl')
+}
+
+export type LockRelease = {
+    label: string
+    cwd: string
+    acquiredAt: number
+    releasedAt: number
+    heldMs: number
+    waitedMs: number
+}
+
+/** `text` with only its last `keep` lines once it holds more than twice that many. Pure. */
+export function trimHistory(text: string, keep = HISTORY_KEEP): string {
+    const lines = text.split('\n').filter(Boolean)
+    if (lines.length <= keep * 2) return text
+    return lines.slice(-keep).join('\n') + '\n'
+}
+
+function appendHistory(lock: string, rec: LockRelease): void {
+    const file = historyPath(lock)
+    try {
+        appendFileSync(file, JSON.stringify(rec) + '\n')
+        const text = readFileSync(file, 'utf8')
+        const trimmed = trimHistory(text)
+        if (trimmed !== text) writeFileSync(file, trimmed)
+    } catch {
+        // History feeds estimates only; a failed write never fails the run.
+    }
+}
+
+/** The live runs waiting for a lock: their owner-style lines, oldest first. */
+export function waiters(lock: string): string[] {
+    const dir = waitingPath(lock)
+    let names: string[] = []
+    try {
+        names = readdirSync(dir)
+    } catch {
+        return []
+    }
+    const live: { line: string; at: number }[] = []
+    for (const name of names) {
+        const pid = Number(name)
+        if (!Number.isInteger(pid) || !alive(pid)) continue
+        try {
+            const line = readFileSync(join(dir, name), 'utf8').trim()
+            live.push({ line, at: ownerAt(line) ?? 0 })
+        } catch {
+            // Removed between the listing and the read: it took the lock.
+        }
+    }
+    return live.sort((a, b) => a.at - b.at).map(w => w.line)
 }
 
 function alive(pid: number): boolean {
@@ -78,11 +156,13 @@ function lockAge(dir: string): number {
  * inside a holder (BISMUTH_TEST_LOCK_HELD set) it returns a no-op. Sets BISMUTH_TEST_LOCK_HELD in
  * this process so spawned children inherit it.
  */
-export function acquireTestLock(label: string): () => void {
+export function acquireTestLock(label: string, dir = lockPath()): () => void {
     if (process.env[HELD_ENV]) return () => {}
-    const dir = lockPath()
     mkdirSync(dirname(dir), { recursive: true })
     const started = Date.now()
+    const waitFile = join(waitingPath(dir), String(process.pid))
+    const unwait = () => rmSync(waitFile, { force: true })
+    let waiting = false
     let lastReport = 0
     for (;;) {
         try {
@@ -90,6 +170,15 @@ export function acquireTestLock(label: string): () => void {
             break
         } catch (e) {
             if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+        }
+        if (!waiting) {
+            waiting = true
+            mkdirSync(waitingPath(dir), { recursive: true })
+            writeFileSync(
+                waitFile,
+                `${label} pid=${process.pid} at=${started} ${process.cwd()}\n`,
+            )
+            process.on('exit', unwait)
         }
         const owner = readOwner(dir)
         const pid = ownerPid(owner)
@@ -112,10 +201,15 @@ export function acquireTestLock(label: string): () => void {
         }
         sleep(POLL_MS)
     }
-    const time = new Date().toTimeString().slice(0, 8)
+    if (waiting) {
+        unwait()
+        process.off('exit', unwait)
+    }
+    const acquiredAt = Date.now()
+    const time = new Date(acquiredAt).toTimeString().slice(0, 8)
     writeFileSync(
         join(dir, 'owner'),
-        `${label} pid=${process.pid} since ${time} ${process.cwd()}\n`,
+        `${label} pid=${process.pid} since ${time} at=${acquiredAt} ${process.cwd()}\n`,
     )
     process.env[HELD_ENV] = dir
     let released = false
@@ -123,8 +217,17 @@ export function acquireTestLock(label: string): () => void {
         if (released) return
         released = true
         delete process.env[HELD_ENV]
-        if (ownerPid(readOwner(dir)) === process.pid)
-            rmSync(dir, { recursive: true, force: true })
+        if (ownerPid(readOwner(dir)) !== process.pid) return
+        rmSync(dir, { recursive: true, force: true })
+        const releasedAt = Date.now()
+        appendHistory(dir, {
+            label,
+            cwd: process.cwd(),
+            acquiredAt,
+            releasedAt,
+            heldMs: releasedAt - acquiredAt,
+            waitedMs: acquiredAt - started,
+        })
     }
     process.on('exit', release)
     for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const)
