@@ -500,24 +500,25 @@ export const mathField = StateField.define<{
     ],
 })
 
+// Built once: a theme made per call is a new style module for every view, and CodeMirror
+// compares every mounted module on each mount (quadratic across many views, e.g. a chat).
+const mathTheme = EditorView.theme({
+    '.cm-math-block': {
+        display: 'block',
+        'text-align': 'left',
+        margin: '0.4em 0',
+    },
+    '.cm-math-block .katex-display': {
+        'text-align': 'left',
+        margin: '0',
+    },
+    '.cm-math-block .katex-display > .katex': { 'text-align': 'left' },
+})
+
 /**
  * CodeMirror Extension that replaces multi-line `$$ ... $$` blocks and multi-line inline
  * `$ ... $` spans with rendered KaTeX widgets when the cursor is outside them.
  */
 export function mathBlock(): Extension {
-    return [
-        mathField,
-        EditorView.theme({
-            '.cm-math-block': {
-                display: 'block',
-                'text-align': 'left',
-                margin: '0.4em 0',
-            },
-            '.cm-math-block .katex-display': {
-                'text-align': 'left',
-                margin: '0',
-            },
-            '.cm-math-block .katex-display > .katex': { 'text-align': 'left' },
-        }),
-    ]
+    return [mathField, mathTheme]
 }

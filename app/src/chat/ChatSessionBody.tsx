@@ -91,6 +91,8 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
             onSend={s.sendText}
             onReply={s.quoteReply}
             subscribeAppend={s.onAppend}
+            noteNames={props.noteNames}
+            memoryNames={props.memoryNames}
         />
     )
 

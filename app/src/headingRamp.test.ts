@@ -130,10 +130,11 @@ test('h5 and h6 sit below body size ONLY while they carry the label register', (
 })
 
 test('the ramp has ONE definition — no surface hardcodes heading sizes', () => {
-    // Each entry is a surface that renders markdown. All five must read the shared tokens.
+    // Each entry is a surface that renders markdown, and each must read the shared tokens. A chat
+    // message is a note view (ui/NoteProse), so its headings are livePreview's.
+    expect(read('chat/ChatTextBubble.tsx')).toContain("from '../ui/NoteProse'")
     const surfaces: Array<[string, string]> = [
         ['editor/livePreview.ts', read('editor/livePreview.ts')],
-        ['chat/ChatTextBubble.module.css', read('chat/ChatTextBubble.module.css')],
         ['ui/MilkdownField.module.css', read('ui/MilkdownField.module.css')],
         ['bases/FlipCard.module.css', read('bases/FlipCard.module.css')],
     ]
@@ -150,7 +151,6 @@ test('no markdown surface sizes a heading with an em multiplier', () => {
     // the same markdown rendered at a different size in every surface. The ramp's invariant is
     // unrepresentable in units relative to an inherited size.
     for (const file of [
-        'chat/ChatTextBubble.module.css',
         'bases/CardEditModal.module.css',
         'bases/FlipCard.module.css',
     ]) {

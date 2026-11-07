@@ -4,6 +4,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import ChatUserTurn from './ChatUserTurn'
+import { noteProseReady } from '../ui/_noteProseReady'
 import type { UserItem } from './chatTranscriptLogic'
 import { IMAGE_TURN_ITEMS, QUEUED_ITEMS } from './_transcriptFixtures'
 
@@ -31,6 +32,7 @@ export const Default: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByText('you')).toBeInTheDocument()
         await expect(canvas.getByText('Summarize the vault.')).toBeInTheDocument()
@@ -51,6 +53,7 @@ export const Queued: Story = {
     ),
     args: { onCancelQueued: fn() },
     play: async ({ canvasElement, args }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByText('queued')).toBeInTheDocument()
         // QUEUED IS INK, NOT OPACITY: the bubble and every ancestor up to the canvas paint at full
@@ -88,6 +91,7 @@ export const QueuedSentMidTurn: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByText('queued')).toBeInTheDocument()
         await expect(
@@ -104,6 +108,7 @@ export const Images: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByAltText('attachment')).toBeInTheDocument()
     },

@@ -1,0 +1,17 @@
+/* NoteProse.module.css — NoteProse.tsx is the ONLY importer. Layout only: the prose look is the
+   note editor's (editor/noteProseTheme.ts + global.css's CodeMirror theming section). The fold
+   triangles hang left of the text, into whatever gutter the host leaves, so nothing here clips. */
+.prose {
+    min-width: 0;
+}
+
+/* Before a lazy view mounts: the source as plain text in the note's face, size, ink and row, so
+   the message takes about the room the view will and the scrollbar does not jump when it mounts. */
+.pending {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--prose-font);
+    font-size: var(--prose-font-size);
+    line-height: var(--prose-row);
+    color: color-mix(in srgb, var(--fg) 88%, var(--text-muted));
+}

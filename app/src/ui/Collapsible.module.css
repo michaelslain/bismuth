@@ -9,4 +9,8 @@
 .ft-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows calc(0.22s * var(--motion-scale)) var(--ease); }
 .ft-collapse.open { grid-template-rows: 1fr; }
 .ft-collapse-inner { overflow: hidden; min-height: 0; }
+/* `gutter`: clip the slide vertically only, so a control hung in the gutter beside the body's lines
+   (a fold triangle) stays visible. `clip`, not `hidden`: `overflow-x: visible` beside
+   `overflow-y: hidden` computes to `auto` (a scroller); beside `clip` it stays visible. */
+.gutter > .ft-collapse-inner { overflow-x: visible; overflow-y: clip; }
 @media (prefers-reduced-motion: reduce) { .ft-collapse { transition: none; } }

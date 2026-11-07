@@ -11,7 +11,7 @@ import {
     untrack,
 } from 'solid-js'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
-import { EditorState, Compartment, Prec, type Line } from '@codemirror/state'
+import { EditorState, Compartment, type Line } from '@codemirror/state'
 import {
     defaultKeymap,
     history,
@@ -75,20 +75,8 @@ import { InkOverlay } from './editor/InkOverlay'
 import { settingsSchemaFor } from '../../core/src/schema/themedSettingsSchema'
 import { customThemes, customThemeOverrides } from './customThemes'
 import { propertySchemas, noteSchemaForText } from './propertyRegistry'
-import {
-    isFolderTarget,
-    parseWikilink,
-    resolveNotePath,
-    findHeadingLineIndex,
-    wikilinkOpenPath,
-    type NoteCandidate,
-} from './editor/wikilink'
-import {
-    MEMORY_REF_RE,
-    memoryRefPath,
-    resolveMemorySlug,
-    type MemoryCandidate,
-} from '../../core/src/memoryRef'
+import { findHeadingLineIndex, type NoteCandidate } from './editor/wikilink'
+import type { MemoryCandidate } from '../../core/src/memoryRef'
 import { takePendingAnchor, clearPendingAnchor } from './pendingAnchor'
 import { takePendingCursor } from './pendingCursor'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
@@ -106,8 +94,6 @@ import {
     type DragPasteboard,
     type DropAction,
 } from './dropIntake'
-import { findBareUrls } from './editor/urls'
-import { openExternalUrl } from './appWindow'
 import { settings } from './settings'
 import { matchesKeybinding } from './keybindings'
 import { findExtension } from './editor/findPanel'
@@ -148,7 +134,8 @@ import {
 import { decideSseReconcile } from './editor/sseReconcile'
 import { mapReaderAnchor } from './editor/readerAnchor'
 import { keepaliveSaveInit } from './editor/keepaliveSave'
-import { openNote, revealFolder } from './ui/openNote'
+import { noteLinkClicks } from './editor/linkClicks'
+import { fitContentTheme, noteProseTheme } from './editor/noteProseTheme'
 import { cursor } from './editor/cursorTheme'
 
 // ExternalReload + externalReconcileSpec live in editor/reconcileDispatch.ts (shared,
@@ -156,38 +143,15 @@ import { cursor } from './editor/cursorTheme'
 // the spec builder also marks them addToHistory:false so undo never restores a disk
 // snapshot (#46 — that was the "file autoreverts on cmd+z" data loss).
 
-// `fitContent`: the editor takes the document's height and lets the host's scroller carry it, so
-// whatever the host puts after the editor scrolls with the text. The content's top padding and
-// bottom scroll space go (the host spaces what sits around it), and the content box moves left by CodeMirror's line inset (its
-// base theme's `.cm-line` padding-left, 6px) so a plain line's first glyph sits on the note
-// column's edge, where the host's own text starts (`left`, not a margin; see below); list lines keep their inline indents relative
-// to it. Highest precedence so it wins over editorTheme's `height: 100%` / `overflow: auto` /
-// content padding.
-const CM_LINE_INSET_PX = 6
-const fitContentTheme = Prec.highest(
-    EditorView.theme({
-        '&': { height: 'auto' },
-        '.cm-scroller': { overflow: 'visible' },
-        // `left`, not a negative margin: the scroller centres the content box, and a margin only
-        // moves a centred box by half its size.
-        '.cm-content': {
-            paddingTop: '0',
-            paddingBottom: '0',
-            position: 'relative',
-            left: `-${CM_LINE_INSET_PX}px`,
-        },
-    }),
-)
-
 // Prose font/size and selection tint come from CSS variables (set by App.tsx from
 // the Appearance settings), so they update live without rebuilding the editor.
 const editorTheme = EditorView.theme({
     // Prose reads in the mono prose font near --fg with a soft tone (design: color-mix(hi 86%, lo)),
     // centered in the redesign's --note-column prose column. The editor's own ground is --editor (a
     // dedicated paper tone, distinct from the app's --bg chrome), not a transparent pass-through.
+    // Prose ink, face, size and row come from noteProseTheme (shared with read-only note views).
     '&': {
         backgroundColor: 'var(--editor)',
-        color: 'color-mix(in srgb, var(--fg) 88%, var(--text-muted))',
         height: '100%',
     },
     // Center the gutter + content TOGETHER (justify-content on the flex scroller) rather
@@ -200,23 +164,7 @@ const editorTheme = EditorView.theme({
     // of the font size — editor.lineHeight (--prose-line-height) defaults to 1.25, so prose lines land
     // on a 1.25x multiple of --row-h (18px). Chat messages and the terminal read the same token.
     '.cm-scroller': {
-        // --prose-font (the prose face), NOT --ui-font-stack. This is the ANSWERED monospace-scope
-        // decision from the visual-unification wave (global.css's `styles/tokens.css` section §9.1): mono stays the
-        // default for all chrome, labels, tables, code, terminal and graph; the ONE proportional
-        // face is scoped to note prose and chat message bodies. The token existed and was loaded
-        // but nothing ever read it — the wave that decided it deferred the wiring, so prose kept
-        // rendering in Monaspace.
-        // Everything that is NOT prose is pulled back to --ui-font-stack in global.css's CodeMirror theming section (headings,
-        // code blocks and inline code, tables, frontmatter, math). codeFontTheme below already
-        // overrides this whole scroller for config buffers, and its comment has always called
-        // this declaration "editorTheme's prose font" — this makes that true.
-        fontFamily: 'var(--prose-font)',
-        // --prose-font-size, not --editor-font-size: the serif needs ~15% more nominal px to read
-        // at the same optical size as the mono it replaced (global.css's `styles/tokens.css` section --prose-scale carries
-        // the measurement). The mono exclusions in global.css's CodeMirror theming section reset BOTH family and size, so a code
-        // fence or a heading is unaffected by this.
-        fontSize: 'var(--prose-font-size)',
-        lineHeight: 'var(--prose-row)',
+        // The prose face, size and row are noteProseTheme's (editor/noteProseTheme.ts).
         overflow: 'auto',
         overflowAnchor: 'none',
         justifyContent: 'center',
@@ -1556,6 +1504,7 @@ export function Editor(props: {
                 ...historyKeymap,
             ]),
             editorTheme,
+            noteProseTheme,
             completionTheme, // shared autocomplete-popup styling (also used by the card editor)
             ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
             // In-editor find (Cmd/Ctrl+F by default) — custom bar, see editor/findPanel.ts.
@@ -1939,109 +1888,10 @@ export function Editor(props: {
                             }
                             return true
                         },
-                        mousedown: (e, view) => {
-                            // Only navigate when the click actually lands on a RENDERED link — live
-                            // preview marks links/wikilinks/bare-urls with `.cm-link` / `.cm-wikilink`
-                            // (livePreview.ts). Without this gate, a click in the empty space below a
-                            // note whose last content is a link resolves (via nearest-position mode) to
-                            // the doc end, which sits inside that trailing link, and wrongly navigates.
-                            // (Links on the caret's own line render raw with no class, so a plain click
-                            // there places the cursor to edit instead of navigating — Obsidian-like.)
-                            const tgt = e.target as HTMLElement | null
-                            if (!tgt?.closest?.('.cm-link, .cm-wikilink'))
-                                return false
-                            // `false` = nearest-position mode: precise mode returns null when the click
-                            // lands between glyphs or on padding, which made links intermittently dead.
-                            // Safe now that the DOM-class gate above has confirmed we're on a link.
-                            const pos = view.posAtCoords(
-                                {
-                                    x: (e as MouseEvent).clientX,
-                                    y: (e as MouseEvent).clientY,
-                                },
-                                false,
-                            )
-                            if (pos == null) return false
-                            const line = view.state.doc.lineAt(pos)
-                            // `(?<!!)` skips EMBEDS (`![[...]]`): clicking one while editing must not
-                            // navigate to it as a note (it's rendered media, not a link).
-                            for (const m of line.text.matchAll(
-                                /(?<!!)\[\[([^\]]+?)\]\]/g,
-                            )) {
-                                const s = line.from + (m.index ?? 0),
-                                    en = s + m[0].length
-                                if (pos >= s && pos <= en) {
-                                    const { target, heading } = parseWikilink(
-                                        m[1],
-                                    )
-                                    // `[[Folder/]]` names a folder: show it in the file tree.
-                                    if (isFolderTarget(target)) {
-                                        revealFolder(target)
-                                        return true
-                                    }
-                                    // Wikilinks are filename-based: resolve the basename to its real vault
-                                    // path so subfolder notes open (and highlight) correctly. An unresolved
-                                    // target opens as a new note at the typed name (read falls back to "").
-                                    const resolved = resolveNotePath(
-                                        target,
-                                        props.noteNames(),
-                                    )
-                                    // Object detail (not a bare string) so a `#heading` anchor rides along —
-                                    // App routes it through pendingAnchor → the opened editor scrolls to it.
-                                    // wikilinkOpenPath (not a bare "+ .md") so an unresolved target naming a
-                                    // previewable attachment (e.g. `[[Screenshot ….png]]`) opens as-is instead of
-                                    // routing to a blank nonexistent note (#38).
-                                    openNote(
-                                        wikilinkOpenPath(target, resolved),
-                                        heading,
-                                    )
-                                    return true
-                                }
-                            }
-                            // `~slug` memory references — open the memory note the slug names. Placed after the
-                            // wikilink scan (the two grammars can't overlap: a slug has no `[`) and before the
-                            // markdown-link scan. Resolve against the known memory notes so a subfoldered note
-                            // opens by basename too, exactly like a wikilink; an unresolved slug still opens its
-                            // canonical path (`.daemon/memory/<slug>.md`) rather than doing nothing.
-                            for (const m of line.text.matchAll(
-                                new RegExp(MEMORY_REF_RE.source, 'g'),
-                            )) {
-                                const s2 =
-                                    line.from + (m.index ?? 0) + m[1].length
-                                const en = s2 + 1 + m[2].length
-                                if (pos >= s2 && pos <= en) {
-                                    const resolved = resolveMemorySlug(
-                                        m[2],
-                                        props.memoryNames(),
-                                    )
-                                    openNote(memoryRefPath(resolved ?? m[2]))
-                                    return true
-                                }
-                            }
-                            // markdown links [text](url) — open the destination in the browser.
-                            for (const m of line.text.matchAll(
-                                /\[([^\]]+)\]\(([^)]+)\)/g,
-                            )) {
-                                const s = line.from + (m.index ?? 0),
-                                    en = s + m[0].length
-                                if (pos >= s && pos <= en) {
-                                    void openExternalUrl(m[2])
-                                    return true
-                                }
-                            }
-                            // bare (inexplicit) URLs — a plain https://… typed without link syntax.
-                            for (const { start, end, url } of findBareUrls(
-                                line.text,
-                            )) {
-                                if (
-                                    pos >= line.from + start &&
-                                    pos <= line.from + end
-                                ) {
-                                    void openExternalUrl(url)
-                                    return true
-                                }
-                            }
-                            return false
-                        },
+                    }),
+                    noteLinkClicks({
+                        noteNames: () => props.noteNames(),
+                        memoryNames: () => props.memoryNames(),
                     }),
                 ],
             }),

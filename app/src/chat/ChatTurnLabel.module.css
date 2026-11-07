@@ -2,6 +2,7 @@
    (size/tracking/color) is Text's `eyebrow` register (ui/Text.module.css), the same one
    DaemonPanel's title uses — this file never sets font-size/weight/letter-spacing/color itself. */
 .chat-turn-label {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--sp-2);
@@ -12,4 +13,9 @@
    the space DaemonFace's own compact header leaves between glyph and name. */
 .with-avatar {
     gap: var(--sp-4);
+}
+
+/* A folded turn's first line, after the label: fills the rest of the row and ellipsises. */
+.preview {
+    flex: 1 1 auto;
 }

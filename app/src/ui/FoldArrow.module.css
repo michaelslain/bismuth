@@ -1,0 +1,18 @@
+/* FoldArrow.module.css — FoldArrow.tsx is the ONLY importer. A fixed-size triangle whatever the
+   line's font size; its centroid sits at the box centre so rotating pivots in place (an off-centre
+   triangle visibly drifts sideways as it turns). `[data-collapsed]` is also set directly by
+   foldBlocks.ts the moment a fold starts, so the turn never lags the slide. */
+.arrow {
+    display: block;
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    background: currentColor;
+    clip-path: polygon(27% 12%, 27% 88%, 96% 50%);
+    transform: rotate(90deg);
+    transform-origin: center;
+    transition: transform calc(90ms * var(--motion-scale, 1)) var(--ease);
+}
+.arrow[data-collapsed] {
+    transform: rotate(0deg);
+}

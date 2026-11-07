@@ -74,3 +74,28 @@ export const WithAvatar: Story = {
         ).toBeLessThan(4)
     },
 }
+
+/** A folded turn: the gutter chevron points right and stays shown, and the message's first line
+ *  follows the label, muted and cut to one line. The left padding is the transcript gutter. */
+export const Folded: Story = {
+    render: () => (
+        <div style={{ width: '360px', 'padding-left': '40px' }}>
+            <ChatTurnLabel
+                label="you"
+                fold={{
+                    open: false,
+                    onToggle: () => {},
+                    preview:
+                        'What changed in the last release, and does the old flag still work?',
+                }}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const button = canvas.getByRole('button', { name: 'Expand message' })
+        await expect(button).toHaveAttribute('aria-expanded', 'false')
+        await expect(getComputedStyle(button).opacity).toBe('1')
+        await expect(canvas.getByText(/What changed/)).toBeInTheDocument()
+    },
+}

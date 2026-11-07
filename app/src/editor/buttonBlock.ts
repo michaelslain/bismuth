@@ -13,11 +13,13 @@ import {
     WidgetType,
 } from '@codemirror/view'
 import {
+    Facet,
     StateEffect,
     StateField,
     type EditorState,
     type Extension,
 } from '@codemirror/state'
+import type { ButtonHost } from '../../../core/src/buttons/buttonTypes'
 import { scanButtonFences } from '../../../core/src/buttons/buttonBlock'
 import ButtonBlockView from '../buttons/ButtonBlockView'
 import { openQuickAsk } from '../quickAsk/quickAskState'
@@ -26,8 +28,18 @@ import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 import { codeLineNumberTheme, numberedLine } from './codeLineNumbers'
 import { disposeSolid, mountSolid } from './solidWidget'
 import { notePathFacet } from './tableState'
+import { inertButtonText } from '../bases/markdown'
 
 export type ButtonRange = { from: number; to: number; body: string }
+
+/** Who a view's button rows run for, when that is not the note at `notePathFacet` — a chat
+ *  message: its `send` buttons become the chat's next message (`onSend`), and with no `onSend`
+ *  (a message you wrote) the rows stay inert, so a fence you typed never runs. */
+export type ButtonBlockHost = { host: ButtonHost; onSend?: (text: string) => void }
+export const buttonHostFacet = Facet.define<
+    ButtonBlockHost,
+    ButtonBlockHost | null
+>({ combine: values => values[0] ?? null })
 
 /** All closed ```button fences in the document, in order (exclusive `to`). A fresh array on
  *  every call. */
@@ -94,6 +106,7 @@ class ButtonBlockWidget extends WidgetType {
     constructor(
         readonly source: string,
         readonly notePath: string | null,
+        readonly chatHost: ButtonBlockHost | null = null,
     ) {
         super()
     }
@@ -107,7 +120,11 @@ class ButtonBlockWidget extends WidgetType {
     }
 
     eq(other: ButtonBlockWidget): boolean {
-        return other.source === this.source && other.notePath === this.notePath
+        return (
+            other.source === this.source &&
+            other.notePath === this.notePath &&
+            other.chatHost === this.chatHost
+        )
     }
 
     /** This block's current range and index, located by DOM position (robust to edits above). */
@@ -164,14 +181,19 @@ class ButtonBlockWidget extends WidgetType {
             if ((e.target as HTMLElement).closest('button')) return
             this.reveal()
         })
-        const host = { kind: 'note', path: this.notePath ?? '' } as const
-        mountSolid(container, () =>
-            ButtonBlockView({
-                host,
-                body: this.source,
-                onSend: this.send,
-            }),
-        )
+        const chat = this.chatHost
+        const host: ButtonHost = chat?.host ?? {
+            kind: 'note',
+            path: this.notePath ?? '',
+        }
+        const body = this.source
+        if (chat && !chat.onSend) {
+            // Inert: the row's labels, nothing to press (a fence in a message you wrote).
+            container.textContent = inertButtonText(body)
+            return container
+        }
+        const onSend = chat ? chat.onSend : this.send
+        mountSolid(container, () => ButtonBlockView({ host, body, onSend }))
         return container
     }
 
@@ -190,6 +212,7 @@ function buildDecorations(state: EditorState): DecorationSet {
     const revealed = state.field(revealedField)
     const doc = state.doc
     const notePath = state.facet(notePathFacet)
+    const chatHost = state.facet(buttonHostFacet)
     const deco: ReturnType<Decoration['range']>[] = []
     buttonRanges(state).forEach((r, i) => {
         if (revealed.has(i)) {
@@ -208,7 +231,7 @@ function buildDecorations(state: EditorState): DecorationSet {
         } else {
             deco.push(
                 Decoration.replace({
-                    widget: new ButtonBlockWidget(r.body, notePath),
+                    widget: new ButtonBlockWidget(r.body, notePath, chatHost),
                     block: true,
                 }).range(r.from, r.to),
             )

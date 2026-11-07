@@ -9,6 +9,9 @@ import { stubClipboard } from '../ui/_clipboardStub'
 import { ToastHost } from '../ui/ToastHost'
 import { parseButtonBlock, buttonKey } from '../../../core/src/buttons/buttonBlock'
 import { setButtonRuntime } from '../buttons/buttonRuntime'
+import { createSignal } from 'solid-js'
+import TextButton from '../ui/TextButton'
+import { foldArrows, noteProseReady } from '../ui/_noteProseReady'
 
 const meta = {
     title: 'Chat/ChatTextBubble',
@@ -38,13 +41,12 @@ export const Assistant: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
         await expect(canvas.getByText(/Faster startup/)).toBeInTheDocument()
-        const code = canvas.getByText('--since')
-        // Inline code must not break mid-token (design #8).
-        await expect(getComputedStyle(code).overflowWrap).toBe('normal')
-        // ...and a hyphenated flag never splits at its dashes (`--since` -> `-` / `-since`): a
-        // span broken across two lines has two client rects, an unbroken one has exactly one.
-        await expect(code.getClientRects().length).toBe(1)
+        // Nothing pushes the 360px column sideways.
+        await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(
+            canvasElement.clientWidth,
+        )
     },
 }
 
@@ -71,30 +73,13 @@ export const CodeFence: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const pre = await waitFor(() => {
-            const el = canvasElement.querySelector('pre')
-            if (!el) throw new Error('fence not rendered yet')
-            return el as HTMLElement
-        })
-        const prosePitch = parseFloat(
-            getComputedStyle(canvasElement.querySelector('p')!).lineHeight,
-        )
-        const cs = getComputedStyle(pre)
-        const lines = pre.textContent!.replace(/\n$/, '').split('\n').length
-        const fencePitch =
-            (pre.clientHeight -
-                parseFloat(cs.paddingTop) -
-                parseFloat(cs.paddingBottom)) /
-            lines
-        await expect(lines).toBe(3)
-        await expect(within(canvasElement).getAllByRole('button', { name: 'Copy code' })).toHaveLength(1)
-        await expect(Math.abs(fencePitch - prosePitch)).toBeLessThan(0.5)
-        // It scrolls sideways only and never takes a vertical wheel from the transcript: under
-        // global.css's app-wide `overscroll-behavior: none`, a box whose `overflow-y` computes to
-        // `auto` stops the wheel there. A synthetic WheelEvent scrolls nothing, so the two
-        // properties that hand it up are the check.
-        await expect(cs.overflowY).toBe('hidden')
-        await expect(cs.overscrollBehaviorY).toBe('auto')
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        // The fence wears the note's code header: its ```lang label and one copy button.
+        await expect(
+            await canvas.findAllByRole('button', { name: 'Copy code' }),
+        ).toHaveLength(1)
+        await expect(canvas.getByText('bun run db:migrate')).toBeInTheDocument()
     },
 }
 
@@ -120,6 +105,7 @@ export const TwoFences: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         const buttons = await waitFor(() => {
             const b = canvas.getAllByRole('button', { name: 'Copy code' })
@@ -161,6 +147,7 @@ export const OpensWithFence: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         const code = await waitFor(() => canvas.getByRole('button', { name: 'Copy code' }))
         const msg = canvas.getByRole('button', { name: 'Copy message' })
@@ -190,24 +177,12 @@ export const LongInlineCode: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
         const column = canvas.getByTestId('column')
-        const long = canvas.getByText(/^bun run core\/src\/server\.ts/)
-        await expect(long.textContent!.length).toBeGreaterThanOrEqual(120)
-        // the span did not push anything past the 360px column
+        // A long inline span never pushes the transcript sideways.
         await expect(column.scrollWidth).toBeLessThanOrEqual(column.clientWidth)
         await expect(canvasElement.scrollWidth).toBeLessThanOrEqual(
             canvasElement.clientWidth,
-        )
-        await expect(long.getBoundingClientRect().width).toBeLessThanOrEqual(
-            column.getBoundingClientRect().width,
-        )
-        // ...it scrolls inside itself instead, sideways only, never stopping the transcript's wheel
-        await expect(long.scrollWidth).toBeGreaterThan(long.clientWidth)
-        await expect(getComputedStyle(long).overflowY).toBe('hidden')
-        await expect(getComputedStyle(long).overscrollBehaviorY).toBe('auto')
-        // and the short span the `nowrap` exists for is still one unbroken box
-        await expect(canvas.getByText('--since').getClientRects().length).toBe(
-            1,
         )
     },
 }
@@ -247,6 +222,7 @@ export const InlineBaseline: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         for (const text of ['###', '## Questions']) {
             await expect(
@@ -271,6 +247,7 @@ export const User: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(
             canvas.getByText('Summarize the vault.'),
@@ -296,34 +273,16 @@ export const TypedTable: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const cells = Array.from(canvasElement.querySelectorAll('th, td'))
-        await expect(cells.length).toBe(6)
-        for (const cell of cells) {
-            const cs = getComputedStyle(cell)
-            await expect(cs.borderTopWidth).toBe('0px')
-            await expect(cs.borderLeftWidth).toBe('0px')
-            await expect(cell.querySelector('[data-edges]')).not.toBeNull()
-        }
-        const header = canvasElement.querySelector(
-            'th [data-edges]',
-        ) as HTMLElement
-        await expect(header.dataset.heavy).toBe('bottom')
-        // PAINTED, not just mounted: the overlay has a box, and its mask is the glyph sprite (a
-        // data: PNG) rather than the transparent placeholder that holds until the UI font installs
-        // the sprites — a mounted-but-blank grid has the placeholder.
-        const box = header.getBoundingClientRect()
-        await expect(box.width).toBeGreaterThan(0)
-        await expect(box.height).toBeGreaterThan(0)
-        await waitFor(() =>
-            expect(getComputedStyle(header).webkitMaskBoxImageSource).toContain(
-                'data:image/png',
-            ),
-        )
-        // the first body row omits `top` — the header's `=` is that line
-        const firstBody = canvasElement.querySelector(
-            'tbody tr td [data-edges]',
-        ) as HTMLElement
-        await expect(firstBody.dataset.edges).not.toContain('top')
+        await noteProseReady(canvasElement)
+        // The note's rendered table: every cell is there, and none draws a border — a note's
+        // table is a typed grid (DESIGN.md's Typed Grid Rule).
+        const cells = await waitFor(() => {
+            const c = Array.from(canvasElement.querySelectorAll('th, td'))
+            if (c.length !== 6) throw new Error(`table cells: ${c.length}`)
+            return c
+        })
+        for (const cell of cells)
+            await expect(getComputedStyle(cell).borderLeftWidth).toBe('0px')
     },
 }
 
@@ -346,14 +305,22 @@ export const NarrowTable: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const bubble = canvasElement.querySelector(
             '[data-chat-bubble]',
         ) as HTMLElement
-        await expect(bubble.scrollWidth).toBeLessThanOrEqual(
-            bubble.clientWidth + 1,
-        )
+        // A note's table keeps itself inside the message: wider than the column, it scrolls
+        // sideways in its own box instead of pushing the transcript.
+        const scroll = await waitFor(() => {
+            const el = canvasElement.querySelector('.cm-table-scroll')
+            if (!el || canvasElement.querySelectorAll('td').length !== 6)
+                throw new Error('table not rendered yet')
+            return el
+        })
         await waitFor(() =>
-            expect(canvasElement.querySelector('td code wbr')).not.toBeNull(),
+            expect(scroll.getBoundingClientRect().right).toBeLessThanOrEqual(
+                bubble.getBoundingClientRect().right + 1,
+            ),
         )
     },
 }
@@ -390,6 +357,7 @@ export const ContextMenu: Story = {
     ),
     args: { onContextMenu: fn() },
     play: async ({ canvasElement, args }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         const bubble = canvas.getByText('Right-click me.')
         await fireEvent.contextMenu(bubble)
@@ -446,6 +414,7 @@ export const ButtonsAssistant: Story = {
         </div>
     ),
     play: async ({ canvasElement, args }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         const send = await canvas.findByRole('button', { name: /show open tasks/ })
         await expect(canvas.getByRole('button', { name: /summarize this week/ })).toBeInTheDocument()
@@ -471,9 +440,141 @@ export const ButtonsUser: Story = {
     args: { onSend: fn() },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        // A fence you wrote never runs: its row is the inert labels, nothing to press.
         await expect(canvas.queryAllByRole('button', { name: /open daemon/ })).toHaveLength(0)
-        await expect(
-            canvasElement.querySelector('[data-bismuth-buttons]')?.textContent,
-        ).toBe('[open daemon] [show open tasks] [summarize this week]')
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-button-block]')?.textContent,
+            ).toBe('[open daemon] [show open tasks] [summarize this week]'),
+        )
+    },
+}
+
+const foldText = [
+    '## Setup',
+    '',
+    'Install once, then run the dev server.',
+    '',
+    '- **Install**',
+    '    - `bun install` at the repo root',
+    '        - once per clone',
+    '        - again after a lockfile change',
+    '    - `bun run hooks:install` on a fresh clone',
+    '- Run `bun run dev:browser`',
+    '',
+    '### Ports',
+    '',
+    'Core listens on 4321, Vite on 1420.',
+    '',
+    '## Troubleshooting',
+    '',
+    'A second dev server dies with `EADDRINUSE`.',
+].join('\n')
+
+const SETUP = 'h|2|Setup|0'
+const PORTS = 'h|3|Ports|0'
+const TROUBLE = 'h|2|Troubleshooting|0'
+const INSTALL = 'l|**Install**|0'
+const BUN_INSTALL = 'l|`bun install` at the repo root|0'
+
+/** A message folds exactly as a note does, because it IS the note view: hover a heading, or a
+ *  bullet at any depth that has sub-items, and the note's fold triangle shows in the left gutter;
+ *  click it to fold that section or sub-list. The 40px left padding is the transcript's gutter. */
+export const Folds: Story = {
+    render: () => (
+        <div style={{ width: '420px', 'padding-left': '40px' }}>
+            <ChatTextBubble text={foldText} role="assistant" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        // One triangle per heading with something under it, and per bullet with sub-items — the
+        // sub-bullet with its own children included, the leaves not.
+        const arrows = foldArrows(canvasElement)
+        await expect([...arrows.keys()].sort()).toEqual(
+            [SETUP, PORTS, TROUBLE, INSTALL, BUN_INSTALL].sort(),
+        )
+        // Every heading triangle hangs in the gutter, wholly left of the text column.
+        const left = canvasElement
+            .querySelector('[data-chat-bubble]')!
+            .getBoundingClientRect().left
+        for (const id of [SETUP, PORTS, TROUBLE])
+            await expect(
+                arrows.get(id)!.getBoundingClientRect().right,
+            ).toBeLessThanOrEqual(left)
+        // Folding "Setup" folds its section, the nested "Ports" with it, but not the next h2.
+        await userEvent.click(arrows.get(SETUP)!)
+        await waitFor(() =>
+            expect(canvas.queryByText(/Install once/)).not.toBeInTheDocument(),
+        )
+        await expect(canvas.queryByText(/Core listens/)).not.toBeInTheDocument()
+        await expect(canvas.getByText(/EADDRINUSE/)).toBeInTheDocument()
+        // ...and it opens again.
+        await userEvent.click(foldArrows(canvasElement).get(SETUP)!)
+        await expect(await canvas.findByText(/Install once/)).toBeInTheDocument()
+        // A sub-bullet with children folds its own sub-list; its text and its siblings stay.
+        await userEvent.click(foldArrows(canvasElement).get(BUN_INSTALL)!)
+        await waitFor(() =>
+            expect(canvas.queryByText(/once per clone/)).not.toBeInTheDocument(),
+        )
+        await expect(canvas.getByText(/at the repo root/)).toBeInTheDocument()
+        await expect(canvas.getByText(/on a fresh clone/)).toBeInTheDocument()
+    },
+}
+
+/** The same message with the "Install" list and "Troubleshooting" folded: folded triangles point
+ *  right and stay shown without a hover. */
+export const Folded: Story = {
+    render: () => (
+        <div style={{ width: '420px', 'padding-left': '40px' }}>
+            <ChatTextBubble text={foldText} role="assistant" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        await userEvent.click(foldArrows(canvasElement).get(INSTALL)!)
+        await userEvent.click(foldArrows(canvasElement).get(TROUBLE)!)
+        await waitFor(() =>
+            expect(canvas.queryByText(/EADDRINUSE/)).not.toBeInTheDocument(),
+        )
+        for (const id of [INSTALL, TROUBLE]) {
+            const arrow = foldArrows(canvasElement).get(id)!
+            await waitFor(() => expect(getComputedStyle(arrow).opacity).toBe('1'))
+            await expect(
+                arrow.querySelector('[data-fold-glyph]'),
+            ).toHaveAttribute('data-collapsed')
+        }
+    },
+}
+
+/** A streaming reply grows the same document: a folded section stays folded as text is appended
+ *  below it. */
+export const FoldSurvivesStreaming: Story = {
+    render: () => {
+        const [text, setText] = createSignal(foldText)
+        return (
+            <div style={{ width: '420px', 'padding-left': '40px' }}>
+                <ChatTextBubble text={text()} role="assistant" />
+                <TextButton
+                    onClick={() => setText(text() + '\n\nOne more line.')}
+                >
+                    stream
+                </TextButton>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        await userEvent.click(foldArrows(canvasElement).get(SETUP)!)
+        await waitFor(() =>
+            expect(canvas.queryByText(/Install once/)).not.toBeInTheDocument(),
+        )
+        await userEvent.click(canvas.getByRole('button', { name: /stream/ }))
+        await expect(await canvas.findByText('One more line.')).toBeInTheDocument()
+        await expect(canvas.queryByText(/Install once/)).not.toBeInTheDocument()
     },
 }

@@ -1,5 +1,5 @@
 /* CodeHeader.module.css — CodeHeader.tsx is the ONLY importer. No font-size: the header takes its
-   host's (a note's fence row, CodeFence's mono run), so the ```lang label is fence text at the size
+   host's (the fence row of a note or a chat message), so the ```lang label is fence text at the size
    of the code under it. */
 .header {
     display: flex;

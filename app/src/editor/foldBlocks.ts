@@ -39,6 +39,8 @@ import { isThematicBreak } from './thematicBreak'
 // dependency-free ./listLayout leaf) so the triangle lands just to the left of the
 // bullet glyph at every depth.
 import { LIST_STEP } from './listLayout'
+import FoldArrow from '../ui/FoldArrow'
+import { disposeSolid, mountSolid } from './solidWidget'
 
 export type FoldMode = 'markdown' | 'yaml'
 
@@ -269,7 +271,14 @@ class FoldArrowWidget extends WidgetType {
         // Sits just left of the heading text / bullet glyph, in the margin. Anchored to
         // the line's padding box so it scales with indent and shifts nothing.
         el.style.left = this.left
+        // The triangle itself is the app's one fold glyph, shared with chat (ui/FoldArrow).
+        const collapsed = this.collapsed
+        mountSolid(el, () => FoldArrow({ collapsed }))
         return el
+    }
+
+    destroy(dom: HTMLElement): void {
+        disposeSolid(dom)
     }
 
     ignoreEvent(): boolean {
@@ -527,6 +536,60 @@ function animateFold(
     else run()
 }
 
+// Scoped to gutter editors only (so it can never make a gutter-less note's hypothetical
+// future gutter unclickable): the line-number gutter sits at z-index 200 above the content
+// layer that hosts the fold triangles. The triangles now park to its left, but make the
+// gutter ignore pointer events too — these line numbers aren't interactive, so this just
+// guarantees a click always reaches the collapser even if the two ever overlap (narrow pane).
+const gutterClickThrough = EditorView.theme({
+    '.cm-gutters': { 'pointer-events': 'none' },
+})
+
+// Built once, like gutterClickThrough: a theme made per call is a new style module for every view,
+// and CodeMirror compares every mounted module on each mount (quadratic across many views).
+const foldTheme = EditorView.theme({
+    // Disable browser scroll-anchoring: when we expand a fold the browser would
+    // otherwise pin some element *below* the fold and let everything above slide up.
+    // We control scroll ourselves (preserveScroll), so the clicked line stays put and
+    // the content *below* it moves instead.
+    // overflow-anchor:none — see above. scrollbar-gutter:stable always reserves the
+    // vertical scrollbar's width, so folding/expanding (or any height change) that adds
+    // or removes the scrollbar can't shift the centered content sideways.
+    '.cm-scroller': {
+        'overflow-anchor': 'none',
+        'scrollbar-gutter': 'stable',
+    },
+    // The anchor line becomes the positioning context for its triangle.
+    '.cm-foldable-line': { position: 'relative' },
+    // The arrow is a WIDE, transparent hit-box (generous click target) that centers the
+    // shared ui/FoldArrow triangle. Only the triangle's visibility is toggled (via the
+    // box's opacity); the box stays clickable so you can grab it even when faint.
+    '.cm-fold-arrow': {
+        position: 'absolute',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: '22px',
+        height: '1.4em',
+        'min-height': '18px',
+        display: 'flex',
+        'align-items': 'center',
+        'justify-content': 'center',
+        // Faint, matching the code-block line-number tint, until hovered/collapsed/locked.
+        color: 'color-mix(in srgb, var(--fg) 36%, transparent)',
+        cursor: 'pointer',
+        opacity: '0',
+        transition: 'opacity 120ms ease, color 120ms ease',
+    },
+    // Collapsed → the box stays visible (the triangle turns itself, from its prop).
+    '.cm-fold-arrow.is-collapsed': { opacity: '1' },
+    // Reveal whenever the pointer is anywhere over the line.
+    '.cm-foldable-line:hover .cm-fold-arrow': { opacity: '1' },
+    '.cm-fold-arrow:hover': { color: 'var(--fg)' },
+    // Locked: a fixed theme color so pinned collapses read at a glance.
+    '.cm-fold-arrow.is-locked': { opacity: '1', color: 'var(--teal)' },
+    '.cm-fold-arrow.is-locked:hover': { color: 'var(--teal)' },
+})
+
 /**
  * Collapsible headings & bullets (markdown) or indented keys (yaml). `getPath`
  * supplies the current note path (stable for the lifetime of this editor view),
@@ -652,7 +715,8 @@ export function foldBlocks(
                 .querySelector<HTMLElement>(
                     `.cm-fold-arrow[data-fold-id="${escId}"]`,
                 )
-                ?.classList.add('is-collapsed')
+                ?.querySelector('[data-fold-glyph]')
+                ?.setAttribute('data-collapsed', '')
             animateFold(view, getEls, 'collapse', () => {
                 commit()
                 release()
@@ -697,15 +761,6 @@ export function foldBlocks(
             }
         },
     )
-
-    // Scoped to gutter editors only (so it can never make a gutter-less note's hypothetical
-    // future gutter unclickable): the line-number gutter sits at z-index 200 above the content
-    // layer that hosts the fold triangles. The triangles now park to its left, but make the
-    // gutter ignore pointer events too — these line numbers aren't interactive, so this just
-    // guarantees a click always reaches the collapser even if the two ever overlap (narrow pane).
-    const gutterClickThrough = EditorView.theme({
-        '.cm-gutters': { 'pointer-events': 'none' },
-    })
 
     return [
         field,
@@ -755,63 +810,6 @@ export function foldBlocks(
                 saveLocked(path, u.state.field(field).locked)
             }
         }),
-        EditorView.theme({
-            // Disable browser scroll-anchoring: when we expand a fold the browser would
-            // otherwise pin some element *below* the fold and let everything above slide up.
-            // We control scroll ourselves (preserveScroll), so the clicked line stays put and
-            // the content *below* it moves instead.
-            // overflow-anchor:none — see above. scrollbar-gutter:stable always reserves the
-            // vertical scrollbar's width, so folding/expanding (or any height change) that adds
-            // or removes the scrollbar can't shift the centered content sideways.
-            '.cm-scroller': {
-                'overflow-anchor': 'none',
-                'scrollbar-gutter': 'stable',
-            },
-            // The anchor line becomes the positioning context for its triangle.
-            '.cm-foldable-line': { position: 'relative' },
-            // The arrow is a WIDE, transparent hit-box (generous click target) that centers a
-            // small fixed-size triangle drawn via ::before. Only the triangle's visibility is
-            // toggled (via the box's opacity); the box stays clickable so you can grab it even
-            // when faint. The triangle is a fixed size regardless of heading font-size.
-            '.cm-fold-arrow': {
-                position: 'absolute',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: '22px',
-                height: '1.4em',
-                'min-height': '18px',
-                display: 'flex',
-                'align-items': 'center',
-                'justify-content': 'center',
-                // Faint, matching the code-block line-number tint, until hovered/collapsed/locked.
-                color: 'color-mix(in srgb, var(--fg) 36%, transparent)',
-                cursor: 'pointer',
-                opacity: '0',
-                transition: 'opacity 120ms ease, color 120ms ease',
-            },
-            '.cm-fold-arrow::before': {
-                content: "''",
-                width: '11px',
-                height: '11px',
-                background: 'currentColor',
-                // Centroid sits at (50%,50%) so rotating about the box center pivots in place —
-                // an off-center triangle visibly drifts sideways as it turns.
-                'clip-path': 'polygon(27% 12%, 27% 88%, 96% 50%)',
-                transform: 'rotate(90deg)', // expanded → points down
-                'transform-origin': 'center',
-                transition: 'transform 90ms ease',
-            },
-            // Collapsed → triangle points right; box stays visible.
-            '.cm-fold-arrow.is-collapsed': { opacity: '1' },
-            '.cm-fold-arrow.is-collapsed::before': {
-                transform: 'rotate(0deg)',
-            },
-            // Reveal whenever the pointer is anywhere over the line.
-            '.cm-foldable-line:hover .cm-fold-arrow': { opacity: '1' },
-            '.cm-fold-arrow:hover': { color: 'var(--fg)' },
-            // Locked: a fixed theme color so pinned collapses read at a glance.
-            '.cm-fold-arrow.is-locked': { opacity: '1', color: 'var(--teal)' },
-            '.cm-fold-arrow.is-locked:hover': { color: 'var(--teal)' },
-        }),
+        foldTheme,
     ]
 }

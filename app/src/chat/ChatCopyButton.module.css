@@ -33,15 +33,16 @@
 }
 
 /* A FENCE OWNS ITS CORNER. A fenced code block wears its own copy button at its top-right
-   (ui/CodeFence → CodeHeader), so a message whose first block is a fence would stack the two
+   (the note view's CodeHeader), so a message whose first block is a fence would stack the two
    buttons there: the message's copy drops to the bottom-right. A message that also ENDS with a
    fence has no free corner, and every block in it already copies itself; the message copy yields
-   (right-click → Copy still copies the whole message). Each fence sits in a `display: contents`
-   mount one level below the bubble's children, hence the `> :first-child > [data-code-fence]`. */
-[data-chat-bubble-wrap]:has(> [data-chat-bubble] > :first-child > [data-code-fence]) .chat-copy-btn.chat-copy-btn {
+   (right-click → Copy still copies the whole message). The message is a note view (ui/NoteProse),
+   so a fence is CodeMirror's run of lines: `cm-block-top` over a `cm-codeblock`, closed by
+   `cm-block-bottom` (`cm-*` is a declared external class). */
+[data-chat-bubble-wrap]:has(:global(.cm-content) > :global(.cm-block-top):first-child + :global(.cm-codeblock)) .chat-copy-btn.chat-copy-btn {
     top: auto;
     bottom: 0;
 }
-[data-chat-bubble-wrap]:has(> [data-chat-bubble] > :first-child > [data-code-fence]):has(> [data-chat-bubble] > :last-child > [data-code-fence]) .chat-copy-btn.chat-copy-btn {
+[data-chat-bubble-wrap]:has(:global(.cm-content) > :global(.cm-block-top):first-child + :global(.cm-codeblock)):has(:global(.cm-content) > :global(.cm-block-bottom):last-child) .chat-copy-btn.chat-copy-btn {
     display: none;
 }

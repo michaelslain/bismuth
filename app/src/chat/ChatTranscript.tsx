@@ -1,6 +1,6 @@
 // app/src/chat/ChatTranscript.tsx — ChatTranscript.module.css is the ONLY importer of its module.
 // The scrollable message list: owns its own scroll container, follow-bottom tracking + the
-// "Latest" jump pill, wikilink click → the global `bismuth-open` navigation event, the floating
+// "Latest" jump pill, the vault names a message's links resolve against, the floating
 // selection "Reply" button, and the bubble right-click menu (Reply/Copy). Renders each TurnItem via
 // ChatUserTurn/ChatAssistantTurn/ChatSystemNote, plus the transient "awaiting reply" and per-turn
 // error rows. Rendered in the chat tab and the daemon page, driven by a `ChatSession`
@@ -18,7 +18,9 @@ import {
 } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import Caret from '../ui/Caret'
-import { openWikilinkHref } from '../ui/openNote'
+import type { NoteCandidate } from '../editor/wikilink'
+import type { MemoryCandidate } from '../../../core/src/memoryRef'
+import { ChatVaultNamesContext } from './chatVaultNames'
 import { IconTextButton } from '../ui/IconTextButton'
 import { TextButton } from '../ui/TextButton'
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
@@ -69,6 +71,9 @@ export type ChatTranscriptProps = {
     /** 'pane' (default): the list's own inline padding. 'flush': none, so the turn column's left
      *  edge is the host's — the daemon page aligns transcript, composer and controls on one edge. */
     inset?: 'pane' | 'flush'
+    /** Vault notes and memory notes that links inside messages resolve against, as in a note. */
+    noteNames?: () => NoteCandidate[]
+    memoryNames?: () => MemoryCandidate[]
     class?: string
 }
 
@@ -145,18 +150,6 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
         if (selReply()) setSelReply(null)
     }
 
-    // Wikilinks in rendered markdown (`data-href` on `a.bismuth-wikilink`) open in-app via the
-    // global `bismuth-open` event, the same navigation used everywhere else a note is rendered.
-    const onListClick = (e: MouseEvent) => {
-        const target = e.target as HTMLElement | null
-        const a = target?.closest?.('a.bismuth-wikilink') as HTMLElement | null
-        if (!a) return
-        const href = a.getAttribute('data-href')
-        if (!href) return
-        e.preventDefault()
-        openWikilinkHref(href)
-    }
-
     /** Right-click a prose bubble → Reply/Copy. Reply always quotes the WHOLE message (the floating
      *  "Reply" button anchored above a selection is the sole selection-reply path); Copy prefers a
      *  live selection, else the whole message. */
@@ -204,119 +197,134 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
     }
 
     return (
-        <div class={`${styles['chat-list-wrap']} ${props.class ?? ''}`}>
-            <div
-                class={styles['chat-list']}
-                classList={{
-                    [styles['chat-list--flush']]: props.inset === 'flush',
-                }}
-                ref={list!}
-                data-chat-list
-                onClick={onListClick}
-                onScroll={onListScroll}
-                onMouseUp={onListMouseUp}
-            >
-                <Show when={props.items.length === 0 && empty()}>
-                    <div class={styles['chat-empty']}>{empty()}</div>
-                </Show>
-                <For each={props.items}>
-                    {(item, i) => {
-                        if (item.role === 'system')
-                            return <ChatSystemNote text={item.text} />
-                        if (item.role === 'assistant')
+        <ChatVaultNamesContext.Provider
+            value={{
+                noteNames: () => props.noteNames?.() ?? [],
+                memoryNames: () => props.memoryNames?.() ?? [],
+            }}
+        >
+            <div class={`${styles['chat-list-wrap']} ${props.class ?? ''}`}>
+                <div
+                    class={styles['chat-list']}
+                    classList={{
+                        [styles['chat-list--flush']]: props.inset === 'flush',
+                    }}
+                    ref={list!}
+                    data-chat-list
+                    onScroll={onListScroll}
+                    onMouseUp={onListMouseUp}
+                >
+                    <Show when={props.items.length === 0 && empty()}>
+                        <div class={styles['chat-empty']}>{empty()}</div>
+                    </Show>
+                    <For each={props.items}>
+                        {(item, i) => {
+                            if (item.role === 'system')
+                                return <ChatSystemNote text={item.text} />
+                            if (item.role === 'assistant')
+                                return (
+                                    <ChatAssistantTurn
+                                        item={item as AssistantItem}
+                                        persona={props.persona}
+                                        avatar={
+                                            i() === faceAt()
+                                                ? face()
+                                                : undefined
+                                        }
+                                        onAnswerPermission={
+                                            props.onAnswerPermission
+                                        }
+                                        onAnswerQuestion={
+                                            props.onAnswerQuestion
+                                        }
+                                        onBubbleContextMenu={
+                                            onBubbleContextMenu
+                                        }
+                                        chatId={props.chatId}
+                                        onSend={props.onSend}
+                                    />
+                                )
                             return (
-                                <ChatAssistantTurn
-                                    item={item as AssistantItem}
-                                    persona={props.persona}
-                                    avatar={
-                                        i() === faceAt() ? face() : undefined
-                                    }
-                                    onAnswerPermission={
-                                        props.onAnswerPermission
-                                    }
-                                    onAnswerQuestion={props.onAnswerQuestion}
+                                <ChatUserTurn
+                                    item={item as UserItem}
+                                    onCancelQueued={props.onCancelQueued}
                                     onBubbleContextMenu={onBubbleContextMenu}
-                                    chatId={props.chatId}
-                                    onSend={props.onSend}
                                 />
                             )
-                        return (
-                            <ChatUserTurn
-                                item={item as UserItem}
-                                onCancelQueued={props.onCancelQueued}
-                                onBubbleContextMenu={onBubbleContextMenu}
+                        }}
+                    </For>
+                    <Show when={props.awaitingReply}>
+                        <ChatTurnColumn class={styles['chat-row']}>
+                            <ChatTurnLabel
+                                label={props.persona}
+                                avatar={face()}
                             />
-                        )
-                    }}
-                </For>
-                <Show when={props.awaitingReply}>
-                    <ChatTurnColumn class={styles['chat-row']}>
-                        <ChatTurnLabel label={props.persona} avatar={face()} />
-                        <ChatNote>
-                            working
-                            <Caret />
-                        </ChatNote>
-                    </ChatTurnColumn>
-                </Show>
-                <Show when={props.turnError}>
-                    {msg => (
-                        <ChatTurnColumn>
-                            <ChatNote icon="TriangleAlert" tone="danger">
-                                {msg()}
+                            <ChatNote>
+                                working
+                                <Caret />
                             </ChatNote>
                         </ChatTurnColumn>
+                    </Show>
+                    <Show when={props.turnError}>
+                        {msg => (
+                            <ChatTurnColumn>
+                                <ChatNote icon="TriangleAlert" tone="danger">
+                                    {msg()}
+                                </ChatNote>
+                            </ChatTurnColumn>
+                        )}
+                    </Show>
+                </div>
+                {/* Floating jump-back pill while the user has scrolled up off the live tail. */}
+                <Show when={!following() && props.items.length > 0}>
+                    <IconTextButton
+                        icon="ArrowDown"
+                        class={styles['chat-jump-bottom']}
+                        onClick={() => scrollToBottom(true)}
+                    >
+                        latest
+                    </IconTextButton>
+                </Show>
+                {/* Floating "Reply" on an active text selection inside a bubble. onMouseDown +
+                    preventDefault keeps the selection alive so onReply quotes it before it collapses.
+                    The Popover is its surface: the bracket register paints no fill, and this floats
+                    over the prose above the selection. It is portalled to <body>: every pane is
+                    `contain: strict` (PaneLeaf.module.css), which makes the pane the containing block
+                    of a `position: fixed` descendant, so viewport coordinates placed inside the pane
+                    would land offset by the pane's own position. */}
+                <Show when={selReply()}>
+                    {s => (
+                        <Portal>
+                            <Popover
+                                class={styles['chat-sel-reply']}
+                                style={{ left: `${s().x}px`, top: `${s().y}px` }}
+                            >
+                                <TextButton
+                                    onMouseDown={e => {
+                                        e.preventDefault()
+                                        props.onReply(s().text)
+                                        window.getSelection()?.removeAllRanges()
+                                        setSelReply(null)
+                                    }}
+                                >
+                                    reply
+                                </TextButton>
+                            </Popover>
+                        </Portal>
+                    )}
+                </Show>
+                <Show when={menu()}>
+                    {m => (
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            items={m().items}
+                            onClose={() => setMenu(null)}
+                        />
                     )}
                 </Show>
             </div>
-            {/* Floating jump-back pill while the user has scrolled up off the live tail. */}
-            <Show when={!following() && props.items.length > 0}>
-                <IconTextButton
-                    icon="ArrowDown"
-                    class={styles['chat-jump-bottom']}
-                    onClick={() => scrollToBottom(true)}
-                >
-                    latest
-                </IconTextButton>
-            </Show>
-            {/* Floating "Reply" on an active text selection inside a bubble. onMouseDown +
-                preventDefault keeps the selection alive so onReply quotes it before it collapses.
-                The Popover is its surface: the bracket register paints no fill, and this floats
-                over the prose above the selection. It is portalled to <body>: every pane is
-                `contain: strict` (PaneLeaf.module.css), which makes the pane the containing block
-                of a `position: fixed` descendant, so viewport coordinates placed inside the pane
-                would land offset by the pane's own position. */}
-            <Show when={selReply()}>
-                {s => (
-                    <Portal>
-                        <Popover
-                            class={styles['chat-sel-reply']}
-                            style={{ left: `${s().x}px`, top: `${s().y}px` }}
-                        >
-                            <TextButton
-                                onMouseDown={e => {
-                                    e.preventDefault()
-                                    props.onReply(s().text)
-                                    window.getSelection()?.removeAllRanges()
-                                    setSelReply(null)
-                                }}
-                            >
-                                reply
-                            </TextButton>
-                        </Popover>
-                    </Portal>
-                )}
-            </Show>
-            <Show when={menu()}>
-                {m => (
-                    <ContextMenu
-                        x={m().x}
-                        y={m().y}
-                        items={m().items}
-                        onClose={() => setMenu(null)}
-                    />
-                )}
-            </Show>
-        </div>
+        </ChatVaultNamesContext.Provider>
     )
 }
 

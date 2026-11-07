@@ -6,8 +6,9 @@
 // the same head style as the daemon panels." An optional trailing slot carries a queued-turn note
 // + cancel button (ChatUserTurn) — kept generic here rather than hardcoded, so the label stays a
 // pure "text + optional trailing content" row.
-import { children, type Component, type JSX } from 'solid-js'
+import { children, Show, type Component, type JSX } from 'solid-js'
 import Text from '../ui/Text'
+import FoldButton from '../ui/FoldButton'
 import styles from './ChatTurnLabel.module.css'
 
 export type ChatTurnLabelProps = {
@@ -20,6 +21,9 @@ export type ChatTurnLabelProps = {
     avatar?: JSX.Element
     /** Extra content after the label — the queued note + cancel button, or nothing. */
     trailing?: JSX.Element
+    /** Folds the whole turn: a FoldChevron hangs in the gutter beside the label, and while the turn
+     *  is folded the label row carries `preview`, the message's first line, muted on one line. */
+    fold?: { open: boolean; onToggle: () => void; preview?: string }
     class?: string
 }
 
@@ -31,12 +35,35 @@ const ChatTurnLabel: Component<ChatTurnLabelProps> = props => {
         <div
             class={`${styles['chat-turn-label']} ${props.class ?? ''}`}
             classList={{ [styles['with-avatar']]: !!avatar() }}
+            data-fold-anchor={props.fold ? '' : undefined}
         >
+            <Show when={props.fold}>
+                {fold => (
+                    <FoldButton
+                        open={fold().open}
+                        onToggle={() => fold().onToggle()}
+                        what="message"
+                    />
+                )}
+            </Show>
             {avatar()}
             <Text as="span" eyebrow size="micro" tone="faint">
                 {props.label.toLowerCase()}
             </Text>
             {props.trailing}
+            <Show when={props.fold && !props.fold.open && props.fold.preview}>
+                {preview => (
+                    <Text
+                        as="span"
+                        register="prose"
+                        tone="muted"
+                        truncate
+                        class={styles['preview']}
+                    >
+                        {preview()}
+                    </Text>
+                )}
+            </Show>
         </div>
     )
 }

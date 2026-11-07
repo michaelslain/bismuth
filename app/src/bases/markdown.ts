@@ -393,7 +393,8 @@ function encodeButtonBody(body: string): string {
         .replace(/\$/g, '&#36;')
 }
 
-function inertButtonText(body: string): string {
+/** A button fence as its inert `[label]` row: what a surface that cannot run buttons shows. */
+export function inertButtonText(body: string): string {
     const { buttons, error } = parseButtonBlock(body)
     if (error) return `button // ${error}`
     const row = [

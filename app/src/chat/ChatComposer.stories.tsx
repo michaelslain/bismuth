@@ -16,6 +16,7 @@ import { ChatComposer, type ComposerHandle } from './ChatComposer'
 import { expectProseFace, expectFamilyReallyLoaded } from '../ui/_fontFace'
 import './ChatComposer.module.css'
 import ChatTextBubble from './ChatTextBubble'
+import { noteProseReady } from '../ui/_noteProseReady'
 
 const meta = {
     title: 'Chat/ChatComposer',
@@ -141,8 +142,10 @@ export const MatchesTheSentBubble: Story = {
         )
     },
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const line = canvasElement.querySelector('.cm-content .cm-line')
-        const bubble = canvasElement.querySelector('[data-chat-bubble]')
+        // The sent message is a note view: its text sits on a note line.
+        const bubble = canvasElement.querySelector('[data-chat-bubble] .cm-line')
         if (!line || !bubble)
             throw new Error('composer line and sent bubble must both mount')
         const pitch = (el: Element) => {
@@ -236,12 +239,15 @@ export const SentReferences: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const refs = canvasElement.querySelectorAll('a.bismuth-memory-ref')
+        await noteProseReady(canvasElement)
+        // The note view's own marks: one memory link, one tag, one strike; `~5 min` stays text.
+        const refs = canvasElement.querySelectorAll('.cm-memory-ref')
         await expect(refs.length).toBe(1)
-        await expect(refs[0].getAttribute('data-href')).toBe(
-            '.daemon/memory/cron-run-preference.md',
+        await expect(refs[0]!.textContent).toBe('~cron-run-preference')
+        await expect(canvasElement.querySelector('.cm-tag')?.textContent).toBe(
+            '#daily',
         )
         await expect(canvasElement.textContent).toMatch(/~5 min/)
-        await expect(canvasElement.querySelector('del')).not.toBeNull()
+        await expect(canvasElement.querySelector('.cm-strike')).not.toBeNull()
     },
 }

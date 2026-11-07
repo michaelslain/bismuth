@@ -4,7 +4,14 @@
 // the callback wiring the interface promises: cancel-queued, a permission answer, and the bubble
 // context menu's Reply.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
+import {
+    expect,
+    fireEvent,
+    fn,
+    userEvent,
+    waitFor,
+    within,
+} from 'storybook/test'
 import type { Component } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import type { ChatFrame } from '../../../core/src/chat'
@@ -15,6 +22,7 @@ import {
     type TurnItem,
 } from './chatTranscriptLogic'
 import EmptyState from '../ui/EmptyState'
+import { foldArrows, noteProseReady } from '../ui/_noteProseReady'
 import {
     COMMAND_OUTPUT_ITEMS,
     CONVERSATION_ITEMS,
@@ -65,6 +73,7 @@ export const Conversation: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         // Right-click the assistant's prose bubble → Reply, and confirm onReply fires with its
         // exact text (not just "was called").
@@ -75,12 +84,117 @@ export const Conversation: Story = {
         await expect(noop.onReply).toHaveBeenCalledWith(
             conversationAssistantText,
         )
-        // Inline code must not break mid-token (design #8) — `.chat-bubble`'s prose
-        // `overflow-wrap: anywhere` was splitting `--since` into `-`/`-since` across the line.
-        const code = canvas.getByText('--since')
-        const codeStyle = getComputedStyle(code)
-        await expect(codeStyle.overflowWrap).toBe('normal')
-        await expect(codeStyle.wordBreak).toBe('keep-all')
+    },
+}
+
+/** Collapse a message: the chevron beside a turn's label folds the whole turn to its label row and
+ *  the first line of what it said; clicking again opens it. */
+export const CollapsedTurn: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '520px', display: 'flex' }}>
+            <ChatTranscript
+                items={CONVERSATION_ITEMS}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError={null}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
+        const canvas = within(canvasElement)
+        const [, assistant] = canvas.getAllByRole('button', {
+            name: 'Collapse message',
+        })
+        await userEvent.click(assistant!)
+        await waitFor(() =>
+            expect(canvas.queryByText(/Fixed a bug/)).not.toBeInTheDocument(),
+        )
+        // The folded row keeps the first line, and the turns around it are untouched.
+        await expect(
+            canvas.getAllByText('A few things landed:').length,
+        ).toBeGreaterThan(0)
+        await expect(canvas.getByText('Nice, thanks.')).toBeVisible()
+        await expect(
+            canvas.getByRole('button', { name: 'Expand message' }),
+        ).toHaveAttribute('aria-expanded', 'false')
+    },
+}
+
+const SECTIONED_ITEMS: TurnItem[] = [
+    { role: 'user', text: 'How do I run it locally?' },
+    {
+        role: 'assistant',
+        parts: [
+            {
+                kind: 'text',
+                text: [
+                    '## Setup',
+                    '',
+                    '- **Install**',
+                    '    - `bun install` at the repo root',
+                    '        - once per clone',
+                    '        - again after a lockfile change',
+                    '    - `bun run hooks:install` on a fresh clone',
+                    '- Run `bun run dev:browser`',
+                    '',
+                    '## Troubleshooting',
+                    '',
+                    'A second dev server dies with `EADDRINUSE`.',
+                ].join('\n'),
+            },
+        ],
+        footer: null,
+    },
+]
+
+/** Headings and bullets fold inside a transcript turn exactly as in a note (the message IS the note
+ *  view), and every triangle — a section's, a sub-bullet's, the message's own — is the one fold
+ *  glyph, hanging on one column in the gutter. Folding the turn takes its folds with it. */
+export const FoldsInTurn: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '520px', display: 'flex' }}>
+            <ChatTranscript
+                items={SECTIONED_ITEMS}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError={null}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement, 2)
+        const arrows = foldArrows(canvasElement)
+        const section = arrows.get('h|2|Troubleshooting|0')!
+        await expect(arrows.has('l|`bun install` at the repo root|0')).toBe(true)
+        const message = canvas.getAllByRole('button', {
+            name: 'Collapse message',
+        })[1]!
+        // Not clipped by the turn's own fold box: the section triangle paints where it sits.
+        const r = section.getBoundingClientRect()
+        const hit = document.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+        )
+        await expect(section.contains(hit)).toBe(true)
+        // The message's triangle and a heading's sit on one column, left of the text.
+        const centre = (el: Element) => {
+            const g = el.querySelector('[data-fold-glyph]')!.getBoundingClientRect()
+            return g.left + g.width / 2
+        }
+        await expect(Math.abs(centre(message) - centre(section))).toBeLessThan(1)
+        const text = canvas.getByText('Troubleshooting').getBoundingClientRect()
+        await expect(message.getBoundingClientRect().right).toBeLessThanOrEqual(
+            text.left,
+        )
+        await userEvent.click(section)
+        await waitFor(() =>
+            expect(canvas.queryByText(/EADDRINUSE/)).not.toBeInTheDocument(),
+        )
     },
 }
 
@@ -99,6 +213,7 @@ export const SelectionReply: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const item = within(canvasElement).getByText(
             /queued messages could double-send/,
         )
@@ -178,6 +293,7 @@ export const LowestTurnAvatar: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const { face, labels } = await expectFaceOnLastLabel(
             canvasElement,
             'sage',
@@ -201,6 +317,7 @@ export const ToolCalls: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByText('Grep')).toBeInTheDocument()
         await expect(canvas.getByText('Bash')).toBeInTheDocument()
@@ -226,6 +343,7 @@ export const InlinePrompts: Story = {
     ),
     args: { onAnswerPermission: fn() },
     play: async ({ canvasElement, args }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await userEvent.click(
             canvas.getAllByRole('button', { name: 'allow' })[0],
@@ -252,9 +370,11 @@ export const SlashCommandReply: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByText('/context')).toBeInTheDocument()
-        await expect(canvas.getByText('tokens')).toBeInTheDocument()
+        // the note's table widget draws its cells after the view mounts
+        await expect(await canvas.findByText('tokens')).toBeInTheDocument()
     },
 }
 
@@ -273,6 +393,7 @@ export const Empty: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(
             canvas.getByText('Ask bismuth anything.'),
@@ -298,6 +419,7 @@ export const AwaitingReply: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByText(/working/)).toBeInTheDocument()
         // The working row is the lowest assistant row, so it takes the face (thinking) and the
@@ -321,6 +443,7 @@ export const TurnError: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(
             canvas.getByText('Lost connection to the daemon — retrying…'),
@@ -346,6 +469,7 @@ export const Queued: Story = {
     ),
     args: { onCancelQueued: fn() },
     play: async ({ canvasElement, args }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await userEvent.click(
             canvas.getByRole('button', { name: 'Cancel queued message' }),
@@ -368,6 +492,7 @@ export const Narrow360: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(
             canvas.getByText(/A few things landed/),
@@ -390,6 +515,7 @@ export const ThinkingAndSystemNote: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByText('Thinking')).toBeInTheDocument()
         await expect(
@@ -415,13 +541,18 @@ export const Flush: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         const wrap = canvasElement.querySelector(
             '[class*="chat-list-wrap"]',
         ) as HTMLElement
-        const bubble = canvas.getAllByText(/A few things landed/)[0]
-        // The reading column's left edge sits at the wrap's own left edge — no inline padding.
-        await expect(Math.round(bubble.getBoundingClientRect().left)).toBe(
+        const line = canvas.getAllByText(/A few things landed/)[0]!
+        // The text's first glyph sits at the wrap's own left edge — no inline padding. (A note
+        // line's box starts at CodeMirror's 6px line inset, left of its text, so the text is what
+        // is measured.)
+        const range = document.createRange()
+        range.selectNodeContents(line)
+        await expect(Math.round(range.getClientRects()[0]!.left)).toBe(
             Math.round(wrap.getBoundingClientRect().left),
         )
     },
@@ -441,6 +572,7 @@ export const Images: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         await expect(canvas.getByAltText('attachment')).toBeInTheDocument()
         await expect(
@@ -541,6 +673,7 @@ const LongStream: Component<{ turns: number }> = props => {
 export const LongConversation: Story = {
     render: () => <LongStream turns={400} />,
     play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement, 1)
         // Streaming into the tail keeps a following list pinned to the bottom, and the new prose
         // renders: the block-flow list and the store write chatStreamPerf.ts times still behave.
         const list = canvasElement

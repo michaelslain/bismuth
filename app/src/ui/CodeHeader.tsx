@@ -2,9 +2,9 @@
 //
 // The one header a fenced code block wears, wherever it is read: the dim ```lang fence text on the
 // left and an icon-only copy button on the right. Mounted by the note editor's live preview (as a
-// CodeMirror widget in place of the opening fence, livePreview.ts) and by CodeFence (each fence
-// inside a chat message), so the copy control is the same size, tone and place in both. The
-// font size is inherited from the host: the fence row in a note, CodeFence's mono run in chat.
+// CodeMirror widget in place of the opening fence, livePreview.ts), which a chat message renders
+// through too (ui/NoteProse), so the copy control is one control everywhere. The font size is
+// inherited from the host, the fence row.
 import type { Component } from 'solid-js'
 import { IconButton } from './IconButton'
 import Text from './Text'

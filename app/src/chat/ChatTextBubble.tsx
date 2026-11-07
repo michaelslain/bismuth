@@ -1,13 +1,13 @@
 // app/src/chat/ChatTextBubble.tsx — ChatTextBubble.module.css is the ONLY importer of its module.
-// One turn's prose, rendered through the SAME note markdown pipeline (renderNoteBody) every note
-// uses, so a message reads exactly like a note — shared by ChatUserTurn's bubble and
-// ChatAssistantTurn's text parts.
+// One turn's prose, rendered through ui/NoteProse — the note editor's own read-only markdown view —
+// so a message reads exactly like a note: the same spacing, code blocks, tables, math, links and
+// the same fold triangles on headings and on bullets at every depth. Shared by ChatUserTurn's
+// bubble and ChatAssistantTurn's text parts.
 import { Show, type Component } from 'solid-js'
-import { renderNoteBody } from '../bases/markdown'
+import NoteProse from '../ui/NoteProse'
 import ChatCopyButton from './ChatCopyButton'
-import { createTypedTables } from '../ui/table/typeTables'
-import { createCodeFences } from '../ui/codeFences'
-import { createButtonBlocks } from '../buttons/createButtonBlocks'
+import { chatTurnPreview } from './chatTurnPreview'
+import { useChatVaultNames } from './chatVaultNames'
 import styles from './ChatTextBubble.module.css'
 
 export type ChatTextBubbleProps = {
@@ -28,50 +28,35 @@ export type ChatTextBubbleProps = {
 }
 
 const ChatTextBubble: Component<ChatTextBubbleProps> = props => {
-    let el!: HTMLDivElement
-    const bubble = (
-        <div
-            ref={el}
-            class={`${styles['chat-bubble']} ${styles[props.role]}`}
-            classList={{
-                [styles['muted']]: props.muted,
-            }}
-            data-chat-bubble
-            innerHTML={renderNoteBody(props.text)}
-        />
-    )
-    // Tables are a typed grid (DESIGN.md's Typed Grid Rule), not drawn borders: once the markdown
-    // string has landed, mount the edges onto its cells. Declared AFTER `bubble` so it re-runs after
-    // the `innerHTML` binding when `text` changes, and tears its roots down before the next pass.
-    createTypedTables(
-        () => el,
-        () => props.text,
-    )
-    // Fences likewise: each `<pre>` becomes a CodeFence, the ```lang label + copy button a note's
-    // code block wears.
-    createCodeFences(
-        () => el,
-        () => props.text,
-    )
-    // ```button fences: renderNoteBody leaves an inert placeholder; adopt it into a live row for an
-    // assistant message only. Same ordering as the tables above.
-    createButtonBlocks(
-        () => el,
-        () => props.text,
-        () =>
-            props.role === 'assistant' && props.chatId
-                ? { kind: 'chat', chatId: props.chatId }
-                : undefined,
-        () => props.onSend,
-    )
+    const names = useChatVaultNames()
+    // Where a right-click fold lock on this message is kept: the chat, the speaker and the
+    // message's first line, which a reloaded transcript reproduces.
+    const foldKey = `chat:${props.chatId ?? 'local'}:${props.role}:${chatTurnPreview(props.text)}`
+    const buttons = () =>
+        props.chatId
+            ? {
+                  host: { kind: 'chat', chatId: props.chatId } as const,
+                  onSend: props.role === 'assistant' ? props.onSend : undefined,
+              }
+            : undefined
     return (
         <Show when={props.text.trim()}>
             <div
                 class={`${styles['chat-bubble-wrap']} ${props.class ?? ''}`}
+                classList={{ [styles['muted']]: props.muted }}
                 data-chat-bubble-wrap
                 onContextMenu={e => props.onContextMenu?.(e)}
             >
-                {bubble}
+                <div class={styles[props.role]} data-chat-bubble>
+                    <NoteProse
+                        text={props.text}
+                        foldKey={foldKey}
+                        noteNames={names.noteNames}
+                        memoryNames={names.memoryNames}
+                        buttons={buttons()}
+                        lazy
+                    />
+                </div>
                 <ChatCopyButton text={props.text} />
             </div>
         </Show>

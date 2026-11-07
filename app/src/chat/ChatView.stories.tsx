@@ -474,8 +474,12 @@ export const TableMessage: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const cell = canvasElement.querySelector('td, th') as HTMLElement
-        await expect(cell).not.toBeNull()
+        // Messages are note views that mount as they near the viewport.
+        const cell = await waitFor(() => {
+            const el = canvasElement.querySelector('[data-chat-bubble] td')
+            if (!el) throw new Error('table not rendered in a chat bubble yet')
+            return el as HTMLElement
+        })
         expectProseFace(cell)
         const callout = canvasElement.querySelector('.callout')
         await expect(callout).not.toBeNull()
@@ -526,7 +530,7 @@ export const TagTypography: Story = {
         await waitFor(() => {
             if (
                 !canvasElement.querySelector(
-                    '[class*="chat-bubble"] .bismuth-tag',
+                    '[data-chat-bubble] .cm-tag',
                 )
             ) {
                 throw new Error('tag not rendered in a chat bubble yet')
@@ -534,7 +538,7 @@ export const TagTypography: Story = {
             return true
         })
         const tags = canvasElement.querySelectorAll<HTMLElement>(
-            '[class*="chat-bubble"] .bismuth-tag',
+            '[data-chat-bubble] .cm-tag',
         )
         await expect(tags.length).toBeGreaterThan(0)
         for (const el of tags) {

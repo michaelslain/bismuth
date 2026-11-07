@@ -1,5 +1,5 @@
 // Visual spec for <CodeHeader> — the ```lang label + copy button a fenced code block wears in a
-// note (live preview, cursor outside the block) and in a chat message (ui/CodeFence). Its look is
+// note (live preview, cursor outside the block) and in a chat message (the same note view). Its look is
 // its own stylesheet, so the bare stories render the real thing; `InNote` mounts the real live
 // preview over a fence to show it in its host row.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
