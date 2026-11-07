@@ -23,18 +23,19 @@ export async function buildTaskRows(
 
 /**
  * Incrementally patch the cached task-rows feed for the changed `paths`, mirroring
- * `patchVaultRows` (`core/src/basesData.ts`) in shape and fallback rules. Unlike vault
- * rows, task-row ORDER need not match a full rebuild: `reconcileRows`
- * (`app/src/bases/reconcileRows.ts`) keys a task row by `path + description`, not array
- * position, so freshly extracted rows can simply be appended rather than re-walked into
- * their original position.
+ * `patchVaultRows` (`core/src/basesData.ts`) in shape and fallback rules. A changed note's
+ * fresh rows take the place of its old ones, so a note keeps its position in the feed; only a
+ * note with no rows before is appended. Re-appending every changed note instead moved it to
+ * the end on each write, and the next patch (the watcher's echo, another note's write) moved
+ * it again: every view that keeps feed order (a calendar day, a list) reshuffled twice per
+ * added task.
  *
  * A no-op when nothing is cached and no `.md` path changed; `cache.invalidate()` when
  * nothing is cached but a `.md` path DID change (nothing to patch, next read builds
  * fresh). Otherwise every existing row for a changed path is spliced out and the
  * freshly re-extracted tasks for those paths (via `collectTasksFromPaths`, which
  * already reads unreadable/deleted paths as empty — yielding zero tasks, so a deleted
- * note's rows are simply not replaced) are pushed onto the end.
+ * note's rows are simply not replaced) go where that note's first row was.
  */
 export async function patchTaskRows(
     root: string,
@@ -55,11 +56,27 @@ export async function patchTaskRows(
     const changed = new Set(mdPaths)
     const tasks = await collectTasksFromPaths(root, mdPaths)
     const fresh = tasks.map(taskToRow)
+    const freshByPath = new Map<string, Row[]>()
+    for (const row of fresh) {
+        const list = freshByPath.get(row.file.path)
+        if (list) list.push(row)
+        else freshByPath.set(row.file.path, [row])
+    }
     const applied = cache.patch(rows => {
-        for (let i = rows.length - 1; i >= 0; i--) {
-            if (changed.has(rows[i].file.path)) rows.splice(i, 1)
+        const out: Row[] = []
+        const placed = new Set<string>()
+        for (const row of rows) {
+            const path = row.file.path
+            if (!changed.has(path)) {
+                out.push(row)
+                continue
+            }
+            if (placed.has(path)) continue
+            placed.add(path)
+            out.push(...(freshByPath.get(path) ?? []))
         }
-        rows.push(...fresh)
+        for (const [path, list] of freshByPath) if (!placed.has(path)) out.push(...list)
+        rows.splice(0, rows.length, ...out)
     })
     if (!applied) cache.invalidate() // raced with an invalidation → rebuild next read
 }

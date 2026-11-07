@@ -45,8 +45,7 @@ test('taskToRow maps task fields into Row.note, one row per checkbox', () => {
 })
 
 // The incremental patch must yield a task-rows feed content-identical to a full rebuild
-// (order aside — see patchTaskRows's header comment on why task rows don't need to match
-// rebuild order), so a base render after an edit is fast (patch a few notes) yet never
+// (a brand-new note is appended rather than walked into its rebuild position), so a base render after an edit is fast (patch a few notes) yet never
 // shows stale/wrong task rows.
 async function seededCache(vault: string) {
     const cache = createAsyncCache(() => buildTaskRows(vault))
@@ -80,6 +79,30 @@ test('patchTaskRows: an edited notes tasks are replaced, others stay ===-identic
     // b.md was never in the changed-paths set — its row object must be untouched, not
     // merely equal, proving the patch didn't rebuild the whole feed.
     expect(after.find(r => r.file.path === 'b.md')).toBe(bRowBefore)
+})
+
+test('patchTaskRows: a changed note keeps its place in the feed, so feed order holds across writes', async () => {
+    const vault = tempDir('bismuth-task-patch-')
+    await writeNote(vault, 'a.md', '- [ ] alpha\n')
+    await writeNote(vault, 'b.md', '- [ ] gamma\n')
+    await writeNote(vault, 'c.md', '- [ ] delta\n')
+    const cache = await seededCache(vault)
+    const order = () => cache.peek()!.map(r => r.note.description)
+    const before = order()
+    // The feed's FIRST note is the one an append would move.
+    const first = cache.peek()![0]
+    const path = first.file.path
+    const desc = first.note.description
+
+    await writeNote(vault, path, `- [ ] ${desc}\n- [ ] added\n`)
+    await patchTaskRows(vault, [path], cache)
+    const once = order()
+    expect(once.filter(d => d !== 'added')).toEqual(before)
+    expect(once.indexOf('added')).toBe(1)
+
+    // The watcher's echo of the same write patches again: nothing moves.
+    await patchTaskRows(vault, [path], cache)
+    expect(order()).toEqual(once)
 })
 
 test('patchTaskRows: a note losing its only task loses its row', async () => {

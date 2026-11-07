@@ -207,7 +207,7 @@ test('a day lists open tasks before resolved ones', () => {
 const lineRow = (file: string, note: Record<string, unknown>): Row =>
     ({ file: { path: `${file}.md`, name: file }, note: { line: 1, ...note }, formula: {} }) as unknown as Row
 
-test('with several sources, resolved tasks sink below every open one, each half grouped by source', () => {
+test('with several sources, resolved tasks sink below every open one, each half grouped by source in name order', () => {
     const day = '2026-09-20'
     const rows = [
         lineRow('work', { scheduled: day, resolved: false, description: 'work open' }),
@@ -218,13 +218,14 @@ test('with several sources, resolved tasks sink below every open one, each half 
         lineRow('home', { scheduled: day, resolved: false, description: 'home open 2' }),
     ]
     const bucket = placeRows(rows, '2026-09-13').get(day)!
+    // Sources in name order, not first-seen: first-seen follows the feed, which reorders notes.
     expect(bucket.map(t => t.row.note.description)).toEqual([
-        'work open',
-        'work open 2',
         'home open 1',
         'home open 2',
-        'work done',
+        'work open',
+        'work open 2',
         'home done',
+        'work done',
     ])
 })
 
@@ -248,6 +249,27 @@ test('a carried overdue task still leads today, ahead of the source groups', () 
     ]
     const bucket = placeRows(rows, today).get(today)!
     expect(bucket.map(t => t.row.note.description)).toEqual(['home late', 'work today', 'work done'])
+})
+
+test('a day orders its tasks by note and line, whatever order the feed lists the notes in', () => {
+    const at = (path: string, line: number, description: string): Row =>
+        ({
+            file: { path, name: path },
+            note: { scheduled: '2026-09-20', resolved: false, description, line },
+            formula: {},
+        }) as unknown as Row
+    const rows = [
+        at('tasks/General.md', 2, 'water'),
+        at('tasks/General.md', 5, 'buy milk'),
+        at('tasks/Do Now.md', 0, 'pay rent'),
+    ]
+    const order = (feed: Row[]) =>
+        placeRows(feed, '2026-09-13').get('2026-09-20')!.map(t => t.row.note.description)
+    const expected = ['pay rent', 'water', 'buy milk']
+    expect(order(rows)).toEqual(expected)
+    // A write's patch moves the written note to the end of the feed; the day must not move.
+    expect(order([rows[2], rows[0], rows[1]])).toEqual(expected)
+    expect(order([rows[1], rows[2], rows[0]])).toEqual(expected)
 })
 
 // --- placeRows(prev): identity reuse for unchanged rows, so <For> keeps their DOM nodes ---

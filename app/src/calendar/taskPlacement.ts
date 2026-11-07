@@ -125,13 +125,35 @@ function utcDayNumber(iso: string): number {
     return Date.UTC(y, m - 1, d) / 86400000
 }
 
+const rowPosition = (row: Row) =>
+    typeof row.note.line === 'number' ? row.note.line : (row.index ?? 0)
+
+/** A day's order: open before resolved, most late first, then source name (unnamed last),
+ *  then note path, then line (or stored-row index). */
+function compareInDay(a: PlacedTask, b: PlacedTask, categoryField?: string): number {
+    const done = (task: PlacedTask) => (task.row.note.resolved ? 1 : 0)
+    if (done(a) !== done(b)) return done(a) - done(b)
+    if (a.late !== b.late) return b.late - a.late
+    const sa = taskCategoryName(a.row, categoryField)
+    const sb = taskCategoryName(b.row, categoryField)
+    if (sa !== sb) {
+        if (sa === undefined) return 1
+        if (sb === undefined) return -1
+        return sa < sb ? -1 : 1
+    }
+    const pa = a.row.file.path
+    const pb = b.row.file.path
+    if (pa !== pb) return pa < pb ? -1 : 1
+    return rowPosition(a.row) - rowPosition(b.row)
+}
+
 /** Buckets rows by the day they render on. An unresolved row whose placed day is
  *  strictly before `today` is re-keyed onto `today` carrying its `late` count; a
  *  resolved row, or one placed on or after today, stays on its own `placed` day with
  *  `late: 0`. A row with no placed date (per `placedDate`) is dropped entirely.
  *  Each bucket lists open tasks before resolved (done or cancelled) ones; within each, the
  *  most-late first, then grouped by source (`taskCategoryName` with `categoryField`, groups in
- *  first-seen order across `rows`); ties keep file order.
+ *  name order), then by note path and line, whatever order the feed lists the rows in.
  *
  *  With `prev` (the last call's result), a row whose `Row` object is IDENTICAL to one
  *  in `prev` and whose recomputed `placed`/`late`/`field` are all unchanged reuses that
@@ -174,16 +196,11 @@ export function placeRows(
     // Open before resolved: with several source notes the rows arrive note by note, so file
     // order alone put one note's done tasks above the next note's open ones. Then most overdue
     // first (a carried pile read in file order buried a 23-day-late task ninth in today's cell),
-    // then one block per source, so a day reads source by source. Array.prototype.sort is
-    // stable, so ties keep file order.
-    const sourceRank = new Map<string | undefined, number>()
-    for (const row of rows) {
-        const name = taskCategoryName(row, categoryField)
-        if (!sourceRank.has(name)) sourceRank.set(name, sourceRank.size)
-    }
-    const rank = (task: PlacedTask) => sourceRank.get(taskCategoryName(task.row, categoryField)) ?? 0
-    const done = (task: PlacedTask) => (task.row.note.resolved ? 1 : 0)
+    // then one block per source, so a day reads source by source. Sources go in name order and
+    // tasks by note and line, never by feed order: the feed's note order changes between two
+    // resolves of the same rows (a write's patch, a rebuild), and a day following it reshuffled
+    // its chips on every added task.
     for (const bucket of buckets.values())
-        bucket.sort((a, b) => done(a) - done(b) || b.late - a.late || rank(a) - rank(b))
+        bucket.sort((a, b) => compareInDay(a, b, categoryField))
     return buckets
 }
