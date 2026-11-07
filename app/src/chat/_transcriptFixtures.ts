@@ -5,6 +5,7 @@
 // full frame sequence to arrive at it (an answered permission, say, with no unanswered one ever
 // having existed).
 import type { TurnItem } from './chatTranscriptLogic'
+import type { ChatFrame } from '../../../core/src/chat'
 
 /** Prose with a bulleted list and bold text — proves bold reads at prose size (Acceptance: "Bold
  *  text in prose is the prose size at bold weight — never larger"), not just plain paragraphs. */
@@ -237,3 +238,50 @@ export const THINKING_ITEMS: readonly TurnItem[] = [
         ],
     },
 ]
+
+/** `turns` exchanges of the same shape (a question, an answer with a list and a fence, a tool call
+ *  and its result) as `/chat` frames: a long chat for scroll and streaming stories. */
+export function longFrames(turns: number): ChatFrame[] {
+    const frames: ChatFrame[] = []
+    for (let i = 0; i < turns; i++) {
+        frames.push({
+            type: 'user-message',
+            text: `Question ${i}: how does the watcher handle a rename?`,
+        })
+        frames.push({
+            type: 'assistant-text',
+            text: [
+                `Answer ${i}. The watcher sees **two events** for a rename and pairs them:`,
+                '',
+                '- the `unlink` of the old path',
+                '- the `add` of the new path, within the debounce window',
+                '',
+                '```ts',
+                'const pair = pending.get(inode)',
+                'if (pair) emit({ kind: "rename", from: pair, to: path })',
+                '```',
+                '',
+                'See [[watcher]] for the full rules.',
+            ].join('\n'),
+        })
+        frames.push({
+            type: 'tool-use',
+            id: `t${i}`,
+            name: 'Read',
+            input: { file_path: `core/src/watch${i}.ts` },
+        })
+        frames.push({
+            type: 'tool-result',
+            id: `t${i}`,
+            content: 'x'.repeat(400),
+            isError: false,
+        })
+        frames.push({
+            type: 'result',
+            isError: false,
+            numTurns: 2,
+            costUsd: 0.01,
+        })
+    }
+    return frames
+}

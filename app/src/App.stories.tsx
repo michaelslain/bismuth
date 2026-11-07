@@ -17,6 +17,7 @@ import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { onCleanup } from 'solid-js'
 import App from './App'
 import { installFakeChatSocket } from './chat/_fakeChatSocket'
+import { longFrames } from './chat/_transcriptFixtures'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { SAMPLE_ROWS } from './ui/_baseFixtures'
@@ -410,6 +411,79 @@ export const NewChatWithSplitKeepsPanes: Story = {
         await waitFor(() => {
             expect(contents()).toEqual(paneContentsBefore)
         })
+    },
+}
+
+/** Leave a long chat scrolled up in it for a note tab and come back: the chat tab remounts its
+ *  transcript, and the same message is at the top at the same offset. Every chat replays the same
+ *  120 exchanges from the fake socket. */
+export const ChatKeepsScrollAcrossTabs: Story = {
+    render: () => {
+        seedVault()
+        onCleanup(installFakeChatSocket(longFrames(120)))
+        return (
+            <Frame>
+                <App />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            expect(canvasElement.querySelector('[data-app-shell]')).not.toBeNull()
+        })
+        const note = 'Draft the roadmap.md'
+        window.dispatchEvent(new CustomEvent('bismuth-open', { detail: note }))
+        const contents = () =>
+            Array.from(canvasElement.querySelectorAll('[data-pane-leaf]')).map(
+                el => el.getAttribute('data-pane-content'),
+            )
+        await waitFor(() => expect(contents()).toEqual([note]))
+        window.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'C',
+                code: 'KeyC',
+                metaKey: true,
+                shiftKey: true,
+                bubbles: true,
+                cancelable: true,
+            }),
+        )
+        const list = () =>
+            canvasElement.querySelector<HTMLElement>('[data-chat-list]')
+        await waitFor(
+            () => expect(list()?.children.length ?? 0).toBeGreaterThan(200),
+            { timeout: 5000 },
+        )
+        const frames = async (n: number) => {
+            for (let i = 0; i < n; i++)
+                await new Promise(r => requestAnimationFrame(r))
+        }
+        await frames(60)
+        const ROW = 150
+        const offsetOf = (l: HTMLElement) =>
+            (l.children[ROW] as HTMLElement).offsetTop - l.offsetTop - l.scrollTop
+        const l1 = list()!
+        l1.scrollTop = (l1.children[ROW] as HTMLElement).offsetTop - l1.offsetTop + 20
+        l1.dispatchEvent(new Event('scroll'))
+        await frames(60)
+        l1.dispatchEvent(new Event('scroll'))
+        const before = offsetOf(l1)
+        const chips = () => canvasElement.querySelectorAll<HTMLElement>('[data-tab-chip]')
+        fireEvent.click(chips()[0]!)
+        await waitFor(() => expect(contents()).toEqual([note]))
+        await frames(10)
+        fireEvent.click(chips()[chips().length - 1]!)
+        await waitFor(
+            () => {
+                const l2 = list()
+                expect(l2).not.toBeNull()
+                expect(l2).not.toBe(l1)
+                expect(Math.abs(offsetOf(l2!) - before)).toBeLessThanOrEqual(2)
+            },
+            { timeout: 5000 },
+        )
+        await frames(60)
+        await expect(Math.abs(offsetOf(list()!) - before)).toBeLessThanOrEqual(2)
     },
 }
 

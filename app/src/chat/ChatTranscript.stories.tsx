@@ -12,9 +12,8 @@ import {
     waitFor,
     within,
 } from 'storybook/test'
-import type { Component } from 'solid-js'
+import { createSignal, Show, type Component } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
-import type { ChatFrame } from '../../../core/src/chat'
 import ChatTranscript from './ChatTranscript'
 import {
     applyChatFrame,
@@ -33,6 +32,7 @@ import {
     SYSTEM_NOTE_ITEMS,
     THINKING_ITEMS,
     TOOL_CALL_ITEMS,
+    longFrames,
 } from './_transcriptFixtures'
 
 const meta = {
@@ -585,50 +585,6 @@ export const Images: Story = {
  *  a Solid store and grown through `applyChatFrame` exactly as chatSession.ts does, so streaming
  *  into it costs what it costs in the app. `window.__chatStream(text)` appends one assistant delta
  *  and pings the append seam; bench/chatStreamPerf.ts drives it to time a token at length. */
-function longFrames(turns: number): ChatFrame[] {
-    const frames: ChatFrame[] = []
-    for (let i = 0; i < turns; i++) {
-        frames.push({
-            type: 'user-message',
-            text: `Question ${i}: how does the watcher handle a rename?`,
-        })
-        frames.push({
-            type: 'assistant-text',
-            text: [
-                `Answer ${i}. The watcher sees **two events** for a rename and pairs them:`,
-                '',
-                '- the `unlink` of the old path',
-                '- the `add` of the new path, within the debounce window',
-                '',
-                '```ts',
-                'const pair = pending.get(inode)',
-                'if (pair) emit({ kind: "rename", from: pair, to: path })',
-                '```',
-                '',
-                'See [[watcher]] for the full rules.',
-            ].join('\n'),
-        })
-        frames.push({
-            type: 'tool-use',
-            id: `t${i}`,
-            name: 'Read',
-            input: { file_path: `core/src/watch${i}.ts` },
-        })
-        frames.push({
-            type: 'tool-result',
-            id: `t${i}`,
-            content: 'x'.repeat(400),
-            isError: false,
-        })
-        frames.push({
-            type: 'result',
-            isError: false,
-            numTurns: 2,
-            costUsd: 0.01,
-        })
-    }
-    return frames
-}
 
 const LongStream: Component<{ turns: number }> = props => {
     const [items, setItems] = createStore<TurnItem[]>(
@@ -700,4 +656,93 @@ export const LongConversation: Story = {
 export const ShortConversation: Story = {
     render: () => <LongStream turns={10} />,
     play: LongConversation.play,
+}
+
+/** A long chat shown and hidden by a toggle, as a tab switch unmounts the transcript and mounts a
+ *  fresh one on return. `chatId` is what keys the remembered spot. */
+const LeaveAndReturn: Component<{ chatId: string }> = props => {
+    const items = buildTranscript(longFrames(120))
+    const [shown, setShown] = createSignal(true)
+    ;(window as unknown as { __chatShown?: (v: boolean) => void }).__chatShown =
+        setShown
+    return (
+        <div style={{ width: '760px', height: '720px', display: 'flex' }}>
+            <Show when={shown()}>
+                <ChatTranscript
+                    chatId={props.chatId}
+                    items={items}
+                    persona="bismuth"
+                    awaitingReply={false}
+                    turnError={null}
+                    {...noop}
+                />
+            </Show>
+        </div>
+    )
+}
+
+const frames = (n: number) =>
+    new Promise<void>(async r => {
+        for (let i = 0; i < n; i++)
+            await new Promise(f => requestAnimationFrame(f))
+        r()
+    })
+
+const listIn = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('[data-chat-list]')!
+
+/** Leave a chat scrolled up in it and come back: the same message is at the top of the list,
+ *  at the same offset, after every message near it has swapped in its note view. */
+export const ScrollKeptOnReturn: Story = {
+    render: () => <LeaveAndReturn chatId="story-scroll-kept" />,
+    play: async ({ canvasElement }) => {
+        const show = (window as unknown as { __chatShown: (v: boolean) => void })
+            .__chatShown
+        await noteProseReady(canvasElement, 1)
+        await frames(60) // the mount-time restore lets go
+        let list = listIn(canvasElement)
+        const target = list.children[200] as HTMLElement
+        list.scrollTop = target.offsetTop - list.offsetTop + 20
+        list.dispatchEvent(new Event('scroll'))
+        await frames(60) // the rows around it mount their note views
+        // read the spot as it stands after the views mounted, the way a person left it
+        const before = target.offsetTop - list.offsetTop - list.scrollTop
+        list.dispatchEvent(new Event('scroll'))
+        show(false)
+        await frames(2)
+        show(true)
+        await waitFor(
+            () => {
+                list = listIn(canvasElement)
+                const row = list.children[200] as HTMLElement
+                const after = row.offsetTop - list.offsetTop - list.scrollTop
+                expect(Math.abs(after - before)).toBeLessThanOrEqual(2)
+            },
+            { timeout: 4000 },
+        )
+        await frames(60) // still there once every view near it has settled
+        const row = list.children[200] as HTMLElement
+        await expect(
+            Math.abs(row.offsetTop - list.offsetTop - list.scrollTop - before),
+        ).toBeLessThanOrEqual(2)
+    },
+}
+
+/** Leave a long chat on its last message and come back: it is on its last message, not short of
+ *  it, once the messages at the end have swapped in their note views. */
+export const BottomKeptOnReturn: Story = {
+    render: () => <LeaveAndReturn chatId="story-bottom-kept" />,
+    play: async ({ canvasElement }) => {
+        const show = (window as unknown as { __chatShown: (v: boolean) => void })
+            .__chatShown
+        await noteProseReady(canvasElement, 1)
+        show(false)
+        await frames(2)
+        show(true)
+        await frames(90)
+        const list = listIn(canvasElement)
+        await expect(
+            list.scrollHeight - list.scrollTop - list.clientHeight,
+        ).toBeLessThan(2)
+    },
 }

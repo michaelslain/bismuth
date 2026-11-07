@@ -36,7 +36,18 @@ import DaemonFace from '../daemon/DaemonFace'
 import type { DaemonMood } from '../daemon/daemonFaceModel'
 import { avatarIndex } from './chatAvatar'
 import type { AssistantItem, TurnItem, UserItem } from './chatTranscriptLogic'
+import {
+    BOTTOM_SLACK,
+    loadChatScroll,
+    saveChatScroll,
+    spotAt,
+    topFor,
+    type ChatScrollSpot,
+} from './chatScrollMemory'
 import styles from './ChatTranscript.module.css'
+
+/** Input that means the person is scrolling the transcript themselves. */
+const INPUT_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
 
 export type ChatTranscriptProps = {
     items: readonly TurnItem[]
@@ -127,24 +138,87 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
     } | null>(null)
 
     const scrollToBottom = (force = false) => {
-        if (force) setFollowing(true)
+        // A forced jump (the pill, a sent message) wins over a restore still holding its spot.
+        if (force) {
+            endRestore()
+            setFollowing(true)
+        }
         if (!following()) return
         queueMicrotask(() => {
             if (list) list.scrollTop = list.scrollHeight
         })
     }
 
+    // Each message's top in the list's content. Rows are the list's first `items.length` children
+    // (the empty slot renders only with no items). offsetTop ignores the list's own scroll.
+    const rowTops = () => {
+        const rows = Array.from(list.children).slice(0, props.items.length)
+        return rows.map(r => (r as HTMLElement).offsetTop - list.offsetTop)
+    }
+
+    // Restoring: true from mount until the rows stop changing height or the person scrolls. While
+    // it runs, the saved spot is re-applied every frame and scroll events do not overwrite it.
+    let restoring = false
+    let endRestore = () => {}
+
+    /** Hold `spot` while the transcript settles: a remount shows every message as plain text and
+     *  swaps in its note view as it nears the viewport (NoteProse `lazy`), and CodeMirror measures
+     *  after that, so the rows keep changing height for a while after the first frame. Ends once
+     *  the content height has been still for SETTLE_MS, after MAX_MS, or at the first wheel, touch,
+     *  pointer or key in the list. */
+    const SETTLE_MS = 600
+    const MAX_MS = 5000
+    const holdSpot = (spot: ChatScrollSpot) => {
+        restoring = true
+        const start = performance.now()
+        let stillSince = start
+        let lastHeight = -1
+        let frame = 0
+        const stop = () => {
+            if (!restoring) return
+            restoring = false
+            cancelAnimationFrame(frame)
+            for (const ev of INPUT_EVENTS) list.removeEventListener(ev, stop)
+            onListScroll()
+        }
+        for (const ev of INPUT_EVENTS)
+            list.addEventListener(ev, stop, { passive: true })
+        endRestore = stop
+        onCleanup(stop)
+        const tick = (now: number) => {
+            if (!restoring) return
+            if (list.clientHeight > 0) {
+                const top = topFor(spot, rowTops(), list)
+                if (Math.abs(list.scrollTop - top) > 1) list.scrollTop = top
+                if (list.scrollHeight !== lastHeight) {
+                    lastHeight = list.scrollHeight
+                    stillSince = now
+                }
+            } else stillSince = now
+            if (now - stillSince >= SETTLE_MS || now - start >= MAX_MS)
+                return stop()
+            frame = requestAnimationFrame(tick)
+        }
+        frame = requestAnimationFrame(tick)
+    }
+
     onMount(() => {
-        scrollToBottom(true)
+        const saved = props.chatId ? loadChatScroll(props.chatId) : undefined
+        const spot = saved ?? { bottom: true as const }
+        setFollowing(spot.bottom || spot.row >= props.items.length)
+        holdSpot(spot)
         const unsub = props.subscribeAppend?.(force => scrollToBottom(force))
         if (unsub) onCleanup(unsub)
     })
 
     const onListScroll = () => {
-        if (!list) return
+        if (!list || restoring || list.clientHeight === 0) return
         setFollowing(
-            list.scrollHeight - list.scrollTop - list.clientHeight < 40,
+            list.scrollHeight - list.scrollTop - list.clientHeight <
+                BOTTOM_SLACK,
         )
+        if (props.chatId)
+            saveChatScroll(props.chatId, spotAt(rowTops(), list))
         // The floating selection-reply button is anchored to a viewport position that scrolling
         // invalidates — drop it (a fresh selection re-shows it).
         if (selReply()) setSelReply(null)
