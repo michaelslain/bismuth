@@ -198,21 +198,73 @@ fn safe_token(s: &str) -> bool {
     !s.is_empty() && s.len() < 64 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
-// Seed a brand-new vault's settings.yaml with the theme/icon picked in the intro, so the
-// app paints in that theme immediately. We write only the two keys — `.settings` is sparse, so
-// every other key reads as its default (the sidecar's reconcileSettings moves this file into
-// `.settings` on boot and never fills it). No-op if a settings
-// file already exists, or if either token looks unexpected.
+// The vault's settings file, then the legacy vault-root name core migrates into it
+// (core/src/settings.ts SETTINGS_FILE, LEGACY_SETTINGS_FILE).
+const SETTINGS_PATHS: [&str; 2] = [".settings", "settings.yaml"];
+
+// Seed a brand-new vault's `.settings` with the theme/icon picked in the intro, so the app
+// paints in that theme immediately. We write only the two keys — `.settings` is sparse, so
+// every other key reads as its default. No-op if the vault already has a settings file under
+// either name (an existing vault keeps its own), or if either token looks unexpected.
 fn seed_vault_settings(vault: &str, theme: &str, icon: &str) {
     if !safe_token(theme) || !safe_token(icon) {
         return;
     }
-    let path = std::path::Path::new(vault).join("settings.yaml");
-    if path.exists() {
+    let vault = std::path::Path::new(vault);
+    if SETTINGS_PATHS.iter().any(|name| vault.join(name).exists()) {
         return;
     }
     let body = format!("appearance:\n  theme: {theme}\n  icon: {icon}\n");
-    let _ = std::fs::write(path, body);
+    let _ = std::fs::write(vault.join(SETTINGS_PATHS[0]), body);
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::*;
+
+    fn temp_vault(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bismuth-seed-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn seeds_dot_settings_in_a_new_vault() {
+        let v = temp_vault("new");
+        seed_vault_settings(v.to_str().unwrap(), "ink", "hopper-crystal");
+        let text = std::fs::read_to_string(v.join(".settings")).unwrap();
+        assert_eq!(text, "appearance:\n  theme: ink\n  icon: hopper-crystal\n");
+        assert!(!v.join("settings.yaml").exists());
+        assert!(!v.join("settings.md").exists());
+    }
+
+    #[test]
+    fn leaves_an_existing_dot_settings_vault_alone() {
+        let v = temp_vault("existing");
+        std::fs::write(v.join(".settings"), "appearance:\n  theme: oxide\n").unwrap();
+        seed_vault_settings(v.to_str().unwrap(), "ink", "hopper-crystal");
+        assert_eq!(std::fs::read_to_string(v.join(".settings")).unwrap(), "appearance:\n  theme: oxide\n");
+        let names: Vec<_> = std::fs::read_dir(&v).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, vec![std::ffi::OsString::from(".settings")]);
+    }
+
+    #[test]
+    fn leaves_a_legacy_settings_yaml_vault_alone() {
+        let v = temp_vault("legacy");
+        std::fs::write(v.join("settings.yaml"), "appearance:\n  icon: node-rings\n").unwrap();
+        seed_vault_settings(v.to_str().unwrap(), "ink", "hopper-crystal");
+        assert!(!v.join(".settings").exists());
+    }
+
+    #[test]
+    fn reads_the_icon_from_dot_settings_first() {
+        let v = temp_vault("icon");
+        std::fs::write(v.join("settings.yaml"), "appearance:\n  icon: node-rings\n").unwrap();
+        assert_eq!(read_vault_settings(&v).and_then(|t| icon_from_settings(&t)).as_deref(), Some("node-rings"));
+        std::fs::write(v.join(".settings"), "editor:\n  icon: no\nappearance:\n  theme: ink\n  icon: 'radial-graph'\n").unwrap();
+        assert_eq!(read_vault_settings(&v).and_then(|t| icon_from_settings(&t)).as_deref(), Some("radial-graph"));
+    }
 }
 
 // Which of `binaries` resolve to an executable file on this machine. The first-run intro has no
@@ -257,7 +309,7 @@ fn detect_agents(binaries: Vec<String>) -> Vec<String> {
 
 // First-run CTA: open the native folder picker, make the chosen folder a vault, persist
 // config.json, and relaunch into it. Works for a brand-new folder (seeds the picked theme)
-// OR an existing vault (its own settings.yaml is left untouched — see seed_vault_settings).
+// OR an existing vault (its own `.settings` is left untouched — see seed_vault_settings).
 // Returns Ok(false) if the user cancels the picker. On success the app restarts.
 #[tauri::command]
 async fn choose_first_vault(
@@ -588,7 +640,7 @@ fn mark_png(name: &str) -> Option<&'static [u8]> {
     })
 }
 
-// Read `appearance.icon` from the active vault's settings.yaml. The vault is BISMUTH_VAULT
+// Read `appearance.icon` from the active vault's `.settings`. The vault is BISMUTH_VAULT
 // (dev) or, in a Finder-launched bundle (no shell env), the one saved in config.json.
 // Returns None if unset/absent. Tiny scoped scan rather than a YAML dependency: the
 // `icon:` key inside the top-level `appearance:` block.
@@ -598,7 +650,18 @@ fn vault_icon_name(app: &tauri::AppHandle) -> Option<String> {
         .ok()
         .filter(|v| !v.is_empty())
         .or_else(|| read_config(app).map(|c| c.vault).filter(|v| !v.is_empty()))?;
-    let text = std::fs::read_to_string(std::path::Path::new(&vault).join("settings.yaml")).ok()?;
+    let text = read_vault_settings(std::path::Path::new(&vault))?;
+    icon_from_settings(&text)
+}
+
+// The vault's settings text: `.settings`, else a not-yet-migrated vault-root `settings.yaml`.
+fn read_vault_settings(vault: &std::path::Path) -> Option<String> {
+    SETTINGS_PATHS
+        .iter()
+        .find_map(|name| std::fs::read_to_string(vault.join(name)).ok())
+}
+
+fn icon_from_settings(text: &str) -> Option<String> {
     let mut in_appearance = false;
     for line in text.lines() {
         let is_top_level = !line.is_empty() && !line.starts_with(char::is_whitespace);
