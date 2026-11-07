@@ -83,7 +83,7 @@ The composer is a small markdown editor: live preview, `[[wikilink]]`, `#tag` an
 - Slash commands. Type `/` for the commands the backend reports; `Enter` or `Tab` fills the highlighted one, and the agent runs it as it would in its own TUI. `/mcp` is answered by Bismuth itself and lists connected, failed and needs-auth MCP servers.
   `/rename <name>` titles the tab (empty reverts to the automatic title), and `/color <swatch|hex|clear>` tints the pane (the tab's right-click Color menu does the same): a light wash of that colour over the pane, its cards and its borders, with text left in the theme's colours. Both commands stay in the app and never reach the model.
 - Mention a note or folder. Type `@` to search vault files and folders, pick a folder from the `[[` popup, or drag a note from the file tree onto the chat pane. A referenced file or folder is listed in the message's context for that one send, folders on their own `Referenced folders` line.
-- Attach images. Drop or paste an image. PNG, JPEG, GIF and WebP up to 10 MB each, about 12 MB per message, are sent to the model as images. A slash command cannot carry an image; if one is staged, the send is refused with an inline error.
+- Attach images. Drop or paste an image. PNG, JPEG, GIF and WebP up to 10 MB each are sent to the model as images. Each one is shrunk as it is attached to 2000 px on its long edge (the size the model reads it at) and about 1.5 MB, so several screenshots fit in one message. An image that does not fit beside the ones already attached is refused when you attach it, with the notice under the conversation, or under the greeting in an empty chat. A slash command cannot carry an image; if one is staged, the send is refused with an inline error.
 - Hand over a file. Drop or paste any other file from Finder and its absolute path goes into the draft; the agent reads it where it is, and nothing is copied. See [draggables](../overview/draggables.md).
 - Send while a reply streams. With Claude Code the message goes to the agent at once and shows `queued` until the agent reads it, at its next step inside the running turn or as the next turn; the reply then accounts for it. It cannot be called back, and **Stop** ends the current work but still answers a message already sent.
   Other backends hold the message as a `queued` bubble with a cancel `[x]` and send it when the reply finishes; **Stop** restores held messages and their images into the composer.
@@ -284,7 +284,7 @@ The erase per backend, from each CLI's own source or docs:
 ### Messages, permissions and questions
 
 `makeUserMessage` shapes the SDK message. With no images, the content is a plain string, which the CLI needs to run its own slash-command expansion; an array of blocks would reach the model as literal text and `/compact` would never run.
-With images, content is an array: an optional text block, then one base64 image block per attachment. Bun silently drops a `/chat` frame over about 16 MB, which would leave a turn waiting forever, so the client caps one message's images at about 12 MB.
+With images, content is an array: an optional text block, then one base64 image block per attachment. Bun silently drops a `/chat` frame over about 16 MB, which would leave a turn waiting forever, so the client caps one message's images at about 12 MB of base64. `shrinkImageFile` re-encodes an image through a canvas before it is staged: scaled to `MAX_IMAGE_EDGE`, then its own lossless type, then JPEG at falling quality until it fits `TARGET_IMAGE_BYTES`. `attachmentWouldOverflow` checks the message's total at attach time, so a staged image is always one the send accepts.
 
 `canUseTool` fires only for tools your Claude Code settings do not already allow. A tool in the session's `alwaysAllow` set returns allow at once. Otherwise the driver emits a `permission` frame and parks the promise until `permission_response` arrives; teardown denies every parked prompt.
 
@@ -376,7 +376,7 @@ The chat's rules sit in pure modules under `app/src/chat/`, each unit-tested, wi
 | `chatPermissionMode.ts` | Mode values, the Bypass default, `reconcilePermissionMode` so a re-reported spawn default does not revert your pick |
 | `chatSessionStore.ts` | Tab id to SDK session id, so Reopen closed tab resumes |
 | `chatColors.ts`, `chatTitles.ts` | Per-tab tint and title precedence (rename, then summary, then fallback). The tint recipe is `ChatView.module.css`'s `.chatTab[data-chat-tint]`: the pane and every `--chat-*` surface and border mix a small share of `--chat-tint` into their own theme token |
-| `chatImageIntake.ts` | The image MIME whitelist and size limits |
+| `chatImageIntake.ts` | The image MIME whitelist, size limits and the shrink before attach |
 | `chatPresets.ts` | Preset list rules |
 | `chatTurnPreview.ts` | The line a folded turn keeps: its first prose line without markdown marks |
 

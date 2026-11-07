@@ -49,6 +49,19 @@
     align-items: center;
     justify-content: center;
 }
+/* The greeting and a notice under it, centred as one block. Its height is its content, so the
+   greeting's own auto margins have no spare space to push the notice away with. */
+.chat-empty-stack {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-7);
+}
+/* A notice under the greeting keeps the reading column's full width, like it does in a chat. */
+.chat-empty-stack > :not(:first-child) {
+    align-self: stretch;
+}
 
 /* A non-turn row (awaiting-reply) — the 680px reading column itself lives in ChatTurnColumn
    (composed in the .tsx); this rule only adds the row's own flex layout on top of it, matching

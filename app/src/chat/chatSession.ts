@@ -113,9 +113,12 @@ import { isMcpConnected } from './mcpWarning'
 import {
     CHAT_IMAGE_MIME,
     MAX_IMAGE_BYTES,
+    NO_ROOM_MESSAGE,
+    attachmentWouldOverflow,
     attachmentsTooLarge,
     imageIntakeDecision,
     readImageFile,
+    shrinkImageFile,
     unsupportedImage,
 } from './chatImageIntake'
 import {
@@ -878,9 +881,17 @@ export function createChatSession(
                 setTurnError(decision.message)
                 continue
             }
-            const att = await readImageFile(f)
-            if (att) setAttachments(a => [...a, att])
-            else setTurnError(unsupportedImage(f.type).message)
+            // Shrunk first, so a screenshot weighs what the model reads and several fit one message.
+            const att = await readImageFile(await shrinkImageFile(f))
+            if (!att) {
+                setTurnError(unsupportedImage(f.type).message)
+                continue
+            }
+            if (attachmentWouldOverflow(attachments(), att)) {
+                setTurnError(NO_ROOM_MESSAGE)
+                continue
+            }
+            setAttachments(a => [...a, att])
         }
     }
 

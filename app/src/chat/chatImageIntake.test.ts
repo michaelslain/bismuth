@@ -2,10 +2,17 @@ import { describe, expect, test } from 'bun:test'
 import {
     CHAT_IMAGE_MIME,
     MAX_IMAGE_BYTES,
+    MAX_IMAGE_EDGE,
     MAX_TOTAL_IMAGE_BYTES,
+    TARGET_IMAGE_BYTES,
+    attachmentWouldOverflow,
     attachmentsTooLarge,
+    encodeSteps,
+    fitWithin,
     imageIntakeDecision,
+    needsShrink,
     readImageFile,
+    renamedFor,
 } from './chatImageIntake'
 
 describe('constants', () => {
@@ -113,5 +120,77 @@ describe('readImageFile', () => {
     test('resolves null for a MIME outside the accepted set without reading', async () => {
         const file = new File(['<svg/>'], 'a.svg', { type: 'image/svg+xml' })
         expect(await readImageFile(file)).toBeNull()
+    })
+})
+
+describe('shrinking before attach', () => {
+    test('fitWithin scales the long edge down to the cap and never up', () => {
+        expect(fitWithin(4000, 2000, MAX_IMAGE_EDGE)).toEqual({
+            width: 2000,
+            height: 1000,
+        })
+        expect(fitWithin(1200, 5120, MAX_IMAGE_EDGE)).toEqual({
+            width: 469,
+            height: 2000,
+        })
+        expect(fitWithin(800, 600, MAX_IMAGE_EDGE)).toEqual({
+            width: 800,
+            height: 600,
+        })
+    })
+
+    test('needsShrink: over the edge or over the byte budget', () => {
+        expect(needsShrink({ width: 2000, height: 1000, size: 1000 })).toBe(
+            false,
+        )
+        expect(needsShrink({ width: 2001, height: 10, size: 1000 })).toBe(true)
+        expect(
+            needsShrink({
+                width: 100,
+                height: 100,
+                size: TARGET_IMAGE_BYTES + 1,
+            }),
+        ).toBe(true)
+    })
+
+    test('encodeSteps tries the lossless type first, then falling JPEG quality', () => {
+        expect(encodeSteps('image/png').map(s => s.type)).toEqual([
+            'image/png',
+            'image/jpeg',
+            'image/jpeg',
+            'image/jpeg',
+            'image/jpeg',
+        ])
+        expect(encodeSteps('image/jpeg').map(s => s.quality)).toEqual([
+            0.9, 0.8, 0.7, 0.6,
+        ])
+        expect(encodeSteps('image/gif')[0]?.type).toBe('image/jpeg')
+    })
+
+    test('renamedFor follows the new type', () => {
+        expect(renamedFor('Screenshot 1.png', 'image/jpeg')).toBe(
+            'Screenshot 1.jpg',
+        )
+        expect(renamedFor('a.b.webp', 'image/webp')).toBe('a.b.webp')
+        expect(renamedFor('', 'image/png')).toBe('image.png')
+    })
+
+    test('several shrunk screenshots fit one message', () => {
+        const att = (n: number) => ({
+            name: 'a.png',
+            mediaType: 'image/png',
+            data: 'x'.repeat(n),
+        })
+        const shrunk = Math.ceil((TARGET_IMAGE_BYTES * 4) / 3)
+        const staged = [att(shrunk), att(shrunk), att(shrunk), att(shrunk)]
+        expect(attachmentWouldOverflow(staged.slice(0, 3), staged[3]!)).toBe(
+            false,
+        )
+        expect(
+            attachmentWouldOverflow(
+                [att(MAX_TOTAL_IMAGE_BYTES - 10)],
+                att(11),
+            ),
+        ).toBe(true)
     })
 })

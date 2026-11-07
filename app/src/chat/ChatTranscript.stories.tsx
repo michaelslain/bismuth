@@ -451,6 +451,33 @@ export const TurnError: Story = {
     },
 }
 
+/** A refused attach or send in a chat with no messages yet: the notice sits under the greeting,
+ *  inside the transcript's visible area, not below the greeting's full-height slot. */
+export const EmptyWithNotice: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '520px', display: 'flex' }}>
+            <ChatTranscript
+                items={[]}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError="No room for another image in this message — send these first, then attach it."
+                empty={<EmptyState>Ask bismuth anything.</EmptyState>}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
+        const canvas = within(canvasElement)
+        const notice = canvas.getByText(/No room for another image/)
+        const list = canvasElement.querySelector('[data-chat-list]')!
+        const n = notice.getBoundingClientRect()
+        const l = list.getBoundingClientRect()
+        await expect(n.top).toBeGreaterThanOrEqual(l.top)
+        await expect(n.bottom).toBeLessThanOrEqual(l.bottom)
+    },
+}
+
 /** A queued (staged) user turn, dimmed, with a cancel button. */
 export const Queued: Story = {
     render: args => (

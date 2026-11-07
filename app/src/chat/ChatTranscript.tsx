@@ -7,10 +7,12 @@
 // (subscribeAppend = session.onAppend).
 import {
     children,
+    createEffect,
     createMemo,
     createSignal,
     For,
     onCleanup,
+    on,
     onMount,
     Show,
     type Component,
@@ -211,6 +213,30 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
         if (unsub) onCleanup(unsub)
     })
 
+    // A new notice (a refused send or attach, a lost connection) is brought into view: it answers
+    // what the person just did, so it must not sit below the fold where they scrolled away from it.
+    createEffect(
+        on(
+            () => props.turnError,
+            msg => {
+                if (msg) scrollToBottom(true)
+            },
+            { defer: true },
+        ),
+    )
+
+    const turnNotice = () => (
+        <Show when={props.turnError}>
+            {msg => (
+                <ChatTurnColumn>
+                    <ChatNote icon="TriangleAlert" tone="danger">
+                        {msg()}
+                    </ChatNote>
+                </ChatTurnColumn>
+            )}
+        </Show>
+    )
+
     const onListScroll = () => {
         if (!list || restoring || list.clientHeight === 0) return
         setFollowing(
@@ -289,7 +315,14 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                     onMouseUp={onListMouseUp}
                 >
                     <Show when={props.items.length === 0 && empty()}>
-                        <div class={styles['chat-empty']}>{empty()}</div>
+                        <div class={styles['chat-empty']}>
+                            {/* The notice shares the greeting's full-height slot, or it lands below
+                                the fold. */}
+                            <div class={styles['chat-empty-stack']}>
+                                {empty()}
+                                {turnNotice()}
+                            </div>
+                        </div>
                     </Show>
                     <For each={props.items}>
                         {(item, i) => {
@@ -339,14 +372,8 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                             </ChatNote>
                         </ChatTurnColumn>
                     </Show>
-                    <Show when={props.turnError}>
-                        {msg => (
-                            <ChatTurnColumn>
-                                <ChatNote icon="TriangleAlert" tone="danger">
-                                    {msg()}
-                                </ChatNote>
-                            </ChatTurnColumn>
-                        )}
+                    <Show when={!(props.items.length === 0 && empty())}>
+                        {turnNotice()}
                     </Show>
                 </div>
                 {/* Floating jump-back pill while the user has scrolled up off the live tail. */}
