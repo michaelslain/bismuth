@@ -23,7 +23,7 @@ export const REJECT_TOAST = 'only images and PDFs can be pages'
 
 const isPageFile = (f: { name: string }) => isImagePath(f.name) || isPdfPath(f.name)
 
-async function readNativeBytes(path: string): Promise<ArrayBuffer> {
+export async function readNativeBytes(path: string): Promise<ArrayBuffer> {
     const { readFile } = await import('@tauri-apps/plugin-fs')
     const bytes = await readFile(path)
     return await new Blob([bytes as BlobPart]).arrayBuffer()

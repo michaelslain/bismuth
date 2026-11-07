@@ -16,6 +16,8 @@ import { PaneContent } from './PaneContent'
 import { PaneHeader } from './PaneHeader'
 import { createPaneChrome, PaneChromeContext } from './ui/paneChrome'
 import { PaneDropZone } from './PaneDropZone'
+import { paneMenuItemsOf } from './paneMenuExtras'
+import type { MenuItem } from './ui/ContextMenu'
 import { contentLabel, contentIcon } from './tabIds'
 import type { DragState } from './dnd/viewDrag'
 import { isChatReferenceDrop, isEditorReferenceDrop } from './dnd/noteRef'
@@ -29,7 +31,8 @@ export type PaneTreeProps = {
     showHeader: boolean // tab is split → show a name header on each pane
     onFocus: (leafId: string) => void
     onResize: (splitId: string, ratio: number) => void
-    onMenu: (leafId: string, x: number, y: number) => void
+    /** `extra`: rows the content under the pointer added to this right-click (paneMenuExtras.ts). */
+    onMenu: (leafId: string, x: number, y: number, extra?: MenuItem[]) => void
     onClose: (leafId: string) => void
     dragState: Accessor<DragState>
     onStartPaneDrag: (e: PointerEvent, leafId: string, label: string) => void
@@ -123,7 +126,7 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
             onMouseDown={() => props.onFocus(props.node.id)}
             onContextMenu={e => {
                 e.preventDefault()
-                props.onMenu(props.node.id, e.clientX, e.clientY)
+                props.onMenu(props.node.id, e.clientX, e.clientY, paneMenuItemsOf(e))
             }}
         >
             <Show when={props.showHeader && !chrome.owner()}>

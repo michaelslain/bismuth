@@ -8,7 +8,8 @@ import type { BookLeaf } from '../../../core/src/bases/bookPages'
 import { fileBasename } from '../../../core/src/pathUtils'
 import type { PdfPageGeom } from '../../../core/src/drawing/pdfHighlights'
 
-export const FACE_CACHE_MAX = 6
+/** The spread on screen, one each side, and a burst of waiting turns ahead (BookView MAX_WAITING). */
+export const FACE_CACHE_MAX = 12
 /** Every face is rasterised inside this box at its own aspect; the layer scales it to the pane. */
 export const FACE_W = 900
 export const FACE_H = 1200
@@ -40,6 +41,8 @@ export type FaceLoader = {
      *  names a highlight by this geometry (`pdfHighlightId`), so the annotation store needs it to
      *  send a remove to the PDF. */
     pdfPageGeom: (file: string, pageIndex: number) => PdfPageGeom | undefined
+    /** Drop every cached face of `file`, so the next face reads the file again (its pages were rewritten). */
+    forget: (file: string) => void
 }
 
 const keyOf = (leaf: BookLeaf): string => `${leaf.ref.file}#${leaf.pdfPage ?? 0}`
@@ -90,6 +93,10 @@ export function createFaceLoader(deps: FaceDeps, max: number = FACE_CACHE_MAX): 
         has: leaf => cache.has(keyOf(leaf)),
         size: () => cache.size,
         pdfPageCount: file => deps.pdfPageCount(file),
+        forget(file) {
+            for (const k of [...cache.keys()]) if (k.startsWith(`${file}#`)) cache.delete(k)
+            for (const k of [...settled.keys()]) if (k.startsWith(`${file}#`)) settled.delete(k)
+        },
         pdfPageGeom: (file, pageIndex) => deps.pdfPageGeom?.(file, pageIndex),
     }
 }
@@ -183,6 +190,14 @@ async function pdfDoc(file: string): Promise<PdfDoc> {
         void old.then(d => d.loadingTask.destroy()).catch(() => undefined)
     }
     return p
+}
+
+/** Close `file`'s cached document and forget its page geometry: its pages were rewritten. */
+export function forgetPdf(file: string): void {
+    const doc = pdfDocs.get(file)
+    pdfDocs.delete(file)
+    pdfGeoms.delete(file)
+    if (doc && !inflight.get(file)) void doc.then(d => d.loadingTask.destroy()).catch(() => undefined)
 }
 
 /** The browser readers rasterising inside a `boxW` x `boxH` box: the page faces use the full

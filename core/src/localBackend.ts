@@ -22,14 +22,15 @@
 import { buildGraph } from './engine'
 import { attachLayout, computeViewLayouts } from './layout-cache'
 import { getFileAccess } from './fileAccess'
-import { markTranscript, readStoredTranscript } from './transcribe'
+import { checkPageFile, markTranscript, readStoredTranscript } from './transcribe'
+import { writeTranscriptPage } from './transcript'
 import {
     editPdfHighlights,
     highlightIOFor,
     readStoredPdfHighlights,
     migrateSidecarHighlights,
 } from './pdfHighlightStore'
-import { inkSidecarFor } from './fileKinds'
+import { companionPathFor, inkSidecarFor } from './fileKinds'
 import {
     parseFrontmatter,
 } from './frontmatter'
@@ -520,6 +521,23 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 // Emit after the write: emit bumps the version and notifies synchronously.
                 const r = await markTranscript(vault, b as Parameters<typeof markTranscript>[1])
                 emit([r.companion])
+                return r
+            }
+            case 'POST /transcript/page': {
+                const kind = checkPageFile(b.file)
+                if (!Number.isInteger(b.page) || b.page < 1)
+                    throw new AppError('EINVAL', 'page must be a positive integer', 400)
+                if (typeof b.text !== 'string') throw new AppError('EINVAL', 'text must be a string', 400)
+                await writeTranscriptPage(vault, companionPathFor(b.file), b.page, b.text, kind)
+                emit([companionPathFor(b.file)])
+                return { ok: true }
+            }
+            case 'POST /pdf/pages': {
+                // pdf-lib is pure JS, so the rewrite runs here as it does on the desktop; only a HEIC
+                // image needs the desktop converter and answers 415.
+                const { rewritePdfPages } = await import('./pdfPages')
+                const r = await rewritePdfPages(vault, b.file, b.order)
+                emit([b.file, inkSidecarFor(b.file), companionPathFor(b.file)])
                 return r
             }
             case 'POST /transcribe':

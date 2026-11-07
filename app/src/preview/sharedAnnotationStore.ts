@@ -11,7 +11,7 @@
 // lease's hooks leave with its `release`. Whoever holds the store, a save into the PDF also tells
 // `onSaved` (the real one hands the cached document the saved highlights, since a self-write does
 // not invalidate it).
-import { createEffect, createRoot, untrack } from 'solid-js'
+import { createEffect, createRoot, createSignal, untrack } from 'solid-js'
 import type { Accessor } from 'solid-js'
 import type { Highlight } from '../../../core/src/drawing/model'
 import { inkSidecarFor } from '../../../core/src/fileKinds'
@@ -92,7 +92,19 @@ export function createStoreShare(
         }
     }
 
-    return { acquire, size: () => entries.size }
+    /** Saves whatever the live store of `binary` holds unsaved; resolves at once when none is open. */
+    async function flush(binary: string): Promise<void> {
+        await entries.get(binary)?.store.flush()
+    }
+
+    /** The file under `binary`'s store was rewritten (its pages moved): the next acquire gets a
+     *  fresh store that reads the file again. Holders keep the old one until they release it, so
+     *  flush it before the rewrite. */
+    function retire(binary: string): void {
+        entries.delete(binary)
+    }
+
+    return { acquire, flush, retire, size: () => entries.size }
 }
 
 const shared = createStoreShare(createAnnotationStore, rememberCachedHighlights)
@@ -100,6 +112,25 @@ const shared = createStoreShare(createAnnotationStore, rememberCachedHighlights)
 /** The shared store of `binary` (a vault path), with the lease that gives it back. */
 export function acquireAnnotationStore(binary: string, opts?: AnnotationStoreOptions): AnnotationLease {
     return shared.acquire(binary, opts)
+}
+
+const [epochs, setEpochs] = createSignal<ReadonlyMap<string, number>>(new Map())
+
+/** Bumped each time `binary`'s store is retired. A holder reads it where it acquires, so it lets
+ *  the old store go and takes a fresh one. Reactive. */
+export function storeEpoch(binary: string): number {
+    return epochs().get(binary) ?? 0
+}
+
+/** Save the open store of `binary` before something else rewrites the file under it. */
+export function flushAnnotationStore(binary: string): Promise<void> {
+    return shared.flush(binary)
+}
+
+/** `binary`'s pages were rewritten: every holder moves to a fresh store that reads the new file. */
+export function retireAnnotationStore(binary: string): void {
+    shared.retire(binary)
+    setEpochs(m => new Map(m).set(binary, (m.get(binary) ?? 0) + 1))
 }
 
 /** Resolves once `store` has loaded its sidecar (at once when it already has); rejects when the load failed. */

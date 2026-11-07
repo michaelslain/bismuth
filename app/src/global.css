@@ -743,6 +743,10 @@ body, html, #root { margin: 0; height: 100%; }
    the whole ASCII design leans on, so they're off everywhere, app-wide. */
 body, html { font-variant-ligatures: none; }
 body { background: var(--bg); color: var(--fg); }
+/* The interface font, on body as well as the shell root (shell/AppFrame.module.css): a popover,
+   menu or panel portalled to body sits outside `.app-shell`, and text there that names no family
+   would otherwise fall to the browser's default serif. */
+body { font: var(--fs-ui, 11.5px)/var(--row-h, 18px) var(--ui-font-stack, "Monaspace Xenon", ui-monospace, monospace); }
 /* No rubber-band / bounce scroll anywhere: WKWebView (Tauri on macOS/iPad) and Safari
    elastic-scroll every scroll container by default. `*` reaches every container, so no
    component module needs to repeat it. */

@@ -253,6 +253,7 @@ import {
 } from './dnd/noteRef'
 import { insertTextAtCoords, insertIntoFocusedEditor } from './editorRegistry'
 import { ContextMenu, type MenuItem, type QuickAction } from './ui/ContextMenu'
+import { withPaneItems } from './paneMenuExtras'
 import { isTauri } from './platform'
 import { plural } from './plural'
 import './global.css'
@@ -3420,11 +3421,11 @@ export default function App() {
                                         ),
                                     }))
                                 }
-                                onMenu={(leafId, x, y) =>
+                                onMenu={(leafId, x, y, extra) =>
                                     setPaneMenu({
                                         x,
                                         y,
-                                        items: paneMenuItems(leafId),
+                                        items: withPaneItems(extra ?? [], paneMenuItems(leafId)),
                                     })
                                 }
                                 onClose={closePane}

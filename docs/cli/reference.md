@@ -575,13 +575,14 @@ A path that is not a PDF is refused with a message pointing at [`transcribe`](#t
 
 ## pdf
 
-Converts a PDF into a new markdown note beside it, with math as LaTeX and a `source` link back; the PDF is not changed. Headless; it drives Marker installed on the machine. Output and options are in [Convert a PDF to markdown](../vault/pdf-to-markdown.md).
+Converts a PDF into a new markdown note beside it, with math as LaTeX and a `source` link back, and rewrites a PDF's pages. Headless. `pdf md` drives Marker installed on the machine; output and options are in [Convert a PDF to markdown](../vault/pdf-to-markdown.md). `pdf pages` is in [Rewrite a PDF's pages](../vault/pdf-pages.md).
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `pdf md` | `<file.pdf> [--pages <spec>] [--force] [--replace] [--vault <dir>]` | Writes `<name>.md` beside the PDF. Prints `{ok, path, note}`. | no |
+| `pdf pages` | `<file.pdf> [--order <spec>] [--vault <dir>]` | Rewrites the PDF to hold the pages `--order` lists, such as `1,3,2,blank,@scans/a.png`; highlights, ink, bookmarks and transcript follow their page. Without `--order` prints `{pages}` and changes nothing. Prints `{pages}`, the page count. | no |
 
-`pdf md` refuses with `EEXIST` when `<name>.md` exists, unless `--replace` is given. Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes. `pdf md` is path-scoped.
+`pdf md` refuses with `EEXIST` when `<name>.md` exists, unless `--replace` is given. Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes. `pdf md` and `pdf pages` are path-scoped; for an agent, a hidden PDF, companion, sidecar or `@` file reads as missing.
 
 ## page
 
@@ -733,8 +734,9 @@ Reads an image, a handwritten scan or a PDF into its companion note, with math a
 |---|---|---|---|
 | `transcribe setup` | `[--vault <dir>]` | Installs Marker, the local math reader, into `~/.bismuth/tools` (uv, marker-pdf, llama-server; about 1.2 GB; Mac only) and waits, naming each step on stderr. Prints `{installed, missing, dir}`. See [Install Marker](../vault/transcription.md#install-marker). | no |
 | `transcribe` | `<file> [--engine auto\|on-device\|marker\|ai] [--math careful\|fast] [--pages <spec>] [--book <base>] [--missing] [--vault <dir>]` | Writes the transcript of an image or PDF into `<file>.md`. Without `--engine` the `transcription.engine` setting decides. Prints `{ok, companion, engine, pages, skipped?, escalated?, math?, markerSkipped?, aiSkipped?}`. | no |
+| `transcript set` | `<file> --page <n> (--text "…" \| --stdin) [--vault <dir>]` | Sets one page's transcript text in `<file>.md` as written, keeping the other pages and the `transcribed` stamp; empty text removes the page's text. Prints `{ok, companion, page}`. See [Edit a page's transcript by hand](../vault/transcription.md#edit-a-pages-transcript-by-hand). | no |
 
-`--missing` skips a file whose companion already has `transcribed:`. Through the MCP tool `bismuth_cli` this command may run 30 minutes. `transcribe` is path-scoped; for an agent a hidden page file reads as missing.
+`--missing` skips a file whose companion already has `transcribed:`. Through the MCP tool `bismuth_cli` `transcribe` may run 30 minutes. `transcribe` and `transcript set` are path-scoped; for an agent a hidden page file reads as missing.
 
 ## update
 

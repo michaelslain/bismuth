@@ -53,12 +53,6 @@
     gap: var(--sp-4);
 }
 
-/* The display panel's text size row: `A-` and `A+` side by side. */
-.textSize {
-    display: inline-flex;
-    gap: var(--sp-2);
-}
-
 /* The page stage stays mounted under scroll mode (it holds the pane measure), out of sight. */
 .hidden {
     display: none;

@@ -50,9 +50,9 @@ applyTheme((DEFAULTS as any).appearance.theme)
 
 // ── The app-shell font ────────────────────────────────────────────────────────
 // THIRD crucial step, same spirit as the theme tokens above. shell/AppFrame.module.css declares the interface font
-// on `.app-shell` / `.layout` — the two elements that wrap every pane in the real app — NOT on
-// `body`. Storybook mounts a component with neither ancestor, so anything that inherits its font
-// instead of naming one lands on the browser's default proportional SERIF.
+// on `.app-shell` / `.layout`, and global.css on `body` for whatever is portalled there. Storybook
+// loads global.css, so this rule repeats the body one; it stays so a story never depends on
+// global.css's order to get the font.
 //
 // That is not a cosmetic gap: it makes a story actively lie. ChatView's AskUserQuestion card
 // (`.chat-question-option { font: inherit }`) rendered its labels and descriptions in Times in the

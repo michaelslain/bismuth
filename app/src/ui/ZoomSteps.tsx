@@ -26,6 +26,11 @@ export type ZoomStepsProps = {
      *  bare glyphs --bar-icon-gap apart. */
     wide?: boolean
     class?: string
+    /** What the steps change, for their names: `Zoom out` / `Zoom in` and the `[≡]` row `zoom` by
+     *  default; the book's text size passes `smaller text` / `larger text` / `text size`. */
+    outLabel?: string
+    inLabel?: string
+    menuLabel?: string
     /** Test hook on the run; the preview zoom keeps the default. */
     'data-testid'?: string
 }
@@ -35,7 +40,7 @@ const ZoomSteps: Component<ZoomStepsProps> = props => {
         <div
             class={`${styles.group} ${props.wide ? styles.wide : ''} ${props.class ?? ''}`}
             data-bar-drop="4"
-            data-bar-menu-label="zoom"
+            data-bar-menu-label={props.menuLabel ?? 'zoom'}
             data-testid={props['data-testid'] ?? 'pdf-zoom-steps'}
         >
             <IconButton
@@ -43,8 +48,8 @@ const ZoomSteps: Component<ZoomStepsProps> = props => {
                 class={styles.step}
                 size={props.size}
                 bracketRoom={props.wide}
-                label="Zoom out"
-                title="Zoom out"
+                label={props.outLabel ?? 'Zoom out'}
+                title={props.outLabel ?? 'Zoom out'}
                 disabled={props.zoomOutDisabled}
                 onClick={() => props.onZoomOut()}
             />
@@ -56,8 +61,8 @@ const ZoomSteps: Component<ZoomStepsProps> = props => {
                 class={styles.step}
                 size={props.size}
                 bracketRoom={props.wide}
-                label="Zoom in"
-                title="Zoom in"
+                label={props.inLabel ?? 'Zoom in'}
+                title={props.inLabel ?? 'Zoom in'}
                 disabled={props.zoomInDisabled}
                 onClick={() => props.onZoomIn()}
             />

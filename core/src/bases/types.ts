@@ -140,6 +140,8 @@ export interface ViewConfig {
     bookLayout?: 'spread' | 'single' // default "spread"
     // Book view: the pages as photographed or scanned, or their transcriptions set as text.
     bookMode?: 'scroll' | 'pages' | 'text' // default "pages"
+    // Book view: pages drawn dark, as the PDF viewer's dark mode draws them. Default appearance.pdfDarkMode.
+    bookDark?: boolean
     // Chart views (bar, line, stat): axis + aggregation config.
     x?: string // property id for the x-axis / category
     y?: string // property id for the y-axis value

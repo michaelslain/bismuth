@@ -219,7 +219,7 @@ They override framework habits, and most violations compile, render and pass tes
 | vault semantic search (notes, PDFs, images, chats), embeddings switch, `bismuth image describe` | `docs/vault/semantic-search.md` |
 | a PDF's text layer, `bismuth ocr` | `docs/vault/ocr.md` |
 | PDF → markdown note, `bismuth pdf md`, the PDF bar's button | `docs/vault/pdf-to-markdown.md` |
-| book bases (scroll, pages and text modes, highlights, bookmarks), reading one image or PDF as a book, `bismuth book` | `docs/bases/views/book.md` |
+| book bases (scroll, pages and text modes, highlights, bookmarks, the page sorter, dark pages, fixing a page's text), reading one image or PDF as a book, `bismuth book` | `docs/bases/views/book.md` |
 | transcribing an image, scan or PDF into its note, math as LaTeX (`bismuth transcribe`, on-device, marker and ai engines, the `transcription` settings, transcript marks), installing Marker (`bismuth transcribe setup`) | `docs/vault/transcription.md` |
 | ` ```button ` fences in notes and chat replies, `bismuth button`, `.daemon/buttons/` | `docs/editor/buttons.md` |
 | mobile | `docs/mobile/overview.md` |

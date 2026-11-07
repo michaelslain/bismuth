@@ -25,15 +25,16 @@ function deps(over: Partial<FaceDeps> = {}) {
 }
 
 describe('createFaceLoader', () => {
-    test('holds at most 6 leaves and evicts the least recently used', async () => {
+    test('holds at most FACE_CACHE_MAX leaves and evicts the least recently used', async () => {
         const { d, calls } = deps()
         const loader = createFaceLoader(d)
-        expect(FACE_CACHE_MAX).toBe(6)
-        for (let i = 0; i < 6; i++) await loader.face(leaf(`p${i}.png`))
+        const n = FACE_CACHE_MAX
+        expect(n).toBe(12)
+        for (let i = 0; i < n; i++) await loader.face(leaf(`p${i}.png`))
         // touch p0 so p1 is now the oldest
         await loader.face(leaf('p0.png'))
-        await loader.face(leaf('p6.png'))
-        expect(loader.size()).toBe(6)
+        await loader.face(leaf(`p${n}.png`))
+        expect(loader.size()).toBe(n)
         expect(loader.has(leaf('p1.png'))).toBe(false)
         expect(loader.has(leaf('p0.png'))).toBe(true)
         const before = calls.length
@@ -102,5 +103,33 @@ describe('pdfEvictions', () => {
     })
     test('keeps everything while under the cap', () => {
         expect(pdfEvictions(['a', 'b'], 2, 'b', new Map())).toEqual([])
+    })
+})
+
+describe('forget', () => {
+    test('a forgotten file is read again; other files stay cached', async () => {
+        let reads = 0
+        const d: FaceDeps = {
+            loadImage: async () => {
+                reads++
+                return { width: 10, height: 10 } as unknown as CanvasImageSource
+            },
+            renderPdfPage: async () => {
+                reads++
+                return { width: 10, height: 10 } as unknown as CanvasImageSource
+            },
+            pdfPageCount: async () => 2,
+        }
+        const loader = createFaceLoader(d)
+        const leafOf = (file: string, pdfPage?: number) =>
+            ({ ref: { file, kind: pdfPage ? 'pdf' : 'image', rowIndex: 0 }, pdfPage }) as Parameters<typeof loader.face>[0]
+        await loader.face(leafOf('a.pdf', 1))
+        await loader.face(leafOf('b.png'))
+        expect(reads).toBe(2)
+        loader.forget('a.pdf')
+        expect(loader.peek(leafOf('a.pdf', 1))).toBeUndefined()
+        await loader.face(leafOf('a.pdf', 1))
+        await loader.face(leafOf('b.png'))
+        expect(reads).toBe(3)
     })
 })

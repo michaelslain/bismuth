@@ -30,6 +30,10 @@ export type TextSpreadProps = {
     onMarkClick?: (mark: BookQuote) => void
     /** A right-click on a line of text, with the notebook page (leaf index) the line came from. */
     onLineContextMenu?: (e: MouseEvent, leaf: number) => void
+    /** The type face; the pages were typeset in it. Defaults to the serif stack the stories use. */
+    fontFamily?: string
+    /** Paper, ink and placeholder ink; default the light sheet, a PDF page's white. */
+    colors?: { paper: string; ink: string; muted: string }
     className?: string
 }
 
@@ -46,7 +50,8 @@ const TextSpread: Component<TextSpreadProps> = props => {
     let strut!: HTMLSpanElement
 
     const fontPx = () => TEXT_STYLE(props.pageSize, props.textScale ?? 1).fontPx
-    const font = () => `${fontPx()}px ${TEXT_FONT_FAMILY}`
+    const family = () => props.fontFamily ?? TEXT_FONT_FAMILY
+    const font = () => `${fontPx()}px ${family()}`
     const [metrics, setMetrics] = createSignal({ space: fontPx() * 0.25, baseline: fontPx() })
     const measure = () => {
         const g = document.createElement('canvas').getContext('2d')
@@ -138,11 +143,13 @@ const TextSpread: Component<TextSpreadProps> = props => {
 
     const menu = (e: MouseEvent) => {
         if (!props.onLineContextMenu) return
-        const line = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-text-line]')
+        // the line under the pointer, else the page's first line: a right-click in a margin names the page too
+        const target = e.target as HTMLElement | null
+        const line =
+            target?.closest<HTMLElement>('[data-text-line]') ??
+            (e.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>('[data-text-line]')
         const leaf = line ? Number(line.dataset.leaf) : NaN
         if (Number.isNaN(leaf)) return
-        e.preventDefault()
-        e.stopPropagation()
         props.onLineContextMenu(e, leaf)
     }
 
@@ -152,8 +159,9 @@ const TextSpread: Component<TextSpreadProps> = props => {
         onCleanup(() => window.removeEventListener('pointerup', up))
     })
 
-    // The same sheet as the scan: paper and ink fixed in every theme, like a PDF page.
-    const pageStyle = () => ({ width: `${props.pageSize.w}px`, height: `${props.pageSize.h}px`, background: PDF_PAGE_PAPER, color: BOOK_TEXT_INK })
+    // The same sheet as the scan: white paper and dark ink, or both turned as the dark pages are.
+    const colors = () => props.colors ?? { paper: PDF_PAGE_PAPER, ink: BOOK_TEXT_INK, muted: BOOK_TEXT_MUTED }
+    const pageStyle = () => ({ width: `${props.pageSize.w}px`, height: `${props.pageSize.h}px`, background: colors().paper, color: colors().ink })
 
     /** A line holding a formula sits by its own baseline: the strut at its start says where that
      *  landed, and the line moves so it is the typesetter's `y`. */
@@ -214,7 +222,7 @@ const TextSpread: Component<TextSpreadProps> = props => {
                                     left: `${line.x}px`,
                                     top: `${line.y - metrics().baseline}px`,
                                     'word-spacing': `${line.gap - metrics().space}px`,
-                                    ...(line.placeholder ? { color: BOOK_TEXT_MUTED } : {}),
+                                    ...(line.placeholder ? { color: colors().muted } : {}),
                                     ...(line.scale ? { transform: `scale(${line.scale})`, 'transform-origin': 'left top' } : {}),
                                 }}
                                 data-text-line
@@ -239,7 +247,7 @@ const TextSpread: Component<TextSpreadProps> = props => {
         <div
             ref={root}
             class={[styles.spread, props.className].filter(Boolean).join(' ')}
-            style={{ 'font-family': TEXT_FONT_FAMILY, 'font-size': `${fontPx()}px` }}
+            style={{ 'font-family': family(), 'font-size': `${fontPx()}px` }}
             data-text-spread
         >
             <Text as="div" inherit class={styles.probe} ref={probe} aria-hidden="true">

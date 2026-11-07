@@ -125,6 +125,12 @@ describe('book view config', () => {
         expect(parseBase('type: base\nview: book\nbookMode: wide\n').view.bookMode).toBe('pages')
         expect(parseBase('type: base\nview: book\n').view.bookMode).toBeUndefined()
     })
+
+    test('bookDark parses a boolean and drops anything else', () => {
+        expect(parseBase('type: base\nview: book\nbookDark: true\n').view.bookDark).toBe(true)
+        expect(parseBase('type: base\nview: book\nbookDark: false\n').view.bookDark).toBe(false)
+        expect(parseBase('type: base\nview: book\nbookDark: yes\n').view.bookDark).toBeUndefined()
+    })
     test('an invalid bookLayout reads as spread', () => {
         const base = parseBase('type: base\nview: book\nbookLayout: wide\n')
         expect(base.view.bookLayout).toBe('spread')

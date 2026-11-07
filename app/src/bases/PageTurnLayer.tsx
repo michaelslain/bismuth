@@ -16,6 +16,9 @@ export type PageTurnLayerProps = {
     /** Pointer in layer px while dragging; null = the turn animates on its own. */
     drag: { x: number; y: number } | null
     durationMs?: number
+    /** A new value starts a new turn on the same layer: the faces upload again and the leaf lifts
+     *  from flat, so a run of turns keeps one WebGL context instead of building one per turn. */
+    turnKey?: number
     onSettled: (committed: boolean) => void
     className?: string
 }
@@ -149,6 +152,8 @@ const PageTurnLayer: Component<PageTurnLayerProps> = props => {
     let canvas!: HTMLCanvasElement
     let draw: (() => void) | undefined
     let uploadAll: (() => void) | undefined
+    let restart: (() => void) | undefined
+    let startedKey = props.turnKey
 
     onMount(() => {
         const setTurn = (s: TurnState) => root.setAttribute('data-turn-state', s)
@@ -452,16 +457,23 @@ const PageTurnLayer: Component<PageTurnLayerProps> = props => {
             }
         }
 
-        uploadAll()
-        if (props.drag) draw?.()
-        else {
-            frame(null)
-            animate(1, true)
+        restart = () => {
+            stop()
+            progress = 0
+            live = false
+            uploadAll?.()
+            if (props.drag) draw?.()
+            else {
+                frame(null)
+                animate(1, true)
+            }
         }
+        restart()
         onCleanup(() => {
             stop()
             draw = undefined
             uploadAll = undefined
+            restart = undefined
             for (const t of [texFrom.left, texFrom.right, texTo.left, texTo.right, blank]) gl.deleteTexture(t)
             for (const b of [quadBuf, leafBuf, idxBuf]) gl.deleteBuffer(b)
             gl.deleteVertexArray(quadVao)
@@ -479,10 +491,18 @@ const PageTurnLayer: Component<PageTurnLayerProps> = props => {
     createEffect(() => {
         props.from
         props.to
+        // a new turn restarts below, faces and all
+        if (props.turnKey !== startedKey) return
         if (uploadAll) {
             uploadAll()
             draw?.()
         }
+    })
+    createEffect(() => {
+        const key = props.turnKey
+        if (key === startedKey) return
+        startedKey = key
+        restart?.()
     })
 
     return (

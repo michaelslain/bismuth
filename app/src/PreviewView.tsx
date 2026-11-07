@@ -73,7 +73,7 @@ import BookmarksPanel from './preview/BookmarksPanel'
 import EdgeHandle from './shell/EdgeHandle'
 import { dragWidth, widthBounds } from './edgeResize'
 import { dragMarginRatio, fixedUnitLine, type ScratchLineAt } from './preview/scratchResize'
-import { acquireAnnotationStore } from './preview/sharedAnnotationStore'
+import { acquireAnnotationStore, storeEpoch } from './preview/sharedAnnotationStore'
 import { rememberCachedHighlights } from './preview/pdfDocCache'
 import type { PdfPageGeom } from '../../core/src/drawing/pdfHighlights'
 import createCompanionStore from './preview/createCompanionStore'
@@ -191,14 +191,33 @@ export function PreviewView(props: {
     // over this one file, the same reader a book base uses. Remembered per file.
     const [readMode, setReadMode] = createSignal<ReadMode>('scroll')
     const [bookLayout, setBookLayout] = createSignal<'spread' | 'single'>('spread')
+    // Switching between the viewer and the book lands on the page the reader was on, and about as
+    // far down it: the viewer's page and scroll into it open the book there, and the book's page
+    // (or, in text, how far into a page's text it is) scrolls the viewer back to it.
+    const [bookStart, setBookStart] = createSignal<{ leaf: number; frac: number }>()
+    let bookAt: { leaf: number; frac: number } | undefined
     createEffect(
         on(path, p => {
             const saved = loadPreviewView(p)
             setReadMode(saved?.readMode ?? 'scroll')
+            bookAt = undefined
+            setBookStart(undefined)
             setBookLayout(saved?.bookLayout ?? 'spread')
         }),
     )
+    const viewerFrac = () => {
+        const el = pdfScrollEl()
+        const b = pdfBoxes()[currentPage()]
+        if (!el || !b || b.h <= 0) return 0
+        return Math.min(1, Math.max(0, (el.scrollTop - b.top) / b.h))
+    }
     const pickReadMode = (m: ReadMode) => {
+        const was = readMode()
+        if (kind() === 'pdf' && was === 'scroll' && m !== 'scroll') setBookStart({ leaf: currentPage(), frac: viewerFrac() })
+        if (kind() === 'pdf' && was !== 'scroll' && m === 'scroll' && bookAt) {
+            const at = bookAt
+            requestAnimationFrame(() => pdfController?.scrollToPage(at.leaf, at.frac))
+        }
         setReadMode(m)
         savePreviewView(path(), { readMode: m === 'scroll' ? undefined : m })
     }
@@ -407,6 +426,8 @@ export function PreviewView(props: {
     const store = createMemo<AnnotationStore | undefined>(() => {
         if (!inkableKind()) return undefined
         const binary = path()
+        // a page rewrite retires the store: let it go and read the file again
+        storeEpoch(binary)
         const lease = untrack(() =>
             acquireAnnotationStore(binary, {
                 pageGeom: pdfPageGeom,
@@ -1058,6 +1079,10 @@ export function PreviewView(props: {
                         onBarSlots={setBookSlots}
                         onReadMode={pickReadMode}
                         onLayout={pickBookLayout}
+                        dark={pdfDark}
+                        onDark={on => store()?.edit(d => setDark(d, on))}
+                        start={bookStart()}
+                        onPosition={at => (bookAt = at)}
                     />
                 </div>
             </Show>

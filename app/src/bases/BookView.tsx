@@ -12,12 +12,12 @@ import {
     type Component,
 } from 'solid-js'
 import { api } from '../api'
-import { pushToast } from '../ui/toastStore'
+import { dismissToast, pushToast } from '../ui/toastStore'
 import { matchesKeybinding } from '../keybindings'
 import { claimNativeDrop } from '../nativeDropRouting'
 import { pointInDropRect, type NativeDragDetail } from '../nativeDrop'
-import { settings, setSettings } from '../settings'
-import { acquireAnnotationStore, whenReady } from '../preview/sharedAnnotationStore'
+import { FONT_STACKS, settings, setSettings } from '../settings'
+import { acquireAnnotationStore, flushAnnotationStore, retireAnnotationStore, storeEpoch, whenReady } from '../preview/sharedAnnotationStore'
 import HighlightColorMenu from '../preview/HighlightColorMenu'
 import { highlightColor, setHighlightColor } from '../preview/highlightColor'
 import BarSettings from '../ui/BarSettings'
@@ -27,7 +27,10 @@ import SegmentedToggle from '../ui/SegmentedToggle'
 import FilePicker from '../ui/FilePicker'
 import Text from '../ui/Text'
 import TextButton from '../ui/TextButton'
-import { ContextMenu } from '../ui/ContextMenu'
+import ZoomSteps from '../ui/ZoomSteps'
+import { ContextMenu, type MenuItem } from '../ui/ContextMenu'
+import { addPaneMenuItems } from '../paneMenuExtras'
+import { pdfReplaced } from '../preview/pdfDocCache'
 import type { ViewBarSlots } from '../ui/ViewBar'
 import {
     bookPageRefs,
@@ -46,9 +49,15 @@ import type { Bookmark, DrawingDoc } from '../../../core/src/drawing/model'
 import { addBookmark, removeBookmark, renameBookmark } from '../../../core/src/drawing/pageBookmarks'
 import type { TranscriptEngine } from '../../../core/src/transcript'
 import { looksLikeMath } from '../../../core/src/mathDetect'
-import { createFaceLoader, defaultFaceDeps, type Face } from './bookFaces'
+import { createFaceLoader, defaultFaceDeps, faceDeps, forgetPdf, type Face } from './bookFaces'
+import { darkenPixels, darkHex, tintOf } from './darkPage'
+import BookPageEditor, { type EditTile } from './BookPageEditor'
+import TranscriptEditor from './TranscriptEditor'
 import { isFileDrag } from './cardImageDrop'
-import { intakeFiles } from './bookIntake'
+import { intakeFiles, readNativeBytes } from './bookIntake'
+import { planDeletes, planMoves } from './bookRowPlan'
+import { pushUndoToast } from '../undoToast'
+import { basename } from '../fileIntake'
 import { createTranscribeQueue } from './transcribeQueue'
 import MathPrompt, { type MathChoice } from './MathPrompt'
 import BookBookmarksPanel from './BookBookmarksPanel'
@@ -64,7 +73,7 @@ import { mathRaster, mathReady, measureMath, prepareMathRasters, primeMath } fro
 import type { BookQuote } from './bookSelection'
 import { rasterTextPage, texOf } from './bookTextRaster'
 import TextSpread, { type TextSpreadReader } from './TextSpread'
-import PageTurnLayer, { type SpreadFaces } from './PageTurnLayer'
+import PageTurnLayer, { TURN_MS, type SpreadFaces } from './PageTurnLayer'
 import styles from './BookView.module.css'
 
 export type BookViewProps = {
@@ -84,6 +93,14 @@ export type BookViewProps = {
      *  `scroll | pages | text` switch, or a layout pick, goes here and nothing is written to a base. */
     onReadMode?: (mode: ReadMode) => void
     onLayout?: (layout: BookLayout) => void
+    /** Dark pages, owned by the caller (the preview keeps it per file in the sidecar). Unset: a
+     *  base's `bookDark` key, else `appearance.pdfDarkMode`. */
+    dark?: () => boolean
+    onDark?: (on: boolean) => void
+    /** Where to open: a notebook page, and how far down it the reader was (0..1). */
+    start?: { leaf: number; frac?: number }
+    /** Where the reader is, as a notebook page and how far into it, whenever that changes. */
+    onPosition?: (at: { leaf: number; frac: number }) => void
 }
 
 /** The faces of a spread; in text mode also the typeset pages the still spread is drawn from. */
@@ -92,6 +109,8 @@ type BookMode = 'pages' | 'text'
 type Shown = { key: string; faces: Faces }
 type Turn = {
     id: number
+    /** Shorter while more turns wait behind this one, so a burst of presses keeps up. */
+    durationMs?: number
     direction: 'forward' | 'back'
     from: SpreadFaces
     to: SpreadFaces
@@ -120,6 +139,10 @@ const whenIdle = (fn: () => void) => {
 const leafMemory = new Map<string, number>()
 
 const PAD = 32
+/** Turns that may wait behind the one running; presses past it are dropped. */
+const MAX_WAITING = 4
+/** A turn's length with `waiting` more behind it: the full turn alone, down to under half in a burst. */
+const turnMsFor = (waiting: number) => Math.round(TURN_MS / (1 + 0.5 * Math.min(waiting + 1, 3)))
 /** Pointer travel before a press on a page becomes a drag instead of a click. */
 const DRAG_SLOP = 6
 
@@ -155,7 +178,10 @@ const BookView: Component<BookViewProps> = props => {
     )
     const [counts, setCounts] = createSignal<ReadonlyMap<string, number>>(new Map())
     const asked = new Set<string>()
+    // bumped when a file's pages were rewritten, so its page count is asked again
+    const [recount, setRecount] = createSignal(0)
     createEffect(() => {
+        recount()
         for (const r of refs()) {
             if (r.kind !== 'pdf' || asked.has(r.file)) continue
             asked.add(r.file)
@@ -195,11 +221,48 @@ const BookView: Component<BookViewProps> = props => {
     const textAllowed = () => textAvailable() || !!props.files
     const mode = (): BookMode => (modeReq() === 'text' && textAllowed() && !scrolling() ? 'text' : 'pages')
     const readMode = (): ReadMode => (scrolling() ? 'scroll' : mode())
+
+    // ── dark pages: the PDF viewer's dark mode, on scans and text pages alike ──
+    const [darkPick, setDarkPick] = createSignal<boolean | undefined>()
+    createEffect(on(() => props.view.bookDark, () => setDarkPick(undefined), { defer: true }))
+    const dark = (): boolean =>
+        props.dark ? props.dark() : (darkPick() ?? props.view.bookDark ?? settings.appearance.pdfDarkMode)
+    const toggleDark = () => {
+        const next = !dark()
+        if (props.onDark) return props.onDark(next)
+        setDarkPick(next)
+        const path = props.basePath
+        if (path) void api.setProperty(path, 'bookDark', next).then(() => props.onChange())
+    }
+    const paper = () => (dark() ? darkHex(PDF_PAGE_PAPER) : PDF_PAGE_PAPER)
+    const ink = () => (dark() ? darkHex(BOOK_TEXT_INK) : BOOK_TEXT_INK)
+    const muted = () => (dark() ? darkHex(BOOK_TEXT_MUTED) : BOOK_TEXT_MUTED)
+    // One dark copy per page picture, made once: the still spread, the curl and scroll share it.
+    const darkCopies = new WeakMap<object, HTMLCanvasElement>()
+    // a face already turned dark is never turned again (that would turn it back toward light)
+    const darkMade = new WeakSet<object>()
+    const shade = (f: Face | undefined): Face | undefined => {
+        if (!f || f.kind !== 'ready' || !dark() || darkMade.has(f.source as object)) return f
+        let c = darkCopies.get(f.source as object)
+        if (!c) {
+            const src = f.source as { width: number; height: number }
+            c = document.createElement('canvas')
+            c.width = Math.max(1, Number(src.width))
+            c.height = Math.max(1, Number(src.height))
+            const g = c.getContext('2d', { willReadFrequently: true })!
+            g.drawImage(f.source, 0, 0)
+            const px = g.getImageData(0, 0, c.width, c.height)
+            darkenPixels(px.data)
+            g.putImageData(px, 0, 0)
+            darkCopies.set(f.source as object, c)
+            darkMade.add(c)
+        }
+        return { kind: 'ready', source: c }
+    }
     /** The tint behind a highlighted word: the highlighter's current colour, translucent. */
     const markTint = () => {
         const hex = (PDF_HIGHLIGHT_COLORS.find(c => c.c === highlightColor()) ?? PDF_HIGHLIGHT_COLORS[0]).hex
-        const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex)
-        return m ? `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, 0.45)` : hex
+        return tintOf(hex, 0.45, dark())
     }
     const chooseMode = (next: ReadMode) => {
         if (props.onReadMode) return props.onReadMode(next)
@@ -220,7 +283,9 @@ const BookView: Component<BookViewProps> = props => {
     )
     /** The book's key in the page memory: its base, or the file opened on its own. */
     const memoryKey = () => props.basePath ?? (props.files ? `file:${props.files.join('|')}` : undefined)
-    const [leaf, setLeaf] = createSignal(leafMemory.get(memoryKey() ?? '') ?? 0)
+    const [leaf, setLeaf] = createSignal(
+        props.start && props.view.bookMode !== 'text' ? props.start.leaf : (leafMemory.get(memoryKey() ?? '') ?? 0),
+    )
     const [pane, setPane] = createSignal({ w: 0, h: 0 })
     // Every page's shape, as its face loads (width over height, keyed by file and PDF page).
     const [shapes, setShapes] = createSignal<ReadonlyMap<string, number>>(new Map())
@@ -285,9 +350,28 @@ const BookView: Component<BookViewProps> = props => {
         if (next !== now) setSettings('reader', 'textScale', next)
     }
     const textStyle = () => TEXT_STYLE(fit().pageSize, textScale())
+    /** Text mode's face: the prose font the notes are set in (`appearance.proseFont`). */
+    const family = () => FONT_STACKS[settings.appearance.proseFont] ?? FONT_STACKS['Libron'] ?? TEXT_FONT_FAMILY
+    // The canvas measures with whatever face is loaded, so the pages set again once the prose face is in.
+    const [fontRev, setFontRev] = createSignal(0)
+    createEffect(() => {
+        const f = family()
+        const fonts = (document as Document & { fonts?: FontFaceSet }).fonts
+        if (!fonts) return
+        void Promise.all([fonts.load(`16px ${f}`), fonts.load(`bold 16px ${f}`)]).then(
+            () => setFontRev(n => n + 1),
+            () => undefined,
+        )
+    })
+    /** How many words a notebook page's text has: the unit the typeset lines count `start` in. */
+    const wordsOf = (leafIndex: number) => {
+        const l = untrack(leaves)[leafIndex]
+        return l ? pageTextOf(l).split(/\s+/).filter(Boolean).length : 0
+    }
     const textPages = createMemo<TextPage[]>(() => {
         if (mode() !== 'text' || !measured()) return []
         mathReady() // the pages set again with real formula boxes once KaTeX lands
+        fontRev()
         const size = fit().pageSize
         const style = TEXT_STYLE(size, textScale())
         const blocks = leaves()
@@ -299,7 +383,7 @@ const BookView: Component<BookViewProps> = props => {
                     : { source, text: `page ${i + 1} isn't transcribed yet`, placeholder: true as const }
             })
         const g = document.createElement('canvas').getContext('2d')!
-        const font = `${style.fontPx}px ${TEXT_FONT_FAMILY}`
+        const font = `${style.fontPx}px ${family()}`
         // a word's width is measured once a typesetting: a line is tried word by word
         const widths = new Map<string, number>()
         const text = (str: string, bold?: boolean) => {
@@ -319,12 +403,12 @@ const BookView: Component<BookViewProps> = props => {
                     m[1] !== undefined ? { tex: m[1].trim(), display: true } : { tex: m[2], display: false },
                 ),
             ),
-            TEXT_FONT_FAMILY,
+            family(),
         )
         const pages = paginateText(
             blocks,
             size,
-            { text, math: (tex, display) => measureMath(tex, display, style.fontPx, TEXT_FONT_FAMILY, text) },
+            { text, math: (tex, display) => measureMath(tex, display, style.fontPx, family(), text) },
             style,
             // each notebook page starts a page of text, so switching modes lands at the top of one
             { breakPerBlock: true },
@@ -359,7 +443,7 @@ const BookView: Component<BookViewProps> = props => {
 
     // The page to open when text mode starts: the one holding this notebook page's text, or the next
     // that has any; or, switching straight back, exactly the text page the reader left.
-    let entering: { leaf: number } | { textPage: number } | undefined
+    let entering: { leaf: number; frac?: number } | { textPage: number } | undefined = props.start && props.view.bookMode === 'text' ? { leaf: props.start.leaf, frac: props.start.frac } : undefined
     // Where the last switch came from and where it landed, so a switch straight back (no page
     // turned in between) returns to exactly the same place instead of re-deriving it.
     let back: { mode: BookMode; pos: number; there: number | undefined } | undefined
@@ -368,6 +452,8 @@ const BookView: Component<BookViewProps> = props => {
         if (entering === undefined || pages.length === 0) return
         let at = 0
         if ('textPage' in entering) at = Math.max(0, Math.min(entering.textPage, pages.length - 1))
+        else if (entering.frac && wordsOf(entering.leaf) > 0)
+            at = textPageForWord(pages, entering.leaf, Math.floor(entering.frac * wordsOf(entering.leaf)))
         else
             for (let l = entering.leaf; l < untrack(leaves).length; l++) {
                 if (pages.some(p => p.lines.some(x => x.source.leaf === l))) {
@@ -435,7 +521,8 @@ const BookView: Component<BookViewProps> = props => {
     const keyOf = (s: Spread) =>
         mode() === 'text'
             ? `text${textRev}.${pictures()}|${markTint()}|${[s.left, s.right].map(i => i ?? '-').join('|')}`
-            : [s.left, s.right]
+            : (dark() ? 'dark|' : '') +
+              [s.left, s.right]
                   .map(i => (i === undefined ? '-' : `${leaves()[i]?.ref.file}#${leaves()[i]?.pdfPage ?? 0}`))
                   .join('|')
     // Text pages are drawn, not loaded: the canvas faces the curl turns, and the typeset pages the still spread shows.
@@ -446,16 +533,16 @@ const BookView: Component<BookViewProps> = props => {
         const style = textStyle()
         const face = (i: number | undefined): Face | undefined => {
             if (i === undefined || !pages[i]) return undefined
-            const key = `${textRev}|${markTint()}|${i}`
+            const key = `${textRev}|${markTint()}|${dark() ? 'd' : ''}|${i}`
             let f = rasters.get(key)
             if (!f) {
                 if (rasters.size > 12) rasters.clear()
-                const colors = { bg: PDF_PAGE_PAPER, fg: BOOK_TEXT_INK, mark: markTint(), muted: BOOK_TEXT_MUTED }
-                const font = `${style.fontPx}px ${TEXT_FONT_FAMILY}`
+                const colors = { bg: paper(), fg: ink(), mark: markTint(), muted: muted() }
+                const font = `${style.fontPx}px ${family()}`
                 const g = document.createElement('canvas').getContext('2d')!
                 g.font = font
                 const math = (tex: string, display: boolean) => ({
-                    w: measureMath(tex, display, style.fontPx, TEXT_FONT_FAMILY, str => g.measureText(str).width).w,
+                    w: measureMath(tex, display, style.fontPx, family(), str => g.measureText(str).width).w,
                     picture: mathRaster(tex, display, style.fontPx, colors.fg),
                 })
                 f = { kind: 'ready', source: rasterTextPage(pages[i], size, colors, font, math) }
@@ -483,7 +570,7 @@ const BookView: Component<BookViewProps> = props => {
         )
         const step = (from: number) => {
             if (from >= items.length) return
-            primeMath(items.slice(from, from + 12), TEXT_FONT_FAMILY)
+            primeMath(items.slice(from, from + 12), family())
             whenIdle(() => step(from + 12))
         }
         whenIdle(() => step(0))
@@ -498,11 +585,11 @@ const BookView: Component<BookViewProps> = props => {
         const lo = Math.max(0, (s.left ?? s.right ?? 0) - 2)
         const hi = Math.min(pages.length - 1, (s.right ?? s.left ?? 0) + 2)
         const fontPx = textStyle().fontPx
-        const fg = BOOK_TEXT_INK
+        const fg = ink()
         const items = pages
             .slice(lo, hi + 1)
             .flatMap(p => p.lines.flatMap(l => l.runs.filter(r => r.math).map(r => ({ tex: texOf(r), display: r.math === 'display' }))))
-        void prepareMathRasters(items, fontPx, TEXT_FONT_FAMILY, fg).then(drew => {
+        void prepareMathRasters(items, fontPx, family(), fg).then(drew => {
             if (!drew) return
             rasters.clear()
             setPictures(n => n + 1)
@@ -517,7 +604,7 @@ const BookView: Component<BookViewProps> = props => {
         ])
         noteShape(s.left === undefined ? undefined : l[s.left], left)
         noteShape(s.right === undefined ? undefined : l[s.right], right)
-        return { left, right }
+        return { left: shade(left), right: shade(right) }
     }
     const peekSpread = (s: Spread): Faces | null => {
         if (mode() === 'text') return textFaces(s)
@@ -525,7 +612,7 @@ const BookView: Component<BookViewProps> = props => {
         const left = s.left === undefined ? undefined : loader.peek(l[s.left])
         const right = s.right === undefined ? undefined : loader.peek(l[s.right])
         if ((s.left !== undefined && !left) || (s.right !== undefined && !right)) return null
-        return { left, right }
+        return { left: shade(left), right: shade(right) }
     }
     // The first few pages' shapes are read at once, so the typical shape is known before turning.
     createEffect(() => {
@@ -584,6 +671,8 @@ const BookView: Component<BookViewProps> = props => {
 
     const begin = async (dir: 1 | -1, at?: { x: number; y: number }): Promise<boolean> => {
         if (drag() || count() === 0) return false
+        // a turn cut short takes the turns waiting behind it with it
+        if (turn()) waiting.length = 0
         finishNow()
         const from = untrack(shown)
         const target = stepSpread(cur(), count(), layout(), dir)
@@ -617,20 +706,84 @@ const BookView: Component<BookViewProps> = props => {
         return true
     }
 
-    // Key and click turns run one after another, so a burst of presses lands one spread each.
+    // Key and click turns run one after another, so a burst of presses lands one spread each. A press
+    // while a turn runs the same way waits behind it rather than cutting it short; the waiting turns
+    // then run back to back on the same turn layer, quicker the more are waiting.
     let chain: Promise<unknown> = Promise.resolve()
+    const waiting: (1 | -1)[] = []
+    const dirOf = (t: Turn): 1 | -1 => (t.direction === 'forward' ? 1 : -1)
+    /** Where the turn running now and every waiting one will have landed. */
+    const landing = () => {
+        const t = turn()
+        let at = t ? t.target : cur()
+        for (const d of waiting) at = stepSpread(at, count(), layout(), d)
+        return at
+    }
     const turnBy = (dir: 1 | -1) => {
+        const t = turn()
+        if (t && !drag() && dirOf(t) === dir) {
+            if (waiting.length >= MAX_WAITING) return
+            waiting.push(dir)
+            // the spread it will land on loads now, so its turn starts the moment the one before ends
+            void loadSpread(spreadFor(landing(), count(), layout()))
+            return
+        }
+        waiting.length = 0
         chain = chain.then(() => begin(dir)).catch(() => false)
+    }
+    /** The next waiting turn, started on the layer the last one used, or false when its pages are not in yet. */
+    const chainNext = (t: Turn, dir: 1 | -1): boolean => {
+        const target = stepSpread(t.target, count(), layout(), dir)
+        if (target === t.target) return false
+        const ts = spreadFor(target, count(), layout())
+        const toFaces = peekSpread(ts)
+        if (!toFaces) return false
+        batch(() => {
+            setLeaf(t.target)
+            setShown(t.toShown)
+            setTurn({
+                id: ++turnId,
+                direction: dir === 1 ? 'forward' : 'back',
+                from: asLayer(t.toShown.faces),
+                to: asLayer(toFaces),
+                target,
+                toShown: { key: keyOf(ts), faces: toFaces },
+                durationMs: turnMsFor(waiting.length),
+            })
+            setTurnState('turning')
+        })
+        return true
     }
 
     const onSettled = (t: Turn) => (committed: boolean) => {
         if (turn()?.id !== t.id) return
-        if (committed) commit(t)
-        else
-            batch(() => {
+        if (!committed) {
+            waiting.length = 0
+            return batch(() => {
                 setTurn(null)
                 setTurnState('settled')
             })
+        }
+        const next = waiting.shift()
+        if (next === undefined) return commit(t)
+        if (chainNext(t, next)) return
+        // its pages are not in yet: the layer holds the landed spread, flat, until they are, then
+        // the burst goes on from there on the same layer
+        const ts = spreadFor(stepSpread(t.target, count(), layout(), next), count(), layout())
+        void loadSpread(ts).then(
+            () => {
+                if (turn()?.id !== t.id) return
+                if (!chainNext(t, next)) {
+                    waiting.length = 0
+                    commit(t)
+                }
+            },
+            () => {
+                if (turn()?.id !== t.id) return
+                waiting.length = 0
+                commit(t)
+            },
+        )
     }
 
     // ── keys ──
@@ -851,6 +1004,17 @@ const BookView: Component<BookViewProps> = props => {
         const right = (e.clientX - box.left) / box.width >= 0.5
         const leafIndex = layout() === 'spread' ? (right ? sp.right : sp.left) : (sp.left ?? sp.right)
         if (leafIndex === undefined || !leaves()[leafIndex]) return
+        openPageMenu(e, leafIndex)
+    }
+    /** A page's own rows: fix its text, or read it again with ai. */
+    const pageMenuItems = (leafIndex: number): MenuItem[] => [
+        { label: 'edit text', icon: 'Pencil', onSelect: () => openTextEditor(leafIndex) },
+        { label: 'transcribe again with ai', icon: 'Sparkles', onSelect: () => redoWithAi(leafIndex) },
+    ]
+    /** Inside a pane the page's rows join the pane's own menu (split, close): one menu every time.
+     *  On its own (a story) the book shows them itself. */
+    const openPageMenu = (e: MouseEvent, leafIndex: number) => {
+        if (host.closest('[data-pane-leaf]')) return addPaneMenuItems(e, pageMenuItems(leafIndex))
         e.preventDefault()
         e.stopPropagation()
         setRedoMenu({ x: e.clientX, y: e.clientY, leaf: leafIndex })
@@ -890,6 +1054,7 @@ const BookView: Component<BookViewProps> = props => {
         { onRetire: f => history.forget(f) },
     )
     let closed = false
+    let lastEpochs = ''
     onCleanup(() => {
         closed = true
         void pageStores.close()
@@ -899,7 +1064,18 @@ const BookView: Component<BookViewProps> = props => {
         const wanted = visibleLeaves()
             .map(i => leaves()[i]?.ref.file)
             .filter((f): f is string => !!f)
-        untrack(() => !closed && pageStores.sync(wanted))
+        // A file whose pages were rewritten has a fresh shared store: let the old one go first.
+        const epochs = wanted.map(f => `${f}@${storeEpoch(f)}`).join('|')
+        untrack(() => {
+            if (closed) return
+            if (epochs !== lastEpochs) {
+                const before = new Set(lastEpochs.split('|'))
+                const stale = wanted.filter(f => !before.has(`${f}@${storeEpoch(f)}`))
+                if (stale.length) pageStores.sync(pageStores.files().filter(f => !stale.includes(f)))
+                lastEpochs = epochs
+            }
+            pageStores.sync(wanted)
+        })
     })
     const editFile = (file: string, fn: (d: DrawingDoc) => DrawingDoc) => {
         const store = pageStores.get(file)
@@ -999,9 +1175,11 @@ const BookView: Component<BookViewProps> = props => {
         equals: (a, b) => a.join('\n') === b.join('\n'),
     })
     const [sidecars, setSidecars] = createSignal<ReadonlyMap<string, DrawingDoc | null>>(new Map())
-    // One read per page file when the panel opens (or the file list changes); no store is kept for a page off screen.
+    // One read per page file when the panel opens (or the file list changes, or a file's pages were
+    // rewritten); no store is kept for a page off screen.
     createEffect(() => {
         if (!bookmarksOpen()) return
+        sidecarsRev()
         void readSidecars(bookFiles(), api.read).then(fresh =>
             // a page on screen already holds a newer doc than the file does
             setSidecars(prev => {
@@ -1074,6 +1252,201 @@ const BookView: Component<BookViewProps> = props => {
             .finally(() => void lease.release())
     }
 
+    const [sidecarsRev, setSidecarsRev] = createSignal(0)
+    // ── edit pages: a sorter over the pages, saved at once on `save` ──
+    // A PDF opened on its own edits the PDF itself, one page per tile; a book base edits its rows,
+    // one tile per row (a PDF row is all of its pages), and never the files.
+    type Staged = { key: string; kind: 'page'; at: number } | { key: string; kind: 'file'; file: File } | { key: string; kind: 'blank' }
+    const [staged, setStaged] = createSignal<Staged[] | null>(null)
+    const [stagedDirty, setStagedDirty] = createSignal(false)
+    const [savingPages, setSavingPages] = createSignal(false)
+    let stagedSeq = 0
+    const pdfFile = () => (props.files?.length === 1 && kindOf(props.files[0]) === 'pdf' ? props.files[0] : undefined)
+    const canEditPages = () => !!pdfFile() || (!props.files && !!props.basePath && props.ownsRows)
+    const thumbs = createFaceLoader(faceDeps(200, 260), 400)
+    const openPageEditor = () => {
+        const n = pdfFile() ? leaves().length : refs().length
+        setStaged(Array.from({ length: n }, (_, at) => ({ key: `p${at}`, kind: 'page' as const, at })))
+        setStagedDirty(false)
+        setEditingText(null)
+    }
+    // a remove's undo only means something while the sorter is open
+    let undoToasts: number[] = []
+    const closePageEditor = () => {
+        for (const id of undoToasts) dismissToast(id)
+        undoToasts = []
+        setStaged(null)
+    }
+    const stage = (next: Staged[]) => {
+        setStaged(next)
+        setStagedDirty(true)
+    }
+    const editTiles = createMemo<EditTile[]>(() =>
+        (staged() ?? []).map((st, i) => {
+            if (st.kind === 'file') return { key: st.key, label: st.file.name, pending: true }
+            if (st.kind === 'blank') return { key: st.key, label: 'blank page', pending: true }
+            if (pdfFile()) {
+                const l = leaves()[st.at]
+                return { key: st.key, label: `${i + 1}`, face: l ? () => thumbs.face(l) : undefined }
+            }
+            const r = refs()[st.at]
+            const own = leaves().filter(x => x.ref.rowIndex === r?.rowIndex)
+            const label = r?.kind === 'pdf' ? `${basename(r.file)} // ${own.length} ${own.length === 1 ? 'page' : 'pages'}` : `${i + 1}`
+            return { key: st.key, label, face: own[0] ? () => thumbs.face(own[0]) : undefined }
+        }),
+    )
+    const moveStaged = (from: number, to: number) => {
+        const next = [...(staged() ?? [])]
+        const [m] = next.splice(from, 1)
+        next.splice(to, 0, m)
+        stage(next)
+    }
+    const removeStaged = (i: number) => {
+        const before = staged() ?? []
+        stage(before.filter((_, k) => k !== i))
+        // nothing is written until save, so undo puts the sorter back as it was
+        undoToasts.push(
+            pushUndoToast(`removed page ${i + 1}`, () => {
+                if (staged()) setStaged(before)
+            }),
+        )
+    }
+    const addStaged = (at: number, files: File[]) => {
+        const ok = files.filter(f => /\.(png|jpe?g|pdf)$/i.test(f.name) || (!pdfFile() && kindOf(f.name)))
+        if (ok.length < files.length)
+            pushToast(pdfFile() ? 'only jpeg, png and pdf files can be added to a pdf' : 'only images and PDFs can be pages')
+        const next = [...(staged() ?? [])]
+        next.splice(at, 0, ...ok.map(file => ({ key: `f${++stagedSeq}`, kind: 'file' as const, file })))
+        if (ok.length) stage(next)
+    }
+    const addBlank = (at: number) => {
+        const next = [...(staged() ?? [])]
+        next.splice(at, 0, { key: `b${++stagedSeq}`, kind: 'blank' })
+        stage(next)
+    }
+    const base64Of = (f: File) =>
+        new Promise<string>((resolve, reject) => {
+            const r = new FileReader()
+            r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''))
+            r.onerror = () => reject(r.error ?? new Error('could not read the file'))
+            r.readAsDataURL(f)
+        })
+    /** Everything that held the old pages of `file` reads it again. */
+    const afterRewrite = (file: string) => {
+        loader.forget(file)
+        thumbs.forget(file)
+        forgetPdf(file)
+        pdfReplaced(file)
+        retireAnnotationStore(file)
+        asked.delete(file)
+        setCounts(m => {
+            const n = new Map(m)
+            n.delete(file)
+            return n
+        })
+        setRecount(n => n + 1)
+        setShown(undefined)
+        void loadTranscript(file)
+        setSidecarsRev(n => n + 1)
+    }
+    const saveRows = async (list: Staged[]) => {
+        const base = props.basePath!
+        // the base file's rows by their stored position; a page row is known by its ref
+        const all = props.rows.map(r => r.index).filter((i): i is number => i !== undefined).sort((a, b) => a - b)
+        const ids: (number | string)[] = [...all]
+        const kept = new Set(list.flatMap(st => (st.kind === 'page' ? [st.at] : [])))
+        const removed = new Set(
+            refs().flatMap((r, at) => (kept.has(at) ? [] : [props.rows[r.rowIndex]?.index].filter((x): x is number => x !== undefined))),
+        )
+        const del = planDeletes(ids, removed)
+        for (const o of del.ops) if (o.op === 'delete') await api.rowDelete(base, o.index)
+        const rows = del.rows
+        const order: (number | string)[] = []
+        for (const st of list) {
+            if (st.kind === 'page') {
+                const idx = props.rows[refs()[st.at]?.rowIndex ?? -1]?.index
+                if (idx !== undefined) order.push(idx)
+            } else if (st.kind === 'file') {
+                const landed = await intakeFiles({ files: [st.file] }, base)
+                if (landed.length) {
+                    rows.push(st.key)
+                    order.push(st.key)
+                }
+            }
+        }
+        for (const o of planMoves(rows, order)) if (o.op === 'move') await api.rowReorder(base, o.from, o.to)
+    }
+    const savePages = async () => {
+        const list = staged()
+        if (!list || savingPages()) return
+        setSavingPages(true)
+        try {
+            const file = pdfFile()
+            if (file) {
+                const order = await Promise.all(
+                    list.map(async st =>
+                        st.kind === 'page'
+                            ? { page: st.at + 1 }
+                            : st.kind === 'blank'
+                              ? { blank: true as const }
+                              : { data: await base64Of(st.file), name: st.file.name },
+                    ),
+                )
+                // unsaved ink or boxes go first, so nothing writes the old page order after
+                await flushAnnotationStore(file)
+                await api.pdfPages(file, order)
+                afterRewrite(file)
+            } else {
+                await saveRows(list)
+                props.onChange()
+            }
+            setLeaf(0)
+            closePageEditor()
+        } catch (e) {
+            pushToast(`couldn't save the pages: ${(e as Error).message}`)
+        } finally {
+            setSavingPages(false)
+        }
+    }
+
+    // ── edit text: one notebook page's transcript, by hand ──
+    const [editingText, setEditingText] = createSignal<{ leaf: number } | null>(null)
+    const [savingText, setSavingText] = createSignal(false)
+    const openTextEditor = (leafIndex: number) => {
+        if (!leaves()[leafIndex]) return
+        setStaged(null)
+        setEditingText({ leaf: leafIndex })
+    }
+    const saveText = async (text: string) => {
+        const at = editingText()
+        const l = at && leaves()[at.leaf]
+        if (!l) return
+        setSavingText(true)
+        try {
+            await api.setTranscriptPage(l.ref.file, l.pdfPage ?? 1, text)
+            await loadTranscript(l.ref.file)
+            setEditingText(null)
+        } catch (e) {
+            pushToast(`couldn't save the text: ${(e as Error).message}`)
+        } finally {
+            setSavingText(false)
+        }
+    }
+
+    // ── where the reader is, for the caller that opened it ──
+    createEffect(() => {
+        if (!props.onPosition || leaves().length === 0) return
+        if (scrolling()) return props.onPosition({ leaf: cur(), frac: 0 })
+        const s = spread()
+        if (mode() !== 'text') return props.onPosition({ leaf: s.left ?? s.right ?? 0, frac: 0 })
+        const pages = textPages()
+        if (pages.length === 0) return
+        const at = leafOnTextPages(pages, [s.left, s.right], 0)
+        const first = [s.left, s.right].flatMap(i => (i === undefined ? [] : (pages[i]?.lines ?? []))).find(l => l.source.leaf === at)
+        const words = untrack(() => wordsOf(at))
+        props.onPosition({ leaf: at, frac: first && words ? first.start / words : 0 })
+    })
+
     // ── intake ──
     let picker: HTMLInputElement | undefined
     const takePages = async (input: { files?: File[]; paths?: string[] }) => {
@@ -1101,6 +1474,13 @@ const BookView: Component<BookViewProps> = props => {
             if (d.type !== 'drop' || d.paths.length === 0) return
             if (!pointInDropRect(host.getBoundingClientRect(), d.x, d.y)) return
             if (!claimNativeDrop(d)) return
+            // the sorter takes dropped files as pages to add, saved with the rest
+            if (staged()) {
+                void Promise.all(
+                    d.paths.map(async p => new File([await readNativeBytes(p)], basename(p))),
+                ).then(files => addStaged(staged()?.length ?? 0, files), () => pushToast("couldn't read the dropped files"))
+                return
+            }
             void takePages({ paths: d.paths })
         }
         window.addEventListener('bismuth-native-drag', onNative)
@@ -1186,6 +1566,25 @@ const BookView: Component<BookViewProps> = props => {
                             onClick={toggleBookmarks}
                         />
                     </Text>
+                    <Text as="span" inherit data-bar-drop="2" data-bar-menu-label="dark pages">
+                        <IconButton
+                            icon="Moon"
+                            label="dark pages"
+                            variant={dark() ? 'selected' : 'unselected'}
+                            onClick={toggleDark}
+                        />
+                    </Text>
+                    <Show when={canEditPages()}>
+                        <Text as="span" inherit data-bar-drop="3" data-bar-menu-label="edit pages">
+                            <IconButton
+                                icon="LayoutGrid"
+                                label="edit pages"
+                                title="add, move and remove pages"
+                                variant={staged() ? 'selected' : 'unselected'}
+                                onClick={() => (staged() ? closePageEditor() : openPageEditor())}
+                            />
+                        </Text>
+                    </Show>
                     <Show when={!props.files}>
                         <Text as="span" inherit data-bar-drop="4" data-bar-menu-label="add pages">
                             <IconButton icon="Plus" label="add pages" onClick={addPages} />
@@ -1216,24 +1615,17 @@ const BookView: Component<BookViewProps> = props => {
                                 {
                                     label: 'text size',
                                     control: (
-                                        <Text as="span" inherit class={styles.textSize}>
-                                            <TextButton
-                                                quiet
-                                                aria-label="smaller text"
-                                                disabled={textScale() <= TEXT_SCALES[0]}
-                                                onClick={() => stepText(-1)}
-                                            >
-                                                A-
-                                            </TextButton>
-                                            <TextButton
-                                                quiet
-                                                aria-label="larger text"
-                                                disabled={textScale() >= TEXT_SCALES[TEXT_SCALES.length - 1]}
-                                                onClick={() => stepText(1)}
-                                            >
-                                                A+
-                                            </TextButton>
-                                        </Text>
+                                        <ZoomSteps
+                                            zoom={textScale}
+                                            onZoomOut={() => stepText(-1)}
+                                            onZoomIn={() => stepText(1)}
+                                            zoomOutDisabled={textScale() <= TEXT_SCALES[0]}
+                                            zoomInDisabled={textScale() >= TEXT_SCALES[TEXT_SCALES.length - 1]}
+                                            outLabel="smaller text"
+                                            inLabel="larger text"
+                                            menuLabel="text size"
+                                            data-testid="book-text-size"
+                                        />
                                     ),
                                 },
                             ]}
@@ -1277,16 +1669,42 @@ const BookView: Component<BookViewProps> = props => {
                         </div>
                     }
                 >
-                    <Show when={scrolling()}>
+                    <Show when={staged()}>
+                        <BookPageEditor
+                            tiles={editTiles()}
+                            shade={shade}
+                            canBlank={!!pdfFile()}
+                            dirty={stagedDirty()}
+                            busy={savingPages()}
+                            onMove={moveStaged}
+                            onRemove={removeStaged}
+                            onAddFiles={addStaged}
+                            onAddBlank={addBlank}
+                            onSave={() => void savePages()}
+                            onCancel={closePageEditor}
+                        />
+                    </Show>
+                    <Show when={!staged() && editingText()}>
+                        {at => (
+                            <TranscriptEditor
+                                title={`page ${at().leaf + 1}`}
+                                text={untrack(() => pageTextOf(leaves()[at().leaf]))}
+                                busy={savingText()}
+                                onSave={text => void saveText(text)}
+                                onCancel={() => setEditingText(null)}
+                            />
+                        )}
+                    </Show>
+                    <Show when={scrolling() && !staged() && !editingText()}>
                         <BookScroll
                             leaves={leaves()}
-                            face={l => loader.face(l)}
+                            face={l => loader.face(l).then(f => shade(f)!)}
                             aspect={pageAspect()}
                             target={cur()}
                             onPage={setLeaf}
                         />
                     </Show>
-                    <div ref={observe} class={styles.stage} classList={{ [styles.hidden]: scrolling() }}>
+                    <div ref={observe} class={styles.stage} classList={{ [styles.hidden]: scrolling() || !!staged() || !!editingText() }}>
                         <Show when={measured() && shown()}>
                             {s => (
                                 <div
@@ -1303,7 +1721,6 @@ const BookView: Component<BookViewProps> = props => {
                                 >
                                     <Show
                                         when={turn()}
-                                        keyed
                                         fallback={
                                             <Show
                                                 when={mode() === 'text'}
@@ -1329,7 +1746,9 @@ const BookView: Component<BookViewProps> = props => {
                                                     onTurn={turnBy}
                                                     readerRef={read => (readSelection = read)}
                                                     onSelectEnd={() => armed() && highlightSelection() && setArmed(false)}
-                                                    onLineContextMenu={(e, leafIndex) => setRedoMenu({ x: e.clientX, y: e.clientY, leaf: leafIndex })}
+                                                    onLineContextMenu={openPageMenu}
+                                                    fontFamily={family()}
+                                                    colors={{ paper: paper(), ink: ink(), muted: muted() }}
                                                     onMarkClick={armed() ? q => void markQuotes([q], true) : undefined}
                                                 />
                                             </Show>
@@ -1340,11 +1759,13 @@ const BookView: Component<BookViewProps> = props => {
                                                 width={boxSize().w}
                                                 height={boxSize().h}
                                                 layout={layout()}
-                                                from={t.from}
-                                                to={t.to}
-                                                direction={t.direction}
+                                                from={t().from}
+                                                to={t().to}
+                                                direction={t().direction}
                                                 drag={drag()}
-                                                onSettled={onSettled(t)}
+                                                onSettled={committed => onSettled(t())(committed)}
+                                                turnKey={t().id}
+                                                durationMs={t().durationMs}
                                             />
                                         )}
                                     </Show>
@@ -1385,7 +1806,7 @@ const BookView: Component<BookViewProps> = props => {
                     <ContextMenu
                         x={m().x}
                         y={m().y}
-                        items={[{ label: 'transcribe again with ai', onSelect: () => redoWithAi(m().leaf) }]}
+                        items={pageMenuItems(m().leaf)}
                         onClose={() => setRedoMenu(null)}
                     />
                 )}

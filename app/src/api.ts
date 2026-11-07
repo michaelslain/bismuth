@@ -122,6 +122,7 @@ const OWNER_TOKEN = resolveOwnerToken(
 )
 
 import type { PageText, TranscribeEngine, TranscriptEngine } from '../../core/src/transcript'
+import type { PageSource } from '../../core/src/pdfPages'
 import type { MarkerSetupState, MarkerStatus } from '../../core/src/markerSetup'
 import type { TextLine } from '../../core/src/visionOcr'
 import type { GraphData, TreeEntry, ViewLayout } from '../../core/src/graph'
@@ -660,6 +661,12 @@ export const api = {
             '/transcript/mark',
             req,
         ),
+    /** Replace (or add) one page's transcript text by hand; empty text removes the page's text. */
+    setTranscriptPage: (file: string, page: number, text: string) =>
+        postJson<{ ok: true }>('/transcript/page', { file, page, text }),
+    /** Rewrite a pdf's pages to exactly `order`; ink, highlights and transcript follow their page. */
+    pdfPages: (file: string, order: PageSource[]) =>
+        postJson<{ pages: number }>('/pdf/pages', { file, order }),
     /** The page's text lines with boxes as page fractions, recognised on demand. */
     transcriptLines: (file: string, pages?: number[]) =>
         postJson<{ pages: { page: number; lines: TextLine[] }[] }>(

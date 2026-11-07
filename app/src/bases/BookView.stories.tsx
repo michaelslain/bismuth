@@ -16,6 +16,7 @@ import pdfFixtureUrl from '../../../core/test/drawing/fixtures/pdfkit-highlights
 import type { Row, ViewConfig } from '../../../core/src/bases/types'
 import BookView from './BookView'
 import { bookPageUrl } from './_bookPages'
+import { paneMenuItemsOf, withPaneItems } from '../paneMenuExtras'
 
 const meta = {
     title: 'Bases/BookView',
@@ -586,7 +587,7 @@ const withMathText = () => {
 }
 
 /** Handwritten lecture notes in text mode: headings set bold, formulas set by KaTeX, display math
- *  centred on its own line; `A+` in the display panel sets the type larger and the pages reflow. */
+ *  centred on its own line; `+` on the display panel's text size sets the type larger and the pages reflow. */
 export const MathText: Story = {
     name: 'Math text',
     beforeEach: withMathText,
@@ -1023,5 +1024,240 @@ export const RedoWithAiInText: Story = {
         await userEvent.click(row)
         await waitFor(() => expect(seam.calls.length).toBe(1), { timeout: 8000 })
         await expect(seam.calls[0]).toMatchObject({ file: line.dataset.file, engine: 'ai', pages: [1] })
+    },
+}
+
+// ── dark pages, the prose face, editing text and pages, one right-click menu ──
+
+/** The light-or-dark of a CSS colour: the mean of its channels, 0..255. */
+const lightness = (css: string) => {
+    const m = css.match(/\d+(\.\d+)?/g)?.map(Number) ?? [255, 255, 255]
+    return (m[0] + m[1] + m[2]) / 3
+}
+
+/** Text mode with dark pages: near-black paper and light ink, the way the PDF viewer's dark mode turns a page. */
+export const DarkText: Story = {
+    name: 'Dark text',
+    beforeEach: () => withText(6),
+    render: () => <Harness w={1100} h={720} rows={images(6)} view={bookView({ bookMode: 'text', bookDark: true })} />,
+    play: async ({ canvasElement }) => {
+        await readyText(canvasElement)
+        const page = canvasElement.querySelector<HTMLElement>('[data-text-page="right"]')!
+        await expect(lightness(getComputedStyle(page).backgroundColor)).toBeLessThan(40)
+        await expect(lightness(getComputedStyle(page).color)).toBeGreaterThan(200)
+        await expect(within(canvasElement).getByRole('button', { name: 'dark pages' })).toHaveAttribute('aria-pressed', 'true')
+    },
+}
+
+/** Pages mode with dark pages: a PDF's white paper is drawn near-black. */
+export const DarkPages: Story = {
+    name: 'Dark pages',
+    beforeEach: () => serveFixtures(0),
+    render: () => <Harness w={1100} h={720} rows={[row(PDF_PATH)]} view={bookView({ bookDark: true })} />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(readout(canvasElement)).toMatch(/^page 1 \/\/ \d+$/), { timeout: 8000 })
+        await waitFor(() => expect(host(canvasElement).hasAttribute('data-book-prefetched')).toBe(true), { timeout: 8000 })
+        const canvas = canvasElement.querySelector<HTMLCanvasElement>('[data-book-page="right"] canvas')!
+        await waitFor(() => expect(canvas.width).toBeGreaterThan(10), { timeout: 8000 })
+        // a corner of the page is paper: dark once the page is turned dark
+        const px = canvas.getContext('2d')!.getImageData(4, 4, 1, 1).data
+        await expect((px[0] + px[1] + px[2]) / 3).toBeLessThan(60)
+    },
+}
+
+/** Text mode sets the transcripts in the notes' prose face (`appearance.proseFont`), not a stock serif. */
+export const ProseFace: Story = {
+    name: 'Prose face',
+    beforeEach: () => withText(4),
+    render: () => <Harness w={1100} h={720} rows={images(4)} view={bookView({ bookMode: 'text' })} />,
+    play: async ({ canvasElement }) => {
+        await readyText(canvasElement)
+        await expect(getComputedStyle(textSpread(canvasElement)!).fontFamily).toContain(settings.appearance.proseFont)
+    },
+}
+
+/** Right-click a line, `edit text`, fix the words and save: the page's transcript is written and the
+ *  page sets the new text. */
+export const EditText: Story = {
+    name: 'Edit text',
+    beforeEach: () => {
+        const restore = withText(4)
+        const original = api.setTranscriptPage
+        api.setTranscriptPage = async (file: string, _page: number, text: string) => {
+            TRANSCRIPTS.set(file, text)
+            return { ok: true }
+        }
+        return () => {
+            restore()
+            api.setTranscriptPage = original
+        }
+    },
+    render: () => <Harness w={1100} h={720} rows={images(4)} view={bookView({ bookMode: 'text' })} />,
+    play: async ({ canvasElement }) => {
+        await readyText(canvasElement)
+        await waitFor(() => expect(textLines(canvasElement, 'right').length).toBeGreaterThan(3), { timeout: 8000 })
+        rightClick(textLines(canvasElement, 'right')[1])
+        await userEvent.click(await within(document.body).findByText('edit text'))
+        const editor = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('[data-transcript-editor]')
+            expect(el).not.toBeNull()
+            return el!
+        })
+        await expect(within(editor).getByText('edit text // page 1')).toBeInTheDocument()
+        const cm = editor.querySelector<HTMLElement>('.cm-content')!
+        await waitFor(() => expect(cm.textContent).toContain('Page 1.'))
+        cm.focus()
+        await userEvent.keyboard('{Control>}a{/Control}{Meta>}a{/Meta}Fixed by hand.')
+        await userEvent.click(within(editor).getByRole('button', { name: 'save' }))
+        await waitFor(() => expect(canvasElement.querySelector('[data-transcript-editor]')).toBeNull(), { timeout: 8000 })
+        await waitFor(() => expect(textSpread(canvasElement)!.textContent).toContain('Fixed by hand.'), { timeout: 8000 })
+    },
+}
+
+let rowWrites: string[] = []
+/** A base's sorter: remove page 2 (and undo puts it back), remove it again, save: one row delete. */
+export const EditPages: Story = {
+    name: 'Edit pages',
+    beforeEach: () => {
+        const restore = serveFixtures(5)
+        rowWrites = []
+        const original = { del: api.rowDelete, move: api.rowReorder }
+        api.rowDelete = async (file: string, index: number) => {
+            rowWrites.push(`delete ${file} ${index}`)
+            return { ok: true } as never
+        }
+        api.rowReorder = async (file: string, from: number, to: number) => {
+            rowWrites.push(`move ${file} ${from} ${to}`)
+            return { ok: true } as never
+        }
+        return () => {
+            restore()
+            api.rowDelete = original.del
+            api.rowReorder = original.move
+        }
+    },
+    render: () => (
+        <Harness w={1100} h={720} basePath="notebook.base.jsonl" rows={images(5).map((r, i) => ({ ...r, index: i }))} />
+    ),
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 5')
+        await userEvent.click(within(canvasElement).getByRole('button', { name: 'edit pages' }))
+        const tiles = () => canvasElement.querySelectorAll('[data-book-edit-tile]')
+        await waitFor(() => expect(tiles().length).toBe(5))
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile] canvas').length).toBe(5), { timeout: 8000 })
+        const remove = () => within(tiles()[1] as HTMLElement).getByRole('button', { name: 'remove page' })
+        // the [x] shows on hover; a synthetic pointer does not hover, so press it directly
+        remove().click()
+        await waitFor(() => expect(tiles().length).toBe(4))
+        const toast = await waitFor(() => {
+            const t = toasts().find(x => x.message === 'removed page 2')
+            expect(t?.action?.label).toBe('undo')
+            return t!
+        })
+        toast.action!.onClick()
+        await waitFor(() => expect(tiles().length).toBe(5))
+        remove().click()
+        await userEvent.click(within(canvasElement).getByRole('button', { name: 'save' }))
+        await waitFor(() => expect(canvasElement.querySelector('[data-book-page-editor]')).toBeNull(), { timeout: 8000 })
+        await expect(rowWrites).toEqual(['delete notebook.base.jsonl 1'])
+    },
+}
+
+/** Inside a pane, the page's rows join the pane's own menu rather than replacing it. */
+export const PageRowsJoinPaneMenu: Story = {
+    name: 'Page rows join the pane menu',
+    beforeEach: () => withText(4),
+    render: () => (
+        <div
+            data-pane-leaf="leaf-1"
+            onContextMenu={e => {
+                e.preventDefault()
+                const rows = withPaneItems(paneMenuItemsOf(e), [{ label: 'Split right' }, { label: 'Close pane' }])
+                document.body.dataset.paneMenu = rows.map(r => r.label).join('|')
+            }}
+        >
+            <Harness w={1100} h={720} rows={images(4)} view={bookView({ bookMode: 'text' })} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await readyText(canvasElement)
+        await waitFor(() => expect(textLines(canvasElement, 'right').length).toBeGreaterThan(3), { timeout: 8000 })
+        delete document.body.dataset.paneMenu
+        rightClick(textLines(canvasElement, 'right')[1])
+        await waitFor(() =>
+            expect(document.body.dataset.paneMenu).toBe('edit text|transcribe again with ai|Split right|Close pane'),
+        )
+        // the book shows no menu of its own inside a pane
+        await expect(within(document.body).queryByRole('menu')).toBeNull()
+    },
+}
+
+let pdfOrders: unknown[] = []
+/** A PDF read on its own: its sorter has one tile per PDF page and `+ blank page`; adding a blank
+ *  page, removing page 1 and saving rewrites the PDF as the rest of its pages and the blank one. */
+export const PdfEditPages: Story = {
+    name: 'PDF edit pages',
+    beforeEach: () => {
+        const restore = serveFixtures(0)
+        pdfOrders = []
+        const original = api.pdfPages
+        api.pdfPages = async (_file: string, order: unknown[]) => {
+            pdfOrders.push(order)
+            return { pages: order.length }
+        }
+        return () => {
+            restore()
+            api.pdfPages = original
+        }
+    },
+    render: () => {
+        const [slots, setSlots] = createSignal<ViewBarSlots | undefined>()
+        return (
+            <div style={{ width: '1100px', height: '720px', display: 'flex', 'flex-direction': 'column' }}>
+                <div data-testid="book-bar">
+                    <ViewBar identity={<Crumb icon="FileText">lecture.pdf</Crumb>} readouts={slots()?.readouts} config={slots()?.config} actions={slots()?.actions} />
+                </div>
+                <div style={{ flex: 1, 'min-height': 0 }}>
+                    <BookView rows={[]} files={[PDF_PATH]} view={bookView()} ownsRows={false} onChange={() => {}} onBarSlots={setSlots} />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await waitFor(() => expect(readout(canvasElement)).toMatch(/^page 1 \/\/ \d+$/), { timeout: 8000 })
+        const pages = Number(readout(canvasElement)!.match(/\/\/ (\d+)$/)![1])
+        await userEvent.click(c.getByRole('button', { name: 'edit pages' }))
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile]').length).toBe(pages))
+        await userEvent.click(c.getByRole('button', { name: '+ blank page' }))
+        within(canvasElement.querySelectorAll<HTMLElement>('[data-book-edit-tile]')[0]).getByRole('button', { name: 'remove page' }).click()
+        await userEvent.click(c.getByRole('button', { name: 'save' }))
+        await waitFor(() => expect(pdfOrders.length).toBe(1), { timeout: 8000 })
+        await expect(pdfOrders[0]).toEqual([...Array.from({ length: pages - 1 }, (_, i) => ({ page: i + 2 })), { blank: true }])
+    },
+}
+
+/** Four quick presses while the first page turns: none cuts the one before short, all four land,
+ *  and every turn of the burst runs on the one turn layer (one WebGL context, not four). */
+export const BurstTurns: Story = {
+    name: 'Burst of turns',
+    beforeEach: () => serveFixtures(12),
+    render: () => <Harness w={1100} h={720} rows={images(12)} />,
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 12')
+        const layers = new Set<Element>()
+        const watch = new MutationObserver(() => {
+            const l = canvasElement.querySelector('[data-book] [data-turn-state] canvas')
+            if (l) layers.add(l)
+        })
+        watch.observe(canvasElement, { subtree: true, childList: true, attributes: true })
+        for (let i = 0; i < 4; i++) {
+            await userEvent.keyboard('{ArrowRight}')
+            await new Promise(r => setTimeout(r, 40))
+        }
+        await waitFor(() => expect(readout(canvasElement)).toBe('pages 8–9 // 12'), { timeout: 8000 })
+        await waitFor(() => expect(host(canvasElement).dataset.turnState).toBe('settled'), { timeout: 8000 })
+        watch.disconnect()
+        await expect(layers.size).toBe(1)
     },
 }

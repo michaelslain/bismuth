@@ -120,6 +120,20 @@ Dear diary, the ==integral of $x^2$== is $x^3/3$.
 
 A re-run of a transcript keeps each mark whose text still occurs on the new page and drops the rest.
 
+## Edit a page's transcript by hand
+
+A page's text can be typed or corrected directly. `POST /transcript/page` with `{ "file": "scan.pdf", "page": 2, "text": "Dear diary, the ==integral== …" }` replaces that one page's text, or adds the page when it has none. The text is stored as written, `==marks==` included, and the other pages, the `transcribed` and `transcribedAt` frontmatter and your own text stay byte for byte. Text that is empty after trimming removes the page's text, and removing the last page removes the whole marked block. The companion is created when it does not exist.
+
+```bash
+bismuth transcript set scans/notes.pdf --page 2 --text "Dear diary, the integral of \$x^2\$ is \$x^3/3\$."
+```
+
+```json
+{"ok":true,"companion":"scans/notes.pdf.md","page":2}
+```
+
+`--stdin` reads the text from standard input instead of `--text`; give one of the two. For an image, the page is `1`. A later `bismuth transcribe` run replaces the typed text, keeping only the marks whose words still occur.
+
 ## Line boxes
 
 `POST /transcript/lines` with `{ "file": "scan.jpg" }` recognises the page again on this machine and returns each line with its box, so a client can find the lines under a region the reader drew:
@@ -148,11 +162,15 @@ A re-run of a transcript keeps each mark whose text still occurs on the new page
 bismuth book pages Notebook --vault ~/vault | while read f; do bismuth transcribe "$f" --missing --book Notebook --vault ~/vault; done
 ```
 
+## Transcripts follow rewritten pages
+
+When a PDF's pages are reordered, deleted or added to (see [Rewrite a PDF's pages](pdf-pages.md)), each page's transcript is renumbered to follow it, a deleted page's text is dropped, and an added page has none until it is transcribed.
+
 ## Transcribe as an agent
 
 An agent runs `bismuth transcribe` from its shell with the flags in the table above; a host with no shell sends the same arguments through the MCP tool `bismuth_cli`, which lets `transcribe` run up to 30 minutes, since a long PDF takes minutes. It fails outside a vault.
 
-`transcribe` is path-scoped under the vault's visibility settings. A hidden or chat-only page file, or one whose companion is hidden, reads as missing to an agent. See [visibility](visibility.md).
+`transcribe` and `transcript set` are path-scoped under the vault's visibility settings. A hidden or chat-only page file, or one whose companion is hidden, reads as missing to an agent. See [visibility](visibility.md).
 
 ## Failure modes
 
@@ -166,12 +184,12 @@ An agent runs `bismuth transcribe` from its shell with the flags in the table ab
 
 ## How it works
 
-`core/src/transcribe.ts` holds the one path every entry point shares: it checks the file, reads the `transcription` settings, picks the engine, runs it and writes the companion. `transcribeAuto` there routes each page. The HTTP routes are `POST /transcribe`, `GET /transcript`, `POST /transcript/mark` and `POST /transcript/lines` in `core/src/routes/transcribe.ts` ([HTTP reference](../api/http-reference.md)); the CLI command is `transcribe`, and `cliTimeoutMs` in `mcp/src/cli.ts` gives it `bismuth_cli`'s long timeout.
+`core/src/transcribe.ts` holds the one path every entry point shares: it checks the file, reads the `transcription` settings, picks the engine, runs it and writes the companion. `transcribeAuto` there routes each page. The HTTP routes are `POST /transcribe`, `GET /transcript`, `POST /transcript/mark`, `POST /transcript/page` and `POST /transcript/lines` in `core/src/routes/transcribe.ts` ([HTTP reference](../api/http-reference.md)); the CLI commands are `transcribe` and `transcript set`, and `cliTimeoutMs` in `mcp/src/cli.ts` gives it `bismuth_cli`'s long timeout.
 
 `core/src/mathDetect.ts` decides whether a page looks like math from its on-device text. `core/src/marker.ts` runs Marker: `markerPageTexts` runs it with `--paginate_output` and `splitMarkerPages` splits the markdown on Marker's page labels, so each page keeps its own text. `INSTALL_HINTS` there holds the install commands in [Install Marker](#install-marker).
 
-`core/src/bookMarks.ts` finds a page's text inside the block and wraps or unwraps its spans, and `linesInRegion` picks the lines under a region. `core/src/transcript.ts` renders, merges and reads the marked block and stamps the frontmatter through `mutateFrontmatter`. `core/src/visionOcr.ts` runs the `bismuth-vision` helper, which is found through `BISMUTH_VISION_PATH`, then the app bundle, then the development build in `app/src-tauri/binaries`, then, on a Mac with `swiftc`, a build of `main.swift` compiled once and cached in `~/.bismuth/cache/vision`. `core/src/aiTranscribe.ts` runs one headless turn per page image on the resolved backend, in an empty temp folder.
+`core/src/bookMarks.ts` finds a page's text inside the block and wraps or unwraps its spans, and `linesInRegion` picks the lines under a region. `core/src/transcript.ts` renders, merges and reads the marked block and stamps the frontmatter through `mutateFrontmatter`; `setTranscriptPage` and `writeTranscriptPage` there set one page without stamping, and `remapTranscriptPages` renumbers the pages after a PDF rewrite. `core/src/visionOcr.ts` runs the `bismuth-vision` helper, which is found through `BISMUTH_VISION_PATH`, then the app bundle, then the development build in `app/src-tauri/binaries`, then, on a Mac with `swiftc`, a build of `main.swift` compiled once and cached in `~/.bismuth/cache/vision`. `core/src/aiTranscribe.ts` runs one headless turn per page image on the resolved backend, in an empty temp folder.
 
-The engines load through dynamic `import()`, so the iPad's in-process core, which has no child processes, still loads the module. Its backend in `core/src/localBackend.ts` answers `POST /transcribe` with 503 `AI_UNAVAILABLE` for `ai` and 503 `VISION_UNAVAILABLE` otherwise, answers `POST /transcript/lines` with 503 `VISION_UNAVAILABLE`, and serves `GET /transcript` and `POST /transcript/mark`. `transcribe` is in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
+The engines load through dynamic `import()`, so the iPad's in-process core, which has no child processes, still loads the module. Its backend in `core/src/localBackend.ts` answers `POST /transcribe` with 503 `AI_UNAVAILABLE` for `ai` and 503 `VISION_UNAVAILABLE` otherwise, answers `POST /transcript/lines` with 503 `VISION_UNAVAILABLE`, and serves `GET /transcript`, `POST /transcript/mark` and `POST /transcript/page`. `transcribe` and `transcript` are in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
 
 Source: `core/src/markerSetup.ts`, `core/src/transcribe.ts`, `core/src/transcript.ts`, `core/src/mathDetect.ts`, `core/src/marker.ts`, `core/src/bookMarks.ts`, `core/src/visionOcr.ts`, `core/src/aiTranscribe.ts`, `core/src/routes/transcribe.ts`, `core/src/localBackend.ts`, `cli/src/commands/transcribe.ts`, `mcp/src/cli.ts`
