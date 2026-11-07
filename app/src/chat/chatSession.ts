@@ -109,6 +109,7 @@ import { wikilinkFor, noteNameFromPath } from '../dnd/noteRef'
 import { buildHistoryEntries } from './chatHistory'
 import { settings } from '../settings'
 import type { ChatPreset } from './chatPresets'
+import { isMcpConnected } from './mcpWarning'
 import {
     CHAT_IMAGE_MIME,
     MAX_IMAGE_BYTES,
@@ -1564,9 +1565,7 @@ export function createChatSession(
         ),
     )
     const mcpConnected = () =>
-        (manifest()?.mcpServers ?? []).filter(s =>
-            /connect|ready|ok/i.test(s.status),
-        ).length
+        (manifest()?.mcpServers ?? []).filter(s => isMcpConnected(s.status)).length
     const displayModel = () => manifest()?.model || lastModel()
     // Picker-space form of displayModel (Bug #89): the manifest's resolved id → the picker alias.
     const displayModelValue = createMemo(() => {

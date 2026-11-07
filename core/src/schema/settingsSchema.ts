@@ -763,6 +763,13 @@ export const SETTINGS_SCHEMA: Schema = {
             default: [],
             doc: 'Saved provider + model + effort combinations for chat and the daemon chat, applied from the model dialog. Picking one on another connector starts a new conversation, as switching connector always does.',
         },
+        // Written by the chat header's MCP warning panel (`never show again`, app/src/chat/McpDownPanel.tsx);
+        // pure rules in app/src/chat/mcpWarning.ts.
+        mutedMcpServers: {
+            type: { kind: 'list', item: 'string' },
+            default: [],
+            doc: "MCP server names the chat's `N mcp servers down` warning ignores. The warning panel's `never show again` adds every server that is down at the time; a server not listed here still raises the warning when it goes down. Remove a name to be warned about it again.",
+        },
     }),
     // Open models through the EXISTING chat connectors (core/src/agentBackends/localModel.ts): any
     // OpenAI/Anthropic-compatible local server — LM Studio, Ollama, llama.cpp, vLLM. Applied at spawn

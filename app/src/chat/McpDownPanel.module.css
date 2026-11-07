@@ -1,0 +1,22 @@
+/* McpDownPanel.module.css — chat/McpDownPanel.tsx is the ONLY importer. The box is <Popover>;
+   this lays out its content: a name/status grid, then the two actions on one line. */
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+    padding: var(--sp-4) var(--sp-5);
+}
+
+.rows {
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: var(--sp-6);
+    row-gap: var(--sp-2);
+    align-items: baseline;
+}
+
+.actions {
+    display: flex;
+    gap: var(--sp-5);
+    white-space: nowrap;
+}

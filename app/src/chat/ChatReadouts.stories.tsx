@@ -2,8 +2,11 @@
 // `N mcp servers down` warning that exists only while a configured server is not connected. Each
 // story is one state; ChatHeader.stories.tsx shows the same component through the real bar.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { createSignal } from 'solid-js'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import ChatReadouts from './ChatReadouts'
+import { resetHiddenMcpServers } from './mcpWarningHidden'
+import { settings, setSettings } from '../settings'
 import { makeStubChatSession, type StubChatSessionInit } from './_stubChatSession'
 import type { ChatManifest } from '../../../core/src/chat'
 import { Row } from '../ui/_storyKit'
@@ -12,6 +15,14 @@ const meta = {
     title: 'Chat/ChatReadouts',
     component: ChatReadouts,
     parameters: { layout: 'centered' },
+    // `hide` and `never show again` write window-wide state; every story starts with neither.
+    decorators: [
+        Story => {
+            resetHiddenMcpServers()
+            setSettings('chat', 'mutedMcpServers', [])
+            return <Story />
+        },
+    ],
 } satisfies Meta<typeof ChatReadouts>
 
 export default meta
@@ -134,5 +145,94 @@ export const PrivateWithContext: Story = {
         expect(meterText(canvasElement)).toBe('context  [###.......] 34%')
         // The run's spacing is flex gap, not text: `//` sits between the two with no spaces.
         expect(canvasElement.textContent).toContain('private//context')
+    },
+}
+
+const mcpButton = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('[data-testid="chat-mcp"]')
+const panel = () => document.querySelector<HTMLElement>('[data-testid="mcp-down-panel"]')
+const panelButton = (label: string) =>
+    [...(panel()?.querySelectorAll('button') ?? [])].find(b => b.textContent === label)!
+
+/** Pressing the warning opens the panel: each down server with its status, then `[hide]` and
+ *  `[never show again]`. */
+export const McpPanelOpen: Story = {
+    render: () => (
+        <Readouts init={{ manifest: MANIFEST, context: context(34), mcpConnected: 1 }} />
+    ),
+    play: async ({ canvasElement }) => {
+        await userEvent.click(mcpButton(canvasElement)!)
+        await waitFor(() => expect(panel()).not.toBeNull())
+        expect(panel()!.textContent).toContain('railway')
+        expect(panel()!.textContent).toContain('linear')
+        expect(panel()!.textContent).toContain('failed')
+    },
+}
+
+/** A live session whose manifest a play() can change, to show a server going down later. */
+function LiveReadouts(props: { onReady: (setServers: (n: string[]) => void) => void }) {
+    const [manifest, setManifest] = createSignal<ChatManifest | null>({
+        ...MANIFEST,
+        mcpServers: [
+            { name: 'bismuth', status: 'connected' },
+            { name: 'railway', status: 'failed' },
+        ],
+    })
+    props.onReady(down =>
+        setManifest({
+            ...MANIFEST,
+            mcpServers: ['bismuth', 'railway', 'linear'].map(name => ({
+                name,
+                status: down.includes(name) ? 'failed' : 'connected',
+            })),
+        }),
+    )
+    return (
+        <ChatReadouts
+            session={{
+                manifest,
+                context: () => context(34),
+                isPrivate: () => false,
+            }}
+        />
+    )
+}
+
+let setDown: (names: string[]) => void = () => {}
+
+/** `[hide]` silences the warning; it comes back only when a DIFFERENT server goes down. */
+export const McpHideThenNewServerDown: Story = {
+    render: () => <LiveReadouts onReady={f => (setDown = f)} />,
+    play: async ({ canvasElement }) => {
+        await userEvent.click(mcpButton(canvasElement)!)
+        await waitFor(() => expect(panel()).not.toBeNull())
+        await userEvent.click(panelButton('hide'))
+        await waitFor(() => expect(mcpButton(canvasElement)).toBeNull())
+        expect(meterText(canvasElement)).toBe('context  [###.......] 34%')
+        // The same server still down: still quiet.
+        setDown(['railway'])
+        expect(mcpButton(canvasElement)).toBeNull()
+        // A new one goes down: the warning is back, counting both.
+        setDown(['railway', 'linear'])
+        await waitFor(() =>
+            expect(mcpButton(canvasElement)?.textContent).toBe('2 mcp servers down'),
+        )
+    },
+}
+
+/** `[never show again]` writes the down servers to `chat.mutedMcpServers`; a muted server no
+ *  longer counts, and a new one still warns, alone. */
+export const McpNeverShowAgain: Story = {
+    render: () => <LiveReadouts onReady={f => (setDown = f)} />,
+    play: async ({ canvasElement }) => {
+        await userEvent.click(mcpButton(canvasElement)!)
+        await waitFor(() => expect(panel()).not.toBeNull())
+        await userEvent.click(panelButton('never show again'))
+        await waitFor(() => expect(mcpButton(canvasElement)).toBeNull())
+        expect([...settings.chat.mutedMcpServers]).toEqual(['railway'])
+        setDown(['railway', 'linear'])
+        await waitFor(() =>
+            expect(mcpButton(canvasElement)?.textContent).toBe('1 mcp server down'),
+        )
     },
 }

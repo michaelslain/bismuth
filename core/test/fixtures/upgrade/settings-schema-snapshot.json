@@ -2310,6 +2310,16 @@
     "max": null,
     "required": false
   },
+  "chat.mutedMcpServers": {
+    "type": {
+      "kind": "list",
+      "item": "string"
+    },
+    "default": [],
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "chat.presets": {
     "type": {
       "kind": "list",

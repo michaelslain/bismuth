@@ -85,7 +85,19 @@ export function makeStubChatSession(
     const [streaming] = createSignal(init.streaming ?? false)
     const [isPrivate, setIsPrivate] = createSignal(init.isPrivate ?? false)
     const [awaitingReply] = createSignal(init.awaitingReply ?? false)
-    const [manifest] = createSignal<ChatManifest | null>(init.manifest ?? null)
+    // `mcpConnected: n` marks every server past the first n as `failed`, so the manifest's statuses
+    // (what the header's MCP warning reads) agree with the count a story asks for.
+    const [manifest] = createSignal<ChatManifest | null>(
+        init.manifest && init.mcpConnected !== undefined
+            ? {
+                  ...init.manifest,
+                  mcpServers: init.manifest.mcpServers.map((s, i) => ({
+                      ...s,
+                      status: i < init.mcpConnected! ? 'connected' : 'failed',
+                  })),
+              }
+            : (init.manifest ?? null),
+    )
     const [setupError] = createSignal<ChatProviderChoice | null>(
         init.setupError ?? null,
     )

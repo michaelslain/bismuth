@@ -1,6 +1,8 @@
 // app/src/chat/ChatReadouts.tsx — the chat header's trailing readout: how full the context window
 // is, as the system's own meter (`context [###.......] 34%`), plus a danger-toned `N mcp servers
-// down` that exists ONLY while a configured MCP server is not connected.
+// down` that exists ONLY while a configured MCP server is not connected. The warning is a button:
+// it opens McpDownPanel (which servers, `[hide]`, `[never show again]`); a hidden or muted server
+// stops raising it, and a different server going down raises it again (rules: mcpWarning.ts).
 //
 // What it replaced: three unlabelled icon+number stats (wrench + tool count, server + `2/3`,
 // gauge + `34%`) that read as noise. The tool count is gone outright — nothing a person does
@@ -11,9 +13,16 @@
 // manifest too. Everything else is gated like before:
 // nothing renders until the first manifest arrives, and the meter waits for the first `context`
 // frame. ChatHeader places this in its ViewBar's `readouts` slot.
-import { Show, type Component } from 'solid-js'
+import { createSignal, Show, type Component } from 'solid-js'
 import AsciiMeter from '../ui/ascii/AsciiMeter'
+import AnchoredPopover from '../ui/AnchoredPopover'
+import Popover from '../ui/Popover'
 import Text from '../ui/Text'
+import TextButton from '../ui/TextButton'
+import { settings, setSettings } from '../settings'
+import McpDownPanel from './McpDownPanel'
+import { addNames, downMcpServers, mcpWarningShows } from './mcpWarning'
+import { hiddenMcpServers, hideMcpServers } from './mcpWarningHidden'
 import type { ChatSession } from './chatSession'
 import { plural } from '../plural'
 import styles from './ChatReadouts.module.css'
@@ -21,7 +30,7 @@ import styles from './ChatReadouts.module.css'
 export type ChatReadoutsProps = {
     session: Pick<
         ChatSession,
-        'manifest' | 'context' | 'mcpConnected' | 'isPrivate'
+        'manifest' | 'context' | 'isPrivate'
     >
     /** Merged onto the root, so a caller can adjust one instance without forking this. */
     class?: string
@@ -40,11 +49,19 @@ export function mcpDownLabel(down: number): string {
 }
 
 const ChatReadouts: Component<ChatReadoutsProps> = props => {
-    const mcpDown = () => {
-        const m = props.session.manifest()
-        if (!m) return 0
-        return Math.max(0, m.mcpServers.length - props.session.mcpConnected())
+    const down = () =>
+        downMcpServers(
+            props.session.manifest()?.mcpServers ?? [],
+            settings.chat.mutedMcpServers,
+        )
+    const warn = () => mcpWarningShows(down(), hiddenMcpServers())
+    const [open, setOpen] = createSignal(false)
+    const [anchor, setAnchor] = createSignal<HTMLElement>()
+    const close = () => {
+        setOpen(false)
+        anchor()?.focus()
     }
+    const names = () => down().map(s => s.name)
     return (
         <Show when={props.session.isPrivate() || props.session.manifest()}>
             <Text
@@ -63,22 +80,51 @@ const ChatReadouts: Component<ChatReadoutsProps> = props => {
                     >
                         private
                     </Text>
-                    <Show when={props.session.manifest() && (mcpDown() > 0 || props.session.context())}>
+                    <Show when={props.session.manifest() && (warn() || props.session.context())}>
                         <Text as="span" inherit data-bar-drop="4">
                             {'//'}
                         </Text>
                     </Show>
                 </Show>
-                <Show when={props.session.manifest() && mcpDown() > 0}>
-                    <Text
-                        as="span"
-                        inherit
-                        class={styles.down}
+                <Show when={props.session.manifest() && warn()}>
+                    <TextButton
+                        danger
                         data-testid="chat-mcp"
-                        title={`${props.session.mcpConnected()} of ${props.session.manifest()!.mcpServers.length} MCP servers connected`}
+                        aria-haspopup="true"
+                        aria-expanded={open()}
+                        ref={setAnchor}
+                        title="Which MCP servers are down — hide this or never show it again"
+                        onClick={() => setOpen(!open())}
                     >
-                        {mcpDownLabel(mcpDown())}
-                    </Text>
+                        {mcpDownLabel(down().length)}
+                    </TextButton>
+                    <AnchoredPopover
+                        open={open()}
+                        anchor={anchor}
+                        toggleEl={anchor}
+                        onAnchorPress={close}
+                        onDismiss={close}
+                        placement="below"
+                        align="end"
+                    >
+                        <Popover tone="panel">
+                            <McpDownPanel
+                                servers={down()}
+                                onHide={() => {
+                                    hideMcpServers(names())
+                                    setOpen(false)
+                                }}
+                                onMute={() => {
+                                    setSettings(
+                                        'chat',
+                                        'mutedMcpServers',
+                                        addNames(settings.chat.mutedMcpServers, names()),
+                                    )
+                                    setOpen(false)
+                                }}
+                            />
+                        </Popover>
+                    </AnchoredPopover>
                     <Show when={props.session.context()}>
                         <Text as="span" inherit data-bar-drop="4">
                             {'//'}
