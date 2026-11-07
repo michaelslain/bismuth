@@ -198,3 +198,19 @@ export function firstEventTop(events: CalendarEvent[], days: string[]): number |
     const starts = days.flatMap(ds => timedOn(events, ds).map(e => eventMinutes(e).startMin))
     return starts.length ? minutesToPx(Math.min(...starts)) : null
 }
+
+/** The time grid's opening scroll, as a step function fed each (range key, `firstEventTop`) pair.
+ *  Only the range the grid opened on scrolls, once, as soon as its first timed event is in; it
+ *  returns that offset and null forever after. Paging to another range ends it, so moving between
+ *  weeks keeps the scroll where the person left it instead of jumping to each week's earliest
+ *  event, which lands every week at a slightly different hour. */
+export function openingScroll(): (key: string, top: number | null) => number | null {
+    let openedOn: string | undefined
+    let done = false
+    return (key, top) => {
+        if (done) return null
+        openedOn ??= key
+        if (key !== openedOn || top !== null) done = true
+        return key === openedOn ? top : null
+    }
+}

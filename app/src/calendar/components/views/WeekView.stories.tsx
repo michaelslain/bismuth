@@ -6,6 +6,7 @@ import type { CalendarEvent, Category } from '../../types'
 import { WeekView } from './WeekView'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
+import { currentDate } from '../../state'
 import CalendarFrame from '../CalendarFrame'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
@@ -99,6 +100,56 @@ export const BusyWeek: Story = {
                 </CalendarFrame>
             </div>
         )
+    },
+}
+
+// Three weeks whose earliest events start at different hours, with a different number of all-day
+// events each, so paging between them would land each week somewhere else if it re-scrolled.
+const PAGED_EVENTS: CalendarEvent[] = [
+    wk(13, 'p1', 'Standup', '09:00', '09:15', ['Work']),
+    wk(15, 'p2', 'Taxes', '13:00', '14:00', ['Admin']),
+    { id: 'p3', title: 'Rent due', date: '2026-01-21', category: 'Admin' },
+    { id: 'p4', title: 'Offsite', date: '2026-01-21', category: 'Work' },
+    { id: 'p9', title: 'Conference', date: '2026-01-21', category: 'Work' },
+    wk(20, 'p5', 'Run', '07:00', '08:00', ['Health']),
+    wk(22, 'p6', 'Dentist', '10:00', '11:00', ['Health']),
+    wk(28, 'p7', 'Lunch with Sam', '11:30', '12:30', ['Personal']),
+    wk(30, 'p8', 'Retro', '15:00', '16:00', ['Work']),
+]
+
+const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+/** Paging between weeks holds the hours still. The grid opens on the 1/12 week scrolled to its
+ *  earliest event (9:00); the next week starts at 7:00 and stacks three all-day events on one day,
+ *  the one after starts at 11:30 with none, and neither moves the hours. */
+export const PagingWeeks: Story = {
+    render: () => {
+        seedCalendarState({ date: new Date(2026, 0, 12), categories: WEEK_CATEGORIES, events: PAGED_EVENTS })
+        return (
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <WeekView store={new EventStore(new MemoryBackend())} />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await frame()
+        const col = () => canvasElement.querySelector('[data-testid="time-grid-day-col"]') as HTMLElement
+        let body: HTMLElement | null = col()
+        while (body && getComputedStyle(body).overflowY !== 'auto') body = body.parentElement
+        if (!body) throw new Error('no time grid scroller')
+        const scroller = body
+        // where the hours sit in the pane: the first day column's top, relative to the scroller
+        const hoursAt = () => col().getBoundingClientRect().top - scroller.getBoundingClientRect().top
+        expect(scroller.scrollTop).toBeGreaterThan(0)
+        const opened = hoursAt()
+        for (const day of [19, 26, 12, 19]) {
+            currentDate.value = new Date(2026, 0, day)
+            await frame()
+            // within the half pixel the scroller rounds its offset to
+            expect(Math.abs(hoursAt() - opened)).toBeLessThan(1)
+        }
     },
 }
 

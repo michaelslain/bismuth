@@ -10,6 +10,7 @@ import {
     ghostBox,
     layoutDay,
     minutesToPx,
+    openingScroll,
     sortDayEvents,
     timedOn,
     yToMinutes,
@@ -234,4 +235,20 @@ test('firstEventTop is the earliest timed start across the shown days', () => {
     expect(firstEventTop(list, ['d1', 'd2'])).toBe(minutesToPx(510))
     expect(firstEventTop(list, ['d4'])).toBeNull()
     expect(firstEventTop([ev('x', 'd1')], ['d1'])).toBeNull()
+})
+
+test('openingScroll scrolls only the range the grid opened on, once', () => {
+    const step = openingScroll()
+    expect(step('w1', null)).toBeNull() // events not in yet: keep waiting
+    expect(step('w1', 480)).toBe(480) // they arrive: scroll there
+    expect(step('w1', 360)).toBeNull() // a later edit never yanks the view
+    expect(step('w2', 540)).toBeNull() // paging weeks keeps the scroll
+    expect(step('w1', 480)).toBeNull()
+})
+
+test('openingScroll ends when the person pages away before any event loads', () => {
+    const step = openingScroll()
+    expect(step('w1', null)).toBeNull()
+    expect(step('w2', 540)).toBeNull()
+    expect(step('w2', 540)).toBeNull()
 })

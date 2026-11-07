@@ -1,4 +1,4 @@
-import { For, Index, createEffect } from 'solid-js'
+import { For, Index, createEffect, onCleanup, onMount } from 'solid-js'
 import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
 import { formatGutterHour } from '../../dates'
@@ -25,7 +25,13 @@ import {
     computeCreatePayload,
     pointerDistance,
 } from './timeGridDrag'
-import { allDayOn, eventMinutes, firstEventTop, yToMinutes } from './timeGridLayout'
+import {
+    allDayOn,
+    eventMinutes,
+    firstEventTop,
+    openingScroll,
+    yToMinutes,
+} from './timeGridLayout'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
@@ -43,20 +49,36 @@ export function TimeGrid(props: Props) {
     let body: HTMLDivElement | undefined
     let stickyTop: HTMLDivElement | undefined
     let rows: HTMLDivElement | undefined
-    // Each date range scrolls once, as soon as its events are in, so the earliest event's top
-    // sits just under the sticky header, half a line down so its hour rule (drawn straddling the
-    // boundary) stays in view. Later edits within the same range never yank the view.
-    let scrolledFor = ''
+    // The grid opens with its earliest event's top just under the sticky header, half a line
+    // down so its hour rule (drawn straddling the boundary) stays in view. Only the range it
+    // opened on does this (`openingScroll`); paging between weeks and later edits never move it.
+    const opening = openingScroll()
     createEffect(() => {
         const days = props.dates.map(d => todayISO(d))
-        const key = days.join()
-        if (!body || !stickyTop || !rows || key === scrolledFor) return
-        const top = firstEventTop(props.events, days)
+        if (!body || !stickyTop || !rows) return
+        const top = opening(days.join(), firstEventTop(props.events, days))
         if (top === null) return
-        scrolledFor = key
         const rowsTop = rows.getBoundingClientRect().top - body.getBoundingClientRect().top
         const halfLine = parseFloat(getComputedStyle(body).getPropertyValue('--cell-h')) / 2 || 0
         body.scrollTop = body.scrollTop + rowsTop + top - stickyTop.offsetHeight - halfLine
+        stickyH = stickyTop.getBoundingClientRect().height
+    })
+    // The sticky top (day headers + all-day row) sits inside the scroller, so when it grows or
+    // shrinks — paging to a week with more or fewer all-day events — every hour below it would
+    // shift by the difference. Scrolling by that same difference holds the hours still. Heights
+    // are measured unrounded: `offsetHeight` rounds, and a fractional row would drift a pixel.
+    let stickyH = 0
+    onMount(() => {
+        if (!body || !stickyTop) return
+        const top = stickyTop
+        stickyH = top.getBoundingClientRect().height
+        const ro = new ResizeObserver(() => {
+            const h = top.getBoundingClientRect().height
+            if (body && h !== stickyH) body.scrollTop += h - stickyH
+            stickyH = h
+        })
+        ro.observe(top)
+        onCleanup(() => ro.disconnect())
     })
 
     function getMinutesFromEvent(e: MouseEvent, ds: string): number {
