@@ -2,10 +2,12 @@
    The date/datetime frontmatter property popover (DatePicker.tsx). The container reuses the
    shared `.bismuth-popover` chrome (global.css's `ui/popover/popover.css` section, a permanent
    global — vanilla DOM code stamps that literal class onto elements the bundler never sees), so
-   only the header
-   inputs + the relative list separator are styled here. */
+   only the layout of the month grid, the time row and the relative list separator are styled here. */
 
 .root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
     min-width: 230px;
     padding: var(--sp-3);
 }
@@ -27,84 +29,29 @@
     box-shadow: none;
 }
 
-/* native date (+ time) inputs row */
-.head {
-    display: grid;
-    /* date takes whatever room is left; time gets enough for "hh:mm AM" plus its clock
-       indicator glyph — a fixed 90px clipped the AM/PM segment against the icon. */
-    grid-template-columns: 1fr minmax(12ch, auto);
+/* under the grid: the typed time (datetime only) on the left, `[clear]` on the right */
+.foot {
+    display: flex;
+    align-items: center;
     gap: var(--sp-3);
-    padding: var(--sp-1) var(--sp-1) var(--sp-3);
+    padding: 0 var(--sp-1);
 }
-
-/* Flat + square + lighter-weight than the relative-date presets below. The native OS picker
-   chrome (a heavy grey rounded pill with a 3D UA bevel in both WebKit and Chromium) is stripped
-   with `appearance: none` — which also drops the UA's own `border-style: inset` bevel, so the
-   border has to be re-asserted explicitly rather than left to fall back to a default. Background
-   is transparent (reads as the panel's own `--bg`, not a heavier fill of its own) and the border
-   is the SAME hairline (`--border`, 1px solid) the `.list` divider below uses, so the two read as
-   one family. Text sits at the SAME weight as the presets (`--fg`, no override) — only the
-   indicator glyph is dimmed, which is what actually carries the "lighter than the presets"
-   weighting now that the fill and border are no longer doing it.
-   NO `cursor: pointer` on the field itself: the segments are typed into, so a text caret is the
-   honest cursor there and the pointer belongs on the indicator that actually opens the overlay. */
-.dateInput,
-.timeInput {
-    font-family: var(--popover-font);
-    font-size: var(--popover-font-size);
-    padding: var(--sp-2) var(--sp-3);
-    appearance: none;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 0;
-    color: var(--fg);
-}
-
-.dateInput::-webkit-datetime-edit,
-.timeInput::-webkit-datetime-edit,
-.dateInput::-webkit-datetime-edit-fields-wrapper,
-.timeInput::-webkit-datetime-edit-fields-wrapper,
-.dateInput::-webkit-datetime-edit-text,
-.timeInput::-webkit-datetime-edit-text,
-.dateInput::-webkit-datetime-edit-year-field,
-.dateInput::-webkit-datetime-edit-month-field,
-.dateInput::-webkit-datetime-edit-day-field,
-.timeInput::-webkit-datetime-edit-hour-field,
-.timeInput::-webkit-datetime-edit-minute-field,
-.timeInput::-webkit-datetime-edit-ampm-field {
-    color: var(--fg);
-}
-
-/* The calendar/clock glyph is the one element still tinted down to --text-muted — it's what
-   makes the control read lighter than the bold preset rows, now that fill/border/text match.
-   IT IS ALSO THE ONLY OPENER, and that is deliberate. Hiding it and routing the affordance to a
-   click anywhere on the field changed what the control DOES — a click on a segment is how you
-   put the caret in that segment to type — and it rested on `showPicker()`, which is unverified
-   in the shipped WKWebView and whose failure the call site swallows, so there the glyph would be
-   gone with nothing in its place. Unifying this control with the app's own icon set is a
-   redesign, raised separately; until then the engine's glyph stays.
-   The 0.6→1 hover pair this rule used to carry is NOT restored: a state told by opacity
-   (DESIGN.md:426-428). The glyph keeps its one muted tint. */
-.dateInput::-webkit-calendar-picker-indicator,
-.timeInput::-webkit-calendar-picker-indicator {
-    color: var(--text-muted);
-    opacity: 0.6;
-    cursor: pointer;
-}
-
-.dateInput {
-    width: 100%;
+.time {
+    flex: 1 1 auto;
     min-width: 0;
 }
-
-.timeInput {
-    width: 100%;
-    min-width: 0;
+.clear {
+    margin-left: auto;
 }
 
-/* relative-date quick options, divided from the inputs above */
+/* relative-date quick options, divided from the grid above */
 .list {
     border-top: 1px solid var(--border);
-    margin-top: var(--sp-1);
     padding-top: var(--sp-2);
+}
+
+/* The time field's own underline already divides it from the presets: no second rule under it. */
+.foot:has(.time) + .list {
+    border-top: none;
+    padding-top: 0;
 }

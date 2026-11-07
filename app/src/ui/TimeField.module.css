@@ -1,0 +1,8 @@
+/* app/src/ui/TimeField.module.css — TimeField.tsx is the sole importer. */
+.root {
+    display: block;
+    min-width: 0;
+}
+.root > * {
+    width: 100%;
+}

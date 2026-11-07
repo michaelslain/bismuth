@@ -5,15 +5,22 @@
 // tooltip identity, the field's dismissal state — that has to stay imperative because it
 // dispatches into the EditorView).
 //
-// This component owns ONLY what can be owned declaratively: the header inputs' displayed
-// value, and which relative-date row is highlighted. Two things it does NOT own, by design:
+// This component owns ONLY what can be owned declaratively: the picked day and time it shows,
+// and which relative-date row is highlighted. Two things it does NOT own, by design:
 //   - inserting a picked value into the document (the caller does that; this component only
 //     reports the intent via onDateChange/onTimeChange/onPick)
-//   - keyboard navigation (ArrowUp/Down/Enter/Escape are CodeMirror keymap commands bound to
-//     the EditorView, which never sees this component — so the caller drives highlight moves
-//     through the imperative `handleRef` handle below)
+//   - keyboard navigation of the preset rows (ArrowUp/Down/Enter/Escape are CodeMirror keymap
+//     commands bound to the EditorView, which never sees this component — so the caller drives
+//     highlight moves through the imperative `handleRef` handle below)
+//
+// The day is picked on the app's own month grid (ui/MonthCalendar) and the time typed into
+// ui/TimeField — never the engine's date/time controls, whose overlays ignore the theme. The
+// grid picks on mousedown + preventDefault, so a pick never blurs the editor.
 import { createSignal, For, Show, type Component } from 'solid-js'
-import FormControl from '../ui/FormControl'
+import MonthCalendar from '../ui/MonthCalendar'
+import TimeField from '../ui/TimeField'
+import TextButton from '../ui/TextButton'
+import { settings } from '../settings'
 import styles from './DatePicker.module.css'
 
 export type DatePickerKind = 'date' | 'datetime'
@@ -28,8 +35,8 @@ export type DatePickerHandle = {
     moveHighlight(delta: number): boolean
     /** Apply the currently-highlighted row, if any. Returns false when nothing is highlighted. */
     pickHighlighted(): boolean
-    /** Sync the header inputs to a value edited elsewhere in the document — but never while
-     *  the user has one of the inputs focused, so an in-progress edit is never clobbered. */
+    /** Sync the shown day and time to a value edited elsewhere in the document — but never the
+     *  time while the user is typing in it, so an in-progress edit is never clobbered. */
     refresh(date: string, time: string): void
 }
 
@@ -38,31 +45,24 @@ export type DatePickerProps = {
     initialDate: string
     initialTime: string
     options: DateOption[]
-    /** The native date input changed. `close` is true for a bare `date` kind (nothing else to
+    /** A day was picked on the grid. `close` is true for a bare `date` kind (nothing else to
      *  set) and false for `datetime` (the popover stays open so the time can be set next). */
     onDateChange: (value: string, close: boolean) => void
-    /** The native time input changed — always closes the popover. */
+    /** A whole time was entered — always closes the popover. */
     onTimeChange: (value: string) => void
+    /** Clear the value. Given → a `[clear]` action shows under the grid while a day is picked. */
+    onClear?: () => void
     /** A relative-date row was picked (click or Enter). */
     onPick: (index: number) => void
     /** Receives the imperative handle once, on mount. */
     handleRef?: (handle: DatePickerHandle) => void
 }
 
-// NO `showPicker()` CALL ANYWHERE IN THIS FILE, deliberately. The overlay is opened by the
-// engine's own `::-webkit-calendar-picker-indicator` glyph (see DatePicker.module.css), which is
-// the only opener. Calling `showPicker()` on a click anywhere in the field popped the overlay
-// every time the user clicked a segment to type into it — a change to what the control does —
-// and `showPicker` is unverified in the shipped WKWebView, where the `try/catch` it needs
-// swallows the failure silently. `DatePicker.stories.tsx`'s `DateAndTime` play spies on
-// `HTMLInputElement.prototype.showPicker` and fails if a call comes back.
-
 const DatePicker: Component<DatePickerProps> = props => {
     const [date, setDate] = createSignal(props.initialDate)
     const [time, setTime] = createSignal(props.initialTime)
     const [highlight, setHighlight] = createSignal(-1)
-    let dateInput: HTMLInputElement | undefined
-    let timeInput: HTMLInputElement | undefined
+    let timeRef: HTMLDivElement | undefined
 
     function clampIndex(i: number): number {
         const n = props.options.length
@@ -85,41 +85,47 @@ const DatePicker: Component<DatePickerProps> = props => {
             return true
         },
         refresh(d, t) {
-            if (document.activeElement !== dateInput) setDate(d)
-            if (document.activeElement !== timeInput) setTime(t)
+            setDate(d)
+            if (!timeRef?.contains(document.activeElement)) setTime(t)
         },
     })
 
     return (
         <div class={`bismuth-popover ${styles.root}`}>
-            <div class={styles.head}>
-                <FormControl
-                    as="input"
-                    ref={dateInput}
-                    type="date"
-                    class={styles.dateInput}
-                    value={date()}
-                    onChange={e => {
-                        const v = e.currentTarget.value
-                        setDate(v)
-                        props.onDateChange(v, props.kind === 'date')
-                    }}
-                />
-                <Show when={props.kind === 'datetime'}>
-                    <FormControl
-                        as="input"
-                        ref={timeInput}
-                        type="time"
-                        class={styles.timeInput}
-                        value={time()}
-                        onChange={e => {
-                            const v = e.currentTarget.value
-                            setTime(v)
-                            props.onTimeChange(v)
-                        }}
-                    />
-                </Show>
-            </div>
+            <MonthCalendar
+                value={date()}
+                mondayFirst={settings.calendar.weekStartsOnMonday}
+                onPick={v => {
+                    setDate(v)
+                    props.onDateChange(v, props.kind === 'date')
+                }}
+            />
+            <Show when={props.kind === 'datetime' || (props.onClear && date())}>
+                <div class={styles.foot}>
+                    <Show when={props.kind === 'datetime'}>
+                        <div ref={timeRef} class={styles.time}>
+                            <TimeField
+                                value={time()}
+                                military={settings.calendar.militaryTime}
+                                suggest={false}
+                                onChange={v => {
+                                    setTime(v)
+                                    props.onTimeChange(v)
+                                }}
+                            />
+                        </div>
+                    </Show>
+                    <Show when={props.onClear && date()}>
+                        <TextButton
+                            variant="unselected"
+                            class={styles.clear}
+                            onClick={() => props.onClear?.()}
+                        >
+                            clear
+                        </TextButton>
+                    </Show>
+                </div>
+            </Show>
             <div class={styles.list}>
                 <For each={props.options}>
                     {(opt, i) => (

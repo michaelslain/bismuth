@@ -1,7 +1,7 @@
 // app/src/bases/DateFieldEditor.tsx
 // A date property as ONE input-height control: a FormControl trigger (the same `.ui-input`
 // chrome TextInput/Select use) showing the value or a muted placeholder, which opens the app's
-// DatePicker (editor/DatePicker.tsx) anchored under the trigger by `<AnchoredPopover>`.
+// DatePicker (editor/DatePicker.tsx: a month grid, a typed time, `[clear]`) anchored under the trigger by `<AnchoredPopover>`.
 //
 // Why not ui/Popover: Popover is only the floating SURFACE (border + --lift), with no anchoring,
 // and DatePicker already paints that surface itself (`.bismuth-popover`) — wrapping it would
@@ -11,6 +11,7 @@ import AnchoredPopover from '../ui/AnchoredPopover'
 import DatePicker, { type DatePickerKind } from '../editor/DatePicker'
 import { parseDateValue, composeDateValue } from '../editor/datePickerCore'
 import FormControl from '../ui/FormControl'
+import { isConfirmKey } from '../ui/widgetKeys'
 import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import { dateFieldPresets } from './dateFieldPresets'
@@ -23,6 +24,8 @@ export type DateFieldEditorProps = {
     value: unknown
     onCommit: (value: unknown) => void
     placeholder?: string
+    /** The field must hold a date (an event's day): the picker offers no `[clear]`. */
+    required?: boolean
     className?: string
     /** Fired when the popover closes WITHOUT a pick (Escape or a click away), so a host that
      *  mounted this as a transient cell editor can end its edit. */
@@ -119,7 +122,14 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
                     open picker over a filled field showed a blank date. `<Show>` builds it on each
                     open, from the value openPicker() just read. */}
                 <Show when={open()}>
-                    <div style={{ 'min-width': `${triggerWidth()}px` }}>
+                    {/* A confirm key inside the picker (the time field's) closes it and refocuses the
+                        trigger mid-keydown; its default would then "click" that button and reopen. */}
+                    <div
+                        style={{ 'min-width': `${triggerWidth()}px` }}
+                        onKeyDown={e => {
+                            if (isConfirmKey(e)) e.preventDefault()
+                        }}
+                    >
                         <DatePicker
                             kind={kind()}
                             initialDate={lastDate}
@@ -133,6 +143,15 @@ const DateFieldEditor: Component<DateFieldEditorProps> = props => {
                                 lastTime = v
                                 commit(lastDate, v, true)
                             }}
+                            onClear={
+                                props.required
+                                    ? undefined
+                                    : () => {
+                                          lastDate = ''
+                                          lastTime = ''
+                                          commit('', '', true)
+                                      }
+                            }
                             onPick={i => {
                                 lastDate = options[i].date
                                 commit(lastDate, lastTime, true)

@@ -164,23 +164,6 @@
   min-width: 0;
   font-size: var(--fs-micro);
 }
-/* Native date picker, styled to sit with the path fields on the rail. */
-.exp-date {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: var(--ui-font-stack);
-  font-size: var(--fs-micro);
-  color: var(--fg);
-  background: var(--panel);
-  border: var(--rule);
-  border-radius: var(--r-0);
-  padding: var(--sp-2) var(--sp-4);
-}
-.exp-date::-webkit-calendar-picker-indicator {
-  filter: invert(0.7);
-  cursor: pointer;
-}
-
 /* Passed to <Swatch static> via its `class` prop, overriding the primitive's default 22px
    borderless box for this 10px bordered dot. Swatch.module.css wraps its own box rule in :where()
    so a single override class like this always wins regardless of stylesheet order. */

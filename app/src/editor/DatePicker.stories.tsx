@@ -4,7 +4,7 @@
 // so the `.bismuth-datepicker`-style background override still applies) — it does not exercise
 // the CodeMirror mount path itself, only the DOM this component draws inside it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import DatePicker from './DatePicker'
 
 const OPTIONS = [
@@ -14,6 +14,9 @@ const OPTIONS = [
 ]
 
 const noop = () => {}
+// What DateAndTime's picker reported, read by its play.
+const dates: [string, boolean][] = []
+const times: string[] = []
 
 const meta = {
     title: 'Editor/DatePicker',
@@ -24,7 +27,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A bare `date` property: no time input, just the date field over the relative-date list. */
+/** A bare `date` property: the month grid over the relative-date list, no time row. */
 export const DateOnly: Story = {
     render: () => (
         <div class="cm-editor">
@@ -43,31 +46,20 @@ export const DateOnly: Story = {
     ),
 }
 
-/** A `datetime` property: the date input gains a paired time input alongside it.
+/** A `datetime` property: the grid, then the typed time, then the presets.
  *
- *  The engine's own calendar/clock indicator stays, and it is the ONLY thing that opens the native
- *  overlay. The play is the guard on that: it replaces `HTMLInputElement.prototype.showPicker`
- *  with a spy, clicks a date segment and a time segment, and asserts the spy was NEVER called —
- *  so reintroducing a click-anywhere `showPicker()` fails here. A click on a segment is how the
- *  caret gets into that segment to be typed into; popping a native overlay on it changes what the
- *  control does, and `showPicker` is unverified in the shipped WKWebView where the `try/catch`
- *  around it swallows the failure, leaving no opener at all.
- *
- *  It also asserts the fields do NOT claim a pointer cursor — they are typed into, so the caret
- *  is the honest one, and `cursor: pointer` was the cue that advertised the click-to-open. The
- *  indicator's own `display` is deliberately not asserted: it is a UA shadow pseudo-element, and
- *  Chrome's `getComputedStyle(input, '::-webkit-calendar-picker-indicator')` reports the HOST's
- *  `display` rather than the author rule, so reading it grades nothing. The frame is the proof
- *  that the glyph is drawn. */
+ *  The play is the guard on "never the engine's controls": no native date or time input is
+ *  drawn, nothing calls `HTMLInputElement.prototype.showPicker`, a day pressed on the grid
+ *  reports the date WITHOUT closing (the time comes next), and a typed time reports on the
+ *  confirm key. */
 export const DateAndTime: Story = {
     play: async ({ canvasElement }) => {
-        const fields = [
-            ...canvasElement.querySelectorAll<HTMLInputElement>('input'),
-        ]
-        expect(fields.length).toBe(2)
-
-        const proto: { showPicker?: () => void } =
-            HTMLInputElement.prototype
+        dates.length = 0
+        times.length = 0
+        await expect(
+            canvasElement.querySelector('input[type="date"], input[type="time"]'),
+        ).toBeNull()
+        const proto: { showPicker?: () => void } = HTMLInputElement.prototype
         const had = Object.prototype.hasOwnProperty.call(proto, 'showPicker')
         const original = proto.showPicker
         let calls = 0
@@ -75,18 +67,19 @@ export const DateAndTime: Story = {
             calls += 1
         }
         try {
-            for (const f of fields) {
-                expect(getComputedStyle(f).cursor).not.toBe('pointer')
-                await userEvent.click(f)
-            }
+            const day = canvasElement.querySelector<HTMLElement>('[data-iso="2026-09-22"]')!
+            await userEvent.pointer({ keys: '[MouseLeft>]', target: day })
+            await waitFor(() => expect(dates).toEqual([['2026-09-22', false]]))
+            const time = canvasElement.querySelector<HTMLInputElement>('[data-time-field] input')!
+            await expect(time.value).toBe('2:30 pm')
+            await userEvent.clear(time)
+            await userEvent.type(time, '9:15a{Enter}')
+            await waitFor(() => expect(times).toEqual(['09:15']))
         } finally {
             if (had) proto.showPicker = original
             else delete proto.showPicker
         }
-        expect(
-            calls,
-            'clicking a date/time segment must not pop the native overlay — the OS indicator glyph is the only opener',
-        ).toBe(0)
+        expect(calls, 'nothing may open the engine overlay').toBe(0)
     },
     render: () => (
         <div class="cm-editor">
@@ -96,8 +89,28 @@ export const DateAndTime: Story = {
                     initialDate="2026-09-20"
                     initialTime="14:30"
                     options={OPTIONS}
+                    onDateChange={(v, close) => dates.push([v, close])}
+                    onTimeChange={v => times.push(v)}
+                    onPick={noop}
+                />
+            </div>
+        </div>
+    ),
+}
+
+/** A base field's picker (`onClear` given) with a day set: `[clear]` sits under the grid. */
+export const WithClear: Story = {
+    render: () => (
+        <div class="cm-editor">
+            <div class="cm-tooltip">
+                <DatePicker
+                    kind="date"
+                    initialDate="2026-09-20"
+                    initialTime=""
+                    options={OPTIONS}
                     onDateChange={noop}
                     onTimeChange={noop}
+                    onClear={noop}
                     onPick={noop}
                 />
             </div>

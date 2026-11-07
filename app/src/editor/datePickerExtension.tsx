@@ -3,17 +3,16 @@
 //
 // When the caret sits in the VALUE of a note-frontmatter property whose registered
 // type is `date` or `datetime` (the `properties:` section of settings.yaml, surfaced
-// to the editor as the propertyRegistry), a small popover opens: a native date input
-// (plus a time input for datetime) defaulting to today — the SAME native controls the
-// calendar EventModal uses — with the quick relative-date options (today, tomorrow, in
-// a week…) listed below it.
+// to the editor as the propertyRegistry), a small popover opens: the app's month calendar
+// (plus a typed time for datetime) — the SAME picker the calendar EventModal uses — with
+// the quick relative-date options (today, tomorrow, in a week…) listed below it.
 //
 // Why a custom `showTooltip` tooltip rather than a CodeMirror autocomplete source: the
-// autocomplete popup closes the moment the editor loses focus, so a focusable native
-// <input type="date"> inside it would be dismissed the instant you click it to open the
-// OS calendar. A `showTooltip` tooltip is STATE-driven (tied to the cursor/selection,
-// not focus), so the native input can take focus freely. The relative-date rows still
-// apply on `mousedown`+preventDefault, so clicking them never blurs the editor at all.
+// autocomplete popup closes the moment the editor loses focus, so the focusable time field
+// inside it would be dismissed the instant you click into it. A `showTooltip` tooltip is
+// STATE-driven (tied to the cursor/selection, not focus), so the time field can take focus
+// freely. The calendar's days and the relative-date rows apply on `mousedown`+preventDefault,
+// so clicking them never blurs the editor at all.
 //
 // Pure helpers (findDateTarget / parseDateValue / composeDateValue) live in
 // datePickerCore.ts so they're unit-testable without the CSS / CodeMirror imports here;
@@ -53,7 +52,7 @@ const dismissPicker = StateEffect.define<null>()
 interface PickerState {
     /** The live target is kept here so insertValue + the refresh hook read it without
      *  re-deriving from the whole document on every interaction. `tooltip` identity is
-     *  preserved across keystrokes (same key + valueFrom) so the native inputs don't remount. */
+     *  preserved across keystrokes (same key + valueFrom) so the picker does not remount. */
     open: { tooltip: Tooltip; target: DateTarget } | null
     /** Sig the user dismissed; suppresses reopening until the caret leaves that property. */
     dismissed: string | null
@@ -177,7 +176,7 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
             if (target.sig === value.dismissed)
                 return { open: null, dismissed: value.dismissed }
             // Caret is on a fresh (un-dismissed) date property. Reuse the tooltip (no remount → the
-            // native inputs keep focus/value) while it's the same property AT the same anchor; only
+            // time field keeps focus/value) while it's the same property AT the same anchor; only
             // rebuild when the value's start position shifts so the tooltip's `pos` stays accurate.
             if (
                 value.open &&

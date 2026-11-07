@@ -21,7 +21,7 @@ import Swatch from './ui/Swatch'
 import Text from './ui/Text'
 import { Loading } from './ui/EmptyState'
 import { IconTextButton } from './ui/IconTextButton'
-import { TextInput } from './ui/TextInput'
+import DateFieldEditor from './bases/DateFieldEditor'
 import PathField from './ui/PathField'
 import { pushToast } from './ui/ToastHost'
 import { isTauri } from './platform'
@@ -794,11 +794,11 @@ export function ExportView(props: {
                                 </SettingsField>
                                 <SettingsField label="starts">
                                     <div class={styles['path-row']}>
-                                        <TextInput
-                                            type="date"
-                                            class={`${styles['path-input']} ${styles['exp-date']}`}
+                                        <DateFieldEditor
+                                            className={styles['path-input']}
                                             value={calStart()}
-                                            onInput={setCalStart}
+                                            placeholder="today"
+                                            onCommit={v => setCalStart(v ? String(v) : '')}
                                         />
                                         <Show when={calStart()}>
                                             <IconTextButton

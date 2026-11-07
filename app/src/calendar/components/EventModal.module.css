@@ -17,6 +17,9 @@
 
 .dash { color: var(--faint); font-size: var(--fs-body); }
 
+/* start and end share the row evenly, either side of the arrow */
+.time { flex: 1 1 0; min-width: 0; }
+
 /* description — live-preview markdown editor (MarkdownField); neutral underline field, no fill,
    no accent ring (modal redesign: Acceptance 5, neutral focus). */
 .mdedit { cursor: text; background: transparent; border: none; border-bottom: var(--rule-soft); transition: border-color var(--dur) var(--ease); }

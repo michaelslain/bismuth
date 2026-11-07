@@ -166,16 +166,16 @@ export const TimeOnlyCommit: Story = {
         const body = within(canvasElement.ownerDocument.body)
         await userEvent.click(canvas.getByTestId('date-field-trigger'))
         const popover = await waitFor(() => body.getByTestId('date-field-popover'))
-        const time = popover.querySelector<HTMLInputElement>('input[type="time"]')!
-        await waitFor(() => expect(time.value).toBe('09:30'))
-        time.value = '10:15'
-        time.dispatchEvent(new Event('change', { bubbles: true }))
+        const time = popover.querySelector<HTMLInputElement>('[data-time-field] input')!
+        await waitFor(() => expect(time.value).toBe('9:30 am'))
+        await userEvent.clear(time)
+        await userEvent.type(time, '10:15{Enter}')
         await waitFor(() => expect(canvas.getByTestId('raw')).toHaveTextContent('"2026-09-14T10:15"'))
         await waitFor(() => expect(body.queryByTestId('date-field-popover')).toBeNull())
     },
 }
 
-/** Emptying the date input clears the field: the value commits null and the placeholder returns. */
+/** `[clear]` under the grid clears the field: the value commits null and the placeholder returns. */
 export const ClearCommitsNull: Story = {
     render: () => <Harness initial="2026-09-14" />,
     play: async ({ canvasElement }) => {
@@ -184,11 +184,39 @@ export const ClearCommitsNull: Story = {
         const trigger = canvas.getByTestId('date-field-trigger')
         await userEvent.click(trigger)
         const popover = await waitFor(() => body.getByTestId('date-field-popover'))
-        const date = popover.querySelector<HTMLInputElement>('input[type="date"]')!
-        await waitFor(() => expect(date.value).toBe('2026-09-14'))
-        date.value = ''
-        date.dispatchEvent(new Event('change', { bubbles: true }))
+        await waitFor(() =>
+            expect(popover.querySelector('[aria-selected="true"]')?.getAttribute('data-iso')).toBe(
+                '2026-09-14',
+            ),
+        )
+        await userEvent.click(within(popover).getByText('clear'))
         await waitFor(() => expect(canvas.getByTestId('raw')).toHaveTextContent('null'))
         await expect(trigger).toHaveTextContent('Set date…')
+    },
+}
+
+/** A picked day on the grid commits and closes; a required field (an event's day) offers no clear. */
+export const GridPickRequired: Story = {
+    render: () => {
+        const [value, setValue] = createSignal<unknown>('2026-09-14')
+        return (
+            <div style={{ width: '360px' }}>
+                <DateFieldEditor required value={value()} onCommit={setValue} />
+                <span hidden data-testid="raw">
+                    {JSON.stringify(value())}
+                </span>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(canvasElement.ownerDocument.body)
+        await userEvent.click(canvas.getByTestId('date-field-trigger'))
+        const popover = await waitFor(() => body.getByTestId('date-field-popover'))
+        await expect(within(popover).queryByText('clear')).toBeNull()
+        const day = popover.querySelector<HTMLElement>('[data-iso="2026-09-25"]')!
+        await userEvent.pointer({ keys: '[MouseLeft>]', target: day })
+        await waitFor(() => expect(canvas.getByTestId('raw')).toHaveTextContent('"2026-09-25"'))
+        await waitFor(() => expect(body.queryByTestId('date-field-popover')).toBeNull())
     },
 }

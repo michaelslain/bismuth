@@ -1,0 +1,103 @@
+/* app/src/ui/MonthCalendar.module.css — MonthCalendar.tsx is the sole importer.
+   Inherits its host's font (the popover's chrome mono). Every day is the same 4ch box, so the
+   grid never reflows as brackets come and go: the brackets hang off the number, absolutely
+   placed, and paint only on the picked day (accent) and on hover / keyboard focus (--faint). */
+
+.root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+}
+
+/* `‹ august 2026 ›` — the month label centred between its two steppers */
+.head {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+}
+
+.month {
+    text-align: center;
+    color: var(--fg);
+}
+
+.weekdays,
+.grid {
+    display: grid;
+    grid-template-columns: repeat(7, 4ch);
+    justify-content: space-between;
+}
+
+.weekday {
+    text-align: center;
+    color: var(--faint);
+}
+
+.grid {
+    row-gap: var(--sp-1);
+}
+
+.day {
+    display: flex;
+    justify-content: center;
+    padding: var(--sp-1) 0;
+    color: var(--fg);
+    cursor: pointer;
+    outline: none;
+}
+
+.num {
+    position: relative;
+}
+
+.day .num::before,
+.day .num::after {
+    position: absolute;
+    color: transparent;
+}
+.day .num::before {
+    content: '[' / '';
+    right: 100%;
+}
+.day .num::after {
+    content: ']' / '';
+    left: 100%;
+}
+
+.outside {
+    color: var(--faint);
+}
+.outside:hover,
+.outside:focus-visible {
+    color: var(--text-muted);
+}
+
+/* today: the accent ink, no brackets — "where you are", not "what is picked" */
+.today {
+    color: var(--accent);
+}
+
+.day:hover .num::before,
+.day:hover .num::after,
+.day:focus-visible .num::before,
+.day:focus-visible .num::after {
+    color: var(--faint);
+}
+
+/* picked: `[20]` in the accent, bold — a selected ChipToggle's recipe */
+.selected,
+.selected:hover,
+.selected:focus-visible {
+    color: var(--accent);
+    font-weight: var(--fw-bold);
+}
+.selected .num::before,
+.selected .num::after,
+.selected:hover .num::before,
+.selected:hover .num::after,
+.selected:focus-visible .num::before,
+.selected:focus-visible .num::after {
+    color: var(--accent);
+}

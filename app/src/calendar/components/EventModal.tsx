@@ -1,6 +1,11 @@
 import { createSignal, Show } from 'solid-js'
 import { createStore, unwrap } from 'solid-js/store'
-import { showEventModal, recurrenceAction, useCalendarNav } from '../state'
+import {
+    showEventModal,
+    recurrenceAction,
+    useCalendarNav,
+    settings,
+} from '../state'
 import { EventStore, uuid } from '../EventStore'
 import { prettyDate } from '../dates'
 import { todayISO } from '../../../../core/src/dates'
@@ -17,6 +22,7 @@ import FormModal from '../../ui/FormModal'
 import ModalBody from '../../ui/ModalBody'
 import ToggleRow from '../../ui/ToggleRow'
 import { TextInput } from '../../ui/TextInput'
+import TimeField from '../../ui/TimeField'
 import { TextButton } from '../../ui/TextButton'
 import Text from '../../ui/Text'
 import MarkdownField from '../../ui/MarkdownField'
@@ -156,6 +162,7 @@ export function EventModal(props: { store: EventStore }) {
                         <SettingsField label="date">
                             <div class={styles.row}>
                                 <DateFieldEditor
+                                    required
                                     value={form.date}
                                     onCommit={v => {
                                         if (v) setForm('date', String(v))
@@ -171,18 +178,18 @@ export function EventModal(props: { store: EventStore }) {
                             </div>
                         </SettingsField>
 
-                        {/* start → end, only when not all-day. No time-only primitive exists
-                            (DateFieldEditor stores a date or a datetime), so these stay native. */}
+                        {/* start → end, only when not all-day: typed times with half-hour slots */}
                         <Show when={!form.allDay}>
                             <SettingsField label="time">
                                 <div
                                     class={styles.row}
                                     data-testid="event-modal-times"
                                 >
-                                    <TextInput
-                                        type="time"
+                                    <TimeField
+                                        class={styles.time}
                                         value={form.startTime}
-                                        onInput={v => setForm('startTime', v)}
+                                        military={settings.value.militaryTime}
+                                        onChange={v => setForm('startTime', v)}
                                     />
                                     <Text
                                         as="span"
@@ -191,10 +198,11 @@ export function EventModal(props: { store: EventStore }) {
                                     >
                                         →
                                     </Text>
-                                    <TextInput
-                                        type="time"
+                                    <TimeField
+                                        class={styles.time}
                                         value={form.endTime}
-                                        onInput={v => setForm('endTime', v)}
+                                        military={settings.value.militaryTime}
+                                        onChange={v => setForm('endTime', v)}
                                     />
                                 </div>
                             </SettingsField>

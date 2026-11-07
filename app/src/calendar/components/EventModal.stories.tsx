@@ -84,6 +84,37 @@ export const EditingTimedEvent: Story = {
     },
 }
 
+/** The date field open: the app's month grid under the trigger, the event's day `[20]` picked,
+ *  no `[clear]` (an event always has a day). Picking the 27th moves the event and closes. */
+export const DatePickerOpen: Story = {
+    render: EditingTimedEvent.render,
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+        await userEvent.click(await waitFor(() => body.getByTestId('date-field-trigger')))
+        const popover = await waitFor(() => body.getByTestId('date-field-popover'))
+        await expect(popover.querySelector('input[type="date"]')).toBeNull()
+        await expect(
+            popover.querySelector('[aria-selected="true"]')?.getAttribute('data-iso'),
+        ).toBe('2026-08-20')
+        await expect(within(popover).queryByText('clear')).toBeNull()
+    },
+}
+
+/** A time field focused: typed text with the half-hour slots listed from the set time on —
+ *  no engine clock control anywhere in the modal. */
+export const TimeSlotsOpen: Story = {
+    render: EditingTimedEvent.render,
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement.ownerDocument.body)
+        const times = await waitFor(() => body.getByTestId('event-modal-times'))
+        await expect(times.querySelector('input[type="time"]')).toBeNull()
+        const start = times.querySelector<HTMLInputElement>('input')!
+        await expect(start.value).toBe('2:00 pm')
+        await userEvent.click(start)
+        await waitFor(() => expect(body.getByText('2:30 pm')).toBeTruthy())
+    },
+}
+
 /** Editing a recurring weekly event — shows the day-of-week picker and the optional "Ends"
  *  date field, both hidden for a non-recurring event. */
 export const RecurringWeekly: Story = {

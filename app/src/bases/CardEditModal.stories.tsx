@@ -116,7 +116,7 @@ export const Default: Story = {
         // No `onOpenNote` passed — the footer must show no "open note" button.
         expect(openNoteButton()).toBeNull()
         // The `due` property (a declared `date` kind) renders DateFieldEditor — one trigger that opens the app's DatePicker
-        // (editor/DatePicker.tsx, its header date input under the hood) seeded from the row's
+        // (editor/DatePicker.tsx, the app's month grid) seeded from the row's
         // value ("2026-08-05") — proves the "every declared property, populated" half of this
         // modal's whole reason to exist, and that DUE no longer falls back to the bare native
         // date input PropertyValueEditor renders for every other declared date property.

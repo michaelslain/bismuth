@@ -18,6 +18,8 @@ export type SuggestInputProps = {
     onInput: (value: string) => void
     placeholder?: string
     class?: string
+    /** Which options show for the typed text. Default: the label (or value) starts with it. */
+    filter?: (option: SuggestOption, query: string) => boolean
 }
 
 /**
@@ -41,6 +43,7 @@ const SuggestInput: Component<SuggestInputProps> = props => {
 
     const text = (o: SuggestOption) => o.label ?? o.value
     const filtered = createMemo(() => {
+        if (props.filter) return props.options.filter(o => props.filter!(o, props.value))
         const q = props.value.trim().toLowerCase()
         return props.options.filter(o => text(o).toLowerCase().startsWith(q))
     })
