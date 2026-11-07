@@ -191,7 +191,7 @@ Change detection is timestamp-free where possible: a remote change is `updated` 
 
 Inserts use `googleEventId(bismuthId)`, a base32hex ID derived from the row ID, so a repeated insert hits Google's `409 duplicate` and re-links instead of duplicating. Every event also carries a private `bismuthId` extended property, so a lost manifest self-heals by re-attaching events in phase A.
 
-A push error on one event is caught per event, counted in `failed`, and the batch continues. `buildRRule` and `parseRRule` in `recurrence.ts` translate recurrence; an `UNTIL` for a timed series is 23:59:59 local on the end date, expressed in UTC. `colors.ts` snaps a category colour (a palette token resolved against the active theme, or a hex) to the nearest of Google's 11 event colours by squared RGB distance.
+A push error on one event is caught per event, counted in `failed`, and the batch continues. `buildRRule` and `parseRRule` in `recurrence.ts` translate recurrence; an `UNTIL` for a timed series is 23:59:59 local on the end date, expressed in UTC. Reading one back converts that instant to a date in the event's `start.timeZone` (or the offset of its `start.dateTime`), so a series cut short in the app keeps its end date through a round trip. `colors.ts` snaps a category colour (a palette token resolved against the active theme, or a hex) to the nearest of Google's 11 event colours by squared RGB distance.
 
 ### Serialization and the ticker
 

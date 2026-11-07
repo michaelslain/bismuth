@@ -85,7 +85,17 @@ after    daily  2026-05-01 to 2026-05-02
          daily  2026-05-04 to open-ended        (same seriesId)
 ```
 
-Editing one day does the same cut and adds a standalone single event for that day carrying your changes. If the day is the first of the series, the head segment is dropped instead of left empty. Editing "this and following" ends the old segment the day before and starts a new segment that gets a fresh `seriesId`, so you can change the rule of the tail: a daily series can become weekly-on-Mondays from a chosen date. Deleting "this and following" just sets `endDate` to the day before.
+Editing one day does the same cut and adds a standalone single event for that day carrying your changes. If the day is the first of the series, the head segment is dropped instead of left empty. Editing "this and following" ends the old segment the day before and starts a new segment that gets a fresh `seriesId`, so you can change the rule of the tail: a daily series can become weekly-on-Mondays from a chosen date. Moving an occurrence to another day, by dragging its chip sideways or changing its date in the event form, moves it in the scope you pick:
+
+| Choice | Effect of moving Wednesday's occurrence to Tuesday |
+|---|---|
+| this event | a single event on Tuesday; Wednesday of that week is empty, and the rest of the series stays on Wednesdays |
+| this and following events | from that week on, the series falls on Tuesdays; earlier weeks keep Wednesday |
+| all events | the whole series falls on Tuesdays and stays one repeating event |
+
+A move shifts the new segment's `startDate`, `endDate` and weekdays by the same number of days. When "this and following" moves a series earlier, the old segment ends the day before the new one starts, so no day shows both.
+
+Deleting "this and following" just sets `endDate` to the day before.
 
 ## How do categories work?
 
@@ -190,7 +200,7 @@ A `.base.jsonl` calendar is read and written through `parseBaseJsonl` and `seria
 
 `core/src/bases/recurrence.ts` is the one recurrence implementation; the app, the CLI and the HTML export all import it. `expandRecurrence(recurrence, rangeStart, rangeEnd)` walks day by day from the later of `startDate` and `rangeStart` to the earlier of `endDate` (or 2100-01-01) and `rangeEnd`, asking `matchesRecurrence` of each day, so its cost follows the range, not the age of the series. The biweekly test is `floor(daysSinceStart / 7)` being even, and any day before `startDate` never matches. Date arithmetic uses local midnight, never UTC.
 
-The app's scope dialog (`RecurrenceDialog`) calls `EventStore`'s `editOccurrence`, `editFollowing`, `editSeries`, `deleteOccurrence`, `deleteFollowing` or `deleteSeries`. The dialog opens when a chip or the event form edits or deletes a repeating event.
+The app's scope dialog (`RecurrenceDialog`) calls `EventStore`'s `editOccurrence`, `editFollowing`, `editSeries`, `deleteOccurrence`, `deleteFollowing` or `deleteSeries`. A move to another day is `updates.date` differing from the occurrence's day: `editOccurrence` puts the single event on that day, and `editFollowing` and `editSeries` (given the occurrence's day) move the rule with `shiftRecurrence` and `daysBetween` from `core/src/bases/recurrence.ts`. The dialog opens when a chip or the event form edits or deletes a repeating event.
 
 ### Category colours
 

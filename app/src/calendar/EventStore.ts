@@ -1,7 +1,12 @@
 import { CalendarEvent, Category, EventsFile } from './types'
 import { addDays } from './dates'
 import { todayISO } from '../../../core/src/dates'
-import { expandRecurrence } from '../../../core/src/bases/recurrence'
+import {
+    expandRecurrence,
+    daysBetween,
+    shiftRecurrence,
+} from '../../../core/src/bases/recurrence'
+import { addDaysISO } from '../../../core/src/dates'
 
 export const uuid = () => crypto.randomUUID()
 
@@ -107,17 +112,46 @@ export class EventStore {
         const { id, recurrence, ...rest } = master
         const { recurrence: _excluded, ...singleUpdates } =
             updates as CalendarEvent
-        await this.addEvent({ ...rest, ...singleUpdates, date: occurrenceDate })
+        // A drag or a date edit names the day the occurrence moves to; without one it stays put.
+        await this.addEvent({
+            ...rest,
+            ...singleUpdates,
+            date: updates.date ?? occurrenceDate,
+        })
     }
 
+    /**
+     * Apply `updates` to every segment of a series. When `occurrenceDate` is given and
+     * `updates.date` moves that occurrence to another day, the whole series moves by the same
+     * number of days (start, end and weekdays); `date` itself is never copied onto the masters,
+     * since a recurring event's days come from its rule.
+     */
     async editSeries(
         seriesId: string,
         updates: Partial<CalendarEvent>,
+        occurrenceDate?: string,
     ): Promise<void> {
         const masters = this.data.events.filter(
             e => e.recurrence?.seriesId === seriesId,
         )
-        for (const m of masters) await this.updateEvent(m.id, updates)
+        if (!occurrenceDate) {
+            for (const m of masters) await this.updateEvent(m.id, updates)
+            return
+        }
+        const { date, ...rest } = updates
+        const days = date ? daysBetween(occurrenceDate, date) : 0
+        for (const m of masters) {
+            const rule = rest.recurrence ?? m.recurrence!
+            await this.updateEvent(m.id, {
+                ...rest,
+                ...(days
+                    ? {
+                          date: addDaysISO(m.date, days),
+                          recurrence: shiftRecurrence(rule, days),
+                      }
+                    : {}),
+            })
+        }
     }
 
     private async truncateSeriesBefore(
@@ -177,18 +211,35 @@ export class EventStore {
         const master = this.data.events.find(e => e.id === masterId)
         if (!master?.recurrence) return
         const originalEndDate = master.recurrence.endDate
-        await this.truncateSeriesBefore(master, occurrenceDate)
-        const { id, ...masterRest } = master
-        await this.addEvent({
-            ...masterRest,
-            ...updates,
-            recurrence: {
+        // The new segment moves by as many days as the occurrence did, so a drag from Wednesday
+        // to Tuesday makes the rest of the series fall on Tuesdays.
+        const days = updates.date
+            ? daysBetween(occurrenceDate, updates.date)
+            : 0
+        const recurrence = shiftRecurrence(
+            {
                 ...master.recurrence,
                 ...(updates.recurrence ?? {}),
                 startDate: occurrenceDate,
                 endDate: originalEndDate,
                 seriesId: uuid(),
             },
+            days,
+        )
+        // The old segment ends before whichever comes first, the dragged occurrence or the new
+        // segment's first day: a series moved earlier must not overlap its own old tail.
+        const cut =
+            recurrence.startDate < occurrenceDate
+                ? recurrence.startDate
+                : occurrenceDate
+        if (cut <= master.recurrence.startDate) await this.deleteEvent(master.id)
+        else await this.truncateSeriesBefore(master, cut)
+        const { id, ...masterRest } = master
+        await this.addEvent({
+            ...masterRest,
+            ...updates,
+            date: recurrence.startDate,
+            recurrence,
         })
     }
 

@@ -92,3 +92,32 @@ export function splitRecurrence(
               }
     return [before, after]
 }
+
+/** Whole days from `from` to `to` (both YYYY-MM-DD); negative when `to` is earlier. */
+export function daysBetween(from: string, to: string): number {
+    return Math.round(
+        (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+            86_400_000,
+    )
+}
+
+/**
+ * Move a whole recurrence by `days`: its start and end dates, and for a weekly rule its weekday
+ * set, so every occurrence lands `days` later (earlier when negative). A monthly rule follows its
+ * start date's day of the month, and a daily one has nothing else to move.
+ */
+export function shiftRecurrence(rec: Recurrence, days: number): Recurrence {
+    if (!days) return rec
+    return {
+        ...rec,
+        startDate: addDaysISO(rec.startDate, days),
+        ...(rec.endDate ? { endDate: addDaysISO(rec.endDate, days) } : {}),
+        ...(rec.daysOfWeek
+            ? {
+                  daysOfWeek: rec.daysOfWeek
+                      .map(d => (((d + days) % 7) + 7) % 7)
+                      .sort((a, b) => a - b),
+              }
+            : {}),
+    }
+}

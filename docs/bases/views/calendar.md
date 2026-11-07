@@ -76,7 +76,7 @@ The interactive grid reads events from the standard column names `id`, `title`, 
 | Click an empty spot on a week, 3-day or day column | Opens the dialog with a start time |
 | Drag down an empty spot on a time column | Opens the dialog with a start and end time, snapped to 30 minutes |
 | Drag an event chip up or down on a time column | Retimes the event; the drop snaps to 30 minutes |
-| Drag an event chip sideways on a time column | Moves the event to another day |
+| Drag an event chip sideways on a time column | Moves the event to another day; a repeating event asks which occurrences move |
 | Click an event chip | Opens the dialog in edit mode |
 | Right-click an event chip | Menu with Edit and Delete |
 

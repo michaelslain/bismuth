@@ -79,7 +79,13 @@ export function fromGoogle(ev: GEvent): MappedEvent | null {
     let recurrence: BismuthRecurrence | undefined
     if (ev.recurrence && ev.recurrence.length > 0) {
         // seriesId derives from the master's id → stable across syncs, no randomness needed.
-        const parsed = parseRRule(ev.recurrence, date, ev.id)
+        const parsed = parseRRule(
+            ev.recurrence,
+            date,
+            ev.id,
+            s.timeZone,
+            s.dateTime,
+        )
         if (!parsed) return null // unsupported RRULE → skip the whole event
         recurrence = parsed
     }

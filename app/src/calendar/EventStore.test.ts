@@ -217,3 +217,95 @@ test('deleteOccurrence on the FIRST occurrence drops just that day', async () =>
             .sort(),
     ).toEqual(['2026-05-02', '2026-05-03', '2026-05-04'])
 })
+
+// A weekly Wednesday series (2026-11-04, 11, 18, 25), with the 11th dragged back to Tuesday the
+// 10th — the calendar's drag sends the new day as `date` beside the new times.
+async function wednesdays() {
+    const s = await freshStore()
+    const m = await s.addEvent({
+        title: 'Gym',
+        date: '2026-11-04',
+        startTime: '10:00',
+        endTime: '11:00',
+        recurrence: {
+            type: 'weekly',
+            daysOfWeek: [3],
+            startDate: '2026-11-04',
+            seriesId: 'gym',
+        },
+    })
+    return { s, id: m.id }
+}
+const DRAG = { startTime: '10:00', endTime: '11:00', date: '2026-11-10' }
+const novDays = (s: EventStore) =>
+    s
+        .getEventsForRange('2026-11-01', '2026-11-30')
+        .map(e => `${e.date}${e.recurrence ? '' : ' single'}`)
+        .sort()
+
+test('moving ONE occurrence to another day lands it there and empties its old day', async () => {
+    const { s, id } = await wednesdays()
+    await s.editOccurrence(id, '2026-11-11', DRAG)
+    expect(novDays(s)).toEqual([
+        '2026-11-04',
+        '2026-11-10 single',
+        '2026-11-18',
+        '2026-11-25',
+    ])
+})
+
+test('moving an occurrence and the following ones shifts the rest of the series without a duplicate', async () => {
+    const { s, id } = await wednesdays()
+    await s.editFollowing(id, '2026-11-11', DRAG)
+    expect(novDays(s)).toEqual([
+        '2026-11-04',
+        '2026-11-10',
+        '2026-11-17',
+        '2026-11-24',
+    ])
+})
+
+test('moving a daily series earlier from one occurrence on does not double the day before', async () => {
+    const s = await freshStore()
+    const m = await s.addEvent({
+        title: 'Night',
+        date: '2026-11-01',
+        recurrence: { type: 'daily', startDate: '2026-11-01', seriesId: 'n' },
+    })
+    await s.editFollowing(m.id, '2026-11-06', { date: '2026-11-05' })
+    const days = s.getEventsForRange('2026-11-01', '2026-11-08').map(e => e.date)
+    expect(days.sort()).toEqual([
+        '2026-11-01',
+        '2026-11-02',
+        '2026-11-03',
+        '2026-11-04',
+        '2026-11-05',
+        '2026-11-06',
+        '2026-11-07',
+        '2026-11-08',
+    ])
+})
+
+test('moving every occurrence shifts the whole series and keeps it one recurring event', async () => {
+    const { s } = await wednesdays()
+    await s.editSeries('gym', DRAG, '2026-11-11')
+    expect(novDays(s)).toEqual([
+        '2026-11-03',
+        '2026-11-10',
+        '2026-11-17',
+        '2026-11-24',
+    ])
+    expect((s as any).data.events.length).toBe(1)
+})
+
+test('moving the FIRST occurrence and the following ones replaces the series instead of leaving an empty one', async () => {
+    const { s, id } = await wednesdays()
+    await s.editFollowing(id, '2026-11-04', { date: '2026-11-03' })
+    expect(novDays(s)).toEqual([
+        '2026-11-03',
+        '2026-11-10',
+        '2026-11-17',
+        '2026-11-24',
+    ])
+    expect((s as any).data.events.length).toBe(1)
+})

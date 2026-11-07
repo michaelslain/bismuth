@@ -55,6 +55,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                         await props.store.editSeries(
                             master.recurrence.seriesId,
                             updates,
+                            occurrenceDate,
                         )
                 } else {
                     await props.store.editFollowing(

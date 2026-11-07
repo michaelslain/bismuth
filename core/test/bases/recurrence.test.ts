@@ -5,6 +5,8 @@ import {
     expandRecurrence,
     splitRecurrence,
     matchesRecurrence,
+    shiftRecurrence,
+    daysBetween,
 } from '../../src/bases/recurrence'
 
 test('todayISO / addDays', () => {
@@ -129,4 +131,27 @@ test('splitRecurrence returns null tail when split is past the endDate', () => {
     }
     const [, after] = splitRecurrence(rec, '2026-06-20')
     expect(after).toBeNull()
+})
+
+test('shiftRecurrence moves start, end and weekdays together, wrapping the week', () => {
+    expect(
+        shiftRecurrence(
+            {
+                type: 'weekly',
+                daysOfWeek: [0, 3],
+                startDate: '2026-11-01',
+                endDate: '2026-11-30',
+                seriesId: 's',
+            },
+            -1,
+        ),
+    ).toEqual({
+        type: 'weekly',
+        daysOfWeek: [2, 6],
+        startDate: '2026-10-31',
+        endDate: '2026-11-29',
+        seriesId: 's',
+    })
+    expect(daysBetween('2026-11-11', '2026-11-10')).toBe(-1)
+    expect(daysBetween('2026-10-31', '2026-11-02')).toBe(2)
 })

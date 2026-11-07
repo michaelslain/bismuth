@@ -238,3 +238,22 @@ test('recurrenceSignature ignores seriesId and BYDAY order, but reflects content
     expect(c).not.toBe(a)
     expect(recurrenceSignature(undefined)).toBe('')
 })
+
+test('a timed series cut short round-trips its end date west of UTC (no extra day back)', () => {
+    const rec: BismuthRecurrence = {
+        type: 'daily',
+        startDate: '2026-11-01',
+        endDate: '2026-11-05',
+        seriesId: SID,
+    }
+    const rule = buildRRule(rec, false, 'America/Los_Angeles')
+    expect(rule).toEqual(['RRULE:FREQ=DAILY;UNTIL=20261106T075959Z'])
+    expect(parseRRule(rule, rec.startDate, SID, 'America/Los_Angeles')?.endDate).toBe('2026-11-05')
+    // No timeZone on the event: the start dateTime's offset places it instead.
+    expect(
+        parseRRule(rule, rec.startDate, SID, undefined, '2026-11-01T20:00:00-08:00')?.endDate,
+    ).toBe('2026-11-05')
+    // East of UTC the instant falls on the same day.
+    const east = buildRRule(rec, false, 'Asia/Tokyo')
+    expect(parseRRule(east, rec.startDate, SID, 'Asia/Tokyo')?.endDate).toBe('2026-11-05')
+})

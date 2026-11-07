@@ -61,3 +61,32 @@ export const FromABaseFile: Story = {
         expect(c.getByText('Offsite')).toBeInTheDocument()
     },
 }
+
+const RECURRING_PATH = 'Routine.md'
+const RECURRING_BODY = [
+    '---',
+    'type: base',
+    'view: calendar',
+    '---',
+    '',
+    '| id | title | date | startTime | endTime | location | link | description | category | recurrence |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    `| r1 | Morning routine | ${todayISO()} | 08:00 | 09:00 |  |  |  |  | {"type":"daily","startDate":"2026-01-01","seriesId":"s1"} |`,
+].join('\n')
+
+/** A daily recurring event in the week grid: each day shows one occurrence. Dragging one
+ *  occurrence to another day or time asks which occurrences the move applies to. */
+export const RecurringEvent: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { [RECURRING_PATH]: RECURRING_BODY } }))
+        return (
+            <CalendarFrame>
+                <EventsCalendar basePath={RECURRING_PATH} />
+            </CalendarFrame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await waitFor(() => expect(c.getAllByText('Morning routine').length).toBeGreaterThan(1))
+    },
+}

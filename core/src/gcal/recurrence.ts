@@ -88,11 +88,35 @@ export function buildRRule(
     return [`RRULE:${parts.join(';')}`]
 }
 
-/** Parse a Google `recurrence` array into a Bismuth recurrence (null if unsupported). */
+/**
+ * The inclusive end date an RRULE `UNTIL` names. A date-only `UNTIL` (an all-day series) is that
+ * date. A timed one is a UTC instant — `timedUntil` writes 23:59:59 local, which west of UTC is
+ * already the NEXT day in UTC — so it is read back as the calendar date in the series' zone:
+ * `timeZone` when Google gave one, else the UTC offset carried by the start's `dateTime`.
+ */
+function untilDate(until: string, timeZone?: string, startDateTime?: string): string | null {
+    const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/.exec(until)
+    if (!m) return null
+    const [, y, mo, d, h, mi, se] = m
+    if (h === undefined) return `${y}-${mo}-${d}`
+    const at = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +se))
+    let offsetMs = 0
+    if (timeZone) offsetMs = tzOffsetMs(timeZone, at)
+    else {
+        const off = /([+-])(\d{2}):(\d{2})$/.exec(startDateTime ?? '')
+        if (off) offsetMs = (off[1] === '-' ? -1 : 1) * (+off[2] * 60 + +off[3]) * 60_000
+    }
+    return new Date(at.getTime() + offsetMs).toISOString().slice(0, 10)
+}
+
+/** Parse a Google `recurrence` array into a Bismuth recurrence (null if unsupported).
+ *  `timeZone` / `startDateTime` place a timed series' `UNTIL` on its local date (see untilDate). */
 export function parseRRule(
     recurrence: string[] | undefined,
     startDate: string,
     seriesId: string,
+    timeZone?: string,
+    startDateTime?: string,
 ): BismuthRecurrence | null {
     if (!recurrence) return null
     if (recurrence.some(r => r.startsWith('RDATE') || r.startsWith('EXDATE')))
@@ -134,9 +158,8 @@ export function parseRRule(
     }
     const until = fields.get('UNTIL')
     if (until) {
-        const ymd = until.slice(0, 8) // YYYYMMDD (drop any THHMMSSZ suffix)
-        if (/^\d{8}$/.test(ymd))
-            rec.endDate = `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
+        const end = untilDate(until, timeZone, startDateTime)
+        if (end) rec.endDate = end
     }
     return rec
 }
