@@ -9,6 +9,7 @@
 import type { Row } from '../../../core/src/bases/types'
 import { canWriteStoredRow } from '../bases/taskWrite'
 import type { TaskRowRef } from './taskDrag'
+import { taskCategoryName } from './taskCategory'
 
 export interface PlacedTask {
     row: Row
@@ -128,7 +129,9 @@ function utcDayNumber(iso: string): number {
  *  strictly before `today` is re-keyed onto `today` carrying its `late` count; a
  *  resolved row, or one placed on or after today, stays on its own `placed` day with
  *  `late: 0`. A row with no placed date (per `placedDate`) is dropped entirely.
- *  Each bucket is ordered most-late first; ties keep file order.
+ *  Each bucket lists open tasks before resolved (done or cancelled) ones; within each, the
+ *  most-late first, then grouped by source (`taskCategoryName` with `categoryField`, groups in
+ *  first-seen order across `rows`); ties keep file order.
  *
  *  With `prev` (the last call's result), a row whose `Row` object is IDENTICAL to one
  *  in `prev` and whose recomputed `placed`/`late`/`field` are all unchanged reuses that
@@ -144,6 +147,7 @@ export function placeRows(
     today: string,
     dateField?: string,
     prev?: Map<string, PlacedTask[]>,
+    categoryField?: string,
 ): Map<string, PlacedTask[]> {
     const prevByRow = new Map<Row, PlacedTask>()
     if (prev) for (const bucket of prev.values()) for (const task of bucket) prevByRow.set(task.row, task)
@@ -167,8 +171,19 @@ export function placeRows(
         if (bucket) bucket.push(entry)
         else buckets.set(day, [entry])
     }
-    // Most overdue first. A carried pile read in file order buried a 23-day-late task ninth in
-    // today's cell. Array.prototype.sort is stable, so the day's own tasks (late 0) keep file order.
-    for (const bucket of buckets.values()) bucket.sort((a, b) => b.late - a.late)
+    // Open before resolved: with several source notes the rows arrive note by note, so file
+    // order alone put one note's done tasks above the next note's open ones. Then most overdue
+    // first (a carried pile read in file order buried a 23-day-late task ninth in today's cell),
+    // then one block per source, so a day reads source by source. Array.prototype.sort is
+    // stable, so ties keep file order.
+    const sourceRank = new Map<string | undefined, number>()
+    for (const row of rows) {
+        const name = taskCategoryName(row, categoryField)
+        if (!sourceRank.has(name)) sourceRank.set(name, sourceRank.size)
+    }
+    const rank = (task: PlacedTask) => sourceRank.get(taskCategoryName(task.row, categoryField)) ?? 0
+    const done = (task: PlacedTask) => (task.row.note.resolved ? 1 : 0)
+    for (const bucket of buckets.values())
+        bucket.sort((a, b) => done(a) - done(b) || b.late - a.late || rank(a) - rank(b))
     return buckets
 }

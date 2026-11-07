@@ -111,7 +111,9 @@ A task sits on its `scheduled` date, or on its `due` date when it has no `schedu
 
 ### Overdue tasks roll onto today
 
-An unfinished task placed before today draws in today's cell, with a red-washed box and an `Nd late` label. The file keeps the original date: only the drawing moves. Dragging the chip to another day is the one gesture that rewrites the date. A done or cancelled task stays on its own day. Within a day, the most overdue task comes first, then file order.
+An unfinished task placed before today draws in today's cell, with a red-washed box and an `Nd late` label. The file keeps the original date: only the drawing moves. Dragging the chip to another day is the one gesture that rewrites the date. A done or cancelled task stays on its own day.
+
+Within a day, open tasks come first and done or cancelled tasks after them. Inside each of those two parts the most overdue task leads, then the tasks group by source (the same source that sets a chip's colour), then file order.
 
 ### Category colours
 

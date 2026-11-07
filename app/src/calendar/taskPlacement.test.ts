@@ -195,15 +195,59 @@ test('each day lists its most-overdue carried task first, then its own tasks in 
     expect(bucket.map(t => t.late)).toEqual([23, 5, 1, 0, 0])
 })
 
-// Guard, not a red test: pins that the sort is by lateness ONLY and stable, so a later "tidy"
-// that sorts by status or description would fail here.
-test('a day with nothing carried keeps file order, resolved or not', () => {
+test('a day lists open tasks before resolved ones', () => {
     const rows = [
         row({ scheduled: '2026-09-20', resolved: true, description: 'b done' }),
         row({ scheduled: '2026-09-20', resolved: false, description: 'a todo' }),
     ]
     const bucket = placeRows(rows, '2026-09-13').get('2026-09-20')!
-    expect(bucket.map(t => t.row.note.description)).toEqual(['b done', 'a todo'])
+    expect(bucket.map(t => t.row.note.description)).toEqual(['a todo', 'b done'])
+})
+
+const lineRow = (file: string, note: Record<string, unknown>): Row =>
+    ({ file: { path: `${file}.md`, name: file }, note: { line: 1, ...note }, formula: {} }) as unknown as Row
+
+test('with several sources, resolved tasks sink below every open one, each half grouped by source', () => {
+    const day = '2026-09-20'
+    const rows = [
+        lineRow('work', { scheduled: day, resolved: false, description: 'work open' }),
+        lineRow('work', { scheduled: day, resolved: true, description: 'work done' }),
+        lineRow('home', { scheduled: day, resolved: false, description: 'home open 1' }),
+        lineRow('home', { scheduled: day, resolved: true, description: 'home done' }),
+        lineRow('work', { scheduled: day, resolved: false, description: 'work open 2' }),
+        lineRow('home', { scheduled: day, resolved: false, description: 'home open 2' }),
+    ]
+    const bucket = placeRows(rows, '2026-09-13').get(day)!
+    expect(bucket.map(t => t.row.note.description)).toEqual([
+        'work open',
+        'work open 2',
+        'home open 1',
+        'home open 2',
+        'work done',
+        'home done',
+    ])
+})
+
+test('categoryField decides the source groups', () => {
+    const day = '2026-09-20'
+    const rows = [
+        lineRow('a', { scheduled: day, resolved: false, area: 'x', description: '1' }),
+        lineRow('a', { scheduled: day, resolved: false, area: 'y', description: '2' }),
+        lineRow('b', { scheduled: day, resolved: false, area: 'x', description: '3' }),
+    ]
+    const bucket = placeRows(rows, '2026-09-13', undefined, undefined, 'area').get(day)!
+    expect(bucket.map(t => t.row.note.description)).toEqual(['1', '3', '2'])
+})
+
+test('a carried overdue task still leads today, ahead of the source groups', () => {
+    const today = '2026-09-13'
+    const rows = [
+        lineRow('work', { scheduled: today, resolved: false, description: 'work today' }),
+        lineRow('home', { scheduled: '2026-09-10', resolved: false, description: 'home late' }),
+        lineRow('work', { scheduled: today, resolved: true, description: 'work done' }),
+    ]
+    const bucket = placeRows(rows, today).get(today)!
+    expect(bucket.map(t => t.row.note.description)).toEqual(['home late', 'work today', 'work done'])
 })
 
 // --- placeRows(prev): identity reuse for unchanged rows, so <For> keeps their DOM nodes ---

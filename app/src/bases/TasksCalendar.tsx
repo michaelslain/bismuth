@@ -93,7 +93,7 @@ const TasksCalendar: Component<TasksCalendarProps> = props => {
     const view = () => props.result?.view
 
     const placed = createMemo<Map<string, PlacedTask[]>>(prev =>
-        placeRows(rows(), todayISO(), view()?.dateField, prev),
+        placeRows(rows(), todayISO(), view()?.dateField, prev, view()?.categoryField),
     )
 
     // ---- colours: a task's SOURCE is its category (taskCategory.ts) ----------------------
