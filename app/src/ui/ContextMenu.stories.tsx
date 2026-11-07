@@ -412,3 +412,83 @@ export const StackingOrder: Story = {
         if (lx < mr.left) await expect(toast()!.contains(document.elementFromPoint(lx, ly))).toBe(true)
     },
 }
+
+/** The real path every surface takes: a right-click sets a signal and a `<Show>` mounts the menu —
+ *  here on a tab-rail-like strip pinned to the window's right edge, then a second right-click lower
+ *  down while the first menu is still open. Both menus land fully on screen. */
+export const OpenedByRightClickAtEdge: Story = {
+    render: () => {
+        const [menu, setMenu] = createSignal<{ x: number; y: number } | null>(null)
+        return (
+            <>
+                <div
+                    data-testid="edge-strip"
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: '40px',
+                        background: 'var(--bg-alt)',
+                    }}
+                    onContextMenu={e => {
+                        e.preventDefault()
+                        setMenu({ x: e.clientX, y: e.clientY })
+                    }}
+                />
+                {menu() && (
+                    <ContextMenu
+                        x={menu()!.x}
+                        y={menu()!.y}
+                        items={LONG_ROWS}
+                        onClose={() => setMenu(null)}
+                    />
+                )}
+            </>
+        )
+    },
+    play: async () => {
+        const strip = document.querySelector('[data-testid="edge-strip"]')!
+        const rightClick = (x: number, y: number) =>
+            strip.dispatchEvent(
+                new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }),
+            )
+        rightClick(window.innerWidth - 10, 60)
+        await waitFor(() => expect(document.querySelector('.bismuth-popover')).not.toBeNull())
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        await expectOnScreen()
+        rightClick(window.innerWidth - 10, window.innerHeight - 10)
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        await expectOnScreen()
+    },
+}
+
+/** A menu whose rows grow AFTER it opens (a label that fills in late, a font or icon that lands
+ *  after the first layout) re-places itself: opened near the right edge at its small size, then
+ *  widened, it still ends inside the window. */
+export const GrowsAfterOpen: Story = {
+    render: () => {
+        const [label, setLabel] = createSignal('Open')
+        const items: MenuItem[] = [
+            {
+                get label() {
+                    return label()
+                },
+                icon: 'Columns2',
+                onSelect: noop,
+            },
+            { label: 'Copy', icon: 'Copy', onSelect: noop },
+        ]
+        onMount(() =>
+            setTimeout(() => setLabel('Open in a new pane to the right of this one'), 50),
+        )
+        return <ContextMenu x={window.innerWidth - 140} y={90} {...{ items }} onClose={noop} />
+    },
+    play: async () => {
+        await waitFor(() =>
+            expect(document.querySelector('.bismuth-popover')?.textContent).toContain('this one'),
+        )
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        await expectOnScreen()
+    },
+}

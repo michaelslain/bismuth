@@ -7,12 +7,13 @@
 // It MEASURES itself instead: its right edge is the menu's left edge (`x`), so it is placed by
 // `x - gap - measuredWidth` with no constant to keep in sync. The one case that needs the width up
 // front — no room on the left, so it flips to hang off the menu's right edge — reads the same
-// measurement, which is taken on mount, before the first paint. Vertically it flips like the menu
+// measurement, a ResizeObserver that delivers before the first paint (createBoxSize). Vertically it flips like the menu
 // (placeBelowOrAbove) off ITS OWN measured height: one column of buttons is not a twelve-row list.
-import { createEffect, createSignal, For, type Component } from 'solid-js'
+import { For, type Component } from 'solid-js'
 import Popover from '../Popover'
 import { IconButton } from '../IconButton'
 import { placeBelowOrAbove } from './placeAnchored'
+import { createBoxSize, createViewportSize } from './createBoxSize'
 import styles from './QuickActionRail.module.css'
 
 /** A top-level action shown as an icon on the rail. `label` is the tooltip/aria-label; it isn't
@@ -38,13 +39,8 @@ export type QuickActionRailProps = {
 const GAP = 6
 
 const QuickActionRail: Component<QuickActionRailProps> = props => {
-    let el: HTMLDivElement | undefined
-    const [size, setSize] = createSignal({ w: 0, h: 0 })
-    createEffect(() => {
-        props.actions // track: re-measure when the rail's own buttons change
-        const r = el?.getBoundingClientRect()
-        setSize({ w: r?.width ?? 0, h: r?.height ?? 0 })
-    })
+    const [size, measure] = createBoxSize()
+    const viewport = createViewportSize()
     // Derived, not a one-shot signal: a second right-click reuses this component and only updates
     // props, so a snapshot taken at creation would strand the rail at the first menu's position.
     const left = () => {
@@ -55,14 +51,14 @@ const QuickActionRail: Component<QuickActionRailProps> = props => {
         placeBelowOrAbove({
             y: props.y,
             h: size().h,
-            viewportH: window.innerHeight,
+            viewportH: viewport().h,
             flipFrom: props.flipFrom,
             gap: 4,
         })
     return (
         <Popover
             tone="menu"
-            ref={e => (el = e)}
+            ref={measure}
             class={`${styles.rail} ${props.class ?? ''}`}
             style={{
                 position: 'fixed',

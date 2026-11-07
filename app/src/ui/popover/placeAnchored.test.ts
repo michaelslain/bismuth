@@ -53,4 +53,14 @@ describe('placeRightOrLeft', () => {
     test('w === 0 returns x (unmeasured first frame)', () => {
         expect(placeRightOrLeft({ x: 42, w: 0, viewportW: 100 })).toBe(42)
     })
+
+    test('cursor outside the viewport (window shrunk under the menu) clamps inside it', () => {
+        expect(placeRightOrLeft({ x: 1376, w: 170, viewportW: 1050 })).toBe(1050 - 170 - EDGE_GAP)
+    })
+})
+
+describe('placeBelowOrAbove with an anchor outside the viewport', () => {
+    test('cursor below the bottom edge (window shrunk under the menu) clamps inside it', () => {
+        expect(placeBelowOrAbove({ y: 800, h: 100, viewportH: 600 })).toBe(600 - 100 - EDGE_GAP)
+    })
 })
