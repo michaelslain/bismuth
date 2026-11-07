@@ -1,7 +1,7 @@
 // app/src/chat/ChatSubagentStrip.tsx — ChatSubagentStrip.module.css is the ONLY importer.
 // The agents strip above the composer: one row per subagent the current reply dispatched —
 // a little daemon face (busy while it runs, idle once done, hurt when it failed), type, description. Renders nothing for an
-// empty list, so a reply with no subagents leaves no gap.
+// empty list (the session clears it once none is running), so it leaves no gap.
 import { For, Show, createEffect, type Component } from 'solid-js'
 import type { ChatSubagent } from '../../../core/src/chatSubagentTypes'
 import Text from '../ui/Text'
@@ -25,50 +25,53 @@ const ChatSubagentStrip: Component<ChatSubagentStripProps> = props => {
         if (!el) return
         const first = agents.findIndex(a => a.status === 'running')
         const row = first >= 0 ? el.children[first] : undefined
-        if (row instanceof HTMLElement) el.scrollTop = row.offsetTop - el.offsetTop
-        if (el.scrollHeight > el.clientHeight) el.setAttribute('data-overflow', '')
-        else el.removeAttribute('data-overflow')
+        if (row instanceof HTMLElement)
+            el.scrollTop = row.offsetTop - el.offsetTop
     })
     return (
-    <Show when={props.agents.length > 0}>
-        <div
-            class={`${styles['strip']} ${props.class ?? ''}`}
-            role="status"
-            aria-label="subagents"
-        >
-            <div ref={rows} class={styles['rows']} role="list">
-                <For each={props.agents}>
-                    {agent => (
-                        <div class={styles['row']} role="listitem" aria-label={`${agent.agentType} ${agent.description} ${agent.status}`}>
-                            <DaemonFace
-                                mood={FACE[agent.status]}
-                                size="inline"
-                                label={agent.status}
-                            />
-                            <Text
-                                as="span"
-                                inherit
-                                tone={TYPE_TONE[agent.status]}
-                                truncate
-                                class={styles['type']}
+        <Show when={props.agents.length > 0}>
+            <div
+                class={`${styles['strip']} ${props.class ?? ''}`}
+                role="status"
+                aria-label="subagents"
+            >
+                <div ref={rows} class={styles['rows']} role="list">
+                    <For each={props.agents}>
+                        {agent => (
+                            <div
+                                class={styles['row']}
+                                role="listitem"
+                                aria-label={`${agent.agentType} ${agent.description} ${agent.status}`}
                             >
-                                {agent.agentType}
-                            </Text>
-                            <Text
-                                as="span"
-                                inherit
-                                tone="faint"
-                                truncate
-                                class={styles['description']}
-                            >
-                                {agent.description}
-                            </Text>
-                        </div>
-                    )}
-                </For>
+                                <DaemonFace
+                                    mood={FACE[agent.status]}
+                                    size="inline"
+                                    label={agent.status}
+                                />
+                                <Text
+                                    as="span"
+                                    inherit
+                                    tone={TYPE_TONE[agent.status]}
+                                    truncate
+                                    class={styles['type']}
+                                >
+                                    {agent.agentType}
+                                </Text>
+                                <Text
+                                    as="span"
+                                    inherit
+                                    tone="faint"
+                                    truncate
+                                    class={styles['description']}
+                                >
+                                    {agent.description}
+                                </Text>
+                            </div>
+                        )}
+                    </For>
+                </div>
             </div>
-        </div>
-    </Show>
+        </Show>
     )
 }
 

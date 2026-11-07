@@ -42,6 +42,8 @@ export type SubagentRoster = {
     taskStarted(msg: TaskStartedLike): SubagentFrame[]
     /** Claude `system` `task_notification`. */
     taskNotification(msg: TaskNotificationLike): SubagentFrame[]
+    /** One frame per row still running: what a reconnecting window needs to redraw the strip. */
+    running(): SubagentFrame[]
 }
 
 export function newSubagentRoster(): SubagentRoster {
@@ -104,7 +106,20 @@ export function newSubagentRoster(): SubagentRoster {
                 return set(id, 'failed')
             return []
         },
+        running() {
+            return [...rows.values()]
+                .filter(r => r.status === 'running')
+                .map(r => ({ type: 'subagent', ...r }))
+        },
     }
+}
+
+/** Whether an SDK message belongs to a subagent's own conversation: the SDK forwards a subagent's
+ *  tool calls, results and stream events with `parent_tool_use_id` set to the spawning call. They
+ *  belong to the subagent, never to the main transcript. */
+export function fromSubagent(msg: unknown): boolean {
+    const id = obj(msg).parent_tool_use_id
+    return typeof id === 'string' && id.length > 0
 }
 
 /** Feed a roster the tool-use / tool-result frames a driver emits; any other frame yields []. */

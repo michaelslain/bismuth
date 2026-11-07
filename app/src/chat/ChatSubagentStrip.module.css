@@ -31,7 +31,3 @@
     flex: 1 1 0;
     min-width: 0;
 }
-/* More rows than the cap: fade the bottom edge so the scroll is visible. */
-.rows[data-overflow] {
-    mask-image: linear-gradient(to bottom, black calc(100% - var(--sp-5)), transparent);
-}

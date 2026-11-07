@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ChatSubagent } from '../../../core/src/chatSubagentTypes'
-import { upsertSubagent } from './chatSubagents'
+import { settleSubagents, upsertSubagent } from './chatSubagents'
 
 const a = (id: string, status: ChatSubagent['status']): ChatSubagent => ({
     id,
@@ -28,5 +28,18 @@ describe('upsertSubagent', () => {
         const before = [a('1', 'running')]
         upsertSubagent(before, a('1', 'done'))
         expect(before[0].status).toBe('running')
+    })
+})
+
+describe('settleSubagents', () => {
+    test('keeps the list while any row runs', () => {
+        const list = [a('1', 'done'), a('2', 'running')]
+        expect(settleSubagents(list)).toBe(list)
+    })
+    test('clears once every row is done or failed', () => {
+        expect(settleSubagents([a('1', 'done'), a('2', 'failed')])).toEqual([])
+    })
+    test('a late done frame for a cleared row does not bring the strip back', () => {
+        expect(settleSubagents(upsertSubagent([], a('1', 'done')))).toEqual([])
     })
 })

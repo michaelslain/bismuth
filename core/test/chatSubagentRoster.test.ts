@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+    fromSubagent,
     newSubagentRoster,
     observeSubagentFrame,
 } from '../src/chatSubagentRoster'
@@ -231,5 +232,34 @@ describe('opencode translators emit subagent frames', () => {
             { status: 'running' },
             { status: 'failed' },
         ])
+    })
+})
+
+describe('running', () => {
+    test('lists only the rows still running, for a reconnecting window', () => {
+        const r = newSubagentRoster()
+        observeSubagentFrame(
+            r,
+            use('t1', 'Agent', { subagent_type: 'Explore' }),
+        )
+        observeSubagentFrame(r, use('t2', 'Agent', { subagent_type: 'Plan' }))
+        observeSubagentFrame(r, result('t1'))
+        expect(r.running().map(f => `${f.id}:${f.status}`)).toEqual([
+            't2:running',
+        ])
+    })
+})
+
+describe('fromSubagent', () => {
+    test('a message with a parent tool call belongs to a subagent', () => {
+        expect(
+            fromSubagent({ type: 'assistant', parent_tool_use_id: 't1' }),
+        ).toBe(true)
+    })
+    test('a main-thread message does not', () => {
+        expect(
+            fromSubagent({ type: 'assistant', parent_tool_use_id: null }),
+        ).toBe(false)
+        expect(fromSubagent({ type: 'system' })).toBe(false)
     })
 })

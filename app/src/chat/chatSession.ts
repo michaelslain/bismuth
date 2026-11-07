@@ -35,7 +35,7 @@ import {
 import { createStore, produce } from 'solid-js/store'
 import type { ChatFrame } from '../../../core/src/chat'
 import type { ChatSubagent } from '../../../core/src/chatSubagentTypes'
-import { upsertSubagent } from './chatSubagents'
+import { settleSubagents, upsertSubagent } from './chatSubagents'
 import { api, wsBase } from '../api'
 import {
     applyChatFrame,
@@ -207,8 +207,8 @@ export type ChatSession = {
     addMention: (path: string, noteIds: string[]) => void
     streaming: Accessor<boolean>
     awaitingReply: Accessor<boolean>
-    /** The subagents the current reply dispatched, in dispatch order; cleared when the user sends the
-     *  next turn. Feeds the agents strip above the composer. */
+    /** The subagents the current reply dispatched, in dispatch order; cleared once none is running,
+     *  and when the user sends the next turn. Feeds the agents strip above the composer. */
     subagents: Accessor<ChatSubagent[]>
     manifest: Accessor<ChatManifest | null>
     setupError: Accessor<ChatProviderChoice | null>
@@ -657,7 +657,9 @@ export function createChatSession(
                 applyFrameToTranscript(frame)
                 break
             case 'subagent':
-                setSubagents(list => upsertSubagent(list, frame))
+                setSubagents(list =>
+                    settleSubagents(upsertSubagent(list, frame)),
+                )
                 break
             case 'result':
                 // Don't clobber the specific message an earlier `error` frame already set.

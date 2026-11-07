@@ -12,3 +12,7 @@ export function upsertSubagent(
     return list.map((a, i) => (i === at ? frame : a))
 }
 
+/** The strip shows live work only: once no row is running, the whole list clears. */
+export function settleSubagents(list: ChatSubagent[]): ChatSubagent[] {
+    return list.some(a => a.status === 'running') ? list : []
+}

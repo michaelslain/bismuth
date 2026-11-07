@@ -62,6 +62,7 @@ import {
 // One source of truth for how a subagent's lifetime is swept, so the chat and relay paths
 // can't drift apart (they render as the same thing in the same view).
 import {
+    fromSubagent,
     newSubagentRoster,
     observeSubagentFrame,
     type SubagentRoster,
@@ -2326,6 +2327,10 @@ async function drain(session: ChatSession): Promise<void> {
                 continue
             }
 
+            // A subagent's own tool calls, results and deltas: the strip above the composer shows the
+            // subagent, its work stays out of the main transcript.
+            if (fromSubagent(msg)) continue
+
             if (msg.type === 'stream_event') {
                 // Live deltas (only present with includePartialMessages). Prefer these for streaming.
                 const ev = msg.event as {
@@ -2874,6 +2879,8 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
     const s = sessions.get(chatId)
     if (!s) return false
     rebindSessionSink(s, sink)
+    // A reloaded window starts with an empty strip: redraw the subagents still running.
+    for (const sub of s.subagents.running()) emit(s, sub)
     return true
 }
 
