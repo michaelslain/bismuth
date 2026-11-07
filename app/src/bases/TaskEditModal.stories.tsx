@@ -3,6 +3,7 @@
 // normalizeStoredTaskRow), same discipline as TaskRow.stories.tsx, so a hand-built fixture
 // can't quietly drift from what the app actually passes in.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal, Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import TaskEditModal from './TaskEditModal'
 import { setTransport, type Transport } from '../api'
@@ -177,6 +178,46 @@ export const LineTask: Story = {
         expect(canvas.queryByText('category')).not.toBeInTheDocument()
         // The task's own note comes preselected in the destination picker.
         expect(await canvas.findByText('Website Relaunch')).toBeInTheDocument()
+    },
+}
+
+/** A text selection dragged out of the title field and released over the backdrop keeps the modal
+ *  open: the browser fires that `click` on the backdrop (the common ancestor of press and release),
+ *  and only a press that ALSO began on the backdrop closes. Opened through a real signal, so a close
+ *  unmounts the dialog exactly as the calendar does. */
+export const DragSelectOutKeepsOpen: Story = {
+    render: () => {
+        reset()
+        setTransport(fakeTransport({ files: VAULT_FILES }))
+        const [open, setOpen] = createSignal(true)
+        return (
+            <Show when={open()}>
+                <TaskEditModal row={lineTask()} onClose={() => setOpen(false)} />
+            </Show>
+        )
+    },
+    play: async () => {
+        const input = (await body().findByDisplayValue(
+            'finish the hero section',
+        )) as HTMLInputElement
+        const backdrop = document.querySelector('[role="dialog"]')!
+            .parentElement as HTMLElement
+        const fire = (type: string, target: Element) =>
+            target.dispatchEvent(
+                new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(
+                    type,
+                    { bubbles: true, cancelable: true, button: 0 },
+                ),
+            )
+        // Press in the title, release over the backdrop: click lands on the backdrop.
+        fire('pointerdown', input)
+        fire('mousedown', input)
+        fire('pointerup', backdrop)
+        fire('mouseup', backdrop)
+        fire('click', backdrop)
+        expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+        // Rests open: select in the title and release outside to try it; a plain backdrop click
+        // closes (pinned by ui/outsidePress.test.ts).
     },
 }
 

@@ -87,6 +87,47 @@ export const ClickOpensSubmenu: Story = {
     },
 }
 
+/** A press that begins on a row and is released outside the menu keeps it open: that `click`
+ *  lands on a common ancestor outside the menu, and only a press that also began outside dismisses. */
+export const DragOutKeepsOpen: Story = {
+    render: () => {
+        const [open, setOpen] = createSignal(true)
+        return (
+            <div
+                data-menu-state={open() ? 'open' : 'closed'}
+                style={{ position: 'fixed', inset: '0' }}
+            >
+                {open() && (
+                    <ContextMenu
+                        x={140}
+                        y={90}
+                        items={FILE_ROW_ITEMS}
+                        onClose={() => setOpen(false)}
+                    />
+                )}
+            </div>
+        )
+    },
+    play: async () => {
+        // The dismiss listener is registered a tick after mount.
+        await new Promise(r => setTimeout(r, 20))
+        const row = document.querySelector<HTMLElement>('[data-popover-row]')!
+        const outside = document.querySelector<HTMLElement>('[data-menu-state]')!
+        const fire = (type: string, target: Element) =>
+            target.dispatchEvent(
+                new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(
+                    type,
+                    { bubbles: true, cancelable: true, button: 0 },
+                ),
+            )
+        const state = () => outside.getAttribute('data-menu-state')
+        fire('pointerdown', row)
+        fire('pointerup', outside)
+        fire('click', outside)
+        await expect(state()).toBe('open')
+    },
+}
+
 /** A disabled row (DaemonList's "Run now" while already running) plus a quick-action rail —
  *  icon buttons pinned BESIDE the menu rather than competing with a long row list (#67). */
 export const WithQuickActionsAndDisabledRow: Story = {

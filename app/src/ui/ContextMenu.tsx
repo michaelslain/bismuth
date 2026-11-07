@@ -22,6 +22,7 @@ import QuickActionRail, { type QuickAction } from './popover/QuickActionRail'
 import { createMenuNav } from './popover/createMenuNav'
 import { placeBelowOrAbove, placeRightOrLeft } from './popover/placeAnchored'
 import { registerActiveMenu } from '../activeMenu'
+import { createOutsidePress } from './outsidePress'
 
 export type MenuItem = PopoverRow & {
     /** Run when the row is picked. Optional for rows that only open a `submenu`. */
@@ -174,11 +175,15 @@ export function ContextMenu(props: {
     }
 
     // A click inside the menu or its flyout is the menu's own: a leaf row closes it through its
-    // pick, and a submenu row must stay open to show its flyout.
+    // pick, and a submenu row must stay open to show its flyout. A press that began inside and
+    // was released outside (a drag) is the menu's own too: its `click` lands on a common ancestor.
+    const outside = createOutsidePress(t => {
+        const n = t instanceof Node ? t : null
+        return !!n && (!!rootEl?.contains(n) || !!subEl?.contains(n))
+    })
+    const onDocPointerDown = (e: PointerEvent) => outside.down(e.target)
     const handleDocClick = (e: MouseEvent) => {
-        const t = e.target as Node | null
-        if (t && (rootEl?.contains(t) || subEl?.contains(t))) return
-        props.onClose()
+        if (outside.isOutsideClick(e.target)) props.onClose()
     }
 
     // Global single-menu exclusivity: registering as the active menu closes any menu that
@@ -200,12 +205,14 @@ export function ContextMenu(props: {
             document.addEventListener('click', handleDocClick)
         }, 0)
         document.addEventListener('keydown', onKeyDown)
+        document.addEventListener('pointerdown', onDocPointerDown, true)
     })
     onCleanup(() => {
         disposeActive?.()
         clearTimeout(docClickTimer)
         document.removeEventListener('click', handleDocClick)
         document.removeEventListener('keydown', onKeyDown)
+        document.removeEventListener('pointerdown', onDocPointerDown, true)
     })
 
     // Mark rows that open a submenu so MenuRow draws the chevron.

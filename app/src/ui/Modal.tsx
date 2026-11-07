@@ -2,6 +2,7 @@ import { onCleanup, onMount, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import styles from './Modal.module.css'
 import { isDismissKey } from './widgetKeys'
+import { createOutsidePress } from './outsidePress'
 
 export type ModalProps = {
     onClose: () => void
@@ -94,6 +95,10 @@ function Modal(props: ModalProps) {
             : []
 
     const token = Symbol('modal')
+
+    const backdropPress = createOutsidePress(
+        t => !!panelEl && t instanceof Node && panelEl.contains(t),
+    )
 
     const handleKey = (e: KeyboardEvent) => {
         // Only the topmost modal acts: Escape and the Tab trap belong to it alone. Without this,
@@ -255,8 +260,15 @@ function Modal(props: ModalProps) {
         <Portal>
             <div
                 class={styles['ui-overlay']}
-                onClick={() => {
-                    if (props.closeOnBackdrop !== false) props.onClose()
+                // Press and click both on the backdrop itself: a text selection dragged out of an
+                // input and released over the backdrop fires its `click` here too (see outsidePress).
+                onPointerDown={e => backdropPress.down(e.target)}
+                onClick={e => {
+                    if (
+                        backdropPress.isOutsideClick(e.target) &&
+                        props.closeOnBackdrop !== false
+                    )
+                        props.onClose()
                 }}
             >
                 <div
