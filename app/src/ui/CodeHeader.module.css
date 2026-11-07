@@ -15,13 +15,3 @@
     color: var(--fence-ink);
     letter-spacing: 0.04em;
 }
-
-/* The copy glyph is IconButton `size="sm"` — muted at rest, accent on hover, the same control as a
-   chat message's copy. Only its box height is overridden: sm ships a --h-control height that would
-   make the fence row taller than the code rows under it. Doubled class to match Button's own
-   two-class `.btn--icon.btn--sm` without depending on stylesheet order. */
-.copy.copy {
-    height: auto;
-    min-height: 0;
-    line-height: 1;
-}

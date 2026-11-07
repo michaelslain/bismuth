@@ -21,7 +21,7 @@
 // output here IS pinning down which lines get the card's top/mid/bottom classes.
 import { test, expect, describe } from 'bun:test'
 import { Text } from '@codemirror/state'
-import { computeBlockRegions, calloutBlocksInRange } from './blockRegions'
+import { computeBlockRegions, calloutBlocksInRange, quoteRunText } from './blockRegions'
 
 const doc = (s: string) => Text.of(s.split('\n'))
 
@@ -318,5 +318,17 @@ describe('calloutBlocksInRange', () => {
     test('a document with no callouts returns empty for any range', () => {
         const doc = Text.of(['plain', 'text', 'only'])
         expect(calloutBlocksInRange(doc, 0, doc.length)).toEqual([])
+    })
+})
+
+describe("a quote's copy text", () => {
+    const d = doc(['intro', '> first line', '>second line', '>', '> > nested', '', '> next quote'].join('\n'))
+
+    test('takes every consecutive > line with one level of > removed', () => {
+        expect(quoteRunText(d, 2)).toBe('first line\nsecond line\n\n> nested')
+    })
+
+    test('stops at the first line that is not a quote line', () => {
+        expect(quoteRunText(d, 7)).toBe('next quote')
     })
 })

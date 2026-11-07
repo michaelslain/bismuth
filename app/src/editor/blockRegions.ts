@@ -119,6 +119,24 @@ export function calloutBlocksInRange(
     return out
 }
 
+// A blockquote line: `>` then one optional space. livePreview.ts hides this prefix off the cursor.
+export const BLOCKQUOTE_RE = /^>\s?/
+
+/** What a quote's copy button writes, for the quote run starting at `fromLine` (1-based): every
+ *  consecutive `>` line with ONE level of `>` and its space removed, joined with "\n". A nested
+ *  `>>` keeps its inner level and a bare `>` stays a blank line, so the copy keeps the quote's
+ *  shape. `fromLine` must be the run's first line. */
+export function quoteRunText(doc: Text, fromLine: number): string {
+    const out: string[] = []
+    for (let n = fromLine; n <= doc.lines; n++) {
+        const text = doc.line(n).text
+        const m = text.match(BLOCKQUOTE_RE)
+        if (!m) break
+        out.push(text.slice(m[0].length))
+    }
+    return out.join('\n')
+}
+
 /** Scan the whole document once and return the block-region sets.
  *  Called only when the document content changes (or on first construction). */
 export function computeBlockRegions(doc: Text): BlockRegions {

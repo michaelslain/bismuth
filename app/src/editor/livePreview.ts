@@ -30,6 +30,7 @@ import { reorderAroundLine } from './taskFold'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import { LIST_STEP } from './listLayout'
 import CodeHeader from '../ui/CodeHeader'
+import BlockCopyButton from '../ui/BlockCopyButton'
 import { groupTableBlocks } from './tableModel'
 import { TableWidget, loadTypeTable } from './tableWidget'
 import { watchFitTable } from '../ui/table/fitTable'
@@ -52,6 +53,8 @@ import {
     scanCalloutLineBlocks,
     calloutBlocksInRange,
     FENCE_RE,
+    BLOCKQUOTE_RE,
+    quoteRunText,
     type BlockRegions,
 } from './blockRegions'
 import { blockHeightKey, estimateBlockHeight } from './blockHeights'
@@ -168,7 +171,6 @@ const hrLine = Decoration.line({ class: 'cm-hr' })
 // former inline literals; every use below is via .match()/.matchAll()/.test()/.exec(),
 // none of which leak lastIndex state across calls for these patterns.
 const HEADING_RE = /^(#{1,6})\s+/
-const BLOCKQUOTE_RE = /^>\s?/
 const TASK_LINE_RE = /^(\s*)([-*+])(\s+)\[([ xX/\\-])\](\s)/
 const BULLET_LINE_RE = /^(\s*)([-*+])(\s+)/
 const ORDERED_LINE_RE = /^(\s*)(\d+)([.)])(\s+)/
@@ -331,6 +333,39 @@ class CheckboxWidget extends WidgetType {
 
     ignoreEvent(): boolean {
         return false
+    }
+}
+
+// The copy button a quote wears at the right end of its first line (the same glyph a code block's
+// header carries, BlockCopyButton). Positioned absolutely inside the `.cm-quote` line, which
+// reserves room for it on the right, so it never moves the text or the caret.
+class QuoteCopyWidget extends WidgetType {
+    constructor(private readonly text: string) {
+        super()
+    }
+
+    eq(other: QuoteCopyWidget): boolean {
+        return other.text === this.text
+    }
+
+    toDOM(): HTMLElement {
+        const wrap = document.createElement('span') as HTMLElement & {
+            __dispose?: () => void
+        }
+        wrap.className = 'cm-quote-copywrap'
+        wrap.__dispose = render(
+            () => BlockCopyButton({ text: this.text, label: 'Copy quote' }),
+            wrap,
+        )
+        return wrap
+    }
+
+    destroy(dom: HTMLElement): void {
+        ;(dom as HTMLElement & { __dispose?: () => void }).__dispose?.()
+    }
+
+    ignoreEvent(): boolean {
+        return true // let the button handle its own clicks
     }
 }
 
@@ -828,6 +863,22 @@ function buildDecorations(
             const qm = text.match(BLOCKQUOTE_RE)
             if (qm) {
                 deco.push(quoteLine.range(line.from))
+                // A quote's first line carries its copy button. A revealed callout falls through
+                // here as raw `>` lines; it is a callout, not a quote, so it gets none.
+                const prev =
+                    line.number > 1 ? doc.line(line.number - 1).text : ''
+                if (
+                    !BLOCKQUOTE_RE.test(prev) &&
+                    !calloutBlockByLine.has(line.number)
+                )
+                    deco.push(
+                        Decoration.widget({
+                            widget: new QuoteCopyWidget(
+                                quoteRunText(doc, line.number),
+                            ),
+                            side: 1,
+                        }).range(line.to),
+                    )
                 if (!onCursor)
                     deco.push(hide.range(line.from, line.from + qm[0].length))
                 else
@@ -1337,7 +1388,10 @@ const activeCalloutField = StateField.define<readonly number[]>({
     },
 })
 
-type CalloutWrap = HTMLElement & { _untype?: () => void }
+type CalloutWrap = HTMLElement & {
+    _untype?: () => void
+    _uncopy?: () => void
+}
 
 // A table in a callout's body is the one Bismuth table (ui/table/typeTable.ts: the typed `+ - | =`
 // grid and the shared cell rules), the same table a note's own table widget and a chat message show.
@@ -1421,11 +1475,25 @@ class CalloutWidget extends WidgetType {
             renderCalloutHtml(this.header, bodyHtml, titleHtml),
         )
         ;(wrap as CalloutWrap)._untype = typeCalloutTables(wrap)
+        // The title row carries the block copy button at its right end, the one a code block's
+        // header and a quote wear; it copies the body without its `>` markers, not the title line.
+        // Its click cancels its default, so a foldable callout's <summary> does not toggle.
+        const title = wrap.querySelector('.callout-title')
+        if (title) {
+            const slot = document.createElement('span')
+            slot.className = 'cm-callout-copy'
+            title.append(slot)
+            ;(wrap as CalloutWrap)._uncopy = render(
+                () => BlockCopyButton({ text: this.body, label: 'Copy callout' }),
+                slot,
+            )
+        }
         return wrap
     }
 
     destroy(dom: HTMLElement): void {
         ;(dom as CalloutWrap)._untype?.()
+        ;(dom as CalloutWrap)._uncopy?.()
     }
 
     // THE dblclick EXEMPTION IS LOAD-BEARING — do not simplify this back to `return true`.
@@ -1522,6 +1590,12 @@ const calloutThemeSpec: Record<string, Record<string, string>> = {
         gap: '0.45em',
         'font-weight': '600',
         'font-size': 'var(--fs-ui)',
+    },
+    // The copy button's slot, pushed to the title row's right end.
+    '.cm-callout-wrap .cm-callout-copy': {
+        'margin-left': 'auto',
+        display: 'inline-flex',
+        'font-weight': 'normal',
     },
     '.cm-callout-wrap .callout-icon': {
         display: 'inline-flex',
@@ -1868,10 +1942,28 @@ export const livePreview = [
             'letter-spacing': 'var(--ls-label)',
             color: 'var(--text-muted)',
         },
+        // `position: relative` + the right padding hold the quote's copy button (QuoteCopyWidget):
+        // every quote line reserves the glyph's width, so wrapped text never runs under it and the
+        // quote keeps one right edge.
         '.cm-quote': {
             'border-left': '2px solid var(--border)',
             'padding-left': '8px',
+            'padding-right':
+                'calc(var(--icon) + 2 * var(--sp-1) + var(--sp-2))',
+            position: 'relative',
             opacity: '0.85',
+        },
+        // Pinned to the first line's top-right corner and centred on that line's height (`1lh`), not
+        // on the whole wrapped line box. `line-height: inherit` takes the row pitch back from
+        // global.css's `span { line-height: 1 }` reset, which would make `1lh` the font size.
+        '.cm-quote-copywrap': {
+            'line-height': 'inherit',
+            position: 'absolute',
+            top: '0',
+            right: '0',
+            height: '1lh',
+            display: 'flex',
+            'align-items': 'center',
         },
         // Rendered horizontal rule (a `---` / `***` "em-dash" break): off the cursor line the dashes
         // are hidden, so draw a centered rule via a pseudo-element. It must be ALWAYS clearly visible on

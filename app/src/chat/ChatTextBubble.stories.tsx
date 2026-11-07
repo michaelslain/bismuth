@@ -83,6 +83,80 @@ export const CodeFence: Story = {
     },
 }
 
+const quoteText = [
+    'From the design notes:',
+    '',
+    '> Every block copies itself: a code block from its header, a quote from the end of its first',
+    '> line. The copy is the text without its quote markers.',
+    '',
+    'That is the whole rule.',
+].join('\n')
+
+/** A quote in a reply wears the same copy button a quote in a note does, at the right of its first
+ *  line; the code block's "Copy code" and the message's own copy are separate controls. */
+export const Quote: Story = {
+    render: () => (
+        <div style={{ width: '480px' }}>
+            <ChatTextBubble text={quoteText} role="assistant" />
+            <ToastHost />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        await expect(
+            await canvas.findAllByRole('button', { name: 'Copy quote' }),
+        ).toHaveLength(1)
+    },
+}
+
+/** A reply that OPENS with a quote: the quote's copy button holds the top-right corner, so the
+ *  message's own copy drops to the bottom-right instead of stacking on it. */
+export const OpensWithQuote: Story = {
+    render: () => (
+        <div style={{ width: '480px' }}>
+            <ChatTextBubble
+                text={'> Quoted from your note: keep the copy plain text.\n\nAgreed, and the same goes for code.'}
+                role="assistant"
+            />
+            <ToastHost />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        const quote = await canvas.findByRole('button', { name: 'Copy quote' })
+        const message = canvas.getByRole('button', { name: 'Copy message' })
+        // The two controls sit in different corners: the message copy is below the quote's.
+        await expect(message.getBoundingClientRect().top).toBeGreaterThan(
+            quote.getBoundingClientRect().bottom,
+        )
+    },
+}
+
+/** A reply that OPENS with a callout: the callout's copy button holds the top-right corner of its
+ *  title row, so the message's own copy drops to the bottom-right. */
+export const OpensWithCallout: Story = {
+    render: () => (
+        <div style={{ width: '480px' }}>
+            <ChatTextBubble
+                text={'> [!note] Heads up\n> The copy is the body, not the title.\n\nThat matches code blocks.'}
+                role="assistant"
+            />
+            <ToastHost />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        const callout = await canvas.findByRole('button', { name: 'Copy callout' })
+        const message = canvas.getByRole('button', { name: 'Copy message' })
+        await expect(message.getBoundingClientRect().top).toBeGreaterThan(
+            callout.getBoundingClientRect().bottom,
+        )
+    },
+}
+
 const twoFenceText = [
     '```ts',
     "export const greet = (name: string) => `hi ${name}`",

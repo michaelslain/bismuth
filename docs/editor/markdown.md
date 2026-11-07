@@ -21,7 +21,7 @@ Read this page to learn what each markdown construct looks like in the editor an
 | `- item`, `* item`, `+ item` | A bullet: a filled dot at even nesting levels, a hollow dot at odd levels | Click onto the bullet itself to show `- ` |
 | `1. item` or `1) item` | The number, in the same column as a bullet | Click onto the number to show it raw |
 | `- [ ] task` | A checkbox | Click onto the checkbox marker to show `- [ ]` |
-| `> quote` | A quote with a left rule and `>` hidden | Put the cursor on the line |
+| `> quote` | A quote with a left rule, `>` hidden and a copy button | Put the cursor on the line |
 | `> [!tip] Title` | A callout card with an icon; its body renders as markdown, and a table in it is the same typed table a note shows (read-only there) | Double-click it, select across it, or type inside it |
 | `---`, `***` or `___` on a line | A horizontal rule | Put the cursor on the line |
 | `---` block at the top of the file | A shaded properties panel with dimmed keys | Edit it in place |
@@ -81,6 +81,10 @@ Each foldable heading and list item has a small triangle in the left margin. Lef
 A fenced code block shows its language and a copy button above the code (the same header a code block in a chat message wears), with line numbers in the margin and colors that follow the active theme. The language comes from the info string: names and aliases of the standard CodeMirror language list, plus `matlab`, `py`, `jl` and `hs`.
 
 Double-click inside the block, or start typing in it, to show the raw fences. Moving the cursor out hides them again. Frontmatter and ` ```yaml ` blocks color their keys the same way.
+
+## Quotes
+
+A quote (lines starting with `>`) carries the same copy button as a code block, at the right end of its first line, in a note and in a chat message. It copies the quote's text with one level of `>` removed: a nested `> >` keeps its inner `>`, and a bare `>` line stays a blank line. A callout (`> [!note]`) carries the button at the right of its title row instead, and copies its body without the title line.
 
 ## Math
 
@@ -149,4 +153,4 @@ A callout's body is rendered by `renderNoteBody` (`bases/markdown.ts`) into the 
 
 All rendered HTML goes through `sanitizeHtml` in `app/src/sanitizeHtml.ts`, DOMPurify configured with the HTML, MathML and SVG profiles and `target` allowed on links. With no DOM available (Bun tests), it returns its input unchanged. A live HTML artifact embed (`![[viz.html]]`) runs in a sandboxed iframe from `embedBlock.ts` instead, since `<script>` is always stripped here.
 
-Source: `app/src/editor/livePreview.ts`, `app/src/editor/inlineMath.ts`, `app/src/editor/blockRegions.ts`, `app/src/editor/inlineEmphasis.ts`, `app/src/editor/listLayout.ts`, `app/src/editor/callout.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/katexLoader.ts`, `app/src/ui/CodeHeader.tsx`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLanguages.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/editor/foldBlocks.ts`, `app/src/ui/FoldArrow.tsx`, `app/src/editor/taskFold.ts`, `app/src/editor/linkClicks.ts`, `app/src/editor/noteProseTheme.ts`, `app/src/ui/NoteProse.tsx`, `app/src/editor/findPanel.ts`, `app/src/editor/markdownFormat.ts`, `app/src/editor/wrapSelection.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/datePickerExtension.tsx`, `app/src/sanitizeHtml.ts`, `app/src/Editor.tsx`, `app/src/editor/blockHeights.ts`, `app/src/editor/blockHeightRecorder.ts`, `app/src/editor/tableWidget.ts`, `app/src/ui/table/typeTable.ts`
+Source: `app/src/editor/livePreview.ts`, `app/src/editor/inlineMath.ts`, `app/src/editor/blockRegions.ts`, `app/src/editor/inlineEmphasis.ts`, `app/src/editor/listLayout.ts`, `app/src/editor/callout.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/katexLoader.ts`, `app/src/ui/CodeHeader.tsx`, `app/src/ui/BlockCopyButton.tsx`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLanguages.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/editor/foldBlocks.ts`, `app/src/ui/FoldArrow.tsx`, `app/src/editor/taskFold.ts`, `app/src/editor/linkClicks.ts`, `app/src/editor/noteProseTheme.ts`, `app/src/ui/NoteProse.tsx`, `app/src/editor/findPanel.ts`, `app/src/editor/markdownFormat.ts`, `app/src/editor/wrapSelection.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/datePickerExtension.tsx`, `app/src/sanitizeHtml.ts`, `app/src/Editor.tsx`, `app/src/editor/blockHeights.ts`, `app/src/editor/blockHeightRecorder.ts`, `app/src/editor/tableWidget.ts`, `app/src/ui/table/typeTable.ts`

@@ -1,0 +1,11 @@
+/* BlockCopyButton.module.css — BlockCopyButton.tsx is the ONLY importer.
+   The glyph is IconButton `size="sm"`: muted at rest, accent on hover, the same control as a chat
+   message's copy. Only its box height is overridden: sm ships a --h-control height that would make
+   the host row (a code fence band, a quote's first line) taller than the text rows beside it.
+   Doubled class to match Button's own two-class `.btn--icon.btn--sm` without depending on
+   stylesheet order. */
+.copy.copy {
+    height: auto;
+    min-height: 0;
+    line-height: 1;
+}

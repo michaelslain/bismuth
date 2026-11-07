@@ -32,7 +32,7 @@
     }
 }
 
-/* A FENCE OWNS ITS CORNER. A fenced code block wears its own copy button at its top-right
+/* A FENCE, A QUOTE OR A CALLOUT OWNS ITS CORNER. A fenced code block wears its own copy button at its top-right
    (the note view's CodeHeader), so a message whose first block is a fence would stack the two
    buttons there: the message's copy drops to the bottom-right. A message that also ENDS with a
    fence has no free corner, and every block in it already copies itself; the message copy yields
@@ -44,5 +44,24 @@
     bottom: 0;
 }
 [data-chat-bubble-wrap]:has(:global(.cm-content) > :global(.cm-block-top):first-child + :global(.cm-codeblock)):has(:global(.cm-content) > :global(.cm-block-bottom):last-child) .chat-copy-btn.chat-copy-btn {
+    display: none;
+}
+
+/* A callout wears its copy button at the right of its title row (`cm-callout-wrap`, the callout's
+   block widget), so a message that opens with one sends the message copy to the bottom-right. */
+[data-chat-bubble-wrap]:has(:global(.cm-content) > :global(.cm-callout-wrap):first-child) .chat-copy-btn.chat-copy-btn {
+    top: auto;
+    bottom: 0;
+}
+
+/* A quote wears its copy button at the right of its FIRST line (`cm-quote` lines, livePreview.ts),
+   so a message that opens with a quote sends the message copy to the bottom-right too; if the
+   message's last line is also a quote's first line, that corner is taken as well and the message
+   copy yields, as it does between two fences. */
+[data-chat-bubble-wrap]:has(:global(.cm-content) > :global(.cm-quote):first-child) .chat-copy-btn.chat-copy-btn {
+    top: auto;
+    bottom: 0;
+}
+[data-chat-bubble-wrap]:has(:global(.cm-content) > :global(.cm-quote):first-child):has(:global(.cm-content) > :not(:global(.cm-quote)) + :global(.cm-quote):last-child, :global(.cm-content) > :global(.cm-quote):first-child:last-child) .chat-copy-btn.chat-copy-btn {
     display: none;
 }
