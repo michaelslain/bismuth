@@ -317,6 +317,11 @@ export const SETTINGS_SCHEMA: Schema = {
             default: false,
             doc: 'The phosphor glow behind dense regions of the graph and the darkened vignette at its edges. Off by default (a flat ground).',
         },
+        exclude: {
+            type: { kind: 'list', item: 'string' },
+            default: [],
+            doc: 'Notes left out of the graph in every mode: a bare name (user-profile) hides every note with that name, a path (folder/Note) only that one, a folder path ending in / (journal/) every note under it. The file tree and tab menus toggle an entry with Hide from Graph / Show in Graph. A hidden note keeps its links, search, recall and backlinks; the graph only drops its node and every edge touching it.',
+        },
     }),
     editor: object({
         livePreview: {

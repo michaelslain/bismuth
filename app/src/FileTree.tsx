@@ -34,9 +34,15 @@ import {
     uniqueBaseFileName,
 } from './baseViews'
 import { primeNoteCache } from './noteCache'
-import { settings } from './settings'
+import { settings, setSettings } from './settings'
 import { applyNewNoteTemplate } from '../../core/src/newNoteTemplate'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
+import {
+    graphHidden,
+    hideInGraph,
+    showInGraph,
+} from '../../core/src/graphExclude'
+import { isCompanionable } from '../../core/src/fileKinds'
 import { setPendingCursor } from './pendingCursor'
 import { flushEditorsAtOrUnder, flushSidecarsAtOrUnder } from './editorRegistry'
 import { createRenameSettleRegistry } from './renameSettle'
@@ -734,6 +740,34 @@ export function FileTree(props: {
         return submenu
     }
 
+    function graphMenuItem(path: string, isDir: boolean): MenuItem {
+        const list = settings.graph.exclude ?? []
+        const state = graphHidden(list, path, isDir)
+        if (state.own)
+            return {
+                label: 'Show in Graph',
+                icon: 'Network',
+                onSelect: () =>
+                    setSettings(
+                        'graph',
+                        'exclude',
+                        showInGraph(list, path, isDir),
+                    ),
+            }
+        if (state.byFolder)
+            return {
+                label: `Hidden from Graph by '${state.byFolder}'`,
+                icon: 'Network',
+                disabled: true,
+            }
+        return {
+            label: 'Hide from Graph',
+            icon: 'Network',
+            onSelect: () =>
+                setSettings('graph', 'exclude', hideInGraph(list, path, isDir)),
+        }
+    }
+
     function buildMenuItems(node: TreeNode): MenuItem[] {
         // Right-clicking inside a multi-selection offers a single batch delete for the lot.
         const sel = selected()
@@ -795,6 +829,15 @@ export function FileTree(props: {
                 icon: visibilityMenuIcon(node.visibility),
                 submenu: buildVisibilitySubmenu(node, isDir),
             })
+            // Notes, folders and images/PDFs (whose companion note is their graph node) toggle
+            // their own entry in `graph.exclude`. Sheets, bases and drawings are never graph nodes,
+            // so they carry no row. One hidden by an ancestor folder's entry says which folder.
+            if (
+                isDir ||
+                node.path.endsWith('.md') ||
+                isCompanionable(node.path)
+            )
+                items.push(graphMenuItem(node.path, isDir))
             items.push({
                 label: 'Rename',
                 icon: 'Pencil',
@@ -815,12 +858,11 @@ export function FileTree(props: {
     function openMenuFor(node: TreeNode, e: MouseEvent) {
         e.preventDefault()
         e.stopPropagation()
+        // A row with no actions (the `.settings` file) opens no menu rather than an empty box.
+        const items = buildMenuItems(node)
+        if (items.length === 0) return
         // Native OS menu in the Tauri build; HTML ContextMenu fallback in the browser.
-        setMenu({
-            x: e.clientX,
-            y: e.clientY,
-            items: buildMenuItems(node),
-        })
+        setMenu({ x: e.clientX, y: e.clientY, items })
     }
 
     /** The tab bar's right-click on a tab holding a vault file: open THIS menu for that file, so a

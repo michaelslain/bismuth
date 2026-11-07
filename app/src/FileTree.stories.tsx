@@ -756,3 +756,66 @@ export const LastFolderBlankColumn: Story = {
         expect(prefixOf('a/b')).toBe('    `--')
     },
 }
+
+/** The `Hide from Graph` / `Show in Graph` row a note's right-click menu carries (the tab's menu is
+ *  the same one): it toggles the note's own entry in `graph.exclude`. `play` hides `Housing`, sees
+ *  the row flip to `Show in Graph`, shows it again, does the same for the `projects` folder (a
+ *  `projects/` entry), and leaves the list as it found it. Right-click any note or folder here to
+ *  try it; a sheet, base or drawing is never a graph node and has no such row. */
+export const HideFromGraphMenu: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(document.body)
+        const restore = [...(settings.graph.exclude ?? [])]
+        setSettings('graph', 'exclude', [])
+        try {
+            const row = await canvas.findByText(/Housing/)
+            fireEvent.contextMenu(row)
+            await userEvent.click(await body.findByText('Hide from Graph'))
+            await waitFor(() =>
+                expect(settings.graph.exclude).toEqual(['Housing']),
+            )
+
+            fireEvent.contextMenu(row)
+            await userEvent.click(await body.findByText('Show in Graph'))
+            await waitFor(() => expect(settings.graph.exclude).toEqual([]))
+
+            // A folder hides every note under it through a trailing-slash entry.
+            const folder = await canvas.findByText(/projects/)
+            fireEvent.contextMenu(folder)
+            await userEvent.click(await body.findByText('Hide from Graph'))
+            await waitFor(() =>
+                expect(settings.graph.exclude).toEqual(['projects/']),
+            )
+            fireEvent.contextMenu(folder)
+            await userEvent.click(await body.findByText('Show in Graph'))
+            await waitFor(() => expect(settings.graph.exclude).toEqual([]))
+
+            // A sheet is never a graph node, so it has no graph row.
+            fireEvent.contextMenu(await canvas.findByText(/Budget/))
+            await body.findByText('Rename')
+            expect(body.queryByText('Hide from Graph')).toBeNull()
+            await userEvent.keyboard('{Escape}')
+
+            // `.settings` has no actions, so its right-click opens no menu at all.
+            fireEvent.contextMenu(await canvas.findByText(/settings/))
+            await new Promise(r => setTimeout(r, 100))
+            expect(document.querySelector('[data-popover-row]')).toBeNull()
+            await userEvent.keyboard('{Escape}')
+        } finally {
+            setSettings('graph', 'exclude', restore)
+        }
+    },
+}

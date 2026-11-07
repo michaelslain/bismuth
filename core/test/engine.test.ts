@@ -134,3 +134,62 @@ test('multiple memory notes can link to same vault note', async () => {
     )
     expect(aboutToTarget.length).toBe(2)
 })
+
+test('graph.exclude in .settings drops the named notes and their edges in every brain', async () => {
+    const vault = tempDir('bismuth-eng-excl-')
+    const mem = tempDir('bismuth-eng-excl-mem-')
+    await writeNote(
+        vault,
+        'keep.md',
+        'links [[user-profile]] and [[index]] #solo',
+    )
+    await writeNote(vault, 'index.md', '#only-index')
+    await writeNote(vault, 'notes/index.md', 'a second index')
+    await writeNote(mem, 'user-profile.md', 'about [[keep]] and [[index]]')
+    await writeNote(mem, 'facts.md', 'see [[user-profile]] and [[keep]]')
+    await writeNote(
+        vault,
+        '.settings',
+        'graph:\n  exclude:\n    - user-profile\n    - index\n',
+    )
+    const g = await buildGraph(vault, mem)
+    const ids = g.nodes.map(n => n.id)
+    expect(ids).toContain('keep')
+    expect(ids).toContain('mem:facts')
+    // a bare name hides every note with that basename, vault and memory alike
+    expect(ids).not.toContain('index')
+    expect(ids).not.toContain('notes/index')
+    expect(ids).not.toContain('mem:user-profile')
+    // a tag carried only by an excluded note goes with it; one a kept note carries stays
+    expect(ids).not.toContain('tag:only-index')
+    expect(ids).toContain('tag:solo')
+    const gone = new Set(['index', 'notes/index', 'mem:user-profile'])
+    expect(g.edges.some(e => gone.has(e.from) || gone.has(e.to))).toBe(false)
+    expect(g.edges).toContainEqual({
+        from: 'mem:facts',
+        to: 'keep',
+        kind: 'about',
+    })
+})
+
+test('a path-qualified graph.exclude entry hides only that note', async () => {
+    const vault = tempDir('bismuth-eng-exclpath-')
+    await writeNote(vault, 'index.md', '')
+    await writeNote(vault, 'notes/index.md', '')
+    const g = await buildGraph(vault, undefined, {
+        exclude: ['notes/index.md'],
+    })
+    const ids = g.nodes.map(n => n.id)
+    expect(ids).toContain('index')
+    expect(ids).not.toContain('notes/index')
+})
+
+test('no graph.exclude leaves the graph as it was', async () => {
+    const vault = tempDir('bismuth-eng-exclnone-')
+    await writeNote(vault, 'a.md', '[[b]]')
+    await writeNote(vault, 'b.md', '')
+    await writeNote(vault, '.settings', 'graph:\n  exclude: []\n')
+    const g = await buildGraph(vault)
+    expect(g.nodes.map(n => n.id).sort()).toEqual(['a', 'b'])
+    expect(g.edges).toHaveLength(1)
+})

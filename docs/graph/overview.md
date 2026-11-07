@@ -99,6 +99,28 @@ These `graph` keys in `.settings` change what you see; each has a row in [the se
 
 With `graph.gradient` off, the glow canvas and the vignette are not mounted at all. The glow takes its colour from the theme's `--accent` token, tinted per community.
 
+## Hide notes from the graph
+
+The `graph.exclude` key in `.settings` lists notes and folders the graph leaves out, such as summary or index notes kept for search and recall rather than for connections:
+
+```yaml
+graph:
+  exclude:
+    - user-profile
+    - notes/index
+    - journal/
+```
+
+Right-click a note, folder, image or PDF in the file tree, or a file's tab, and pick **Hide from Graph** to add it to the list; the same row reads **Show in Graph** on a hidden item and takes it off again. The menu writes the item's path, so it hides only that item. Showing an item removes every entry that names it, a bare name included. An item inside a hidden folder shows a disabled **Hidden from Graph by '*folder*/'** row instead: show the folder to bring it back.
+
+- A bare name hides every note with that name, in the vault and in the 3rd brain, the way a bare `[[Note]]` names a note. A path such as `notes/index` hides only the note at that path. A trailing `.md` is ignored.
+- A path ending in `/`, such as `journal/`, hides every note under that folder at any depth. Without the `/`, `journal` is a bare name and hides only notes named `journal`.
+- An image or PDF is in the graph through its companion note, the one that holds its tags, so `scans/paper.pdf` hides it. Sheets, bases and drawings are never graph nodes, so their menus carry no graph row.
+- A hidden note has no node and no edges in any mode (`2nd`, `3rd`, `both`, `local`), `about` edges included. A tag whose only notes are hidden goes with them.
+- Hiding is display-only. The note stays in the vault or memory, its `[[links]]` stay in the text, and search, recall, backlinks, the daemon and chat still see it.
+- Names match exactly, with no globs or patterns, so a misspelt name hides nothing and raises no error.
+- An edit to the list redraws the open graph.
+
 ## Embed a graph in a note
 
 A ` ```graph ` fence in a note draws a small hand-authored graph with the same renderer, labelling every node. Its syntax lives in [the graph block page](../editor/graph-block.md).
@@ -149,7 +171,7 @@ The `agent`, `self`, `message` and `open` kinds are defined in `graph.ts` and no
 ```
 buildVaultGraph()   buildMemoryGraph()
         \             /
-         buildGraph()          engine.ts: about edges, mergeGraphs, stampCommunities (Louvain)
+         buildGraph()          engine.ts: about edges, mergeGraphs, graph.exclude, stampCommunities (Louvain)
               |
          attachLayout()        layout-cache.ts: position / position2d on every node
               |
@@ -159,6 +181,8 @@ buildVaultGraph()   buildMemoryGraph()
               |
          AsciiGraphRenderer
 ```
+
+The file tree's menu (`FileTree.tsx`, which a file tab's menu reuses) toggles a note, folder, image or PDF through `graphHidden()`, `hideInGraph()` and `showInGraph()` and the settings store. `buildGraph()` drops the notes `graph.exclude` names (`excludeFromGraph()` in `graphExclude.ts`, reading `.settings` through `FileAccess` so the mobile backend runs it too) before communities are stamped, so a hidden note shapes neither clusters nor layout. `GET /graph` and `bismuth graph` both go through it; the vault map (`vaultMap.ts`) calls `buildVaultGraph()` directly and still sees every note.
 
 `GET /graph` returns the full `both` graph. The 2nd and 3rd brain modes filter it in the browser with `subgraphByKinds()` and swap in that brain's `ViewLayout`. `views` is included on `/graph` only after it has been computed; `GET /graph/views` computes and caches it, and the frontend uses full-graph positions until it arrives. No mode adds a `self` node.
 
@@ -267,4 +291,4 @@ Cron and process nodes carry a `daemon` field (`enabled`, `running`, `lastResult
 - The layout cache is not in the vault. Writing inside the vault would trigger the file watcher and loop invalidate and rebuild.
 - `graph.repulsion`, `graph.linkDistance`, `graph.centering`, `graph.nodeSize` and the three `nodeSize*Mult` keys validate but nothing reads them; the layout uses its own constants.
 
-Source: `core/src/graph.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/engine.ts`, `core/src/community.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/layoutDiff.ts`, `core/src/layoutCompute.ts`, `core/src/layoutRunner.ts`, `core/src/routes/graph.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `app/src/GraphView.tsx`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/graph/displayGraph.ts`, `app/src/graph/graphLayers.ts`, `app/src/graph/respace.ts`, `app/src/graph/asciiGrid.ts`, `app/src/graph/cameraModel.ts`, `app/src/graph/modeMorph.ts`, `app/src/graph/backbone.ts`, `app/src/graph/lod.ts`, `app/src/graph/labelSelection.ts`, `app/src/graph/flatField.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src/graph/densityField.ts`, `app/src/graph/bloomColor.ts`, `app/src/graph/localLayoutInput.ts`
+Source: `core/src/graph.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/engine.ts`, `core/src/graphExclude.ts`, `app/src/FileTree.tsx`, `core/src/community.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/layoutDiff.ts`, `core/src/layoutCompute.ts`, `core/src/layoutRunner.ts`, `core/src/routes/graph.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `app/src/GraphView.tsx`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/graph/displayGraph.ts`, `app/src/graph/graphLayers.ts`, `app/src/graph/respace.ts`, `app/src/graph/asciiGrid.ts`, `app/src/graph/cameraModel.ts`, `app/src/graph/modeMorph.ts`, `app/src/graph/backbone.ts`, `app/src/graph/lod.ts`, `app/src/graph/labelSelection.ts`, `app/src/graph/flatField.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src/graph/densityField.ts`, `app/src/graph/bloomColor.ts`, `app/src/graph/localLayoutInput.ts`

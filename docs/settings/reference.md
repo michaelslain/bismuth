@@ -89,6 +89,7 @@ Knowledge-graph rendering. The 2D/3D choice is not a setting: it is a per-window
 | `backgroundNoise` | boolean | `false` | | The faint ASCII noise texture under the graph field. |
 | `gradient` | boolean | `false` | | The glow behind dense regions and the darkened vignette at the edges. Off gives a flat ground. |
 | `refreshDebounceMs` | number | `300` | 100 to 1000 | Delay in ms before rebuilding the graph after a burst of edits. |
+| `exclude` | list of strings | `[]` | | Notes the graph leaves out in every mode: a bare name, a note's path, or a folder path ending in `/`. Display-only. See [Hide notes from the graph](../graph/overview.md#hide-notes-from-the-graph). |
 | `mapDefaultZoom` | number | `2` | 1 to 18 | Default zoom of the Bases map view when it cannot fit all markers. |
 | `repulsion` | number | `-10` | -40 to -1 | Accepted, not read. |
 | `linkDistance` | number | `5` | 1 to 40 | Accepted, not read. |
@@ -105,6 +106,8 @@ graph:
   spin: false
   graphLabelHubCount: 15
   gradient: true
+  exclude:
+    - user-profile
 ```
 
 ---

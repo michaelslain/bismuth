@@ -2756,6 +2756,16 @@
     "max": 0.5,
     "required": false
   },
+  "graph.exclude": {
+    "type": {
+      "kind": "list",
+      "item": "string"
+    },
+    "default": [],
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "graph.gradient": {
     "type": "boolean",
     "default": false,

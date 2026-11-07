@@ -72,6 +72,7 @@ export interface Settings {
         refreshDebounceMs: number // ms before rebuilding the graph after edits
         backgroundNoise: boolean // faint ASCII noise texture under the graph field; off by default
         gradient: boolean // phosphor glow + edge vignette behind the graph field; off by default
+        exclude: string[] // note names (bare) or paths left out of the graph; display-only
     }
     editor: {
         livePreview: boolean

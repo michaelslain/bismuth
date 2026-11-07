@@ -2,6 +2,22 @@ import { buildVaultGraph, resolveLinkTarget } from './vault'
 import { buildMemoryGraph } from './memory'
 import { mergeGraphs, type GraphData, type GraphEdge } from './graph'
 import { detectCommunityHierarchy } from './community'
+import { getFileAccess } from './fileAccess'
+import { parseSettingsText } from './settingsSerialize'
+import { excludeFromGraph, graphExcludeFrom } from './graphExclude'
+
+/** The vault's `graph.exclude` list, read through FileAccess so the mobile path can run it. A
+ *  missing or unreadable `.settings` is an empty list. */
+export async function readGraphExclude(vaultDir: string): Promise<string[]> {
+    try {
+        const raw = await (
+            await getFileAccess()
+        ).readNote(vaultDir, '.settings')
+        return graphExcludeFrom(parseSettingsText(raw).data)
+    } catch {
+        return []
+    }
+}
 
 /**
  * Stamp `community` / `communityLabel` / `communityPath` / `communityPathLabels` onto each node from
@@ -43,16 +59,24 @@ export function stampCommunities(g: GraphData): GraphData {
     return g
 }
 
+/**
+ * The knowledge graph: the vault's notes and tags, plus the 3rd brain's memory notes and their
+ * `about` edges when `memoryDir` is given. Notes named in `graph.exclude` are dropped before
+ * communities are stamped, so they shape neither clusters nor layout; `opts.exclude` overrides the
+ * list read from the vault's `.settings`.
+ */
 export async function buildGraph(
     vaultDir: string,
     memoryDir?: string,
+    opts: { exclude?: string[] } = {},
 ): Promise<GraphData> {
+    const exclude = opts.exclude ?? (await readGraphExclude(vaultDir))
     const {
         graph: vault,
         byBase: vaultByBase,
         byPath: vaultByPath,
     } = await buildVaultGraph(vaultDir)
-    if (!memoryDir) return stampCommunities(vault)
+    if (!memoryDir) return stampCommunities(excludeFromGraph(vault, exclude))
 
     const memory = await buildMemoryGraph(memoryDir)
     const about: GraphEdge[] = []
@@ -71,5 +95,5 @@ export async function buildGraph(
         vault,
         { nodes: memory.nodes, edges: [...memory.edges, ...about] },
     ])
-    return stampCommunities(merged)
+    return stampCommunities(excludeFromGraph(merged, exclude))
 }
