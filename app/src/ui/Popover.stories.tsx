@@ -2,7 +2,7 @@
 // content. No scrim of its own (see graph/GraphView.tsx's bare `.asc-popover` writers this
 // component will eventually replace), one hard-offset --lift depth cue. Shown here over a
 // textured "live content" backdrop so the surface's own fill and hairline border read as
-// distinct from whatever is behind it. The fill is OPAQUE in both tones (`menu` --bg, `panel`
+// distinct from whatever is behind it. The fill is OPAQUE in both tones (`menu` --menu-bg, `panel`
 // --surface-1): it used to be the translucent --pop-bg, which let the backdrop ghost through.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
@@ -110,9 +110,9 @@ const Rows = () => (
     </div>
 )
 
-/** Both tones over the same busy backdrop. `menu` is the page's own `--bg` with the 4px inset a
- *  row list sits in; `panel` is `--surface-1` with no inset. Both fills are fully opaque — the
- *  backdrop stripes must not show through either. */
+/** Both tones over the same busy backdrop: one box (opaque `--menu-bg`, one soft hairline, flat)
+ *  with no inset of its own; a `menu`'s rows are cells that run edge to edge, a `panel`'s caller
+ *  owns the spacing. The backdrop stripes must not show through either. */
 export const Tones: Story = {
     render: () => (
         <Backdrop>
@@ -135,15 +135,20 @@ export const Tones: Story = {
         const canvas = within(canvasElement)
         const menu = canvas.getByTestId('tone-menu').firstElementChild as HTMLElement
         const panel = canvas.getByTestId('tone-panel').firstElementChild as HTMLElement
-        await expect(getComputedStyle(menu).backgroundColor).toBe(resolved(doc, 'background-color', '--bg'))
+        await expect(getComputedStyle(menu).backgroundColor).toBe(
+            resolved(doc, 'background-color', '--menu-bg'),
+        )
         await expect(getComputedStyle(panel).backgroundColor).toBe(
-            resolved(doc, 'background-color', '--surface-1'),
+            resolved(doc, 'background-color', '--menu-bg'),
         )
         // opaque: a serialised `rgba(..., <1)` would be translucent
         await expect(getComputedStyle(menu).backgroundColor).not.toMatch(/rgba/)
         await expect(getComputedStyle(panel).backgroundColor).not.toMatch(/rgba/)
-        await expect(getComputedStyle(menu).paddingLeft).toBe('4px')
+        await expect(getComputedStyle(menu).paddingLeft).toBe('0px')
+        await expect(getComputedStyle(menu).paddingTop).toBe('0px')
+        await expect(getComputedStyle(menu).boxShadow).toBe('none')
         await expect(getComputedStyle(panel).paddingLeft).toBe('0px')
+        await expect(getComputedStyle(panel).boxShadow).toBe('none')
         await expect(getComputedStyle(menu).borderTopWidth).toBe('1px')
         await expect(getComputedStyle(menu).borderTopLeftRadius).toBe('0px')
     },

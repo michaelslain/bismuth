@@ -91,6 +91,12 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
             (light
                 ? mix(a.background, 70, a.border)
                 : mix(a.background, 88, '#000')),
+        // Menus and dropdown lists (context menu, Select, autocomplete). Dark: well under the rail,
+        // so a menu reads as a darker slot over the note rather than a lighter card on it. Light:
+        // the canvas, unchanged.
+        '--menu-bg':
+            a.menuBg ??
+            (light ? a.background : mix(a.background, 50, '#000')),
         // Editor / main pane (design's --editor): the graph canvas tone on dark, lifted toward
         // white on light. mix(surface 64%, bg) ≈ the design's #FAF8FD for oxide-light.
         '--editor':

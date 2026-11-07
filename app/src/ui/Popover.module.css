@@ -18,18 +18,21 @@
    stylesheet order. */
 
 .asc-popover {
-  border: var(--rule);
+  /* Both tones are one box: the menu fill (darker than the note under it on dark themes) and one
+     soft hairline, flat. They differ only in who owns the inside spacing. */
+  background: var(--menu-bg);
+  border: var(--rule-soft);
   border-radius: var(--r-0);
   color: var(--fg);
 }
 
-/* A list of rows: the page's own ground, and the 4px inset the rows sit inside. */
+/* A list of rows, with no inset at all: rows run edge to edge and the first and last meet the
+   hairline (a row is one --row-h cell, global.css --popover-gap). */
 .asc-popover.menu {
-  background: var(--bg);
-  padding: var(--popover-pad);
+  padding: var(--popover-pad) 0;
 }
-/* A box whose caller owns the content and its padding. */
-.asc-popover.panel { background: var(--surface-1); }
+/* A `panel` (a toolbar's settings or overflow panel, a colour picker, the graph's find panel) is
+   the bare box: its caller owns the content and the padding, so the tone adds no rule here. */
 
 .asc-popover.lift { box-shadow: var(--lift); }
 /* On the right edge --lift would throw off the pane, so the shadow throws left instead. */

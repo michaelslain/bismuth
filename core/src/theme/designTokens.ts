@@ -110,6 +110,7 @@ const SURFACE: TokenDef[] = [
     surface('panel', 'color', '#20222A', 'Panel fill (same as surface-1 in every built-in theme).'),
     surface('rail', 'color', '#101116', 'Sidebar and top strip, a notch under the canvas.', { field: 'rail' }),
     surface('editor', 'color', '#121317', 'Main note pane.', { field: 'editor' }),
+    surface('menu-bg', 'color', '#0B0B0D', 'Menus and dropdown lists: well under the rail on dark themes, the canvas on light.', { field: 'menuBg' }),
     surface('pop-bg', 'color', 'rgba(18,19,23,.88)', 'Floating cards: legends, graph cards, pickers.', { field: 'popBg' }),
     surface('pop-bg-strong', 'color', 'rgba(18,19,23,.94)', 'Floating cards that must stay legible over busy content.', { field: 'popBgStrong' }),
     surface('scrim-bg', 'color', 'rgba(10,11,14,.6)', 'Veil behind command, quick and template overlays.', { field: 'scrimBg' }),
@@ -367,16 +368,17 @@ const MOTION: TokenDef[] = [
 const popover = grp('popover')
 const POPOVER: TokenDef[] = [
     popover('popover-radius', 'length', 'var(--r-0)', 'Corner radius of menus and popovers.'),
-    popover('popover-pad', 'length', '4px', 'Padding inside a popover.'),
-    popover('popover-row-pad-y', 'length', '0px', 'Vertical padding of a popover row.'),
-    popover('popover-row-pad-x', 'length', '8px', 'Horizontal padding of a popover row.'),
+    popover('popover-gap', 'length', 'calc((var(--row-h) - 1cap) / 2)', 'Space around a menu row\'s letters: above the capitals, below the baseline and at the sides.'),
+    popover('popover-pad', 'length', '0px', 'Space above the first row and below the last.'),
+    popover('popover-row-pad-y', 'length', '0px', 'Vertical padding of a popover row (the row is --row-h tall, its letters centred).'),
+    popover('popover-row-pad-x', 'length', 'var(--popover-gap)', 'Horizontal padding of a popover row.'),
     popover('popover-row-radius', 'length', '0', 'Corner radius of a popover row.'),
     popover('popover-row-gap', 'length', 'var(--sp-4)', 'Gap between parts of a popover row.'),
     popover('popover-font-size', 'length', 'var(--fs-ui)', 'Popover text size.'),
     popover('popover-min-width', 'length', '170px', 'Narrowest a popover gets.'),
     popover('popover-selected-bg', 'color', 'var(--state-selected-bg)', 'Fill of the selected popover row.'),
     popover('popover-detail-opacity', 'number', '0.5', 'Opacity of the secondary text in a popover row.'),
-    popover('popover-shadow', 'shadow', 'var(--lift)', 'Shadow under a popover.'),
+    popover('popover-shadow', 'shadow', 'none', 'Shadow under a popover.'),
 ]
 
 const cursor = grp('cursor')
@@ -737,7 +739,7 @@ export function checkTokenValue(def: TokenDef, raw: unknown): TokenCheck {
             return bad()
         case 'length':
             if (typeof raw === 'number') return ok(`${raw}px`)
-            return isLengthLiteral(s) || ref || isMath(s, 'px|rem|em|%|ch|vh|vw', ['length', 'number'])
+            return isLengthLiteral(s) || ref || isMath(s, 'px|rem|em|%|ch|cap|vh|vw', ['length', 'number'])
                 ? ok(s)
                 : bad()
         case 'number':

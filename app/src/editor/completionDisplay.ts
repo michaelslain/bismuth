@@ -76,35 +76,36 @@ export const completionTheme = EditorView.theme({
     // Match .bismuth-popover exactly: same radius, padding, shadow, and UI font tokens —
     // CodeMirror owns this <ul><li> DOM, so we can't share the component, only the tokens.
     '.cm-tooltip.cm-tooltip-autocomplete': {
-        border: '1px solid var(--border)',
+        border: 'var(--rule-soft)',
         borderRadius: 'var(--popover-radius)',
-        backgroundColor: 'var(--bg)',
+        backgroundColor: 'var(--menu-bg)',
         boxShadow: 'var(--popover-shadow)',
         fontFamily: 'var(--popover-font)',
         minWidth: 'var(--popover-min-width)',
         overflow: 'hidden',
-        padding: 'var(--popover-pad)',
+        padding: 'var(--popover-pad) 0',
     },
     // NOTE: two classes (.cm-tooltip.cm-tooltip-autocomplete) so these match CM's
     // own default li rule specificity and win — a single-class selector loses to it.
-    // CM owns this <ul><li> DOM (no .bismuth-popover-row class to hang a `height` off), so
-    // the row unit is expressed via line-height against a zeroed pad-y instead — the same
-    // 18px (--row-h) total as every other popover/context-menu row.
+    // CM owns this <ul><li> DOM (no .bismuth-popover-row class), so it gets the same cell as every
+    // other menu row by the same means: one --row-h tall, its text trimmed to cap top and
+    // baseline (the label and detail below) and centred.
     '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
         display: 'flex',
         alignItems: 'center',
         gap: 'var(--popover-row-gap)',
+        height: 'var(--row-h, 18px)',
         padding: 'var(--popover-row-pad-y) var(--popover-row-pad-x)',
         borderRadius: 'var(--popover-row-radius)',
         fontSize: 'var(--popover-font-size)',
-        lineHeight: 'var(--row-h, 18px)',
     },
     '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': {
         backgroundColor: 'var(--popover-selected-bg)',
         color: 'var(--fg)',
     },
-    '.cm-completionLabel': { flex: '1 1 auto' },
+    '.cm-completionLabel': { flex: '1 1 auto', textBox: 'trim-both cap alphabetic' },
     '.cm-completionDetail': {
+        textBox: 'trim-both cap alphabetic',
         marginLeft: 'auto',
         paddingLeft: '12px',
         opacity: 'var(--popover-detail-opacity)',

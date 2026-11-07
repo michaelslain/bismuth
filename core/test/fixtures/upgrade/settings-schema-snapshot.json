@@ -1323,6 +1323,16 @@
     "max": null,
     "required": false
   },
+  "appearance.tokens.menu-bg": {
+    "type": {
+      "kind": "token",
+      "token": "menu-bg"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "appearance.tokens.mono-scale": {
     "type": {
       "kind": "token",
@@ -1467,6 +1477,16 @@
     "type": {
       "kind": "token",
       "token": "popover-font-size"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.tokens.popover-gap": {
+    "type": {
+      "kind": "token",
+      "token": "popover-gap"
     },
     "default": null,
     "min": null,

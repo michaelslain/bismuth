@@ -18,13 +18,11 @@
    specificity in case CM's default light tooltip chrome (#f5f5f5 / #bbb border) wins on source
    order (the `--bg`/`--fg`/`--border` vars resolve fine — they cascade from :root onto the
    tooltip wherever CM parents it). */
-/* Flat, not the shared .bismuth-popover lift shadow every other popover carries (context menus,
-   the emoji rail) — Acceptance: "the editor date-picker panel has no box-shadow — 1px --border,
-   flat." Scoped to THIS popover only; .bismuth-popover's shared chrome (global.css) is untouched. */
+/* The same box as every menu: the menu fill, one soft hairline, flat. */
 :global(.cm-editor) :global(.cm-tooltip) .root {
-    background: var(--bg);
+    background: var(--menu-bg);
     color: var(--fg);
-    border: 1px solid var(--border);
+    border: var(--rule-soft);
     border-radius: var(--popover-radius);
     box-shadow: none;
 }
@@ -45,13 +43,19 @@
 }
 
 /* relative-date quick options, divided from the grid above */
-.list {
-    border-top: 1px solid var(--border);
-    padding-top: var(--sp-2);
+/* The menu divider between the grid and the presets. The grid's last row already holds space
+   under its digits (its cell padding and untrimmed line box), so the divider adds none above
+   itself, and half a gap below, since the panel's own flex gap does the rest: it sits midway
+   between the digits and the first preset's letters. Scoped under .root so it outranks the shared
+   .bismuth-popover-sep margin whatever the stylesheet order. */
+.root .sep {
+    margin-top: 0;
+    margin-bottom: var(--popover-pad);
 }
 
-/* The time field's own underline already divides it from the presets: no second rule under it. */
-.foot:has(.time) + .list {
-    border-top: none;
-    padding-top: 0;
+/* The presets under the grid. A date-only picker divides them from the grid with the menu divider
+   (DatePicker.tsx); a datetime picker's time field underline already divides them. */
+.list {
+    display: flex;
+    flex-direction: column;
 }

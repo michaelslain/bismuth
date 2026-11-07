@@ -110,6 +110,7 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | `panel` | color | `#20222A` | Panel fill (same as surface-1 in every built-in theme). |
 | `rail` | color | `#101116` | Sidebar and top strip, a notch under the canvas. |
 | `editor` | color | `#121317` | Main note pane. |
+| `menu-bg` | color | `#0B0B0D` | Menus and dropdown lists: well under the rail on dark themes, the canvas on light. |
 | `pop-bg` | color | `rgba(18,19,23,.88)` | Floating cards: legends, graph cards, pickers. |
 | `pop-bg-strong` | color | `rgba(18,19,23,.94)` | Floating cards that must stay legible over busy content. |
 | `scrim-bg` | color | `rgba(10,11,14,.6)` | Veil behind command, quick and template overlays. |
@@ -386,16 +387,17 @@ Every row below comes from `DESIGN_TOKENS`; `core/test/theme/tokensDoc.test.ts` 
 | key | kind | default | what it paints |
 |---|---|---|---|
 | `popover-radius` | length | `var(--r-0)` | Corner radius of menus and popovers. |
-| `popover-pad` | length | `4px` | Padding inside a popover. |
-| `popover-row-pad-y` | length | `0px` | Vertical padding of a popover row. |
-| `popover-row-pad-x` | length | `8px` | Horizontal padding of a popover row. |
+| `popover-gap` | length | `calc((var(--row-h) - 1cap) / 2)` | Space around a menu row's letters: above the capitals, below the baseline and at the sides. |
+| `popover-pad` | length | `0px` | Space above the first row and below the last. |
+| `popover-row-pad-y` | length | `0px` | Vertical padding of a popover row (the row is --row-h tall, its letters centred). |
+| `popover-row-pad-x` | length | `var(--popover-gap)` | Horizontal padding of a popover row. |
 | `popover-row-radius` | length | `0` | Corner radius of a popover row. |
 | `popover-row-gap` | length | `var(--sp-4)` | Gap between parts of a popover row. |
 | `popover-font-size` | length | `var(--fs-ui)` | Popover text size. |
 | `popover-min-width` | length | `170px` | Narrowest a popover gets. |
 | `popover-selected-bg` | color | `var(--state-selected-bg)` | Fill of the selected popover row. |
 | `popover-detail-opacity` | number | `0.5` | Opacity of the secondary text in a popover row. |
-| `popover-shadow` | shadow | `var(--lift)` | Shadow under a popover. |
+| `popover-shadow` | shadow | `none` | Shadow under a popover. |
 
 ### cursor
 

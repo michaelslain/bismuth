@@ -67,6 +67,7 @@
   --border-soft: #282B34;
   --faint: #827F78;
   --rail: #101116;
+  --menu-bg: #0B0B0D;
   /* Structural surfaces that branch light/dark at runtime (settingsCssVars); the
      literals here are dark (ink) first-paint fallbacks. See LIGHT_THEMES.md Part B. */
   --editor: #121317;
@@ -667,14 +668,17 @@
      Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1) alongside .asc-popover
      itself — radius 5 -> 0, the blurred --shadow-popup -> the zero-blur --lift. */
   --popover-radius: var(--r-0);
-  --popover-pad: 4px;
-  /* Row height is now the app's row unit (--row-h, global.css's `styles/tokens.css` section) via an explicit height
-     on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
-     autocomplete, and the chat history list all snap to the same 18px cadence as the
-     sidebar tree. Kept as a token (rather than inlining 0) so a caller can still widen a
-     specific list without touching the shared row rule. */
+  /* A menu row is a CELL, one --row-h tall like a file-tree row: its letters (trimmed to cap top and
+     baseline, `text-box: trim-both cap alphabetic`, .bismuth-popover-label below) sit centred in
+     it, a highlight fills the whole cell, and a divider lies on the line between two cells. The
+     box adds nothing above the first cell or below the last, so a highlighted first or last row
+     meets the hairline. --popover-gap is what the centring leaves above the capitals and below the
+     baseline, so the letters' sides get the same: every gap around the letters is one number.
+     It resolves where it is used (`1cap` is the row's own font). */
+  --popover-gap: calc((var(--row-h) - 1cap) / 2);
+  --popover-pad: 0px;
   --popover-row-pad-y: 0px;
-  --popover-row-pad-x: 8px;
+  --popover-row-pad-x: var(--popover-gap);
   --popover-row-radius: 0;
   --popover-row-gap: var(--sp-4);
   --popover-font-size: var(--fs-ui);
@@ -687,7 +691,9 @@
   /* UI-chrome font + one shadow for every popover surface. Centralised here so the
      context menu, autocomplete, and palette can never drift on either. */
   --popover-font: var(--ui-font-stack);
-  --popover-shadow: var(--lift);
+  /* No shadow: a menu is set apart by its darker fill (--menu-bg) and one hairline, like every
+     other region of the app, not lifted off the page. */
+  --popover-shadow: none;
 }
 
 /* Registered custom properties. `@property` registration is document-global — it cannot be scoped
@@ -2183,12 +2189,14 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 
 /* chrome */
 .bismuth-popover {
-  background: var(--bg);
-  border: var(--rule);
+  background: var(--menu-bg);
+  border: var(--rule-soft);
   border-radius: var(--popover-radius);
-  padding: var(--popover-pad);
+  /* Block only: rows run edge to edge, so a selected row's fill meets the hairline; the side
+     gap is each row's own pad-x. */
+  padding: var(--popover-pad) 0;
   min-width: var(--popover-min-width);
-  box-shadow: var(--lift);
+  box-shadow: var(--popover-shadow);
   font-family: var(--popover-font);
   font-size: var(--popover-font-size);
   color: var(--fg);
@@ -2233,11 +2241,25 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    calls onHover (Enter/click still act on the same row); only the paint differs. */
 .bismuth-popover-row:hover:not(.bismuth-popover-row--disabled) { background: var(--state-hover-bg); }
 
+/* The text parts are trimmed to cap top and baseline (see --popover-gap), so centring them in the
+   cell leaves equal space over the capitals and under the baseline in every row, descenders or
+   not. The parts with no text (icon, prefix swatch, chevron) are held to the same 1cap box,
+   centred, so a glyph centres on the capitals. */
+.bismuth-popover-label,
+.bismuth-popover-detail,
+.bismuth-popover-shortcut > * { text-box: trim-both cap alphabetic; }
+.bismuth-popover-icon,
+.bismuth-popover-prefix,
+.bismuth-popover-chev { height: 1cap; align-items: center; }
 .bismuth-popover-icon,
 .bismuth-popover-prefix { display: inline-flex; flex-shrink: 0; }
 /* The icon takes the row's own ink (accent when selected, text-muted when disabled) — it used to be
    dimmed to .85 opacity, which showed a state by opacity. */
-.bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  /* The trimmed box is cap top to baseline, so `overflow: hidden` alone would cut every descender
+     and overshoot. Padding outside the trim gives the ink room inside the clip; the equal negative
+     margin keeps it out of the layout. */
+  padding-block: .3em; margin-block: -.3em; }
 .bismuth-popover-detail { margin-left: auto; color: var(--text-muted); padding-left: var(--sp-5); }
 /* Right-aligned Kbd caps (a real keybinding — see PopoverRow.shortcut) — layout only, the
    Kbd primitive supplies the cap look. */
@@ -2245,10 +2267,21 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 /* Right-side chevron on a row that opens a nested submenu (label flex pushes it right). */
 .bismuth-popover-chev { display: inline-flex; flex-shrink: 0; color: var(--faint); margin-left: var(--sp-2); }
 
+/* The table's own divider: the `-` ink (--ascii-dash, measured from the UI font by
+   asciiGlyphTiles.ts) in --table-edge, so it reads like a table's `- - - -`. `space` pins the first
+   dash to the row content's start and the last to its end, spreading the rest evenly at about the
+   table's pitch. It lies on the line between two cells, adding only its own pixel. */
 .bismuth-popover-sep {
+  --sep-dash: var(--ascii-dash, .7ch);
+  --sep-pitch: var(--ascii-pitch, 2ch);
   height: 1px;
-  background: var(--border);
-  margin: var(--sp-2) var(--sp-1);
+  /* each tile is one pitch: the dash, then its gap. The line runs one gap past the content's end
+     on the right, so the last tile's trailing gap falls outside and its dash ends in line. */
+  margin: 0 calc(var(--popover-row-pad-x) - (var(--sep-pitch) - var(--sep-dash)))
+    0 var(--popover-row-pad-x);
+  background: linear-gradient(90deg, var(--table-edge) var(--sep-dash), transparent 0)
+    0 0 / var(--sep-pitch) 1px;
+  background-repeat: space no-repeat;
 }
 
 /* When an .bismuth-popover is hosted inside a CodeMirror hover tooltip (the YAML

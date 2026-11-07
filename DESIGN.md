@@ -5,6 +5,7 @@ colors:
   ground-charcoal: "#15161A"
   editor-ground: "#121317"
   rail-ground: "#101116"
+  menu-ground: "#0B0B0D"
   surface-1: "#20222A"
   surface-2: "#272A33"
   surface-3: "#31353F"
@@ -404,8 +405,9 @@ borders, not shadows. Nothing in the app is blurred. Things that genuinely float
 
 ### Shadow Vocabulary
 - **Lift** (`--lift`: `2px 2px 0 var(--shadow-hard)`): a zero-blur, hard-offset "TUI drop-shadow"
-  for surfaces that float directly over live content with no scrim (popovers, context menus,
-  autocomplete). `--shadow-hard` is projected per theme and is more opaque on light themes, since
+  for a box that floats over live content and needs a depth cue (a tooltip, the autocomplete's info
+  card). Menus and popover panels take no lift: their darker `--menu-bg` and one hairline set them
+  apart. `--shadow-hard` is projected per theme and is more opaque on light themes, since
   an unblurred shadow otherwise disappears.
 - **Lift start** (`--lift-start`: `-2px 2px 0 var(--shadow-hard)`): the mirror of `--lift` for a
   surface anchored to the right edge (the default tab rail's flyout), whose `--lift` cue would land
@@ -415,7 +417,7 @@ borders, not shadows. Nothing in the app is blurred. Things that genuinely float
 
 ### Named Rules
 **The No-Blur Rule.** No `blur()` in a shadow and no `backdrop-filter`. Modals sit on a scrim
-(`--overlay-bg`) and need no shadow; popovers get `--lift`, and nothing else does.
+(`--overlay-bg`) and need no shadow; tooltips and info cards get `--lift`, and nothing else does.
 
 **The Token-Not-Shadow Rule.** Components read `--lift`, `--lift-start` or `--glow-*`; they never write a shadow literal.
 
@@ -652,8 +654,15 @@ the accent. An outline appears only when it means something.
   plus the selected tint) fading in over `--sp-6`, so the covered text dissolves under it; a row
   whose trailing meta is a time or a badge hides that meta while the `[x]` shows. The delete is
   immediate, with an undo toast.
-- **Popover / menu:** `--pop-bg` with a hairline and `--lift`; 4px inner padding, rows at `--row-h`
-  with `8px` horizontal padding, selection in `--state-selected-bg` and accent text.
+- **Popover / menu** (context menu, dropdown list, autocomplete, date picker, and the panels a
+  toolbar or picker opens): `--menu-bg` (on dark themes darker than the note under it, on light the
+  canvas), one `--rule-soft` hairline, square, flat. A menu's rows are cells, one `--row-h` tall like a file-tree row,
+  running edge to edge: the letters (trimmed to cap top and baseline) sit centred in the cell, a
+  highlight fills the whole cell, and the box adds no inset, so a highlighted first or last row
+  meets the hairline. `--popover-gap` is what that centring leaves above the capitals and below the
+  baseline, and the letters' sides get the same, so every gap around the letters is one number. A divider lies on the line between two cells; it is a table's dashes (the `-` ink in
+  `--table-edge`, spaced evenly at about `--ascii-pitch`), with the first and last dash in line
+  with the row content. A quick-action box beside a menu uses square cells of the same height. Selection is `--state-selected-bg` with accent text.
 
 ### Navigation
 - **ViewBar:** every pane's toolbar (see Layout). **Tab rail / top strip / sidebar:** `--fs-ui`

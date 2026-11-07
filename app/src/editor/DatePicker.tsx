@@ -126,6 +126,11 @@ const DatePicker: Component<DatePickerProps> = props => {
                     </Show>
                 </div>
             </Show>
+            {/* the menu family's divider (global.css .bismuth-popover-sep): the time field's
+                underline already divides a datetime picker */}
+            <Show when={props.kind !== 'datetime'}>
+                <div class={`bismuth-popover-sep ${styles.sep}`} />
+            </Show>
             <div class={styles.list}>
                 <For each={props.options}>
                     {(opt, i) => (

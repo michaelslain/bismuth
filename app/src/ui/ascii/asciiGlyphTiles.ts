@@ -348,6 +348,9 @@ function install(retried = false): void {
     root.setProperty('--ascii-corner-w', `${g.cssCornerW}px`)
     root.setProperty('--ascii-tile-h', `${g.cssH}px`)
     root.setProperty('--ascii-pitch', `${g.cssPitch}px`)
+    // the `-` ink's length: a menu divider (global.css `.bismuth-popover-sep`) repeats it at
+    // --ascii-pitch so it reads exactly like a table's dashes
+    root.setProperty('--ascii-dash', `${g.dash / dpr}px`)
     // the shortest typed row: two corner halves + one dash pitch — a row this tall gets exactly one
     root.setProperty('--ascii-row-h', `${g.cssH + g.cssPitch}px`)
     root.setProperty('--ascii-slice-x', String(cx))

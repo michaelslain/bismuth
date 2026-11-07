@@ -45,6 +45,7 @@ export interface ColorTokens {
     borderSoft?: string // --border-soft
     faint?: string // --faint
     hoverBg?: string // --hover-bg
+    menuBg?: string // --menu-bg
     popBg?: string // --pop-bg
     popBgStrong?: string // --pop-bg-strong
     scrimBg?: string // --scrim-bg
@@ -186,6 +187,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         borderSoft: '#282B34',
         faint: '#827F78',
         hoverBg: 'rgba(232,227,214,.05)',
+        menuBg: '#0B0B0D',
         popBg: 'rgba(18,19,23,.88)',
         popBgStrong: 'rgba(18,19,23,.94)',
         scrimBg: 'rgba(10,11,14,.6)',

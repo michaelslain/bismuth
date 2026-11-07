@@ -2,9 +2,13 @@
    inset, lift) is <Popover tone="menu">; this file is what makes it a COLUMN of icon buttons and
    puts it on the popover rung of the stacking ladder. Replaces `.bismuth-popover-rail` in
    global.css, which also had to override the 170px list min-width Popover does not impose. */
+/* One square cell per action, each one menu row (--row-h) tall, so the box lines up with the
+   menu's first row and its cells with the menu's cells. */
 .rail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
+  padding: 0;
+  display: grid;
+  grid-template-columns: var(--row-h, 18px);
+  grid-auto-rows: var(--row-h, 18px);
+  place-items: center;
   z-index: var(--z-popover);
 }

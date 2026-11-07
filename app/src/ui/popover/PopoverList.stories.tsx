@@ -4,8 +4,8 @@
 //
 // Props: items (PopoverRow[]: label, icon?, prefix?, detail?, shortcut?, danger?, disabled?,
 // separatorBefore?, hasSubmenu?), active? (highlighted index), onActivate, onHover?,
-// style?/class?/ref?. The surface is ui/Popover, tone "menu": opaque --bg, 1px --border, radius
-// 0, hard 2px 2px 0 lift, 4px inset.
+// style?/class?/ref?. The surface is ui/Popover, tone "menu": opaque --menu-bg, one --border-soft
+// hairline, radius 0, flat, rows edge to edge with one --popover-gap between letters and edges.
 //
 // Rendered un-portaled here (inline, not fixed-positioned) so it shows in the normal
 // document flow instead of needing a trigger + click choreography.
@@ -194,9 +194,10 @@ export const SelectedDisabled: Story = {
     },
 }
 
-/** The menu recipe, measured: opaque --bg, 1px border, radius 0, 4px inset, 18px rows with an
- *  8px inset, a hard right+bottom lift. Fails if the surface goes translucent or the geometry
- *  drifts. */
+/** The menu recipe, measured: opaque --menu-bg, one --border-soft hairline, radius 0, no shadow,
+ *  no inset at all (rows run edge to edge and the first meets the hairline), and every row one
+ *  --row-h cell with --popover-gap at its sides. Fails if the surface goes translucent or the
+ *  geometry drifts. */
 export const Surface: Story = {
     render: () => <PopoverList items={BASIC_ITEMS} onActivate={() => {}} />,
     play: async ({ canvasElement }) => {
@@ -204,13 +205,25 @@ export const Surface: Story = {
         const menu = canvasElement.querySelector('.bismuth-popover') as HTMLElement
         const row = menu.querySelector('.bismuth-popover-row') as HTMLElement
         const cs = getComputedStyle(menu)
-        await expect(cs.backgroundColor).toBe(resolvedColor(doc, 'background-color', '--bg'))
+        await expect(cs.backgroundColor).toBe(resolvedColor(doc, 'background-color', '--menu-bg'))
         await expect(cs.backgroundColor).not.toMatch(/rgba/)
         await expect(cs.borderTopWidth).toBe('1px')
+        await expect(cs.borderTopColor).toBe(resolvedColor(doc, 'color', '--border-soft'))
         await expect(cs.borderTopLeftRadius).toBe('0px')
-        await expect(cs.paddingLeft).toBe('4px')
-        await expect(cs.boxShadow).toMatch(/2px 2px 0px/)
+        await expect(cs.paddingLeft).toBe('0px')
+        await expect(cs.paddingTop).toBe('0px')
+        await expect(cs.boxShadow).toBe('none')
+        const rs = getComputedStyle(row)
+        // the side gap is the gap the centring leaves above the capitals: (row - 1cap) / 2
+        const cap = doc.createElement('div')
+        cap.style.height = '1cap'
+        row.appendChild(cap)
+        const capH = cap.getBoundingClientRect().height
+        cap.remove()
+        await expect(parseFloat(rs.paddingLeft)).toBeCloseTo((18 - capH) / 2, 1)
+        // one cell, the app's row unit, like a file-tree row
         await expect(row.getBoundingClientRect().height).toBe(18)
-        await expect(getComputedStyle(row).paddingLeft).toBe('8px')
+        // the first cell meets the box's top hairline
+        await expect(row.getBoundingClientRect().top - menu.getBoundingClientRect().top).toBe(1)
     },
 }
