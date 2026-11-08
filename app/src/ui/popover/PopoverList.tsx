@@ -15,6 +15,8 @@ export type PopoverRow = {
     /** A small custom element rendered before the label (e.g. a color swatch dot). */
     prefix?: JSX.Element
     detail?: string
+    /** Muted text following the label in its cell — a command's argument hint. */
+    hint?: string
     /** A REAL keybinding, in the app's combo syntax ("Mod+Shift+D") — rendered right-aligned via
      *  the shared Kbd primitive (ui/ascii/Kbd.tsx). Only set this from an actual
      *  settings.keybindings entry (see CommandPalette.tsx's COMMAND_KEYBINDINGS map for the
@@ -39,12 +41,16 @@ function PopoverList(props: {
     class?: string
     /** Ref to the container element (ContextMenu uses it to position a submenu flyout). */
     ref?: (el: HTMLDivElement) => void
+    /** Line the rows up as a table: every label (with its hint) in one column, every detail in
+     *  the next, the detail ending in an ellipsis where the list runs out of width — a command
+     *  list whose descriptions are long. Rows draw no icon, prefix, shortcut or chevron. */
+    columns?: boolean
 }) {
     return (
         <Popover
             tone="menu"
             ref={props.ref}
-            class={`bismuth-popover ${props.class ?? ''}`}
+            class={`bismuth-popover ${props.columns ? 'bismuth-popover--columns' : ''} ${props.class ?? ''}`}
             style={props.style}
             onClick={e => e.stopPropagation()}
         >
@@ -59,6 +65,8 @@ function PopoverList(props: {
                             icon={item.icon}
                             prefix={item.prefix}
                             detail={item.detail}
+                            hint={item.hint}
+                            columns={props.columns}
                             shortcut={item.shortcut}
                             danger={item.danger}
                             disabled={item.disabled}

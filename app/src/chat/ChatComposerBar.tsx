@@ -27,6 +27,7 @@ import { IconButton } from '../ui/IconButton'
 import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { createMenuNav } from '../ui/popover/createMenuNav'
 import { classifyComposerKey } from './chatComposerKeys'
+import { matchSlashCommands, slashArgHint } from './chatSlashCommands'
 import { settings } from '../settings'
 import {
     HISTORY_BOTTOM,
@@ -110,18 +111,23 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
         const q = slashQuery()
         const session = props.session
         if (q === null || !session) return []
-        return session
-            .slashCommands()
-            .filter(c => c.toLowerCase().startsWith(q))
-            .slice(0, 50)
+        return matchSlashCommands(session.slashCommands(), q)
     })
     const slashRows = createMemo<PopoverRow[]>(() =>
         slashMatches().map(c => ({
             label: `/${c}`,
-            icon: 'ChevronRight',
+            hint: props.session?.slashCommandHint(c),
             detail: props.session?.slashCommandDetail(c),
         })),
     )
+    // The picked command's argument hint, greyed after the caret until an argument is typed.
+    const argHint = () => {
+        const session = props.session
+        if (!session) return undefined
+        return slashArgHint(draftValue(), name =>
+            session.slashCommandHint(name),
+        )
+    }
     const closeSlash = () => setSlashOpen(false)
     const chooseSlash = (i: number) => {
         const cmd = slashMatches()[i]
@@ -274,6 +280,7 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                         onMouseDown={e => e.preventDefault() /* keep composer focus */}
                     >
                         <PopoverList
+                            columns
                             items={slashRows()}
                             active={slashNav.active()}
                             onActivate={i => chooseSlash(i)}
@@ -310,6 +317,7 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                     <div class={styles.input}>
                         <ChatComposer
                             value={draftValue}
+                            argHint={argHint}
                             onInput={onComposerInput}
                             onKeyDown={onComposerKey}
                             onPaste={onPaste}

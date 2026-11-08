@@ -36,11 +36,16 @@ export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
  *  core/chat.ts's LOCAL_SLASH_COMMANDS (which is for commands the backend itself answers, like
  *  `/mcp`). `detail` powers the popover row's description text (mirrors chat/chatSession.ts's
  *  SLASH_COMMAND_DETAILS for synthesized commands). */
-export const CLIENT_SLASH_COMMANDS: { name: string; detail: string }[] = [
-    { name: 'rename', detail: 'Rename this chat tab' },
+export const CLIENT_SLASH_COMMANDS: {
+    name: string
+    detail: string
+    hint: string
+}[] = [
+    { name: 'rename', detail: 'Rename this chat tab', hint: '<name>' },
     {
         name: 'color',
-        detail: 'Tint this chat\'s pane (swatch name, hex, or "clear")',
+        detail: "Tint this chat's pane",
+        hint: '<swatch|hex|clear>',
     },
 ]
 
@@ -54,4 +59,41 @@ export function withClientSlashCommands(commands: string[]): string[] {
     for (const c of CLIENT_SLASH_COMMANDS)
         if (!out.includes(c.name)) out.push(c.name)
     return out
+}
+
+/** The commands the "/" popover offers for `query` (the draft after its `/`, lowercased), best
+ *  first: a name that starts with it, then a name whose later part does (`brain` finds
+ *  `superpowers:brainstorming`, `review` finds `code-review`), then a name that contains it. List
+ *  order is kept within each group, and a name listed twice is offered once. An empty query offers
+ *  every command. Pure. */
+export function matchSlashCommands(
+    commands: string[],
+    query: string,
+    limit = 50,
+): string[] {
+    const q = query.toLowerCase()
+    const unique = [...new Set(commands)]
+    if (!q) return unique.slice(0, limit)
+    const groups: string[][] = [[], [], []]
+    for (const c of unique) {
+        const name = c.toLowerCase()
+        if (name.startsWith(q)) groups[0].push(c)
+        else if (name.split(/[:\-_./]/).some(part => part.startsWith(q)))
+            groups[1].push(c)
+        else if (name.includes(q)) groups[2].push(c)
+    }
+    return groups.flat().slice(0, limit)
+}
+
+/** The argument hint to show greyed after the caret, or undefined: the draft is a known command
+ *  followed by whitespace and nothing else yet (`/bust ` → `[deep] [K] <goal>`). The hint goes away
+ *  as soon as an argument is typed, and never shows for a bare `/bust` (the popover shows it there).
+ *  Pure. */
+export function slashArgHint(
+    draft: string,
+    hintFor: (name: string) => string | undefined,
+): string | undefined {
+    const m = /^\/(\S+)[ \t]+$/.exec(draft)
+    if (!m) return undefined
+    return hintFor(m[1]) || undefined
 }

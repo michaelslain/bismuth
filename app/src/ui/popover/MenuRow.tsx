@@ -1,5 +1,5 @@
 // app/src/ui/popover/MenuRow.tsx
-// One popover row: [icon] label [detail]. Pure presentation — no positioning,
+// One popover row: [icon] label [hint] [detail]. Pure presentation — no positioning,
 // no event wiring beyond the click/hover the parent passes in. Shared by the
 // context menu; the autocomplete reproduces the SAME anatomy via CodeMirror's
 // addToOptions (see editor/completionDisplay.ts), reading the same CSS classes.
@@ -28,6 +28,13 @@ function MenuRow(props: {
     /** Descriptive text for the row (a path, a count, a hint) — NOT a keybinding: that is
      *  `shortcut`, which renders the caps at the Kbd size instead of the text size. */
     detail?: string
+    /** Muted text that belongs to the label and follows it in the same cell — a command's
+     *  argument hint (`/bust [deep] <goal>`). */
+    hint?: string
+    /** Set by a `columns` PopoverList: the row lays out as two grid cells (label + hint, detail)
+     *  on the list's shared columns, and always renders the detail cell so rows stay aligned.
+     *  Icon, prefix, shortcut and chevron are not drawn in this layout. */
+    columns?: boolean
     /** A real keybinding combo — see PopoverRow.shortcut. Renders right-aligned via Kbd. */
     shortcut?: string
     danger?: boolean
@@ -55,27 +62,32 @@ function MenuRow(props: {
             onMouseEnter={() => props.onMouseEnter?.()}
             onClick={e => !props.disabled && props.onClick?.(e)}
         >
-            <Show when={props.prefix}>
+            <Show when={!props.columns && props.prefix}>
                 <span class="bismuth-popover-prefix">{props.prefix}</span>
             </Show>
-            <Show when={props.icon}>
+            <Show when={!props.columns && props.icon}>
                 <span class="bismuth-popover-icon">
                     <Icon value={props.icon!} />
                 </span>
             </Show>
-            <span class="bismuth-popover-label">{props.label}</span>
-            <Show when={props.detail}>
+            <span class="bismuth-popover-label">
+                {props.label}
+                <Show when={props.hint}>
+                    <span class="bismuth-popover-hint"> {props.hint}</span>
+                </Show>
+            </span>
+            <Show when={props.columns || props.detail}>
                 <span class={`bismuth-popover-detail ${props.detailClass ?? ''}`}>
-                    {props.detail}
+                    {props.detail ?? ''}
                 </span>
             </Show>
             {/* A row's keybinding recedes to --faint (Kbd's `muted`), as in every palette row. */}
-            <Show when={props.shortcut}>
+            <Show when={!props.columns && props.shortcut}>
                 <span class="bismuth-popover-shortcut">
                     <Kbd combo={props.shortcut} muted />
                 </span>
             </Show>
-            <Show when={props.hasSubmenu}>
+            <Show when={!props.columns && props.hasSubmenu}>
                 <span
                     class="bismuth-popover-chev"
                     style={{ 'margin-right': `${-iconSize() * GLYPH_TRAILING_PAD}px` }}

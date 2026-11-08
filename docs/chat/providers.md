@@ -27,7 +27,7 @@ Controls that rely on a Claude-only surface are hidden for opencode, not broken.
 
 - Permission mode select: opencode can raise and answer a live approval request, but its server API has no Default, Plan, Accept edits or Bypass vocabulary, so the mode select stays hidden.
 - Cross-session history. The `history` button lists the Claude Code session store. opencode conversations resume per tab but do not appear in that list.
-- Slash commands. The `/` popover lists opencode's own command registry instead of Claude's. `/rename` and `/color` work on every provider.
+- Slash commands. The `/` popover lists opencode's own command registry instead of Claude's, with each command's description; opencode commands carry no argument hints. `/rename` and `/color` work on every provider.
 - Context meter. The header shows no context-window usage for opencode.
 
 Streamed markdown, tool chips, thinking sections, the editor-context preamble, queued messages, Stop, reconnect buffering, image attachments and per-turn memory recall work the same on both when opencode runs in server mode.
@@ -176,6 +176,7 @@ The pure half (JSON-RPC envelopes, the `session/update` to `ChatFrame` translato
 - Permissions: `session/request_permission` is parked as a `permission` frame and answered through the same permission card. Every other client-side request (`fs/*`, `terminal/*`, elicitation) gets method-not-found. There is no mode picker and no AskUserQuestion equivalent.
 - MCP and memory: `mcpServers` carries Bismuth's own `bismuth-mcp` binary from `~/.bismuth/bin/bismuth-mcp` (with `BISMUTH_VAULT`, `BISMUTH_MCP_CHANNEL=chat`, `BISMUTH_AGENT_CHANNEL=chat`, plus `BISMUTH_MEMORY_DIR` when the daemon is enabled).
   It is `[]` when that binary is not installed and for any agent with `supportsSessionMcpServers: false`. Memory reaches these agents only through the MCP tools (`memory: "mcpOnly"`).
+- Commands: `available_commands_update` refreshes the manifest's `slashCommands`, `commandDetails` from each command's `description`, and `commandHints` from its `input.hint`.
 - Capabilities are one shared profile, `ACP_SHARED_CAPABILITIES`, plus per-agent overrides.
 - Missing binary emits `no-binary` with ``The `<binary>` CLI was not found. Install <label> to use this provider.`` For the two adapters the binary is `npx`.
 

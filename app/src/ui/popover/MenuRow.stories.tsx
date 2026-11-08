@@ -20,6 +20,7 @@ const meta = {
         label: { control: 'text' },
         icon: { control: 'text' },
         detail: { control: 'text' },
+        hint: { control: 'text' },
         danger: { control: 'boolean' },
         disabled: { control: 'boolean' },
         selected: { control: 'boolean' },
@@ -255,4 +256,15 @@ export const TrailingEdge: Story = {
         await expect(protrusion).toBeGreaterThan(2.5)
         await expect(protrusion).toBeLessThan(4.5)
     },
+}
+
+/** `hint`: a command's argument hint follows its label in the label's own cell, receded to the
+ *  muted ink, and ellipsizes with it when the row is narrow. */
+export const WithHint: Story = {
+    render: () => (
+        <Wrap>
+            <MenuRow label="/bust" hint="[deep] [K] <goal>" />
+            <MenuRow label="/compact" hint="<instructions>" selected />
+        </Wrap>
+    ),
 }

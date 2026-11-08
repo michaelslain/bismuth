@@ -46,6 +46,10 @@ export type StubChatSessionInit = Partial<{
     mcpConnected: number
     fileCandidates: FileCandidate[]
     slashCommands: string[]
+    /** Per-command description and argument hint, keyed by name (the manifest's commandDetails /
+     *  commandHints). */
+    slashCommandDetails: Record<string, string>
+    slashCommandHints: Record<string, string>
     historyEntries: string[]
     persona: string
     historySessions: ChatSessionInfo[]
@@ -236,7 +240,8 @@ export function makeStubChatSession(
         mcpConnected,
         fileCandidates,
         slashCommands,
-        slashCommandDetail: () => undefined,
+        slashCommandDetail: (name: string) => init.slashCommandDetails?.[name],
+        slashCommandHint: (name: string) => init.slashCommandHints?.[name],
         historyEntries,
         persona,
         send: () => log('send')(),

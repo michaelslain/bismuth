@@ -99,6 +99,11 @@ export interface ChatManifest {
      *  names only (never set here); the opencode provider fills it from its command registry
      *  (`opencode debug config` — descriptions ride the same JSON). Absent keys just show no detail. */
     commandDetails?: Record<string, string>
+    /** Optional per-command argument hints (`<file>`, `[deep] [K] <goal>`): the popover prints one
+     *  beside the command and the composer shows it greyed after the caret until an argument is typed.
+     *  Claude fills it from the SDK's command list (a skill's `argument-hint`); ACP from a command's
+     *  `input.hint`. */
+    commandHints?: Record<string, string>
 }
 
 export type ChatFrame =
@@ -541,6 +546,12 @@ interface ChatSession {
      *  spawn-time synthetic one OR a real per-turn `system/init` — has been emitted, so a slow eager
      *  control-request fetch can never clobber a real per-turn manifest that raced ahead (BUG #14). */
     manifestSent?: boolean
+    /** Descriptions + argument hints of the session's commands (commandMetaFrom), from the SDK's
+     *  full command list; attached to every manifest by emitManifest. */
+    commandMeta?: CommandMeta
+    /** The last manifest sent, so a late command list (or a `commands_changed`) re-sends it with the
+     *  new descriptions and hints instead of waiting for the next turn. */
+    lastManifest?: ChatManifest
     /** The vault's 3rd-brain dir when the daemon is enabled — a finished chat's conversation is
      *  captured there as an auto note (like the relay SessionEnd hook does for terminals), so
      *  the dream cron consolidates in-app chats too. Undefined = daemon off = no capture. */
@@ -857,6 +868,44 @@ export function isMcpCommand(text: string): boolean {
  * the popover ordering stays deterministic. Pure → unit-tested in core/test/chat.test.ts.
  */
 export const LOCAL_SLASH_COMMANDS = ['mcp'] as const
+
+/** The description + argument hint of each command, keyed by name, from the SDK's full command list
+ *  (`initializationResult().commands`, `commands_changed`). The per-turn `init` message carries names
+ *  only, so the chat session keeps these and attaches them to every manifest it sends. Empty strings
+ *  are dropped, so a command with neither shows its bare name; a repeated name keeps its first
+ *  entry; HTML entities are decoded. Pure. */
+export interface CommandMeta {
+    names: string[]
+    details: Record<string, string>
+    hints: Record<string, string>
+}
+// The SDK sends a skill's description HTML-escaped (`&lt;attach file&gt;`); the popover prints text.
+const ENTITIES: Record<string, string> = {
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&amp;': '&',
+}
+const unescapeEntities = (text: string) =>
+    text.replace(/&(?:lt|gt|quot|#39|amp);/g, e => ENTITIES[e])
+
+export function commandMetaFrom(
+    commands: { name: string; description?: string; argumentHint?: string }[],
+): CommandMeta {
+    const meta: CommandMeta = { names: [], details: {}, hints: {} }
+    for (const c of commands) {
+        // A name listed twice (a user skill shadowing a built-in of the same name) keeps the first
+        // entry, the one listed from the more specific scope.
+        if (!c?.name || meta.names.includes(c.name)) continue
+        meta.names.push(c.name)
+        const detail = unescapeEntities(c.description ?? '').trim()
+        const hint = unescapeEntities(c.argumentHint ?? '').trim()
+        if (detail) meta.details[c.name] = detail
+        if (hint) meta.hints[c.name] = hint
+    }
+    return meta
+}
 export function withLocalSlashCommands(commands: string[]): string[] {
     const out = [...commands]
     for (const c of LOCAL_SLASH_COMMANDS) if (!out.includes(c)) out.push(c)
@@ -2170,33 +2219,52 @@ function emitSupportedModels(session: ChatSession): void {
  * default (Bypass) because it differs, so Bypass takes effect ON OPEN, before the first turn.
  */
 function emitInitManifest(session: ChatSession): void {
-    if (session.manifestSent || !session.q) return
+    if (!session.q) return
     const q = session.q
     void (async () => {
         const init = await q.initializationResult().catch(() => null)
+        if (init?.commands?.length) session.commandMeta = commandMetaFrom(init.commands)
+        if (session.manifestSent) {
+            // A real per-turn manifest already landed — don't clobber it, but re-send it with the
+            // command descriptions + hints it could not carry (init messages list names only).
+            if (session.commandMeta && session.lastManifest)
+                emitManifest(session, session.lastManifest)
+            return
+        }
         const mcp = await q.mcpServerStatus().catch(() => [])
-        if (session.manifestSent) return // a real per-turn manifest already landed — don't clobber it
+        if (session.manifestSent) {
+            if (session.commandMeta && session.lastManifest)
+                emitManifest(session, session.lastManifest)
+            return
+        }
         session.manifestSent = true
-        emit(session, {
-            type: 'manifest',
-            manifest: {
-                // The session's KNOWN model when there is one (a resume preloaded it from the per-session
-                // store — Bug #89), so a resumed chat's header shows the conversation's own model before
-                // any turn. "" for a fresh session (no model info exists pre-turn; the client's persisted
-                // last-model fills the header until the first real init reports the resolved id).
-                model: session.model ?? '',
-                permissionMode: 'default',
-                slashCommands: withLocalSlashCommands(
-                    (init?.commands ?? []).map(c => c.name),
-                ),
-                tools: [],
-                mcpServers: (mcp ?? []).map(m => ({
-                    name: m.name,
-                    status: m.status,
-                })),
-            },
+        emitManifest(session, {
+            // The session's KNOWN model when there is one (a resume preloaded it from the per-session
+            // store — Bug #89), so a resumed chat's header shows the conversation's own model before
+            // any turn. "" for a fresh session (no model info exists pre-turn; the client's persisted
+            // last-model fills the header until the first real init reports the resolved id).
+            model: session.model ?? '',
+            permissionMode: 'default',
+            slashCommands: withLocalSlashCommands(session.commandMeta?.names ?? []),
+            tools: [],
+            mcpServers: (mcp ?? []).map(m => ({
+                name: m.name,
+                status: m.status,
+            })),
         })
     })()
+}
+
+/** Send a manifest with the session's command descriptions + argument hints attached, and keep it
+ *  as `lastManifest` so a later command-list change can re-send it. Every Claude manifest goes
+ *  through here. */
+function emitManifest(session: ChatSession, manifest: ChatManifest): void {
+    const meta = session.commandMeta
+    const full: ChatManifest = meta
+        ? { ...manifest, commandDetails: meta.details, commandHints: meta.hints }
+        : manifest
+    session.lastManifest = full
+    emit(session, { type: 'manifest', manifest: full })
 }
 
 /** Fetch the session's conversation summary once and emit it as a `title` frame. Latches ONLY on
@@ -2287,20 +2355,17 @@ async function drain(session: ChatSession): Promise<void> {
                 // The REAL per-turn manifest — the self-updating source of truth. Latch manifestSent so a
                 // still-pending eager emitInitManifest fetch (BUG #14) can't overwrite this fuller one.
                 session.manifestSent = true
-                emit(session, {
-                    type: 'manifest',
-                    manifest: {
-                        model: msg.model,
-                        permissionMode: msg.permissionMode,
-                        slashCommands: withLocalSlashCommands(
-                            msg.slash_commands ?? [],
-                        ),
-                        tools: msg.tools ?? [],
-                        mcpServers: (msg.mcp_servers ?? []).map(m => ({
-                            name: m.name,
-                            status: m.status,
-                        })),
-                    },
+                emitManifest(session, {
+                    model: msg.model,
+                    permissionMode: msg.permissionMode,
+                    slashCommands: withLocalSlashCommands(
+                        msg.slash_commands ?? [],
+                    ),
+                    tools: msg.tools ?? [],
+                    mcpServers: (msg.mcp_servers ?? []).map(m => ({
+                        name: m.name,
+                        status: m.status,
+                    })),
                 })
                 // The models this login can run, for the header model picker. Already fetched EAGERLY on
                 // session spawn (createSession → emitSupportedModels) so the picker works before the first
@@ -2310,6 +2375,20 @@ async function drain(session: ChatSession): Promise<void> {
                 // A RESUMED session already has a summary — name the tab right away rather than only
                 // after the next turn completes. No-op (and retried at turn-end) for a fresh session.
                 maybeEmitTitle(session)
+                continue
+            }
+
+            if (msg.type === 'system' && msg.subtype === 'commands_changed') {
+                // Skills found mid-session (the agent walked into a folder with its own): the SDK
+                // pushes the whole new list, and the popover takes it up without waiting for a turn.
+                session.commandMeta = commandMetaFrom(msg.commands ?? [])
+                if (session.lastManifest)
+                    emitManifest(session, {
+                        ...session.lastManifest,
+                        slashCommands: withLocalSlashCommands(
+                            session.commandMeta.names,
+                        ),
+                    })
                 continue
             }
 
@@ -2593,15 +2672,13 @@ export function setModel(chatId: string, model: string): void {
         // A cloud id the app re-applied from the last pick for this provider — the local server has
         // never heard of it. Keep the session's local model and re-emit the manifest so the client
         // adopts it instead of showing the cloud pick.
-        emit(s, {
-            type: 'manifest',
-            manifest: {
-                model: s.model ?? '',
-                permissionMode: s.permissionMode ?? 'default',
-                slashCommands: withLocalSlashCommands([]),
-                tools: [],
-                mcpServers: [],
-            },
+        emitManifest(s, {
+            model: s.model ?? '',
+            permissionMode: s.permissionMode ?? 'default',
+            slashCommands:
+                s.lastManifest?.slashCommands ?? withLocalSlashCommands([]),
+            tools: s.lastManifest?.tools ?? [],
+            mcpServers: s.lastManifest?.mcpServers ?? [],
         })
         return
     }

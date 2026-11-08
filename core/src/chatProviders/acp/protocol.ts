@@ -612,6 +612,7 @@ export interface AcpManifestBaseline {
     mcpServers: { name: string; status: string }[]
     slashCommands: string[]
     commandDetails: Record<string, string>
+    commandHints?: Record<string, string>
 }
 
 /** Mutable per-SESSION scratch for translateSessionUpdate: tool-call bookkeeping (never double-
@@ -741,16 +742,29 @@ export function translateSessionUpdate(
                             'string' &&
                         !!(c as Record<string, unknown>).name,
                 )
-                .map(c => ({
-                    name: c.name as string,
-                    description:
-                        typeof c.description === 'string' ? c.description : '',
-                }))
+                .map(c => {
+                    // ACP's AvailableCommand.input is `{ hint }` for a command that takes free text.
+                    const input = c.input as { hint?: unknown } | null | undefined
+                    return {
+                        name: c.name as string,
+                        description:
+                            typeof c.description === 'string'
+                                ? c.description
+                                : '',
+                        hint:
+                            input && typeof input.hint === 'string'
+                                ? input.hint.trim()
+                                : '',
+                    }
+                })
             state.manifest.slashCommands = commands.map(c => c.name)
             state.manifest.commandDetails = Object.fromEntries(
                 commands
                     .filter(c => c.description)
                     .map(c => [c.name, c.description]),
+            )
+            state.manifest.commandHints = Object.fromEntries(
+                commands.filter(c => c.hint).map(c => [c.name, c.hint]),
             )
             return [{ type: 'manifest', manifest: { ...state.manifest } }]
         }

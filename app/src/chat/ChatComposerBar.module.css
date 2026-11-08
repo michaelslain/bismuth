@@ -124,12 +124,13 @@
    width; anchoring to it left the popover pinned to the pane's left edge instead of the box. */
 .slash-popover {
     position: absolute;
+    /* The box's full width, so each command's description has the room the box has. */
     left: 0;
+    right: 0;
     bottom: calc(100% + var(--sp-3));
     z-index: 40;
     max-height: 280px;
     overflow-y: auto;
-    min-width: 240px;
 }
 
 /* Whatever the host renders directly under the box (the daemon page's ChatControls row). */

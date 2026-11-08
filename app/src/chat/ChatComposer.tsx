@@ -15,11 +15,19 @@
 import { onMount, onCleanup, createEffect } from 'solid-js'
 import styles from './ChatComposer.module.css'
 import {
+    Decoration,
     EditorView,
+    WidgetType,
     keymap,
     placeholder as cmPlaceholder,
 } from '@codemirror/view'
-import { EditorState, Prec, Compartment } from '@codemirror/state'
+import {
+    EditorState,
+    Prec,
+    Compartment,
+    StateEffect,
+    StateField,
+} from '@codemirror/state'
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
 import {
@@ -82,6 +90,7 @@ const composerTheme = EditorView.theme({
     },
     '.cm-line': { padding: '0' },
     '.cm-placeholder': { color: 'var(--text-muted)', fontStyle: 'normal' },
+    '.cm-arg-hint': { color: 'var(--text-muted)', pointerEvents: 'none' },
     '.cm-selectionBackground, .cm-content ::selection': {
         backgroundColor: 'var(--selection)',
     },
@@ -92,12 +101,58 @@ const composerTheme = EditorView.theme({
         },
 })
 
+// A slash command's argument hint, drawn greyed after the end of the draft (`/bust ` →
+// `[deep] [K] <goal>`). The parent decides when one applies; it is never part of the doc, so it is
+// never sent, copied or selected.
+const setArgHint = StateEffect.define<string | undefined>()
+class ArgHintWidget extends WidgetType {
+    constructor(readonly text: string) {
+        super()
+    }
+    eq(other: ArgHintWidget) {
+        return other.text === this.text
+    }
+    toDOM() {
+        const el = document.createElement('span')
+        el.className = 'cm-arg-hint'
+        el.setAttribute('aria-hidden', 'true')
+        el.setAttribute('data-arg-hint', '')
+        el.textContent = this.text
+        return el
+    }
+    ignoreEvent() {
+        return true
+    }
+}
+const argHintField = StateField.define<string | undefined>({
+    create: () => undefined,
+    update(value, tr) {
+        for (const e of tr.effects) if (e.is(setArgHint)) value = e.value
+        return value
+    },
+})
+const argHintDecorations = EditorView.decorations.compute(
+    ['doc', argHintField],
+    state => {
+        const hint = state.field(argHintField)
+        if (!hint) return Decoration.none
+        return Decoration.set([
+            Decoration.widget({
+                widget: new ArgHintWidget(hint),
+                side: 1,
+            }).range(state.doc.length),
+        ])
+    },
+)
+
 export interface ChatComposerProps {
     /** Reactive draft (the ChatView `draft()` signal) — the raw markdown SOURCE. */
     value: () => string
     /** Called on every document change with the new raw source (ChatView `setDraft`). */
     onInput: (value: string) => void
     placeholder: () => string
+    /** A slash command's argument hint to draw greyed after the draft, or undefined for none. */
+    argHint?: () => string | undefined
     getNotes: () => NoteCandidate[]
     getMemories: () => MemoryCandidate[]
     getTags: () => string[]
@@ -249,6 +304,8 @@ export function ChatComposer(props: ChatComposerProps) {
                     openCompletionKeymap.extension,
                     EditorView.lineWrapping,
                     composerTheme,
+                    argHintField,
+                    argHintDecorations,
                     placeholderComp.of(cmPlaceholder(props.placeholder())),
                     // Doc → signal. The external-sync effect below no-ops when value already equals the doc,
                     // so this can't loop.
@@ -277,6 +334,14 @@ export function ChatComposer(props: ChatComposerProps) {
             changes: { from: 0, to: cur.length, insert: next },
             selection: { anchor: next.length },
         })
+    })
+
+    // The argument hint follows the parent's draft-derived hint. Runs after the value effect above,
+    // so the hint lands at the end of the doc that value just wrote.
+    createEffect(() => {
+        const hint = props.argHint?.()
+        if (view && view.state.field(argHintField) !== hint)
+            view.dispatch({ effects: setArgHint.of(hint) })
     })
 
     // Reactive placeholder (persona name can change when the daemon toggles).

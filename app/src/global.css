@@ -2261,6 +2261,24 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
      margin keeps it out of the layout. */
   padding-block: .3em; margin-block: -.3em; }
 .bismuth-popover-detail { margin-left: auto; color: var(--text-muted); padding-left: var(--sp-5); }
+/* A label's trailing hint (a command's argument hint) reads as part of the label, receded. */
+.bismuth-popover-hint { color: var(--text-muted); }
+/* PopoverList `columns`: rows share two grid columns through subgrid, so every detail starts on one
+   line down the list. The label column takes its widest label up to half the list, so a long hint
+   never leaves the details less room than the labels; both end in an ellipsis past that. */
+.bismuth-popover--columns {
+  display: grid;
+  grid-template-columns: fit-content(50%) minmax(0, 1fr);
+  column-gap: var(--popover-row-gap);
+}
+.bismuth-popover--columns > .bismuth-popover-sep,
+.bismuth-popover--columns > .bismuth-popover-row { grid-column: 1 / -1; }
+.bismuth-popover--columns > .bismuth-popover-row { display: grid; grid-template-columns: subgrid; }
+.bismuth-popover--columns .bismuth-popover-detail {
+  margin-left: 0; padding-left: 0; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis;
+  padding-block: .3em; margin-block: -.3em;
+}
 /* Right-aligned Kbd caps (a real keybinding — see PopoverRow.shortcut) — layout only, the
    Kbd primitive supplies the cap look. */
 .bismuth-popover-shortcut { margin-left: auto; flex-shrink: 0; padding-left: var(--sp-5); display: inline-flex; align-items: center; }

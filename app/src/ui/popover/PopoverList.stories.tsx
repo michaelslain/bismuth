@@ -227,3 +227,49 @@ export const Surface: Story = {
         await expect(row.getBoundingClientRect().top - menu.getBoundingClientRect().top).toBe(1)
     },
 }
+
+const COMMAND_ITEMS: PopoverRow[] = [
+    {
+        label: '/bust',
+        hint: '[deep] [K] <goal>',
+        detail: 'Build a goal end to end on its own branch, directly or planned and run through /execute',
+    },
+    { label: '/compact', hint: '<instructions>', detail: 'Clear history but keep a summary in context' },
+    { label: '/clear', detail: 'Clear conversation history and free up context' },
+    { label: '/superpowers:brainstorming', detail: 'Explore intent and design before any creative work' },
+    { label: '/mcp' },
+]
+
+/** `columns`: a command list whose labels carry an argument hint and whose details are long.
+ *  Every detail starts on one line down the list and ends in an ellipsis at the list's edge; a
+ *  row with no hint or no detail keeps the columns. Click a row to move the highlight. */
+export const Columns: Story = {
+    render: () => {
+        const [active, setActive] = createSignal(0)
+        return (
+            <div style={{ width: '560px' }}>
+                <PopoverList
+                    columns
+                    items={COMMAND_ITEMS}
+                    active={active()}
+                    onActivate={setActive}
+                    onHover={setActive}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const rows = [
+            ...canvasElement.querySelectorAll<HTMLElement>('.bismuth-popover-row'),
+        ]
+        expect(rows.length).toBe(COMMAND_ITEMS.length)
+        const lefts = rows.map(r =>
+            Math.round(
+                r.querySelector('.bismuth-popover-detail')!.getBoundingClientRect().left,
+            ),
+        )
+        expect(new Set(lefts).size).toBe(1)
+        const list = canvasElement.querySelector('.bismuth-popover')!
+        expect(list.scrollWidth).toBeLessThanOrEqual(list.clientWidth + 1)
+    },
+}

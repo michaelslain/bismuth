@@ -1052,7 +1052,11 @@ describe('translateSessionUpdate', () => {
             {
                 sessionUpdate: 'available_commands_update',
                 availableCommands: [
-                    { name: 'review', description: 'Review changes' },
+                    {
+                        name: 'review',
+                        description: 'Review changes',
+                        input: { hint: '<branch>' },
+                    },
                     { name: 'init' }, // no description — still a valid command name
                 ],
             },
@@ -1065,6 +1069,7 @@ describe('translateSessionUpdate', () => {
                     ...blankManifest(),
                     slashCommands: ['review', 'init'],
                     commandDetails: { review: 'Review changes' },
+                    commandHints: { review: '<branch>' },
                 },
             },
         ])

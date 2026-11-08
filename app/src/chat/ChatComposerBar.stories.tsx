@@ -31,6 +31,42 @@ const TINY_PNG =
 const cmContent = (root: Element) =>
     root.querySelector<HTMLElement>('.cm-content')!
 
+// A session's commands as the Claude backend reports them: names, plus each one's description and
+// argument hint from the SDK's command list (a skill's `description` / `argument-hint`).
+const COMMANDS = {
+    slashCommands: [
+        'compact',
+        'clear',
+        'chrome',
+        'bust',
+        'superpowers:brainstorming',
+        'code-review',
+    ],
+    slashCommandDetails: {
+        compact:
+            'Clear conversation history but keep a summary in context. Optional: /compact [instructions for summarization]',
+        clear: 'Clear conversation history and free up context',
+        chrome: 'Claude in Chrome settings',
+        bust: 'Use when the user types /bust, or hands over a goal to be built end to end on its own branch',
+        'superpowers:brainstorming':
+            'You MUST use this before any creative work - creating features, building components, adding functionality',
+        'code-review':
+            'Review the current diff, or a PR number/branch/path target, for correctness bugs',
+    },
+    slashCommandHints: {
+        compact: '<optional custom summarization instructions>',
+        bust: '[deep] [K] <goal>',
+        'code-review': '[low|medium|high|xhigh|max] [target]',
+    },
+}
+
+const labels = (root: Element) =>
+    Array.from(
+        root.querySelectorAll(
+            `.${styles['slash-popover']} .bismuth-popover-label`,
+        ),
+    ).map(r => r.textContent?.trim())
+
 export const Empty: Story = {
     render: () => (
         <ChatComposerBar
@@ -170,9 +206,7 @@ export const SlashPopover: Story = {
         ),
     ],
     render: () => {
-        const session = makeStubChatSession({
-            slashCommands: ['compact', 'clear', 'chrome'],
-        })
+        const session = makeStubChatSession(COMMANDS)
         return (
             <ChatComposerBar
                 session={session}
@@ -192,18 +226,27 @@ export const SlashPopover: Story = {
                 canvasElement.querySelector(`.${styles['slash-popover']}`),
             ).not.toBeNull(),
         )
-        const rows = canvasElement.querySelectorAll(
-            `.${styles['slash-popover']} .bismuth-popover-row`,
-        )
-        // Exactly the commands starting with "c": all three of this session's slash commands
-        // (compact, clear, chrome) qualify — a `> 0` check would pass even if the filter dropped
-        // "chrome" or matched something that doesn't start with the query.
-        expect(rows.length).toBe(3)
-        expect(Array.from(rows).map(r => r.textContent?.trim())).toEqual([
-            '/compact',
+        // Names starting with "c" first, in list order, then a name that only contains it. Each
+        // label carries its argument hint; the description sits in the next column.
+        expect(labels(canvasElement)).toEqual([
+            '/compact <optional custom summarization instructions>',
             '/clear',
             '/chrome',
+            '/code-review [low|medium|high|xhigh|max] [target]',
         ])
+        const details = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>(
+                `.${styles['slash-popover']} .bismuth-popover-detail`,
+            ),
+        )
+        expect(details[1].textContent).toBe(
+            'Clear conversation history and free up context',
+        )
+        // Every description starts on one line down the list.
+        expect(
+            new Set(details.map(d => Math.round(d.getBoundingClientRect().left)))
+                .size,
+        ).toBe(1)
         // CodeMirror's own block-insert `/` menu (To-do/Quote/Callout/…) must NOT also open —
         // it raced the chat's own popover on the same keystroke and clipped (storyAudit clip-x on
         // `.cm-tooltip-autocomplete`, 384px content in a 258px box). `slashMenu: false` on the
@@ -213,6 +256,66 @@ export const SlashPopover: Story = {
         ).toBeNull()
     },
 }
+
+/** A skill namespaced by its plugin is found by its own name: typing `/brain` offers
+ *  `/superpowers:brainstorming`, the way Claude Code's own list does. */
+export const SlashMatchesSkillName: Story = {
+    decorators: SlashPopover.decorators,
+    render: SlashPopover.render,
+    play: async ({ canvasElement }) => {
+        await userEvent.click(cmContent(canvasElement))
+        await userEvent.keyboard('/brain')
+        await waitFor(() =>
+            expect(labels(canvasElement)).toEqual([
+                '/superpowers:brainstorming',
+            ]),
+        )
+    },
+}
+
+/** Picking a command fills `/bust ` and greys its argument hint after the caret; typing the
+ *  argument removes the hint, and deleting back to the bare command brings it back. The hint is
+ *  never part of the draft. */
+export const SlashArgumentHint: Story = (() => {
+    let session: StubChatSession
+    return {
+        decorators: SlashPopover.decorators,
+        render: () => {
+            session = makeStubChatSession(COMMANDS)
+            return (
+                <ChatComposerBar
+                    session={session}
+                    placeholder="Message Claude"
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            )
+        },
+        play: async ({ canvasElement }) => {
+            const content = cmContent(canvasElement)
+            const hint = () =>
+                canvasElement.querySelector<HTMLElement>('[data-arg-hint]')
+            await userEvent.click(content)
+            await userEvent.keyboard('/bu')
+            await waitFor(() =>
+                expect(labels(canvasElement)).toEqual([
+                    '/bust [deep] [K] <goal>',
+                ]),
+            )
+            await userEvent.keyboard('{Enter}')
+            await waitFor(() => expect(session.draft()).toBe('/bust '))
+            await waitFor(() =>
+                expect(hint()?.textContent).toBe('[deep] [K] <goal>'),
+            )
+            await userEvent.keyboard('deep')
+            await waitFor(() => expect(session.draft()).toBe('/bust deep'))
+            expect(hint()).toBeNull()
+            await userEvent.keyboard('{Backspace}{Backspace}{Backspace}{Backspace}')
+            await waitFor(() => expect(hint()).not.toBeNull())
+        },
+    }
+})()
 
 export const Streaming: Story = {
     render: () => (
@@ -289,9 +392,7 @@ export const NoSession: Story = {
  *  `chat-chatcomposerbar--slash-popover`, 384px content in a 258px box). */
 export const SlashPopoverNarrow: Story = {
     render: () => {
-        const session = makeStubChatSession({
-            slashCommands: ['compact', 'clear', 'chrome'],
-        })
+        const session = makeStubChatSession(COMMANDS)
         return (
             <div
                 style={{ width: '320px', 'padding-top': '300px' }}
@@ -328,7 +429,7 @@ export const SlashPopoverNarrow: Story = {
         const rows = canvasElement.querySelectorAll<HTMLElement>(
             `.${styles['slash-popover']} .bismuth-popover-row`,
         )
-        expect(rows.length).toBe(3)
+        expect(rows.length).toBe(4)
         for (const row of Array.from(rows)) {
             expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
         }

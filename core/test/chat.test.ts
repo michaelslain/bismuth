@@ -25,6 +25,7 @@ import {
     isMcpCommand,
     formatMcpStatus,
     withLocalSlashCommands,
+    commandMetaFrom,
     LOCAL_SLASH_COMMANDS,
     extractAskUserQuestions,
     buildAskUserQuestionAnswer,
@@ -459,6 +460,63 @@ describe('visibilityRefusalMessage (never names a restricted note, only counts t
 // init manifest omits TUI-only commands, but this chat answers "/mcp" locally — so withLocalSlashCommands
 // splices it into the manifest's slash_commands list that chat.ts sends the frontend (emitInitManifest
 // + the per-turn init handler both route through it).
+// The SDK's full command list carries each skill's description + argument-hint; the per-turn init
+// message carries names only, so chat.ts keeps this projection and attaches it to every manifest.
+describe('commandMetaFrom', () => {
+    test('keys descriptions and argument hints by command name, in list order', () => {
+        expect(
+            commandMetaFrom([
+                {
+                    name: 'bust',
+                    description: 'Build a goal end to end',
+                    argumentHint: '[deep] [K] <goal>',
+                },
+                { name: 'clear', description: 'Clear the conversation', argumentHint: '' },
+            ]),
+        ).toEqual({
+            names: ['bust', 'clear'],
+            details: {
+                bust: 'Build a goal end to end',
+                clear: 'Clear the conversation',
+            },
+            hints: { bust: '[deep] [K] <goal>' },
+        })
+    })
+
+    test('drops blank fields and nameless entries, trimming whitespace', () => {
+        expect(
+            commandMetaFrom([
+                { name: '', description: 'ghost' },
+                { name: 'x', description: '  ', argumentHint: ' <file> ' },
+            ]),
+        ).toEqual({ names: ['x'], details: {}, hints: { x: '<file>' } })
+    })
+
+    test('decodes the HTML entities the SDK escapes descriptions with', () => {
+        expect(
+            commandMetaFrom([
+                {
+                    name: 'data',
+                    description: 'runs /data &lt;dataset&gt; &amp;lt; &quot;x&quot; it&#39;s',
+                },
+            ]).details,
+        ).toEqual({ data: 'runs /data <dataset> &lt; "x" it\'s' })
+    })
+
+    test('a name listed twice keeps its first entry', () => {
+        expect(
+            commandMetaFrom([
+                { name: 'code-review', description: 'mine', argumentHint: '[focus area]' },
+                { name: 'code-review', description: 'built-in', argumentHint: '[level]' },
+            ]),
+        ).toEqual({
+            names: ['code-review'],
+            details: { 'code-review': 'mine' },
+            hints: { 'code-review': '[focus area]' },
+        })
+    })
+})
+
 describe('withLocalSlashCommands (BUG #39: /mcp shows in the autocomplete)', () => {
     test("appends 'mcp' to the SDK's command list", () => {
         expect(withLocalSlashCommands(['context', 'help', 'cost'])).toEqual([

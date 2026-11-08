@@ -234,6 +234,9 @@ export type ChatSession = {
     fileCandidates: Accessor<FileCandidate[]>
     slashCommands: Accessor<string[]>
     slashCommandDetail: (name: string) => string | undefined
+    /** The command's argument hint (`[deep] [K] <goal>`), from the backend's manifest or the
+     *  client command's own. */
+    slashCommandHint: (name: string) => string | undefined
     historyEntries: Accessor<string[]>
     persona: Accessor<string>
     send: () => void
@@ -281,6 +284,9 @@ const SLASH_COMMAND_DETAILS: Record<string, string> = {
     mcp: 'Show MCP server status',
     ...Object.fromEntries(CLIENT_SLASH_COMMANDS.map(c => [c.name, c.detail])),
 }
+const SLASH_COMMAND_HINTS: Record<string, string> = Object.fromEntries(
+    CLIENT_SLASH_COMMANDS.map(c => [c.name, c.hint]),
+)
 
 // A quoted head this long is plenty to identify what's being replied to without the composer
 // drowning in it — long messages truncate with an ellipsis.
@@ -1618,6 +1624,8 @@ export function createChatSession(
     )
     const slashCommandDetail = (name: string) =>
         manifest()?.commandDetails?.[name] ?? SLASH_COMMAND_DETAILS[name]
+    const slashCommandHint = (name: string) =>
+        manifest()?.commandHints?.[name] ?? SLASH_COMMAND_HINTS[name]
 
     const dispose = () => {
         if (disposed) return
@@ -1722,6 +1730,7 @@ export function createChatSession(
         fileCandidates,
         slashCommands,
         slashCommandDetail,
+        slashCommandHint,
         historyEntries,
         persona,
         send,
