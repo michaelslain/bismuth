@@ -3,7 +3,7 @@
 // fixture. The bar slots the view pushes up are drawn in a ViewBar above the pane, as BaseView
 // does. `data-turn-state` on the view's root is the settled seam.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { createSignal } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { ToastHost } from '../ui/ToastHost'
 import { api, setTransport, type Transport } from '../api'
@@ -19,6 +19,7 @@ import BookView from './BookView'
 import { bookPageUrl } from './_bookPages'
 import { ARTICLE_CHART, ARTICLE_PHOTO, buildArticlePdf } from '../preview/_articlePdf'
 import { paneMenuItemsOf, withPaneItems } from '../paneMenuExtras'
+import { ContextMenu } from '../ui/ContextMenu'
 
 const meta = {
     title: 'Bases/BookView',
@@ -1369,5 +1370,60 @@ export const BurstTurns: Story = {
         await waitFor(() => expect(host(canvasElement).dataset.turnState).toBe('settled'), { timeout: 8000 })
         watch.disconnect()
         await expect(layers.size).toBe(1)
+    },
+}
+
+/** Inside a pane: a right-click bubbles up to PaneLeaf, which opens the pane's own menu, and only
+ *  one menu is open at a time (activeMenu.ts). The stand-in does what PaneLeaf + App do — a real
+ *  ContextMenu with the pane's rows — so the `highlight` button has to claim its right-click for
+ *  the colour menu to stay up. Picking a colour arms the highlighter in it. */
+export const HighlightColorsInPane: Story = {
+    name: 'Highlight colours in a pane',
+    beforeEach: () => serveFixtures(8),
+    render: () => {
+        const [paneMenu, setPaneMenu] = createSignal<{ x: number; y: number } | null>(null)
+        return (
+            <div
+                data-pane-leaf="leaf-1"
+                onContextMenu={e => {
+                    e.preventDefault()
+                    setPaneMenu({ x: e.clientX, y: e.clientY })
+                }}
+            >
+                <Harness w={900} rows={images(8)} />
+                <Show when={paneMenu()}>
+                    {m => (
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            items={[{ label: 'Split right' }, { label: 'Close pane' }]}
+                            onClose={() => setPaneMenu(null)}
+                        />
+                    )}
+                </Show>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 8')
+        const btn = within(canvasElement).getByRole('button', { name: 'highlight' })
+        const rows = () =>
+            Array.from(document.querySelectorAll<HTMLElement>('[data-popover-row]')).map(r => r.textContent ?? '')
+        rightClick(btn)
+        await waitFor(() => expect(rows().some(t => t.includes('green'))).toBe(true))
+        await expect(rows().some(t => t.includes('Split right'))).toBe(false)
+        const green = Array.from(document.querySelectorAll<HTMLElement>('[data-popover-row]')).find(r =>
+            r.textContent?.includes('green'),
+        )!
+        await userEvent.click(green)
+        await waitFor(() => expect(btn.getAttribute('aria-pressed')).toBe('true'))
+        await waitFor(() => expect(rows()).toEqual([]))
+
+        // a right-click on the page is still the pane's
+        rightClick(canvasElement.querySelector<HTMLElement>('[data-book-page="right"]')!)
+        await waitFor(() => expect(rows()).toEqual(['Split right', 'Close pane']))
+        // left at rest: the menu closes
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(rows()).toEqual([]))
     },
 }

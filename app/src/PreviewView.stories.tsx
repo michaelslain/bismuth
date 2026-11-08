@@ -81,6 +81,7 @@ import {
 import TextButton from './ui/TextButton'
 import { buildArticlePdf } from './preview/_articlePdf'
 import Text from './ui/Text'
+import { ContextMenu } from './ui/ContextMenu'
 
 const meta = {
     title: 'App/PreviewView',
@@ -3669,5 +3670,70 @@ export const ImageDrawExitCancelsStroke: Story = {
         // Well past the save debounce: nothing was written.
         await new Promise(res => setTimeout(res, 1500))
         await expect(measuredSidecarPuts).toBe(0)
+    },
+}
+
+/** Inside a pane: a right-click anywhere in a pane bubbles up to PaneLeaf, which opens the pane's
+ *  own menu, and only one menu is open at a time (activeMenu.ts). The stand-in below does what
+ *  PaneLeaf + App do — a real ContextMenu with the pane's rows — so the highlighter button has to
+ *  claim its right-click for the colour menu to stay up. Right-click the button for colours, and
+ *  anywhere else for the pane menu. */
+export const PdfHighlightColorsInPane: Story = {
+    render: () => {
+        setHighlightColor('hl')
+        sidecarPuts = []
+        setTransport(recordingTransport({}))
+        const [paneMenu, setPaneMenu] = createSignal<{ x: number; y: number } | null>(null)
+        return (
+            <div
+                data-pane-leaf="leaf-1"
+                style={{ height: '100vh', width: '900px' }}
+                onContextMenu={e => {
+                    e.preventDefault()
+                    setPaneMenu({ x: e.clientX, y: e.clientY })
+                }}
+            >
+                <PreviewView path={ANNOT_PDF_PATH} tagNames={NO_TAGS} pdfLoad={annotatedLoad} />
+                <Show when={paneMenu()}>
+                    {m => (
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            items={[{ label: 'Split right' }, { label: 'Close pane' }]}
+                            onClose={() => setPaneMenu(null)}
+                        />
+                    )}
+                </Show>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const hlBtn = within(canvasElement).getByLabelText('Highlight text') as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false), { timeout: 5000 })
+        const rows = () =>
+            Array.from(document.querySelectorAll<HTMLElement>('[data-popover-row]')).map(
+                r => r.textContent ?? '',
+            )
+        const r = hlBtn.getBoundingClientRect()
+        await fireEvent.contextMenu(hlBtn, { clientX: r.left + 4, clientY: r.bottom })
+        await waitFor(() => expect(rows().some(t => t.includes('yellow'))).toBe(true))
+        await expect(rows().some(t => t.includes('Split right'))).toBe(false)
+        await expect(rows()).toHaveLength(5)
+
+        // a right-click on the page is still the pane's
+        const page = await waitFor(
+            () => {
+                const el = canvasElement.querySelector<HTMLElement>('[data-pdf-page="0"]')
+                if (!el) throw new Error('no page 1')
+                return el
+            },
+            { timeout: 5000 },
+        )
+        const pr = page.getBoundingClientRect()
+        await fireEvent.contextMenu(page, { clientX: pr.left + 40, clientY: pr.top + 40 })
+        await waitFor(() => expect(rows()).toEqual(['Split right', 'Close pane']))
+        // left at rest: the menu closes
+        await userEvent.keyboard('{Escape}')
+        await waitFor(() => expect(rows()).toEqual([]))
     },
 }

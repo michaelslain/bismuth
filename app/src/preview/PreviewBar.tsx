@@ -208,8 +208,11 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 // press highlights THAT selection.
                                 onMouseDown={e => e.preventDefault()}
                                 onClick={() => props.onHighlight?.()}
+                                // The right-click is this button's own: bubbling on to PaneLeaf
+                                // would open the pane menu, which closes this one (activeMenu.ts).
                                 onContextMenu={(e: MouseEvent) => {
                                     e.preventDefault()
+                                    e.stopPropagation()
                                     if (props.annotReady())
                                         setColorMenu({ x: e.clientX, y: e.clientY })
                                 }}

@@ -1546,8 +1546,11 @@ const BookView: Component<BookViewProps> = props => {
                         variant={armed() ? 'selected' : 'unselected'}
                         disabled={leaves().length === 0}
                         onClick={onHighlightClick}
+                        // The right-click is this button's own: bubbling on to PaneLeaf would open
+                        // the pane menu, which closes this one (activeMenu.ts).
                         onContextMenu={(e: MouseEvent) => {
                             e.preventDefault()
+                            e.stopPropagation()
                             if (leaves().length > 0) setColorMenu({ x: e.clientX, y: e.clientY })
                         }}
                     />
