@@ -20,6 +20,7 @@ import { markdown } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, indentUnit } from '@codemirror/language'
 import { codeLanguages } from '../editor/codeLanguages'
 import { taskCompletion } from '../editor/autocomplete'
+import { enterKeymap } from '../editor/enterKeymap'
 import { api } from '../api'
 import { onServerChange } from '../serverVersion'
 import { readNoteCached, primeNoteCache, peekNoteCache } from '../noteCache'
@@ -166,10 +167,13 @@ export function CardEditor(props: {
                     cardKeymap.extension,
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     // remove IndentedCode so a 4-space-indented line stays prose, not a code block.
+                    // addKeymap: false — enterKeymap owns Enter and Backspace, as in the note editor.
                     markdown({
                         codeLanguages,
+                        addKeymap: false,
                         extensions: [{ remove: ['IndentedCode'] }],
                     }),
+                    enterKeymap,
                     syntaxHighlighting(codeHighlightStyle),
                     notePathFacet.of(props.path),
                     // The note editor's task-metadata autocomplete (due/scheduled/priority/recurrence

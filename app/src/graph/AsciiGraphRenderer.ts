@@ -244,7 +244,13 @@ const FALLBACK_MAX_RES = 16 // pre-fit() bootstrap value for `maxRes` (real one 
 const WHEEL_NOTCH_PX = 120 // one physical mouse-wheel click (the Windows WHEEL_DELTA convention most
 // browsers report a notch as); each notch moves ZOOM_STEP_PCT, trackpad
 // deltas simply accumulate toward the next notch instead of firing every event
+// A wheel event later than this after the previous one starts a new stream (a separate click or
+// a new swipe). Trackpad and inertia events arrive once per frame, and a mouse spun fast clicks
+// every few tens of ms, so both stay inside one stream; a deliberate click after a pause is new.
+const WHEEL_STREAM_GAP_MS = 150
+const WHEEL_LINE_PX = 40 // deltaMode 1 (lines): the px a line counts as, so 3 lines read as a 120px click
 const RES_EPS = 0.002 // below this the resolution glide is considered settled
+const TARGET_EPS_PX = 0.5 // below this on screen the target glide snaps onto its goal (sub-pixel)
 // Fraction of the gap the bloom's reference peak closes per DIRTY frame when the field gets sparser
 // (it rises instantly — see `bloomPeakRef`). ~8%/frame halves the gap in about nine frames, i.e. a
 // beat of dimming rather than an instant re-scale, which is what keeps a camera move from
@@ -924,6 +930,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     private maxRes = FALLBACK_MAX_RES
     private zoomPct = 100
     private wheelAccum = 0
+    private lastWheelT = -Infinity
     private userTook = false
     // 2D<->3D MODE MORPH (modeMorph.ts) — what a `viewMode` flip now runs instead of the hard camera
     // cut setConfig used to apply (see graphRenderer.ts's EPITAPH item 1). `null` when settled — no
@@ -2307,15 +2314,23 @@ export class AsciiGraphRenderer implements GraphRenderer {
             this.res = this.goalRes
             this.dirty = true
         }
-        if (
-            Math.hypot(
-                this.goalTarget[0] - this.target[0],
-                this.goalTarget[1] - this.target[1],
-                this.goalTarget[2] - this.target[2],
-            ) > 0.3
-        ) {
+        // The camera target glides the same way, and lands EXACTLY too. Its settle test is in screen
+        // pixels, not world units: a fixed world distance is many pixels at deep zoom, so a target
+        // left that far short parks the point under the cursor visibly off it after a wheel step.
+        if (this.targetMoving()) {
             for (let i = 0; i < 3; i++)
                 this.target[i] += (this.goalTarget[i] - this.target[i]) * glide
+            this.dirty = true
+        } else if (
+            this.target[0] !== this.goalTarget[0] ||
+            this.target[1] !== this.goalTarget[1] ||
+            this.target[2] !== this.goalTarget[2]
+        ) {
+            this.target = [
+                this.goalTarget[0],
+                this.goalTarget[1],
+                this.goalTarget[2],
+            ]
             this.dirty = true
         }
 
@@ -2338,14 +2353,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // NB: the reschedule lives in tick()'s `finally`, not here — see its doc comment.
     }
 
+    /** Whether the target glide is still more than TARGET_EPS_PX from its goal on screen, at the
+     *  current world→px scale. Below that the frame snaps it onto the goal. */
     private targetMoving(): boolean {
-        return (
-            Math.hypot(
-                this.goalTarget[0] - this.target[0],
-                this.goalTarget[1] - this.target[1],
-                this.goalTarget[2] - this.target[2],
-            ) > 0.3
+        const worldGap = Math.hypot(
+            this.goalTarget[0] - this.target[0],
+            this.goalTarget[1] - this.target[1],
+            this.goalTarget[2] - this.target[2],
         )
+        return worldGap * this.pxPerWorld * this.res > TARGET_EPS_PX
     }
     private spinning(is2d: boolean): boolean {
         return (
@@ -4716,7 +4732,28 @@ export class AsciiGraphRenderer implements GraphRenderer {
             ax = this.m.padX + (this.m.cols * this.m.cellW) / 2
             ay = this.originY(0)
         }
-        this.wheelAccum += e.deltaY
+        // A wheel click is one step, whatever delta it reports: the size of a click varies with the
+        // device, the OS's wheel acceleration, the display scale and the page zoom (WebKit and Chrome
+        // report deltas in CSS px, so a 120px click reads 109 at 110% zoom and 60 on a 2x display),
+        // and a click short of WHEEL_NOTCH_PX used to do nothing. So the FIRST event of a wheel
+        // stream steps at once, and the rest of the stream (a trackpad swipe and its inertia, a
+        // fast spin) accumulates toward the next notch as before.
+        const deltaPx =
+            e.deltaMode === 1
+                ? e.deltaY * WHEEL_LINE_PX
+                : e.deltaMode === 2
+                  ? e.deltaY * WHEEL_NOTCH_PX
+                  : e.deltaY
+        const now = e.timeStamp || performance.now()
+        const streamStart = now - this.lastWheelT > WHEEL_STREAM_GAP_MS
+        this.lastWheelT = now
+        if (streamStart && deltaPx !== 0) {
+            this.wheelAccum = 0
+            const dir = deltaPx < 0 ? -1 : 1
+            this.zoomStepAnchored(this.zoomPct + dir * ZOOM_STEP_PCT, ax, ay)
+            return
+        }
+        this.wheelAccum += deltaPx
         while (Math.abs(this.wheelAccum) >= WHEEL_NOTCH_PX) {
             // deltaY < 0 (scroll up / pinch in) is the conventional "zoom in" gesture — MORE resolution,
             // i.e. a LOWER percent under the 100%=fit/0%=deepest convention.

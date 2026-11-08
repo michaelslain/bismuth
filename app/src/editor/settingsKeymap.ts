@@ -2,7 +2,7 @@
 // Turns `settings.keybindings.<id>` combo strings into live CodeMirror bindings.
 //
 // Bindings sit at Prec.high so a rebind beats CodeMirror's upstream keymaps
-// (defaultKeymap, historyKeymap, closeBracketsKeymap, markdownKeymap) — those stay
+// (defaultKeymap, historyKeymap, closeBracketsKeymap) — those stay
 // untouched by this module.
 //
 // A binding whose setting is EMPTY contributes no CM binding at all. Empty is a

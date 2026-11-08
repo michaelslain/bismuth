@@ -26,7 +26,6 @@ import {
     closeBracketsKeymap,
 } from '@codemirror/autocomplete'
 import { openSearchPanel, searchPanelOpen } from '@codemirror/search'
-import { markdownKeymap } from '@codemirror/lang-markdown'
 import { yaml } from '@codemirror/lang-yaml'
 import {
     syntaxHighlighting,
@@ -1494,12 +1493,8 @@ export function Editor(props: {
                 // Backspace deletes a bracket pair when the cursor sits between an empty one;
                 // falls through to defaultKeymap's deleteCharBackward otherwise. Must precede it.
                 ...closeBracketsKeymap,
-                // Markdown list continuation: Enter on "1. foo" / "- foo" inserts the next
-                // marker (renumbering ordered lists), Enter on an empty item outdents it, and
-                // Backspace deletes a list marker. Must precede defaultKeymap so its Enter wins
-                // over the generic insertNewlineAndIndent; falls through (returns false) outside
-                // list/markdown context, so plain notes + YAML buffers are unaffected.
-                ...markdownKeymap,
+                // List continuation (Enter) and list-marker delete (Backspace) live in the shared
+                // stack's enterKeymap (editor/enterKeymap.ts), at Prec.high ahead of these.
                 ...defaultKeymap,
                 ...historyKeymap,
             ]),

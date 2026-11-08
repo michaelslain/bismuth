@@ -273,3 +273,69 @@ describe('Enter inside a $$ math block (closing $$ must survive)', () => {
         expect(out).toBe(['- item', '$$', 'E = mc^2', '', '$$'].join('\n'))
     })
 })
+
+// Enter on a bullet opens the next bullet on the very next line, never after a blank line.
+describe('continueMarkupOutsideMath keeps bullets tight', () => {
+    const enter = (doc: string) => {
+        const [out, caret, handled] = run(
+            doc,
+            doc.length,
+            continueMarkupOutsideMath,
+        )
+        expect(handled).toBe(true)
+        return out.slice(0, caret) + '|' + out.slice(caret)
+    }
+
+    test('a tight list continues on the next line', () => {
+        expect(enter('- a\n- b')).toBe('- a\n- b\n- |')
+    })
+
+    test('an empty second bullet ends the list instead of moving down a line', () => {
+        expect(enter('- a\n- ')).toBe('- a\n|')
+    })
+
+    test('an empty nested second bullet outdents instead of moving down a line', () => {
+        expect(enter('- a\n    - b\n    - ')).toBe('- a\n    - b\n- |')
+    })
+
+    test('a list whose first items are blank-separated adds no blank line', () => {
+        expect(enter('- a\n\n- b')).toBe('- a\n\n- b\n- |')
+    })
+
+    test('a nested loose list adds no blank line and keeps its indent', () => {
+        expect(enter('- a\n    - x\n\n    - y')).toBe(
+            '- a\n    - x\n\n    - y\n    - |',
+        )
+    })
+
+    test('a loose numbered list still renumbers the items after the caret', () => {
+        const doc = '1. a\n\n2. b\n3. c'
+        const [out] = run(doc, '1. a\n\n2. b'.length, continueMarkupOutsideMath)
+        expect(out).toBe('1. a\n\n2. b\n3. \n4. c')
+    })
+
+    test('a task bullet continues as an unchecked task', () => {
+        expect(enter('- [x] a\n\n- [ ] b')).toBe('- [x] a\n\n- [ ] b\n- [ ] |')
+    })
+
+    test('a blockquote still continues', () => {
+        expect(enter('> a')).toBe('> a\n> |')
+    })
+})
+
+// markdown()'s own keymap binds the stock Enter at the same Prec.high as enterKeymap and sits
+// earlier in the extension tree, so an editor that mounts enterKeymap without
+// `addKeymap: false` silently runs the stock command and its lists skip lines again.
+describe('every editor that mounts enterKeymap turns off markdown()’s keymap', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs')
+    const { join } = require('node:path') as typeof import('node:path')
+    for (const rel of ['cellEditorExtensions.ts', '../bases/CardEditor.tsx']) {
+        test(rel, () => {
+            const src = readFileSync(join(import.meta.dir, rel), 'utf8')
+            expect(src).toContain('enterKeymap')
+            for (const call of src.match(/markdown\(\{[\s\S]*?\}\),/g) ?? [])
+                expect(call).toContain('addKeymap: false')
+            expect(src).toMatch(/markdown\(\{/)
+        })
+    }
+})

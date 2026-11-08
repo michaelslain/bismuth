@@ -57,11 +57,11 @@ The `graph-local` command (**Graph: Local (open note)**) switches to the same le
 
 ## Zoom, pan and keys
 
-Zoom changes resolution, not size. At 100% (fit) the whole graph's bounding radius fills the grid. At 0% every note is individually distinguishable. The mouse wheel steps the zoom in 10-point notches and the view glides to each stop; a glyph is the same size on screen at every zoom.
+Zoom changes resolution, not size. At 100% (fit) the whole graph's bounding radius fills the grid. At 0% every note is individually distinguishable. The mouse wheel steps the zoom in 10-point notches and the view glides to each stop; a glyph is the same size on screen at every zoom. Each wheel click is one notch, however far the device reports it scrolled. A trackpad swipe steps once as it starts and then once per notch of travel. In 2D the point under the cursor lands back under it at every stop.
 
 | Input | Effect |
 |---|---|
-| Wheel | Zoom one notch, anchored on the cursor in 2D |
+| Wheel | Zoom one notch per click, anchored on the cursor in 2D |
 | `=` or `+` / `-` | Zoom in / out one step, centered |
 | Drag | Pan in 2D, orbit in 3D (a press under 5 px is a click) |
 | `Z` | Frame the hovered node and its neighbours, or reset the camera when nothing is hovered |
@@ -250,7 +250,7 @@ The pure compute is `computeLayoutPair()` in `core/src/layoutCompute.ts`. `core/
 
 `render(g)` computes `structuralGraphSig()` and skips a rebuild when only coordinates changed. On a structural change, `respace.ts`'s `scaleToSpacing()` measures the median nearest-neighbour distance and applies one uniform scale so the cloud hits `RESPACE_TARGET_SPACING` (14). A uniform scale preserves order, and the renderer shares no spacing constants with the backend.
 
-Zoom is resolution: `asciiGrid.ts` maps a zoom percentage to world units per cell (`ZOOM_STEP_PCT` = 10, `DEEPEST_WORLD_PER_CELL` for 0%). The view glides to each stop with a time-based ease (`GLIDE_TAU_MS` = 110). In 3D a camera dolly is derived from resolution progress (`cameraModel.ts`), so one wheel notch both raises resolution and moves the camera.
+Zoom is resolution: `asciiGrid.ts` maps a zoom percentage to world units per cell (`ZOOM_STEP_PCT` = 10, `DEEPEST_WORLD_PER_CELL` for 0%). The view glides to each stop with a time-based ease (`GLIDE_TAU_MS` = 110). The camera target glides with the same ease and snaps onto its goal once it is under `TARGET_EPS_PX` (half a pixel) away on screen, so a cursor-anchored step lands exactly. `onWheel` counts the first event of a wheel stream (no wheel event for `WHEEL_STREAM_GAP_MS`, 150 ms) as one notch, since a click's reported delta varies with device, acceleration, display scale and page zoom; the rest of the stream accumulates toward `WHEEL_NOTCH_PX` (120 px) per notch. In 3D a camera dolly is derived from resolution progress (`cameraModel.ts`), so one wheel notch both raises resolution and moves the camera.
 
 The zoom ladder has three bands, crossfaded by one continuous progress value `t`:
 

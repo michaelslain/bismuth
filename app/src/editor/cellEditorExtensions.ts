@@ -103,8 +103,10 @@ export function markdownEditingExtensions(
         // A markdown `\$` / `\#` escape is prose, not a code escape: retag it as plain content so
         // codeHighlightStyle's `t.escape` teal (meant for `\n` in fenced code) never tints a
         // literal dollar or hash. livePreview hides the backslash off the caret.
+        // addKeymap: false — enterKeymap below owns Enter and Backspace (see its header).
         markdown({
             codeLanguages,
+            addKeymap: false,
             extensions: [
                 { remove: ['IndentedCode'] },
                 { props: [styleTags({ Escape: t.content })] },

@@ -8527,3 +8527,100 @@ describe('the render loop idles when settled and wakes on input', () => {
         r.destroy()
     })
 })
+
+describe('wheel zoom keeps the point under the cursor and counts every click', () => {
+    type Cam = {
+        pxPerWorld: number
+        res: number
+        zoomPct: number
+        panX: number
+        panY: number
+        target: number[]
+        originX(p: number): number
+        originY(p: number): number
+    }
+    const cam = (r: AsciiGraphRenderer) => r as unknown as Cam
+    const scale = (r: AsciiGraphRenderer) =>
+        cam(r).pxPerWorld * cam(r).res
+    const worldAt = (r: AsciiGraphRenderer, x: number, y: number) => {
+        const c = cam(r)
+        return [
+            c.target[0] + (x - c.originX(c.panX)) / scale(r),
+            c.target[1] + (y - c.originY(c.panY)) / scale(r),
+        ]
+    }
+    const pxOf = (r: AsciiGraphRenderer, w: number[]) => {
+        const c = cam(r)
+        return [
+            c.originX(c.panX) + (w[0] - c.target[0]) * scale(r),
+            c.originY(c.panY) + (w[1] - c.target[1]) * scale(r),
+        ]
+    }
+    let clock = 0
+    const wheelAt = (
+        viewport: HTMLElement,
+        deltaY: number,
+        at: { x: number; y: number },
+        timeStamp: number,
+    ) => {
+        const e = new WheelEvent('wheel', { deltaY, cancelable: true })
+        Object.defineProperty(e, 'clientX', { value: at.x })
+        Object.defineProperty(e, 'clientY', { value: at.y })
+        Object.defineProperty(e, 'timeStamp', { value: timeStamp })
+        viewport.dispatchEvent(e)
+    }
+    const pump = () => {
+        for (let i = 0; i < 2000 && rafQueue.length; i++) {
+            clock += 16
+            frame(clock)
+        }
+    }
+    const at = { x: 620, y: 420 }
+
+    it('lands the world point under the cursor back under it at every stop down to the deepest', () => {
+        const { r, viewport } = mountRenderer('2d')
+        pump()
+        const w = worldAt(r, at.x, at.y)
+        for (let k = 0; k < 10; k++) {
+            wheelAt(viewport, -120, at, 1000 * (k + 1))
+            pump()
+            const [x, y] = pxOf(r, w)
+            expect(Math.abs(x - at.x)).toBeLessThan(0.5)
+            expect(Math.abs(y - at.y)).toBeLessThan(0.5)
+        }
+        expect(cam(r).zoomPct).toBe(0)
+        r.destroy()
+    })
+
+    it('zooming back out to 100% lands the field exactly centred', () => {
+        const { r, viewport } = mountRenderer('2d')
+        pump()
+        for (let k = 0; k < 6; k++) wheelAt(viewport, -120, at, 1000 * (k + 1))
+        pump()
+        for (let k = 0; k < 6; k++) wheelAt(viewport, 120, at, 9000 + 1000 * k)
+        pump()
+        expect(cam(r).zoomPct).toBe(100)
+        expect(Math.hypot(cam(r).target[0], cam(r).target[1])).toBeLessThan(1e-9)
+        r.destroy()
+    })
+
+    it('steps once for each separate click, however small its delta', () => {
+        const { r, viewport } = mountRenderer('2d')
+        pump()
+        // 60px clicks: what a 120px click reads on a 2x display; 109 is one at 110% page zoom.
+        for (const [i, d] of [-60, -60, -109].entries())
+            wheelAt(viewport, d, at, 1000 * (i + 1))
+        expect(cam(r).zoomPct).toBe(70)
+        r.destroy()
+    })
+
+    it('inside one stream, the deltas after the first accumulate toward a notch', () => {
+        const { r, viewport } = mountRenderer('2d')
+        pump()
+        // A trackpad swipe: 61 events a frame apart, 4px each. The first steps, the other 240px
+        // make two more notches.
+        for (let i = 0; i <= 60; i++) wheelAt(viewport, -4, at, 1000 + 16 * i)
+        expect(cam(r).zoomPct).toBe(70)
+        r.destroy()
+    })
+})

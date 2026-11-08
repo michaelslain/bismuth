@@ -1,7 +1,8 @@
 // app/src/editor/enterKeymap.ts
 // Enter handling for the note editor. Three bindings, in order:
-//   1. insertNewlineContinueMarkup — continues list/blockquote markup, but ONLY when the
-//      caret is actually inside a list/blockquote (it returns false otherwise).
+//   1. continueMarkupOutsideMath — continues list/blockquote markup, but ONLY when the
+//      caret is actually inside a list/blockquote (it returns false otherwise). The next
+//      bullet always opens on the very next line: see `continueMarkupTight`.
 //   2. continueOrderedList — a bismuth-owned fallback that continues a NUMBERED list whose
 //      parse tree doesn't nest it as an OrderedList, so the vanilla command declined.
 //   3. insertNewline — a PLAIN line break with no auto-indentation.
@@ -13,14 +14,23 @@
 // and could push a closing ``` fence onto its own line, breaking the block. A plain
 // newline keeps the previous line untouched and never indents a line that isn't in a
 // list. This keymap must precede `defaultKeymap` so its Enter wins.
+//
+// It also carries Backspace → `deleteMarkupBackward` (deletes a list marker). Every editor
+// that mounts it builds `markdown({ addKeymap: false })`: markdown()'s own keymap binds the
+// stock Enter at the same Prec.high, and sitting earlier in the extension tree it would win
+// and the bindings below would never run.
 import { keymap, type Command } from '@codemirror/view'
 import { insertNewline } from '@codemirror/commands'
-import { insertNewlineContinueMarkup } from '@codemirror/lang-markdown'
+import {
+    deleteMarkupBackward,
+    insertNewlineContinueMarkupCommand,
+} from '@codemirror/lang-markdown'
 import { syntaxTree } from '@codemirror/language'
 import {
     EditorSelection,
     Prec,
     type ChangeSpec,
+    type StateCommand,
     type Extension,
 } from '@codemirror/state'
 import { isInMathBlock } from './mathBlock'
@@ -119,13 +129,56 @@ export const continueOrderedList: Command = ({ state, dispatch }) => {
 // through to a plain newline (there is never list markup to continue inside math anyway).
 export const continueMarkupOutsideMath: Command = view => {
     if (isInMathBlock(view.state, view.state.selection.main.head)) return false
-    return insertNewlineContinueMarkup(view)
+    return continueMarkupTight(view)
 }
+
+// CodeMirror's command never ends a list on an empty SECOND item: it pushes that item down a
+// line instead, leaving a blank line above it (`nonTightLists: false` turns that off, so the
+// empty item ends the list like every other empty item). And when a list's first two items
+// are separated by a blank line it calls the list loose and puts a blank line before every new
+// item; that branch has no option, so the blank `\n<indent>` chunk is cut out of the insert
+// here. Every continuation insert is `\n` + markers, and markers never hold a line break, so
+// an insert with a second line break is exactly that blank-line branch.
+const continueMarkup = insertNewlineContinueMarkupCommand({
+    nonTightLists: false,
+})
+
+export const continueMarkupTight: StateCommand = ({ state, dispatch }) =>
+    continueMarkup({
+        state,
+        dispatch: tr => {
+            const br = state.lineBreak
+            const changes: ChangeSpec[] = []
+            let cut = false
+            tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+                let text = inserted.sliceString(0, inserted.length, br)
+                const first = text.indexOf(br)
+                const second =
+                    first < 0 ? -1 : text.indexOf(br, first + br.length)
+                if (second >= 0) {
+                    text = text.slice(0, first) + text.slice(second)
+                    cut = true
+                }
+                changes.push({ from: fromA, to: toA, insert: text })
+            })
+            if (!cut) return dispatch(tr)
+            const next = state.changes(changes)
+            dispatch(
+                state.update({
+                    changes: next,
+                    selection: state.selection.map(next, 1),
+                    scrollIntoView: true,
+                    userEvent: 'input',
+                }),
+            )
+        },
+    })
 
 export const enterKeymap: Extension = Prec.high(
     keymap.of([
         { key: 'Enter', run: continueMarkupOutsideMath },
         { key: 'Enter', run: continueOrderedList },
         { key: 'Enter', run: insertNewline },
+        { key: 'Backspace', run: deleteMarkupBackward },
     ]),
 )
