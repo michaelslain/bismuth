@@ -1,49 +1,37 @@
-/* ChatPermissionCard.module.css — ChatPermissionCard.tsx is the ONLY importer. The surface is
-   ui/Card (proposal: bordered, with the accent left edge); this file adds only what is chat's:
-     - the chat tint, through Card's `--card-bg` seam (a tinted chat pane blends it; in Storybook,
-       where no chat host localises `--chat-surface-1`, the plain --surface-1 fallback applies);
-     - the mechanism size, `--fs-ui` (chrome register 1, the same as ChatToolRow's line and
-       ChatToolInput's block), set ONCE here on the root;
-     - the SETTLED state, which is ink and edge, never opacity (DESIGN.md: no state is shown by
-       opacity). It used to fade the whole card to 0.65 — the title, the outcome and the summary
-       all dropped together, and the outcome line fell under 3:1 in the light themes. Now the edge
-       goes from accent to --border, the lock and title go to --text-muted, and the OUTCOME line
-       stays at full --fg: it is the one thing a settled card exists to say. */
+/* ChatPermissionCard.module.css — ChatPermissionCard.tsx is the ONLY importer.
+
+   NO SURFACE. No fill, no border, no accent edge: the prompt sits on the transcript's own ground and
+   left edge, the same as ChatToolRow and ChatQuestionCard. The root sets the mechanism size once,
+   `--fs-ui` (chrome register 1).
+
+   SETTLED IS ONE LINE AND INK, NEVER OPACITY (DESIGN.md: no state is shown by opacity): the outcome
+   stays at full --fg, the one thing a settled prompt exists to say, with the tool and its argument
+   after it in --text-muted. */
 .chat-permission {
-    --card-bg: var(--chat-surface-1, var(--surface-1));
-    --card-border: 1px solid var(--chat-border, var(--border));
     font-family: var(--ui-font-stack);
     font-size: var(--fs-ui);
     line-height: var(--lh-ui);
 }
-.chat-permission.answered {
-    border-left-color: var(--border);
-}
-.chat-permission-head {
+.chat-permission-line {
     display: flex;
     align-items: center;
     gap: var(--sp-4);
+    min-width: 0;
 }
 .chat-permission-icon {
-    color: var(--accent);
-}
-.chat-permission.answered .chat-permission-icon,
-.chat-permission.answered .chat-permission-title {
+    flex: 0 0 auto;
     color: var(--text-muted);
 }
+.chat-permission-outcome,
+.chat-permission-tool {
+    flex: 0 0 auto;
+}
 .chat-permission-summary {
-    margin-top: var(--sp-4);
+    margin-top: var(--sp-1);
 }
 .chat-permission-actions {
     display: flex;
     gap: var(--sp-4);
-    margin-top: var(--sp-5);
+    margin-top: var(--sp-2);
     flex-wrap: wrap;
-}
-.chat-permission-outcome {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    margin-top: var(--sp-4);
-    color: var(--fg);
 }

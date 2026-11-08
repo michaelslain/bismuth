@@ -109,3 +109,14 @@ export const Capped: Story = {
         await expect(getComputedStyle(body).overscrollBehaviorY).toBe('auto')
     },
 }
+
+/** No box: the same text and size with no fill, hairline or padding, as a permission prompt shows
+ *  its command. */
+export const Bare: Story = {
+    args: { text: 'git mv ChatView.tsx ChatView.old.tsx', tone: 'muted', bare: true },
+    play: async ({ canvasElement }) => {
+        const body = within(canvasElement).getByText(/git mv/)
+        await expect(getComputedStyle(body).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+        await expect(getComputedStyle(body).paddingLeft).toBe('0px')
+    },
+}

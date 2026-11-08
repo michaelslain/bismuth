@@ -1,17 +1,20 @@
 // app/src/chat/ChatQuestionCard.tsx — ChatQuestionCard.module.css is the ONLY importer.
 // Interactive AskUserQuestion card: each question's options as clickable buttons. A lone
 // single-select question submits on click (Claude-TUI feel); multi-select or several questions
-// stage picks and submit together. Every question also offers a free-text "Other". Skipping sends
-// a cancel. Extracted verbatim in behaviour from ChatView.tsx's local `QuestionCard` closure.
-// The surface is `ui/Card` (proposal) — it was a third copy of that recipe that even read the
-// deprecated `--r-card` — and each option wears a `ui/BracketToggle` mark (`[ ]` / `[x]`), single
-// select included: it used to draw Square/SquareCheck icons by hand for multi-select and no mark at
-// all for single-select.
+// stage picks and submit together. Every question also offers a free-text "other". Skipping sends
+// a cancel. No surface: it sits on the transcript's own ground like ChatToolRow, and each option
+// wears a `ui/BracketToggle` mark (`[ ]` / `[x]`), the "other" row included, so every answer sits on
+// one column.
+//
+// TWO REGISTERS (DESIGN.md's three-registers rule). The head line and every `meta` run are
+// mechanism: chrome, `--fs-ui`, like ChatPermissionCard's head and ChatToolRow's line. The question,
+// the options and a typed "other" are words, so they take the prose face: the question at the chat
+// message's own `--prose-font-size`, the option rows at `--fs-ui-prose`, the size for words inside
+// chrome.
 import { createStore } from 'solid-js/store'
 import { For, Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
-import Card from '../ui/Card'
 import BracketToggle from '../ui/BracketToggle'
 import { TextButton } from '../ui/TextButton'
 import { TextInput } from '../ui/TextInput'
@@ -25,6 +28,12 @@ export type ChatQuestionCardProps = {
     onAnswer: (answers: Record<string, string> | null) => void
     class?: string
 }
+
+/** The chrome line naming a question: its short header and, on a multi-select, the instruction. */
+const questionMeta = (q: QuestionPart['questions'][number]): string =>
+    [q.header?.toLowerCase(), q.multiSelect ? 'select all that apply' : '']
+        .filter(Boolean)
+        .join(' // ')
 
 const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
     const questions = props.part.questions
@@ -55,6 +64,12 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
         questions.length === 1 &&
         !questions[qi].multiSelect &&
         !sel.other[qi].trim()
+    // A lone question's meta IS the head line; several questions count in the head and name
+    // themselves one block at a time.
+    const headLabel = () =>
+        questions.length > 1
+            ? `${questions.length} questions`
+            : questionMeta(questions[0]) || 'question'
 
     const buildAnswers = (): Record<string, string> => {
         const answers: Record<string, string> = {}
@@ -86,8 +101,7 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
     }
 
     return (
-        <Card
-            variant="proposal"
+        <div
             class={[
                 styles['chat-question'],
                 done() ? styles['answered'] : '',
@@ -101,43 +115,31 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                     value="ListChecks"
                     class={styles['chat-question-icon']}
                 />
-                <Text as="span" weight="bold" class={styles['chat-question-title']}>
-                    {questions.length > 1
-                        ? `${questions.length} questions`
-                        : 'Question'}
+                <Text as="span" inherit tone="muted">
+                    {headLabel()}
                 </Text>
             </div>
             <For each={questions}>
                 {(q, qi) => (
                     <div class={styles['chat-question-block']}>
-                        <div class={styles['chat-question-prompt']}>
-                            <Show when={q.header}>
-                                <Text
-                                    as="span"
-                                    eyebrow
-                                    size="micro"
-                                    tone="muted"
-                                    weight="bold"
-                                    class={styles['chat-question-chip']}
-                                >
-                                    {q.header?.toLowerCase()}
-                                </Text>
-                            </Show>
-                            <Text as="span" class={styles['chat-question-text']}>
-                                {q.question}
+                        <Show when={questions.length > 1 && questionMeta(q)}>
+                            <Text
+                                as="div"
+                                inherit
+                                tone="muted"
+                                class={styles['chat-question-meta']}
+                            >
+                                {questionMeta(q)}
                             </Text>
-                            <Show when={q.multiSelect}>
-                                <Text
-                                    as="span"
-                                    size="ui"
-                                    tone="muted"
-                                    italic
-                                    class={styles['chat-question-multi']}
-                                >
-                                    select all that apply
-                                </Text>
-                            </Show>
-                        </div>
+                        </Show>
+                        <Text
+                            as="div"
+                            inherit
+                            register="prose"
+                            class={styles['chat-question-text']}
+                        >
+                            {q.question}
+                        </Text>
                         <div class={styles['chat-question-options']}>
                             <For each={q.options}>
                                 {opt => (
@@ -153,32 +155,25 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                                         disabled={done()}
                                         onClick={() => onOption(qi(), opt.label)}
                                     >
+                                        <BracketToggle
+                                            class={styles['chat-question-mark']}
+                                            checked={isChosen(qi(), opt.label)}
+                                        />
                                         <Text
                                             as="span"
                                             inherit
+                                            register="prose"
                                             class={
-                                                styles['chat-question-option-main']
+                                                styles['chat-question-option-label']
                                             }
                                         >
-                                            <BracketToggle
-                                                checked={isChosen(qi(), opt.label)}
-                                            />
-                                            <Text
-                                                as="span"
-                                                class={
-                                                    styles[
-                                                        'chat-question-option-label'
-                                                    ]
-                                                }
-                                            >
-                                                {opt.label}
-                                            </Text>
+                                            {opt.label}
                                         </Text>
                                         <Show when={opt.description}>
                                             <Text
                                                 as="span"
-                                                size="ui"
-                                                tone="muted"
+                                                inherit
+                                                register="prose"
                                                 class={
                                                     styles[
                                                         'chat-question-option-desc'
@@ -191,21 +186,27 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                                     </PlainButton>
                                 )}
                             </For>
+                            <Show when={!done()}>
+                                <div class={styles['chat-question-other-row']}>
+                                    <BracketToggle
+                                        class={styles['chat-question-mark']}
+                                        checked={!!sel.other[qi()].trim()}
+                                    />
+                                    <TextInput
+                                        class={styles['chat-question-other']}
+                                        placeholder="other…"
+                                        value={sel.other[qi()]}
+                                        onInput={v => setSel('other', qi(), v)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                                submit()
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            </Show>
                         </div>
-                        <Show when={!done()}>
-                            <TextInput
-                                class={styles['chat-question-other']}
-                                placeholder="Other… (type a custom answer)"
-                                value={sel.other[qi()]}
-                                onInput={v => setSel('other', qi(), v)}
-                                onKeyDown={e => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault()
-                                        submit()
-                                    }
-                                }}
-                            />
-                        </Show>
                     </div>
                 )}
             </For>
@@ -234,18 +235,16 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                                                 }
                                             >
                                                 <Icon value="Check" />
-                                                <Show when={q.header}>
+                                                <Show
+                                                    when={
+                                                        questions.length > 1 &&
+                                                        q.header
+                                                    }
+                                                >
                                                     <Text
                                                         as="span"
-                                                        eyebrow
-                                                        size="micro"
+                                                        inherit
                                                         tone="muted"
-                                                        weight="bold"
-                                                        class={
-                                                            styles[
-                                                                'chat-question-chip'
-                                                            ]
-                                                        }
                                                     >
                                                         {q.header?.toLowerCase()}
                                                     </Text>
@@ -253,6 +252,12 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                                                 <Text
                                                     as="span"
                                                     inherit
+                                                    register="prose"
+                                                    class={
+                                                        styles[
+                                                            'chat-question-answer-text'
+                                                        ]
+                                                    }
                                                 >
                                                     {ans()[q.question]}
                                                 </Text>
@@ -278,7 +283,7 @@ const ChatQuestionCard: Component<ChatQuestionCardProps> = props => {
                     </TextButton>
                 </div>
             </Show>
-        </Card>
+        </div>
     )
 }
 

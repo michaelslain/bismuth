@@ -1,21 +1,24 @@
-/* ChatQuestionCard.module.css — ChatQuestionCard.tsx is the ONLY importer. The surface is ui/Card
-   (proposal: bordered, accent left edge) — this used to be a third copy of that recipe, reading the
-   deprecated `--r-card` (a visible 4px corner on a system of square ones). The chat tint arrives
-   through Card's `--card-bg` seam. `--chat-*` custom properties carry a plain-token fallback (see
-   ChatTextBubble.module.css's header).
+/* ChatQuestionCard.module.css — ChatQuestionCard.tsx is the ONLY importer.
 
-   SETTLED IS INK AND EDGE, NEVER OPACITY (DESIGN.md: no state is shown by opacity). The answered
-   card used to fade to 0.7 and its disabled options faded AGAIN to 0.7 — compounding to ~0.49, so a
-   muted description measured 2.7:1 — and the outcome line, in --success, fell to 2.18:1 on the light
-   themes. Now nothing in here carries an opacity: the edge goes from accent to --border, the head
-   and the prompt go to --text-muted, a disabled option reads in --text-muted, and the OUTCOME line
-   stays at full --fg — it is the one thing a settled card exists to say. */
+   NO SURFACE. No fill, no border, no accent edge: the survey sits on the transcript's own ground and
+   left edge, the same as ChatToolRow and the prose around it.
+
+   THE ROOT IS CHROME, THE WORDS OPT INTO PROSE. The root sets the mechanism size once, the same as
+   ChatToolRow, and each run of words takes the prose face: the question at `--prose-font-size` (a
+   chat message's size), the option rows and a typed answer at `--fs-ui-prose` (DESIGN.md's size for
+   words inside chrome, matched to the mono's x-height).
+
+   ONE COLUMN. An option and the "other" row are the same two-column grid: the mark, then the words.
+   The description sits in the second column by grid placement, so nothing computes the mark's width.
+
+   SETTLED IS INK, NEVER OPACITY (DESIGN.md: no state is shown by opacity): the head and the question
+   go to --text-muted, a disabled option reads in --text-muted, and the OUTCOME line stays at full
+   --fg. */
 .chat-question {
-    --card-bg: var(--chat-surface-1, var(--surface-1));
-    --card-border: 1px solid var(--chat-border, var(--border));
-}
-.chat-question.answered {
-    border-left-color: var(--border);
+    --bracket-height: auto;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
 }
 .chat-question-head {
     display: flex;
@@ -23,65 +26,45 @@
     gap: var(--sp-4);
 }
 .chat-question-icon {
-    color: var(--accent);
+    color: var(--text-muted);
 }
-.chat-question.answered .chat-question-icon,
-.chat-question.answered .chat-question-title,
 .chat-question.answered .chat-question-text {
     color: var(--text-muted);
 }
-.chat-question-block {
-    margin-top: var(--sp-5);
-}
 .chat-question-block + .chat-question-block {
-    padding-top: var(--sp-5);
-    border-top: 1px solid var(--chat-border-soft, var(--border-soft));
+    margin-top: var(--sp-4);
 }
-.chat-question-prompt {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: var(--sp-3);
-    font-size: var(--fs-body);
+.chat-question .chat-question-text {
+    font-size: var(--prose-font-size);
+    line-height: var(--lh-tight);
     color: var(--fg);
-    line-height: 1.45;
 }
-.chat-question-prompt .chat-question-chip,
-.chat-question-answer .chat-question-chip {
-    flex: 0 0 auto;
-}
-.chat-question-prompt .chat-question-text {
-    line-height: inherit;
-    flex: 1 1 auto;
-}
-.chat-question-prompt .chat-question-multi {
-    flex: 0 0 auto;
-}
-/* Unfilled rows in one stack, divided only by a `--rule-soft` hairline (a border-top on every row
-   but the first) — chat's quiet inline-card vocabulary, not individually boxed slabs. */
 .chat-question-options {
     display: flex;
     flex-direction: column;
-    margin-top: var(--sp-4);
+    margin-top: var(--sp-1);
+}
+.chat-question-option,
+.chat-question-other-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--sp-4);
+    align-items: baseline;
+    padding: var(--sp-1) 0;
+}
+/* The `[`'s side bearing (DESIGN.md's ~0.175em) is pulled out, so its ink starts on the question's
+   left edge, as a text button's bracket does. */
+.chat-question-mark {
+    margin-left: -0.175em;
 }
 .chat-question-option {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-1);
     width: 100%;
     text-align: left;
-    padding: var(--sp-3) var(--sp-1);
-    border-top: 1px solid var(--chat-border-soft, var(--border-soft));
     transition: color var(--dur) var(--ease-std);
     font: inherit;
     color: var(--fg);
 }
-.chat-question-option:first-child {
-    border-top: none;
-}
-.chat-question-option:hover:not(:disabled) {
-    color: var(--accent);
-}
+.chat-question-option:hover:not(:disabled),
 .chat-question-option.picked {
     color: var(--accent);
 }
@@ -94,41 +77,40 @@
 .chat-question-option.picked:disabled {
     color: var(--accent);
 }
-.chat-question-option-main {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-4);
+.chat-question .chat-question-option-label,
+.chat-question .chat-question-answer-text {
+    font-size: var(--fs-ui-prose);
+    line-height: var(--lh-snug);
 }
 .chat-question-option .chat-question-option-label {
-    line-height: inherit;
-    font-size: var(--fs-body);
-    font-weight: var(--fw-medium);
     color: inherit;
 }
-/* The description hangs under the label, past the `[x]` mark (3ch + the row gap). */
 .chat-question-option .chat-question-option-desc {
-    line-height: var(--lh-tight);
-    padding-left: calc(3ch + var(--sp-4));
+    grid-column: 2;
+    font-size: var(--fs-ui-prose);
+    line-height: var(--lh-snug);
+    color: var(--text-muted);
 }
 .chat-question-option.picked:not(:disabled) .chat-question-option-desc {
     color: var(--fg);
 }
-.chat-question-other {
+.chat-question .chat-question-other {
     width: 100%;
-    margin-top: var(--sp-3);
+    height: var(--h-row);
+    font-family: var(--prose-font);
+    font-size: var(--fs-ui-prose);
 }
 .chat-question-actions {
     display: flex;
     gap: var(--sp-4);
-    margin-top: var(--sp-5);
+    margin-top: var(--sp-2);
     flex-wrap: wrap;
 }
 .chat-question-outcome {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-2);
-    margin-top: var(--sp-5);
-    font-size: var(--fs-body);
+    gap: var(--sp-1);
+    margin-top: var(--sp-1);
     color: var(--fg);
 }
 .chat-question-answer {

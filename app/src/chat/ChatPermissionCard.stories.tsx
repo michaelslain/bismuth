@@ -1,6 +1,7 @@
 // Visual spec for <ChatPermissionCard> — an inline allow/deny prompt. `AnswerAllow`'s play()
 // clicks ALLOW and asserts the callback fires with the right args (the card itself stays
 // controlled — a real session would flip `answered` and re-render as the outcome variant).
+import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import ChatPermissionCard from './ChatPermissionCard'
@@ -32,8 +33,64 @@ export const Pending: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        const allow = canvas.getByRole('button', { name: 'allow' })
+        await expect(allow).toBeInTheDocument()
+        // No surface: the prompt and its command draw no fill and no edge, like a tool row.
+        const root = allow.parentElement!.parentElement!
+        await expect(getComputedStyle(root).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+        await expect(getComputedStyle(root).borderLeftStyle).toBe('none')
+        const command = canvas.getByText('notes/todo.md')
+        await expect(getComputedStyle(command).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+        await expect(getComputedStyle(command).borderTopStyle).toBe('none')
+    },
+}
+
+/** A command long enough to wrap: it stays readable in full, because this is what is being allowed. */
+export const LongCommand: Story = {
+    render: () => (
+        <div style={{ width: '600px' }}>
+            <ChatPermissionCard
+                part={{
+                    ...pendingPart,
+                    toolName: 'Bash',
+                    input: {
+                        command:
+                            'git log --oneline --since=2026-10-01 -- app/src/chat app/src/ui core/src/chat | grep -v merge | head -40 > /tmp/recent-chat-commits.txt',
+                    },
+                }}
+                onAnswer={fn()}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const command = within(canvasElement).getByText(/git log --oneline/)
+        await expect(command.scrollWidth).toBeLessThanOrEqual(command.clientWidth)
+        await expect(command.scrollHeight).toBeLessThanOrEqual(command.clientHeight)
+    },
+}
+
+/** Try it: answer on live state and the prompt settles to its one line, as it does in a chat. */
+export const TryIt: Story = {
+    render: () => {
+        const [part, setPart] = createSignal<PermissionPart>({
+            ...pendingPart,
+            toolName: 'Bash',
+            input: { command: 'git mv ChatView.tsx ChatView.old.tsx' },
+        })
+        return (
+            <div style={{ width: '600px' }}>
+                <ChatPermissionCard
+                    part={part()}
+                    onAnswer={(behavior, always) =>
+                        setPart(p => ({ ...p, answered: { behavior, always } }))
+                    }
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
         await expect(
-            canvas.getByRole('button', { name: 'allow' }),
+            within(canvasElement).getByRole('button', { name: 'deny' }),
         ).toBeInTheDocument()
     },
 }

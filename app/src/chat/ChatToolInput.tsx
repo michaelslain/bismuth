@@ -20,6 +20,9 @@ export type ChatToolInputProps = {
     tone?: 'default' | 'muted'
     /** The block scrolls past this many px. Default 320. */
     maxHeight?: number
+    /** Drop CodeBlock's fill, hairline and padding, so the text sits on the ground it is drawn on.
+     *  For a block read as part of a line of chrome, such as a permission prompt's command. */
+    bare?: boolean
     /** A failed call's output — --danger ink. */
     error?: boolean
     class?: string
@@ -37,6 +40,7 @@ const ChatToolInput: Component<ChatToolInputProps> = props => {
             </Show>
             <CodeBlock
                 class={styles['chat-tool-input-body']}
+                bare={props.bare}
                 classList={{
                     [styles['muted']]: props.tone === 'muted',
                     [styles['error']]: !!props.error,

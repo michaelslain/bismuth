@@ -1,6 +1,7 @@
 // Visual spec for <ChatQuestionCard> — an interactive AskUserQuestion card. `AnswerSingleSelect`'s
 // play() clicks an option (a lone single-select question submits immediately, no Submit click
 // needed — see ChatQuestionCard.tsx's `immediate`) and asserts onAnswer fires with that option.
+import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import ChatQuestionCard from './ChatQuestionCard'
@@ -59,16 +60,34 @@ export const SingleSelect: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(
-            canvas.getByText('Which package should the fix land in?'),
-        ).toBeInTheDocument()
+        const question = canvas.getByText('Which package should the fix land in?')
+        await expect(question).toBeInTheDocument()
+        // The head is chrome; the question and the options are words, in the prose face.
+        const face = (el: Element) => getComputedStyle(el).fontFamily
+        const size = (css: string) => {
+            const probe = document.createElement('span')
+            probe.style.fontSize = css
+            canvasElement.appendChild(probe)
+            const px = getComputedStyle(probe).fontSize
+            probe.remove()
+            return px
+        }
+        const head = canvas.getByText('scope')
+        const label = canvas.getByText('app')
+        await expect(face(question)).not.toBe(face(head))
+        await expect(face(label)).toBe(face(question))
+        await expect(getComputedStyle(head).fontSize).toBe(size('var(--fs-ui)'))
+        await expect(getComputedStyle(question).fontSize).toBe(
+            size('var(--prose-font-size)'),
+        )
+        await expect(getComputedStyle(label).fontSize).toBe(
+            size('var(--fs-ui-prose)'),
+        )
     },
 }
 
-/** Multi-select stages picks; Submit/Skip only appear once at least one is answerable. Also
- *  proves the design #7 vocabulary fix: the header chip is lowercase (no CSS uppercase
- *  transform), the option rows carry no individual fill/border (an unfilled hairline list, not
- *  boxed slabs), and Submit/Skip render as bracket buttons — the same idiom + component
+/** Multi-select stages picks; submit enables once a pick is staged. Also proves the vocabulary:
+ *  the head line is lowercase (no CSS uppercase transform), the option rows carry no fill or border (a plain list, not boxed slabs), and Submit/Skip render as bracket buttons — the same idiom + component
  *  ChatPermissionCard's "[allow]"/"[deny]" uses. */
 export const MultiSelect: Story = {
     render: () => (
@@ -82,7 +101,7 @@ export const MultiSelect: Story = {
             canvas.getByText('Which surfaces need a story?'),
         ).toBeInTheDocument()
 
-        const chip = canvas.getByText('stories')
+        const chip = canvas.getByText('stories // select all that apply')
         await expect(getComputedStyle(chip).textTransform).toBe('none')
 
         const firstOption = canvas.getByRole('button', { name: 'ChatToolRow' })
@@ -92,10 +111,11 @@ export const MultiSelect: Story = {
         await expect(getComputedStyle(firstOption).backgroundColor).toBe(
             'rgba(0, 0, 0, 0)',
         )
-        await expect(getComputedStyle(firstOption).borderTopStyle).toBe('none')
-        await expect(getComputedStyle(secondOption).borderTopStyle).toBe(
-            'solid',
-        )
+        await expect(getComputedStyle(secondOption).borderTopStyle).toBe('none')
+        // No surface: the card draws no fill and no edge of its own, like a tool row.
+        const root = firstOption.parentElement!.parentElement!.parentElement!
+        await expect(getComputedStyle(root).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+        await expect(getComputedStyle(root).borderLeftStyle).toBe('none')
 
         // Stage a pick so Submit/Skip render, then confirm the bracket wrap.
         await userEvent.click(canvas.getByText('ChatToolRow'))
@@ -229,5 +249,81 @@ export const AnswerSingleSelect: Story = {
         await expect(args.onAnswer).toHaveBeenCalledWith({
             'Which package should the fix land in?': 'app',
         })
+    },
+}
+
+const severalPart: QuestionPart = {
+    kind: 'question',
+    id: 'q3',
+    questions: [
+        {
+            question: 'Which package should the fix land in?',
+            header: 'scope',
+            multiSelect: false,
+            options: [
+                { label: 'app', description: 'the frontend workspace' },
+                { label: 'core', description: 'the backend workspace' },
+            ],
+        },
+        {
+            question: 'Which surfaces need a story?',
+            header: 'stories',
+            multiSelect: true,
+            options: [
+                { label: 'the tool row', description: 'one line per tool call' },
+                { label: 'the permission card', description: '' },
+                { label: 'the question card', description: '' },
+            ],
+        },
+    ],
+    answered: null,
+}
+
+/** A typed "other" ticks its own row and enables submit, and a lone single-select then stages a
+ *  click instead of sending it, so the typed words are not lost. */
+export const OtherTyped: Story = {
+    render: args => (
+        <div style={{ width: '600px' }}>
+            <ChatQuestionCard part={singlePart} onAnswer={args.onAnswer} />
+        </div>
+    ),
+    args: { onAnswer: fn() },
+    play: async ({ canvasElement, args }) => {
+        const canvas = within(canvasElement)
+        await userEvent.type(canvas.getByPlaceholderText('other…'), 'both of them')
+        await expect(canvas.getByRole('button', { name: 'submit' })).toBeEnabled()
+        await userEvent.click(canvas.getByText('core'))
+        await expect(args.onAnswer).not.toHaveBeenCalled()
+        await userEvent.click(canvas.getByText('core'))
+    },
+}
+
+/** Try it: several questions on live state. Pick, type an "other", submit or skip, and the card
+ *  settles the way it does in a chat. */
+export const TryItSeveralQuestions: Story = {
+    render: () => {
+        const [part, setPart] = createSignal(severalPart)
+        return (
+            <div style={{ width: '600px' }}>
+                <ChatQuestionCard
+                    part={part()}
+                    onAnswer={answers =>
+                        setPart(p =>
+                            answers
+                                ? { ...p, answered: answers }
+                                : { ...p, cancelled: true },
+                        )
+                    }
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('2 questions')).toBeInTheDocument()
+        await expect(canvas.getByText('scope')).toBeInTheDocument()
+        await expect(
+            canvas.getByText('stories // select all that apply'),
+        ).toBeInTheDocument()
     },
 }
