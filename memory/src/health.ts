@@ -2,8 +2,10 @@
 // notes and the like) rendered as a numbered agenda for the dream cron. Pure: no fs, no clock
 // unless `now` is omitted.
 import type { MemoryNote } from './graph'
+import { isDigestNote, isNowNote, rollupPlan } from './digests'
+import { todayISO } from './dates'
 
-export type BrainHealthItem = { kind: 'oversized' | 'dated-name' | 'cluster' | 'orphan' | 'no-source' | 'status-lines' | 'dated-tags' | 'duplicate' | 'broken-link' | 'no-profile' | 'no-hub' | 'no-description'; notes: string[]; detail: string }
+export type BrainHealthItem = { kind: 'oversized' | 'dated-name' | 'cluster' | 'orphan' | 'no-source' | 'status-lines' | 'dated-tags' | 'duplicate' | 'broken-link' | 'no-profile' | 'no-hub' | 'no-description' | 'rollup'; notes: string[]; detail: string }
 export type BrainHealth = { notes: number; bytes: number; items: BrainHealthItem[] }
 
 const OVERSIZED_CHARS = 2000
@@ -165,6 +167,7 @@ const WEIGHT: Record<BrainHealthItem['kind'], number> = {
     'no-hub': 4,
     'dated-name': 3,
     'no-source': 2,
+    rollup: 2.5,
     orphan: 1,
     'no-description': 0,
 }
@@ -183,6 +186,8 @@ export function brainHealth(allNotes: MemoryNote[], opts?: { vaultNames?: Set<st
     const found: { item: BrainHealthItem; magnitude: number }[] = []
     const add = (item: BrainHealthItem, magnitude: number) => found.push({ item, magnitude })
     const byName = [...notes].sort((a, b) => a.name.localeCompare(b.name))
+    // digest notes (day-/week-/month-) are the one sanctioned dated name and status log
+    const plain = byName.filter(n => !isDigestNote(n) && !isNowNote(n))
 
     // oversized
     const big = byName.filter(n => !isHub(n) && n.content.length > OVERSIZED_CHARS).sort((a, b) => b.content.length - a.content.length || a.name.localeCompare(b.name))
@@ -190,7 +195,7 @@ export function brainHealth(allNotes: MemoryNote[], opts?: { vaultNames?: Set<st
         add({ kind: 'oversized', notes: cap(big.map(n => n.name)), detail: `body over ${OVERSIZED_CHARS} chars (largest ${kb(big[0]!.content.length)}); split into focused notes or cut it down` }, big[0]!.content.length)
 
     // status-lines
-    const status = byName
+    const status = plain
         .map(n => ({ n, ...oldDatedLines(n.content, now) }))
         .filter(s => s.count >= STATUS_LINES_MIN)
         .sort((a, b) => b.count - a.count || a.n.name.localeCompare(b.n.name))
@@ -198,18 +203,18 @@ export function brainHealth(allNotes: MemoryNote[], opts?: { vaultNames?: Set<st
         add({ kind: 'status-lines', notes: cap(status.map(s => s.n.name)), detail: `${status[0]!.count}+ dated lines older than ${STATUS_AGE_DAYS} days (most in ${status[0]!.n.name}); keep the durable fact, move the log to a History section or drop it` }, status[0]!.count)
 
     // dated-tags
-    const tagged = byName.map(n => ({ n, tags: datedTags(n.frontmatter.tags) })).filter(t => t.tags.length)
+    const tagged = plain.map(n => ({ n, tags: datedTags(n.frontmatter.tags) })).filter(t => t.tags.length)
     if (tagged.length)
         add({ kind: 'dated-tags', notes: cap(tagged.map(t => t.n.name)), detail: `time-bound tags (${[...new Set(tagged.flatMap(t => t.tags))].slice(0, 5).join(', ')}) go stale; drop them` }, tagged.length)
 
     // dated-name
-    const dated = byName.filter(n => datedName(n.name))
+    const dated = plain.filter(n => datedName(n.name))
     if (dated.length)
         add({ kind: 'dated-name', notes: cap(dated.map(n => n.name)), detail: 'name carries a date or status word; rename to the durable subject' }, dated.length)
 
     // cluster
     const stems = new Map<string, string[]>()
-    for (const n of byName) {
+    for (const n of plain) {
         const s = stem(n.name)
         if (s) stems.set(s, [...(stems.get(s) ?? []), n.name])
     }
@@ -220,8 +225,12 @@ export function brainHealth(allNotes: MemoryNote[], opts?: { vaultNames?: Set<st
         add({ kind: 'cluster', notes: cap(names), detail: `${names.length} notes repeat the stem "${s}" once dates and status words are stripped; merge them into one` }, names.length)
     }
 
+    // rollup: old digest notes fold into the coarser period
+    for (const r of rollupPlan(notes, todayISO(now)))
+        add({ kind: 'rollup', notes: r.from, detail: `fold into ${r.into}` }, r.from.length)
+
     // duplicate
-    const sets = byName.map(n => ({ n, w: wordSet(n) }))
+    const sets = plain.map(n => ({ n, w: wordSet(n) }))
     for (let i = 0; i < sets.length; i++)
         for (let j = i + 1; j < sets.length; j++) {
             const a = sets[i]!.w
@@ -245,7 +254,7 @@ export function brainHealth(allNotes: MemoryNote[], opts?: { vaultNames?: Set<st
     if (vault) {
         const vaultKeys = new Set([...vault].map(v => baseOf(linkKey(v))))
         const inVault = (key: string) => vaultKeys.has(key) || vaultKeys.has(baseOf(key))
-        const noSource = byName.filter(n => !isProfile(n) && !isHub(n) && !SESSION_SOURCE_RE.test(n.content) && !n.backlinks.some(l => inVault(linkKey(l))))
+        const noSource = plain.filter(n => !isProfile(n) && !isHub(n) && !SESSION_SOURCE_RE.test(n.content) && !n.backlinks.some(l => inVault(linkKey(l))))
         if (noSource.length)
             add({ kind: 'no-source', notes: cap(noSource.map(n => n.name)), detail: 'links to no vault note; add [[links]] to the notes it was learned from' }, noSource.length)
         const broken = byName

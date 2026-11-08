@@ -109,6 +109,14 @@ test('searchDocs ranks the most relevant doc first for a shared term', () => {
     expect(hits[0].score).toBeGreaterThan(0)
 })
 
+test('searchDocs is deterministic and descending: it is the order a keyword-only docs search keeps', () => {
+    const a = searchDocs(root, 'the')
+    expect(searchDocs(root, 'the')).toEqual(a)
+    for (let i = 1; i < a.length; i++) expect(a[i]!.score).toBeLessThanOrEqual(a[i - 1]!.score)
+    // a smaller limit is a prefix of the larger answer, so a blend can take a wide pool and cut it
+    expect(searchDocs(root, 'the', 2)).toEqual(a.slice(0, 2))
+})
+
 test('searchDocs respects the limit', () => {
     // "the" appears across all three docs; without a cap we'd get multiple hits.
     const uncapped = searchDocs(root, 'the')

@@ -198,14 +198,14 @@ async function main() {
     const lex = cli('search', word, '--json')
     step('5a lexical search returns companion', !!word && /\.(png)\.md/.test(lex.stdout), `word=${word}`)
     const phrase = text.split(/\s+/).slice(0, 8).join(' ')
-    let sem = cli('search', phrase, '--semantic', '--json')
+    let sem = cli('search', phrase, '--json')
     const end = Date.now() + 180_000
     // the index warms, then embeds the companions the button just wrote: poll until the companion shows up
     while ((/warming/i.test(sem.stdout + sem.stderr) || !/\.(png)\.md/.test(sem.stdout)) && Date.now() < end) {
         await sleep(5000)
-        sem = cli('search', phrase, '--semantic', '--json')
+        sem = cli('search', phrase, '--json')
     }
-    step('5b semantic search returns companion', /\.(png)\.md/.test(sem.stdout), (sem.stdout + sem.stderr).slice(0, 160).replace(/\n/g, ' '))
+    step('5b blended search returns companion', /\.(png)\.md/.test(sem.stdout), (sem.stdout + sem.stderr).slice(0, 160).replace(/\n/g, ' '))
 
     // 6: book pages
     const pages = cli('book', 'pages', 'Notebook.base.jsonl')

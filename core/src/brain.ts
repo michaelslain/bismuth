@@ -21,6 +21,8 @@ export type BrainChannel = 'chat' | 'daemon'
 export const BRAIN_BUDGET_CHARS = 9500
 const MAP_BUDGET_CHARS = 2200
 const PROFILE_BUDGET_CHARS = 1500
+const NOW_BUDGET_CHARS = 1500
+const NOW_NOTE_NAME = 'now'
 const DEFAULT_WAIT_MS = 1000
 // A map older than this rebuilds even if nothing called invalidateBrain (long-lived processes).
 export const MAP_MAX_AGE_MS = 5 * 60 * 1000
@@ -41,6 +43,24 @@ export type BrainDeps = {
     formatProfile?: typeof formatProfile
     formatSessionStart?: typeof formatSessionStart
     now?: () => number
+}
+
+/** The `# Now (written <updated>)` section from the `now` note, its body cut at a line boundary;
+ *  null when there is no such note or its body is empty. */
+function formatNow(notes: MemoryNote[], maxChars: number): string | null {
+    const now = notes.find(n => n.name === NOW_NOTE_NAME && (n.frontmatter.type as string) === 'now')
+    const body = now?.content.trim()
+    if (!now || !body) return null
+    const kept: string[] = []
+    let used = 0
+    for (const line of body.split('\n')) {
+        if (used + line.length + 1 > maxChars) break
+        kept.push(line)
+        used += line.length + 1
+    }
+    const text = kept.join('\n').trimEnd()
+    if (!text) return null
+    return `# Now (written ${now.frontmatter.updated})\n\n${text}`
 }
 
 type Entry = { map?: VaultMap; builtAt?: number; pending?: Promise<VaultMap | null> }
@@ -106,6 +126,8 @@ export function createBrainComposer(deps: BrainDeps) {
         const sections: string[] = []
         const profile = notes.length ? (deps.formatProfile ?? formatProfile)(notes, PROFILE_BUDGET_CHARS) : null
         if (profile) sections.push(`# Who you are working with\n\n${profile.trim()}`)
+        const nowSection = notes.length ? formatNow(notes, NOW_BUDGET_CHARS) : null
+        if (nowSection) sections.push(nowSection)
         if (map && map.notes > 0) {
             const header = `# Vault map (${map.notes} notes)\n\n`
             // formatMap opens with its own title line; the brain's header already says it.
@@ -118,7 +140,11 @@ export function createBrainComposer(deps: BrainDeps) {
         const lead = sections.length ? `${sections.join('\n\n')}\n` : undefined
 
         const fmt = deps.formatSessionStart ?? formatSessionStart
-        const profileLead = profile ? `# Who you are working with\n\n${profile.trim()}\n` : undefined
+        const profileParts = [
+            ...(profile ? [`# Who you are working with\n\n${profile.trim()}`] : []),
+            ...(nowSection ? [nowSection] : []),
+        ]
+        const profileLead = profileParts.length ? `${profileParts.join('\n\n')}\n` : undefined
         const leads = [lead, profileLead && profileLead !== lead ? profileLead : undefined, undefined].filter(
             (l, i, all) => i === all.length - 1 || l !== undefined,
         )

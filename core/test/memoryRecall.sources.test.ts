@@ -3,6 +3,9 @@ import { createRecallService } from '../src/memoryRecall'
 import type { RecallDeps, RecallEngine, RecallRequest } from '../src/memoryRecall'
 import type { SourceHit } from '../src/semanticSources'
 import type { MemoryNote } from '@bismuth/memory'
+import { CLOSED_GATE } from '../src/sourceGate'
+import type { GateTraceRow } from '../src/sourceGate'
+import { cosineGate, logitGate } from './gateStub'
 
 const hit = (over: Partial<SourceHit>): SourceHit => ({
     kind: 'note',
@@ -12,7 +15,7 @@ const hit = (over: Partial<SourceHit>): SourceHit => ({
     hash: 'h1',
     ...over,
 })
-// a standout hit above nine filler hits, so it clears the source's own tenth-best + margin
+// a standout hit above nine filler hits
 const withBackground = (top: SourceHit[], kind: SourceHit['kind'] = 'note'): SourceHit[] => [
     ...top,
     ...Array.from({ length: 9 }, (_, i) => hit({ kind, id: `bg${i}`, score: 0.6, hash: `b${i}` })),
@@ -48,6 +51,7 @@ function make(hits: SourceHit[] | (() => Promise<SourceHit[]>), over: Partial<Re
             seen.push(q)
             return typeof hits === 'function' ? hits() : hits
         },
+        gateModel: logitGate,
         vault: '/v',
         ...over,
     })
@@ -66,7 +70,7 @@ test('with memory empty an admitted source still yields a block: banner, no memo
     expect(r.sources).toEqual(['note:Projects/Launch.md'])
     expect(r.injected).toEqual([])
     expect(r.context).toStartWith('<bismuth-memory>\n')
-    expect(r.context).toContain('# Vault files\n\n## Projects/Launch.md (note)\nPath: /v/Projects/Launch.md\n')
+    expect(r.context).toContain('# Vault files\n\n- Projects/Launch.md (note) — ')
     expect(r.context).not.toContain('# Memories')
     expect(r.context).toEndWith('</bismuth-memory>')
     expect(seen).toHaveLength(1)
@@ -96,7 +100,7 @@ test('sources are appended inside the envelope after the memory text', async () 
     })
     const r = await svc.recall(prompt())
     expect(r.injected).toEqual(['m'])
-    expect(r.context).toStartWith('<bismuth-memory>\nB\n\n# Memories\n\nmem\n\n# Vault files\n\n')
+    expect(r.context).toStartWith('<bismuth-memory>\nB\n\n# Memories\n\nmem\n\nPossibly related, unverified. Open one only if it helps; ignore the rest.\n\n# Vault files\n\n')
     expect(r.context!.match(/<\/bismuth-memory>/g)).toHaveLength(1)
 })
 
@@ -114,17 +118,48 @@ test('no reranker, no embedder, no deps.sources, wrong mode or semantic off = no
     ).toBeNull()
 })
 
-test('a hit under the cosine floor, or not above its source tenth-best + margin, is not a candidate', async () => {
-    const low = make([hit({ score: 0.5 })])
-    expect((await low.svc.recall(prompt())).context).toBeNull()
-    // ten hits within 0.05 of each other: nothing stands out from the background
-    const flat = make(Array.from({ length: 10 }, (_, i) => hit({ id: `f${i}`, score: 0.8 - i * 0.005, hash: `${i}` })))
-    expect((await flat.svc.recall(prompt())).context).toBeNull()
+test('the gate alone decides: a closed gate admits no source and memory is unaffected', async () => {
+    const note = { name: 'm', content: 'alpha', backlinks: [], frontmatter: { type: 'fact', tags: [] } } as any
+    const memory = {
+        ...fakeEngine,
+        rankNotes: () => [{ note: { name: 'm' }, lexical: 1, score: 1 }],
+        packRecall: () => ({ text: '<bismuth-memory>\nB\n\n# Memories\n\nmem\n\n</bismuth-memory>', injected: [{ name: 'm', hash: 'x' }] }),
+    } as unknown as RecallEngine
+    const closed = make(withBackground([hit({})]), { gateModel: CLOSED_GATE, engine: memory, loadNotes: async () => [note] })
+    const r = await closed.svc.recall(prompt())
+    expect(r.sources ?? []).toEqual([])
+    expect(r.injected).toEqual(['m'])
+    expect(r.context).toContain('# Memories')
+    expect(r.context).not.toContain('# Vault files')
+    expect((await make(withBackground([hit({})]), { gateModel: CLOSED_GATE }).svc.recall(prompt())).context).toBeNull()
 })
 
-test('a source with fewer than ten hits is held to the cosine floor only', async () => {
-    const { svc } = make([hit({ score: 0.9 })])
-    expect((await svc.recall(prompt())).sources).toEqual(['note:a.md'])
+test('the gate reads the cosine: a cosine gate refuses a hit under its cutoff', async () => {
+    const low = make([hit({ score: 0.5 })], { gateModel: cosineGate })
+    expect((await low.svc.recall(prompt())).context).toBeNull()
+    expect((await make([hit({ score: 0.6 })], { gateModel: cosineGate }).svc.recall(prompt())).sources).toEqual(['note:a.md'])
+})
+
+test('every candidate reaches the gate with its features, accepted or not', async () => {
+    const rows: GateTraceRow[] = []
+    const files = Array.from({ length: 10 }, (_, i) => hit({ id: `f${i}.md`, score: 0.9 - i * 0.02, hash: `f${i}` }))
+    const chats = [hit({ kind: 'chat', id: 'sess', score: 0.7, hash: 'c', date: '2026-10-29' })]
+    const { svc } = make([...files, ...chats], { gateTrace: r => rows.push(...r), reranker: () => reranker(p => p.map((_, i) => 3 - i)) })
+    await svc.recall(prompt({ prompt: 'a prompt of 24 chars...' }))
+    const byKey = new Map(rows.map(r => [r.key, r]))
+    expect(rows).toHaveLength(6)
+    const top = byKey.get('note:f0.md')!
+    expect(top.path).toBe('ordinary')
+    expect(top.features).toMatchObject({ cosine: 0.9, rank: 0, kind: 'file', inRange: false, promptChars: 'a prompt of 24 chars...'.length })
+    // the source's tenth-best cosine
+    expect(top.features.background).toBeCloseTo(0.9 - 9 * 0.02, 9)
+    expect(byKey.get('note:f4.md')!.features.rank).toBe(4)
+    expect(byKey.has('note:f5.md')).toBe(false)
+    expect(byKey.get('chat:sess')!.features).toMatchObject({ kind: 'chat', rank: 0 })
+    // a source with fewer than ten hits takes its last hit as the background
+    expect(byKey.get('chat:sess')!.features.background).toBe(0.7)
+    expect(typeof top.features.rerank).toBe('number')
+    expect(rows.every(r => r.accepted === (r.probability >= 0.5))).toBe(true)
 })
 
 test('an embedder that never answers does not hold the memory context past the budget', async () => {
@@ -146,18 +181,17 @@ test('an embedder that never answers does not hold the memory context past the b
     expect(r.sources ?? []).toEqual([])
 })
 
-test('the reranker judges at most 3 per source, and logits below the gate refuse', async () => {
+test('the reranker judges the best 5 per source in one call, and logits below the gate refuse', async () => {
     const seenPassages: string[][] = []
-    // under FILE_COSINE_ADMIT, so only the reranker could admit them
-    const top = [1, 2, 3, 4].map(i => hit({ id: `t${i}.md`, score: 0.79 - i * 0.01, excerpt: `e${i}`, hash: `${i}` }))
+    const top = [1, 2, 3, 4, 5, 6].map(i => hit({ id: `t${i}.md`, score: 0.79 - i * 0.01, excerpt: `e${i}`, hash: `${i}` }))
     const { svc } = make(withBackground(top), {
         reranker: () => reranker(p => (seenPassages.push(p), p.map(() => -9))),
     })
     expect((await svc.recall(prompt())).context).toBeNull()
-    expect(seenPassages).toEqual([['e1', 'e2', 'e3']])
+    expect(seenPassages).toEqual([['e1', 'e2', 'e3', 'e4', 'e5']])
 })
 
-test('chats need two more logit than files', async () => {
+test('chats need two more logit than files: the gate weighs the kind', async () => {
     const files = withBackground([hit({ id: 'f.md' })])
     const chats = withBackground([hit({ kind: 'chat', id: 'sess', date: '2026-10-29' })], 'chat')
     const { svc } = make([...files, ...chats], { reranker: () => reranker(-5) })
@@ -206,30 +240,15 @@ test('a failing source or reranker leaves the request unharmed', async () => {
     expect((await bad.svc.recall(prompt())).context).toBeNull()
 })
 
-test('files: a standout cosine is admitted even when the reranker refuses it', async () => {
-    const top = [hit({ id: 'Calendar.md', score: 0.84 }), hit({ id: 'second.md', score: 0.82, hash: 'h2' }), hit({ id: 'third.md', score: 0.81, hash: 'h3' })]
-    const { svc } = make(withBackground(top), { reranker: () => reranker(-11) })
-    // the best two clear 0.80 and the tenth-best (0.60) by the margin; the third is past FILE_COSINE_TAKE
-    expect((await svc.recall(prompt())).sources).toEqual(['note:Calendar.md', 'note:second.md'])
+test('a candidate the cross-encoder does not answer for is not injected', async () => {
+    const short = make(withBackground([hit({})]), { reranker: () => reranker(() => [1]) })
+    expect((await short.svc.recall(prompt())).context).toBeNull()
 })
 
-test('files: under 0.80, or within the margin of the background, the cosine path admits nothing', async () => {
-    const low = make(withBackground([hit({ id: 'a.md', score: 0.79 })]), { reranker: () => reranker(-11) })
-    expect((await low.svc.recall(prompt())).sources ?? []).toEqual([])
-    const flat = Array.from({ length: 10 }, (_, i) => hit({ id: `f${i}.md`, score: 0.83 - i * 0.004, hash: `f${i}` }))
-    const near = make(flat, { reranker: () => reranker(-11) })
-    expect((await near.svc.recall(prompt())).sources ?? []).toEqual([])
-})
-
-test('the cosine path is files only: docs and chats still need the reranker', async () => {
-    const docs = withBackground([hit({ kind: 'docs', id: 'bases/a.md#x', score: 0.9 })], 'docs')
-    const chats = withBackground([hit({ kind: 'chat', id: 'sess', score: 0.9, date: '2026-10-29' })], 'chat')
-    const { svc } = make([...docs, ...chats], { reranker: () => reranker(-11) })
-    expect((await svc.recall(prompt())).sources ?? []).toEqual([])
-})
-
-test('the cosine path respects the ledger: a file already sent is not sent again', async () => {
-    const { svc } = make(withBackground([hit({ id: 'Calendar.md', score: 0.84 })]), { reranker: () => reranker(-11) })
+test('the ledger drops a source already sent after scoring, so ranks do not shift', async () => {
+    const rows: GateTraceRow[] = []
+    const { svc } = make(withBackground([hit({ id: 'Calendar.md', score: 0.84 })]), { gateTrace: r => rows.push(...r) })
     expect((await svc.recall(prompt())).sources).toEqual(['note:Calendar.md'])
     expect((await svc.recall(prompt({ prompt: 'and again' }))).sources ?? []).toEqual([])
+    expect(rows.filter(r => r.key === 'note:Calendar.md').map(r => r.features.rank)).toEqual([0, 0])
 })

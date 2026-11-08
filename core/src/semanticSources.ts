@@ -1,6 +1,6 @@
 import type { DenyEntry } from './visibility'
 
-/** The shared shapes of the semantic sources recall and `search --semantic` draw from beyond memory:
+/** The shared shapes of the semantic sources recall and `bismuth search` draw from beyond memory:
  *  vault files (notes, PDFs, described images), past chats and Bismuth's own docs. Each source module
  *  (`vaultEmbed.ts`, `chatEmbed.ts`, `docsEmbed.ts`) ranks against a query vector the caller embedded
  *  once, so one prompt costs one embedding however many sources it reaches. */

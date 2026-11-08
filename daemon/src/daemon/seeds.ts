@@ -104,6 +104,8 @@ export const PRIOR_SEED_HASHES: Record<string, string[]> = {
         'de6bc04ca72d56fc9fd8f482c751106ad56f92640165244d878354dd769479fd', // v11 — the brain-report dream, before the healthy-graph line named Steps 4 to 7
         'd2ae8fa42283822856b94d1ed9eafa3d678217521bee9fa77b8700b4d21338c3', // v12 — the brain-report dream, before effort: high and the work-to-12 agenda wording
         '34e7549d6f78c472f72a328f1d63388d797049ebf3f57b4a01348d4aee3c7a63', // v13 — the last dream with no `enabled:` line, gated by daemon.dream in .settings
+        '042ad8d4e511754a666aaf03b97baf92168a6ff20b4ef6cdd4314bc844412548', // v14 — the dream before day notes, roll-ups and `now` (same body as v13 plus the `enabled:` line)
+        'f0c29b018e57bafd47098a25e480163afd49ae30d53bd6480573d805a4c49cfa', // v15 — the dream with day notes, roll-ups and `now`, before digest notes were kept out of clusters
     ],
     'vault-review': [
         '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39', // v1 — 2026-06-28 (unchanged through f48076b)

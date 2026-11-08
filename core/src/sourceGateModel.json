@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "weights": {
+    "cosine": 8.556551399093484,
+    "margin": 10.843056908439317,
+    "logRank": -0.15509968175411318,
+    "rerank": 0.15977155721334313,
+    "noRerank": -0.4034947811236795,
+    "chat": -0.8645912728720327,
+    "docs": -0.6624635648560786,
+    "inRange": -0.4034947811236795,
+    "logPromptChars": 0.11944185084981354
+  },
+  "bias": -6.919887108946371,
+  "threshold": 0.1882566141908485,
+  "fitOn": {
+    "cases": 351,
+    "heldOut": 1043,
+    "objective": "exchange rate · hits − junk, over the test sessions; a hit is a labelled case with an injected candidate a fetched label matches (past-chat and time cases: one the judge marks relevant), junk an injected candidate the judge marks irrelevant; the operating point maximises it on the validation sessions",
+    "at": "2026-11-08",
+    "variant": "rate",
+    "judgePrompt": "v2",
+    "exchangeRate": 16.778519752306156,
+    "ridge": 0.0001,
+    "split": {
+      "train": {
+        "sessions": 50,
+        "cases": 188,
+        "candidates": 2471,
+        "positives": 368,
+        "fetchedMatches": 55,
+        "labelledCases": 128,
+        "from": "2026-10-06",
+        "to": "2026-10-27"
+      },
+      "validation": {
+        "sessions": 17,
+        "cases": 98,
+        "candidates": 1499,
+        "positives": 206,
+        "fetchedMatches": 35,
+        "labelledCases": 66,
+        "from": "2026-10-28",
+        "to": "2026-11-02"
+      },
+      "test": {
+        "sessions": 17,
+        "cases": 65,
+        "candidates": 1043,
+        "positives": 173,
+        "fetchedMatches": 15,
+        "labelledCases": 33,
+        "from": "2026-11-02",
+        "to": "2026-11-07"
+      }
+    },
+    "testHitRate": 0.21212121212121213,
+    "testPrecision": 0.08421052631578947,
+    "testJunkRate": 0.5846994535519126,
+    "testQuietFireRate": 0.8947368421052632,
+    "testPastChatRate": 1,
+    "testObjective": 161.4563160368985,
+    "testObjectiveInterval": [
+      26.006677770755402,
+      320.0200333122662
+    ],
+    "shut": false,
+    "exchangeRateMeasuredOn": "all replayed sessions (train, validation and test)",
+    "testObjectiveRate": 16.778519752306156,
+    "testObjectiveHeldOut": false,
+    "qualityReplay": {
+      "at": "2026-11-08",
+      "measuredRate": null,
+      "measuredRateOn": "test sessions",
+      "note": "the saving per hit over the cost per junk item has no positive value here (the cost interval reaches zero), so no rate was measured and no refit was made",
+      "measuredRateInputs": {
+        "savedTokensPerHit": 837.7775862068966,
+        "junkCostTokensPerItem": -52.97629310344828
+      },
+      "refitShipped": false
+    }
+  },
+  "fusion": {
+    "version": 1,
+    "weights": {
+      "meaning": 1,
+      "keyword": 0.35
+    },
+    "k": 60,
+    "rerank": false,
+    "fitOn": {
+      "cases": 222,
+      "objective": "recall@10 of the labelled files on held-out session folds; the grid point with the best training-fold recall@10 is scored on its held-out fold",
+      "at": "2026-11-08",
+      "folds": 5,
+      "heldOutRecall": 0.38288288288288286,
+      "heldOutMeaningOnlyRecall": 0.34234234234234234,
+      "verdict": "blending keyword and meaning reaches held-out recall@10 0.383, at least meaning alone (0.342): the fitted blend ships"
+    }
+  }
+}

@@ -469,7 +469,7 @@ test('dream files inbox pages only when something needs the user, per PAGES.md, 
 
 test("dream's report is ONE line with the fused counters and keeps the failed-run self-check", () => {
     expect(DREAM).toContain(
-        '`vault=N memory=N transcripts=N snapshots-collapsed=N merged=N pages=N notes=N size=XKB profile=<updated|unchanged> hubs=N agenda=<fixed>/<total>`',
+        '`vault=N memory=N transcripts=N snapshots-collapsed=N merged=N pages=N notes=N size=XKB profile=<updated|unchanged> hubs=N agenda=<fixed>/<total> days=N now=<updated|unchanged>`',
     )
     expect(DREAM).toContain('the run FAILED')
     expect(DREAM).not.toContain('bloat-deleted=N')
@@ -639,4 +639,32 @@ test('dream never drops real content: provenance only for added facts, split kee
     expect(DREAM).not.toContain('already handled in Step 2')
     // 5: hubs may exceed the size cap.
     expect(DREAM).toContain('A hub may exceed 2,000 characters; keep each member line under 100')
+})
+
+test('dream writes day notes, rolls them up and rewrites now: steps, exceptions and report fields', () => {
+    // Step 4 and 5 feed the day note; the rollup kind and Step 8 are in the prompt
+    expect(DREAM).toContain('day-<date of the transcript, YYYY-MM-DD>')
+    expect(DREAM).toContain('## Sessions')
+    expect(DREAM).toContain('## Notes changed')
+    expect(DREAM).toContain('## Facts touched')
+    expect(DREAM).toContain('- `rollup`')
+    expect(DREAM).toContain('fold into <name>')
+    expect(DREAM).toContain('## Step 8: Rewrite `now`')
+    for (const h of ['## Active', '## Due', '## Open threads', '## Recent days'])
+        expect(DREAM).toContain(h)
+    // The exceptions name the exact patterns
+    expect(DREAM).toContain('`day-YYYY-MM-DD`, `week-YYYY-Www` and `month-YYYY-MM` with `type: daily`')
+    expect(DREAM).toContain('The one exception is the `now` note')
+    // ...and the dated-note defect still stands for every other name
+    expect(DREAM).toContain('a dated note is a defect for every name except the digest notes')
+    expect(DREAM).toContain('Create any note whose name contains a date')
+    // the report gains its two fields
+    expect(DREAM).toContain('days=N now=<updated|unchanged>')
+    // the facts arrive as a placeholder the daemon fills
+    expect(DREAM).toContain('{{nowFacts}}')
+})
+
+test('dream keeps digest notes out of clusters and reads an existing coarser note before folding', () => {
+    expect(DREAM).toContain('Digest notes are never part of a cluster')
+    expect(DREAM).toContain('if the coarser note already exists, read it too')
 })

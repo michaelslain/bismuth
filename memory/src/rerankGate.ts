@@ -24,7 +24,8 @@ export function rerankQuery(q: { primary: string; context?: string }): string {
     return `${primary}\n${context.slice(0, RERANK_CONTEXT_CHARS)}`
 }
 
-/** Lowest raw logit the gate admits (keyword-only picks go in regardless, see `withKeywordPicks`) (ms-marco MiniLM logits run roughly -12..+8; a relevant
+/** Lowest raw logit the gate admits for memory notes; vault files, past chats and docs pages are gated by
+ *  the learned source gate (core/src/sourceGate.ts) instead (keyword-only picks go in regardless, see `withKeywordPicks`) (ms-marco MiniLM logits run roughly -12..+8; a relevant
  *  note often sits near -5, and a paraphrase of a rule reads -6 to -10 even when it is the right
  *  note). -6 is the lowest bar that adds no false injection on either eval suite: every logit
  *  between -6 and -7 on the synthetic suite belongs to an expect-nothing prompt except one match.

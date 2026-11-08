@@ -54,7 +54,7 @@ Memory is injected at these moments. Each is a request to core's `POST /memory/r
 
 | Moment | Hook | What is sent | Limits |
 |---|---|---|---|
-| A session starts, resumes, clears or compacts | `SessionStart` | The brain: your profile, the vault map, a memory index with one line per note, `[[name]] (type) — description`, and the full text of short `preference` notes | 9,500 characters in all; a line says how many index lines were left out |
+| A session starts, resumes, clears or compacts | `SessionStart` | The brain: your profile, the `now` note, the vault map, a memory index with one line per note, `[[name]] (type) — description`, and the full text of short `preference` notes | 9,500 characters in all; a line says how many index lines were left out |
 | You submit a prompt | `UserPromptSubmit` | Excerpts of the notes that best match the prompt | 5 notes, 900 characters each, 6,000 in total |
 | A batch of tool calls ends | `PostToolBatch` | Excerpts matching what the tools just did | 2 notes, 600 characters each, 1,800 in total, with a stricter match rule; one batch per prompt |
 | A subagent starts | `SubagentStart` | Excerpts matching the task given to the subagent | 4 notes, 700 characters each, 4,000 in total |
@@ -71,18 +71,19 @@ The terminal-tab hooks need the Claude Code CLI. The visual chat runs the same r
 
 ## The session-start brain
 
-The brain is one `<bismuth-memory>` block of at most 9,500 characters that an agent reads before its first prompt. It has up to four parts, in this order:
+The brain is one `<bismuth-memory>` block of at most 9,500 characters that an agent reads before its first prompt. It has these parts, in this order:
 
 | Part | Content | Limit |
 |---|---|---|
 | `# Who you are working with` | The body of the `user-profile` memory note. Omitted when the vault has none | 1,500 characters, cut at a line |
+| `# Now (written <updated>)` | The body of the `now` memory note, headed with when it was written: active projects, tasks due soon, open threads and the last few days. Omitted when the vault has none | 1,500 characters, cut at a line |
 | `# Vault map (N notes)` | Folders two levels deep, hub notes, clusters and surfaces such as bases, open tasks and daily notes | 2,200 characters |
-| `# Memory index` | One line per memory note, ordered by value: hubs first, then notes with the most links in, then the most recently updated | the rest of the block |
+| `# Memory index` | One line per memory note except day, week and month digests (`type: daily`) and the `now` note, which are reached through `# Now` and time words in a prompt. Ordered by value: hubs first, then notes with the most links in, then the most recently updated | the rest of the block |
 | `# Preferences` | The full text of short `preference` notes | 4,000 characters in all, 1,200 per note |
 
 A line's description is the note's `description`, else its first sentence with headings and labels such as `Status:` skipped. A `preference` note's index line is kept before any other line, and dropped when the note's body is shown: the body replaces the line. An index line that does not fit is skipped and the next one is tried, and a closing line counts the notes left out. With a profile and map present, preference bodies give way first so the other index lines keep room.
 
-When the parts do not fit together, the map is dropped first, then the profile, and the index stays. A vault whose memory directory is empty, with the daemon on, still gets the vault map at session start; without a vault there is nothing to send. Restricted notes are absent from the map and the index; the daemon's view is narrower than a chat's ([visibility](../vault/visibility.md)).
+When the parts do not fit together, the map is dropped first, then the profile and `# Now`, and the index stays. A vault whose memory directory is empty, with the daemon on, still gets the vault map at session start; without a vault there is nothing to send. Restricted notes are absent from the map and the index; the daemon's view is narrower than a chat's ([visibility](../vault/visibility.md)).
 
 The brain is composed for the channel that asks. Chat callers (terminal-tab hooks, the visual chat and opencode) get the chat view. A request that names no channel gets the daemon view, which hides more, so a caller that forgets to identify itself sees less rather than more.
 
@@ -108,11 +109,13 @@ Memory notes that link the note you are looking at are injected even when no wor
 ## spring-trip (project) [climbing] (about the open note)
 ```
 
-A batch of tool calls that read or edited a vault file does the same for that file, with a cap of 1 note. A note already sent in the session is skipped, and every injected note still counts against the block's character budget.
+A batch of tool calls that read or edited a vault file does the same for that file, with a cap of 1 note. Day, week and month digest notes and the `now` note are never injected this way; they reach a prompt through `# Now` and time words. A note already sent in the session is skipped, and every injected note still counts against the block's character budget.
 
 ## Files, past chats and docs beside memory
 
-Prompt and subagent recall also inject the vault files, past chats and Bismuth documentation pages that match the prompt by meaning, each under a heading that names its source. They need `embeddings.enabled` as well as `daemon.recall.enabled`, and each source has its own switch. Memory is packed first and keeps its whole share of the block; the sources fill what character budget is left.
+Prompt and subagent recall also point the agent at the vault files, past chats and Bismuth documentation pages that match the prompt by meaning, each under a heading that names its source. They need `embeddings.enabled` as well as `daemon.recall.enabled`, and each source has its own switch. Memory is packed first and keeps its whole share of the block; the sources fill what character budget is left.
+
+Every source item is a reference: one line that names the item and says how to open it, never the item's text. The agent opens one only when it helps, so an item that turns out unrelated costs one line. A learned gate decides which items appear. One lead line comes before the first source heading:
 
 ```
 # Memories
@@ -121,30 +124,44 @@ Prompt and subagent recall also inject the vault files, past chats and Bismuth d
 Path: /Users/me/vault/.daemon/memory/alice.md
 Climbing partner; plans trips in the spring
 
+Possibly related, unverified. Open one only if it helps; ignore the rest.
+
 # Vault files
 
-## papers/attention.pdf (pdf, page 4)
-Path: /Users/me/vault/papers/attention.pdf
-Scaled dot-product attention divides by the square root of the key dimension…
+- papers/attention.pdf (pdf, page 4) — Scaled dot-product attention divides by the square root of the key dimension. (open: `/Users/me/vault/papers/attention.pdf`)
 
 # Past chats
 
-- 2026-10-29 — "you: why does the backup cron fire late claude: the expression was read in UTC…" (open: `bismuth history show 3f2a9c1e-…`)
+- 2026-10-29 — "you: why does the backup cron fire late claude: the expression was read in UTC" (open: `bismuth history show 3f2a9c1e-…`)
 
 # Bismuth docs
 
 - bases/authoring/calendar.md — Calendar (read: `bismuth docs read bases/authoring/calendar.md`)
 ```
 
-| Source | Heading | What an item shows | Prompt cap | Subagent cap |
+| Source | Heading | What the line shows | Prompt cap | Subagent cap |
 |---|---|---|---|---|
-| Vault files: notes, PDFs by page, images through their description | `# Vault files` | header with path and kind, an excerpt | 2 | 2 |
-| Past chats started in this vault | `# Past chats` | date, one matching turn, the command that opens it | 2 | 1 |
-| Bismuth documentation | `# Bismuth docs` | page and section, the call that reads it | 2 | 2 |
+| Vault files: notes, PDFs by page, images through their description | `# Vault files` | path, kind (and page for a PDF), a short hook, the absolute path to open | 2 | 2 |
+| Past chats started in this vault | `# Past chats` | date, a short hook from the matching turn, the `bismuth history show` command that opens it | 2 | 1 |
+| Bismuth documentation | `# Bismuth docs` | page path (with `#anchor` for one section), its title, the `bismuth docs read` command | 2 | 2 |
 
-An item is sent once per session until its content changes, like a memory note. Tool-batch recall never injects sources.
+A hook is the item's title, else the first sentence of its best match, cut at a word to at most 160 characters and ended with `…` when cut. An item is sent once per session until its content changes, like a memory note. Tool-batch recall never injects sources.
 
 Visibility applies to every source. A hidden file is never injected, and a chat-only file is never injected into a daemon session. Past chats follow `chatVisibility`, the session asking is never in its own results, and a vault that restricts any note injects no past chats at all, the rule `bismuth history` keeps for agents.
+
+## Time words in a prompt
+
+A prompt that names a time ("what did we do yesterday", "last tuesday", "on nov 3", "2 days ago", "this week") gets a `# What happened <label>` section before `# Vault files`:
+
+```
+# What happened yesterday (2026-11-05)
+
+## day-2026-11-05
+## Sessions
+- reworked the memory index (session 4f2a9c1e)
+```
+
+The section holds the digest notes that cover the named dates, most specific first: the day note if it exists, else the week note, else the month note. At most 3 digest notes and 2,500 characters go in. Past chats whose session date falls in the range are added under `# Past chats` when the source gate accepts them. A prompt without a time word is unaffected. Digests follow the same rules as other memory: a digest is sent once per session until it changes, restricted notes are never injected, and chats follow the same visibility rule as every other source.
 
 ## Tune or turn off automatic recall
 
@@ -154,7 +171,7 @@ These `.settings` keys control injection. They apply on the next call.
 |---|---|---|
 | `daemon.recall.enabled` | `false` | Master switch for every automatic injection. Off, agents see only what they ask for with `recall`. |
 | `daemon.recall.midTurn` | `false` | Also recall after each batch of tool calls. Off, memory is recalled at the prompt only |
-| `daemon.recall.files` | `true` | Also inject matching vault notes, PDFs and described images. Needs `embeddings.enabled`. |
+| `daemon.recall.files` | `true` | Also inject pointers to matching vault notes, PDFs and described images. Needs `embeddings.enabled`. |
 | `daemon.recall.chats` | `true` | Also inject pointers to matching past chats. Needs `embeddings.enabled`. |
 | `daemon.recall.docs` | `true` | Also inject pointers to matching Bismuth docs pages. Needs `embeddings.enabled`. |
 
@@ -174,7 +191,7 @@ The compiled `bismuth serve` command and the iPad build match by words only.
 
 When a terminal session ends (not on `compact`), and when a visual chat ends, Bismuth saves the conversation as a memory note named `auto-<YYYYMMDD-HHMMSS>-<first 8 characters of the session id>`, with `type: auto` and the tags `auto`, `raw` and `session` (or `chat`). `dream` reads these notes, extracts what matters into real notes, and deletes them.
 
-The note is the conversation paired by turn, in `## Turn N` blocks with a `**You:**` and a `**Claude:**` line. Tool calls and results are dropped. Each message is cut at 1,500 characters, and a note is held to 12,000: the middle turns are replaced by `_(N turns omitted)_`. Two kinds of session are not saved: one started by a cron (a prompt that begins `[Cron: `) and one with under 50 characters in total. The injected `<bismuth-memory>` block is stripped first, so recalled notes never come back as new ones.
+The note is the conversation paired by turn, in `## Turn N` blocks with a `**You:**` and a `**Claude:**` line. Tool calls and results are dropped. Each message is cut at 1,500 characters, and a note is held to 12,000: the middle turns are replaced by `_(N turns omitted)_`. A session is not saved when a cron started it (a prompt that begins `[Cron: `) or when it holds under 50 characters in total. The injected `<bismuth-memory>` block is stripped first, so recalled notes never come back as new ones.
 
 ## Which device runs the daemon
 
@@ -213,7 +230,7 @@ Ranking is BM25 first. With `embeddings.enabled` on (it is off by default), core
 
 **Evidence rules.** In tool mode, at 12 or more notes, evidence is strict: a semantic-only hit never injects, because a cosine is only a bonus on top of lexical evidence. bge-small cosines sit in a narrow band, so the floor is relative per query: a note is lifted only when its cosine clears both the mode's `semanticMinCosine` and this query's tenth-best cosine plus `SEMANTIC_BACKGROUND_MARGIN` (0.07). A prompt the vault knows nothing about scores ten notes within a few hundredths of each other and lifts none. With that map in hand (prompt and subagent modes, 12 or more notes), a note matched only by words in its body, with no name, tag or description hit and no semantic lift, is dropped, and the prompt-mode bar rises from `minScore` 0.08 to `semanticMinScore` 0.12 (`memory/src/pack.ts`). Without semantics (the setting off, the model still warming, the iPad) the keyword-only rules below apply on top of the 0.08 floor. `which`, `whose`, `whom`, `these`, `those` and `off` are stop words.
 
-**Keyword-only evidence rules.** When no semantic scores exist for a request, prompt and subagent recall rank by words alone and `rankNotes` applies four more rules (tool mode keeps its own strict rules and matches exact words). Rarity is a term's idf scaled so a word found in one note scores 1; a word is distinctive at 0.8 or more (`DISTINCT_MIN_IDF`), which is a word found in two or three notes of a vault of 50 to 150. Prompt words that share a stem count as one content term in every rule below. The size rules apply from 12 notes (`SMALL_VAULT`); a smaller vault is never silenced by them.
+**Keyword-only evidence rules.** When no semantic scores exist for a request, prompt and subagent recall rank by words alone and `rankNotes` applies the rules below (tool mode keeps its own strict rules and matches exact words). Rarity is a term's idf scaled so a word found in one note scores 1; a word is distinctive at 0.8 or more (`DISTINCT_MIN_IDF`), which is a word found in two or three notes of a vault of 50 to 150. Prompt words that share a stem count as one content term in every rule below. The size rules apply from 12 notes (`SMALL_VAULT`); a smaller vault is never silenced by them.
 
 - **Word forms.** A prompt word also matches other forms of its stem (`stem` strips `s`, `es`, `ies`, `ed`, `ing`, `ment`, `ation` and their plurals and a final `e`, so `update`, `updates` and `updated` share a stem; it keeps at least 4 letters and leaves tokens with digits whole). A variant form counts at 0.6 of an exact match (`STEM_FORM_WEIGHT`).
 - **A lone body hit.** A note whose only evidence is one body word needs that word to be at least 0.4 of the prompt's content terms (`LONE_HIT_MIN_COVERAGE`) and found in under about a tenth of the notes (`LONE_HIT_MIN_IDF`, 0.55). The note must also repeat the word, at least twice and at 0.4% of its length (`LONE_HIT_MIN_MENTIONS`, `LONE_HIT_MIN_DENSITY`), unless no other note holds it. A note that mentions the word 4 or more times (`LONE_HIT_TOPIC_MENTIONS`) is about it, and the 0.4 coverage is waived.
@@ -232,21 +249,23 @@ The reranker judges each passage against `rerankQuery`. That is the prompt itsel
 
 **Measuring through the real service.** `bun bench/recallEval.ts --dir <memoryDir> --cases <file> --service [--embeddings off|on] [--vault <dir>] [--explain]` sends each case through `createRecallService`, so the numbers are what an agent receives. `--embeddings off` (the default) runs with no embedder or reranker, the keyword-only path; `on` loads the real embedder and reranker and downloads the model on first use. `--vault <dir>` gives the service a vault, so session-start composes a brain. `--explain` lists every miss and every false injection with the reason: the note's score against the mode's floor and its rank, the query words that matched and whether they sit in its name, tags or description, the keyword-only rule that admitted or dropped it, and the strongest rivals. `--sweep` also sweeps `minScore` over a grid read from the scores the candidates carry, bracketing the production floor.
 
-**Measuring sources.** `--service --embeddings on --sources on` also hands the service the three real sources (vault files, past chats, Bismuth docs) over fixtures in the cases file: `{ cases, vault, docs, chats }` (`memory/test/fixtures/recallSourceCases.json`). A case's `expect` may name source keys (`docs:<page>#<anchor>`, `chat:<id>`, `note:<path>`, `pdf:<path>`), and `sourcesExpect: []` says no source may inject. The summary adds `sourceRecall@5`, the share of expected source keys among the first five injected, and `sourceFalseInject`, the share of `sourcesExpect: []` cases that injected any source. With `--sources off` (the default) every number is the one without sources. Sources are semantic and gated by the reranker, so `--sources on` requires `--embeddings on`.
+**Measuring sources.** `--service --embeddings on --sources on` also hands the service the real sources (vault files, past chats, Bismuth docs) over fixtures in the cases file: `{ cases, vault, docs, chats }` (`memory/test/fixtures/recallSourceCases.json`). A case's `expect` may name source keys (`docs:<page>#<anchor>`, `chat:<id>`, `note:<path>`, `pdf:<path>`), and `sourcesExpect: []` says no source may inject. The summary adds `sourceRecall@5`, the share of expected source keys among the first five injected, and `sourceFalseInject`, the share of `sourcesExpect: []` cases that injected any source. With `--sources off` (the default) every number is the one without sources. Sources are semantic and gated by the reranker, so `--sources on` requires `--embeddings on`.
 
-**Replaying real sessions.** `bun bench/recallReplay.ts --vault <dir> [--logs <dir>] [--out <dir>] [--negatives n] [--dry]` turns every prompt in the vault's Claude Code session logs into a case. A case's labels are the Bismuth docs pages, notes, PDFs and images the agent fetched itself before the next prompt; a prompt that mentions an earlier chat is a past-chat case; a prompt after which the agent used no tool is a quiet case. Each case runs through the real service and sources, chats that started after the prompt are left out, and the summary reports per kind how often a label was injected (hit) and how often it was among the sources' top 10 (retrieved), plus how often a quiet case got any source. The vault and the logs are only read; indexes are built under `--out`, which also receives `cases.jsonl` with every prompt, so keep it out of the repo. `--dry` prints the case counts only.
+**Replaying real sessions.** `bun bench/recallReplay.ts --vault <dir> [--logs <dir>] [--out <dir>] [--negatives n] [--dry]` turns every prompt in the vault's Claude Code session logs into a case. A case's labels are the Bismuth docs pages, notes, PDFs and images the agent fetched itself before the next prompt; a prompt that mentions an earlier chat is a past-chat case; a prompt after which the agent used no tool is a quiet case. Each case runs through the real service and sources; chats that started after the prompt are left out before each source is capped at its `k`, so a source's background level is read off its true ranking. The summary reports per kind how often a label was injected (hit) and how often it was among the sources' top 10 (retrieved), plus how often a quiet case got any source. The vault and the logs are only read; indexes are built under `--out`, which also receives `cases.jsonl` with every prompt, so keep it out of the repo. `--dry` prints the case counts only.
 
 ### The brain block
 
 `composeBrain` in `core/src/brain.ts` builds the block per vault and channel (`chat` or `daemon`). The channel selects the deny list that hides restricted notes from the map. The map is cached with a build generation: `invalidateBrain` (called by the server's file watcher and the daemon's) bumps it so a build that started earlier never writes a stale map back, and an entry older than `MAP_MAX_AGE_MS` (5 minutes) rebuilds. Memory notes are loaded on every call, so only the map is cached. `buildVaultMap` and `formatVaultMap` (`core/src/vaultMap.ts`) drop detail in steps until the map fits: recent notes, tags, cluster exemplars and base names go first.
 
-`formatSessionStart` (`memory/src/pack.ts`) takes the profile and map as `lead`. It tries the lead with the map, then the profile alone, then none, and returns the first block within `BRAIN_BUDGET_CHARS`. If even the index does not fit, the lead alone is cut at a line boundary and the envelope is closed. Index lines sort hubs first, then by in-link count, `updated`, type (`INDEX_TYPE_ORDER`) and name. Preference bodies are bounded by `PREFERENCE_BODY_MAX`, `PREFERENCE_BODIES_BUDGET` and, with a lead, a `PREFERENCE_BODIES_FLOOR` of 1,500 above a reserve of 3,000 characters for the other lines. `noteDescription` (`memory/src/graph.ts`) falls back to the first prose sentence and skips headings, fences, tables and short `Label:` prefixes.
+`formatSessionStart` (`memory/src/pack.ts`) takes the profile, the `# Now` section and the map as `lead`. It tries the lead with the map, then the profile and `# Now` alone, then none, and returns the first block within `BRAIN_BUDGET_CHARS`. If even the index does not fit, the lead alone is cut at a line boundary and the envelope is closed. Index lines sort hubs first, then by in-link count, `updated`, type (`INDEX_TYPE_ORDER`) and name. Preference bodies are bounded by `PREFERENCE_BODY_MAX`, `PREFERENCE_BODIES_BUDGET` and, with a lead, a `PREFERENCE_BODIES_FLOOR` of 1,500 above a reserve of 3,000 characters for the other lines. `noteDescription` (`memory/src/graph.ts`) falls back to the first prose sentence and skips headings, fences, tables and short `Label:` prefixes.
 
 The recall service's `session-start` mode calls `composeBrain` with the request's channel (`RecallRequest.channel`, default `daemon`) and falls back to the memory index alone when there is no vault or composing fails. An empty memory dir with a vault still reaches `composeBrain`. The route (`core/src/routes/memory.ts`) asks `requestChannel`: an `x-bismuth-channel: chat` header or the owner token means `chat`, anything else `daemon`. The relay (`relay/lib/recall.ts`) sends the chat header, and `chat.ts` and opencode pass `channel: 'chat'` in-process. `buildDaemonPersona` (`daemon/src/daemon/persona.ts`) calls it with the `daemon` channel and `DAEMON_BRAIN_WAIT_MS` (30 s); a failure leaves the persona unchanged. `DAEMON_PERSONA_CHANNELS` maps each daemon backend to `systemPromptAppend` or `developerInstructions`. The visual chat's hook is in `core/src/chat.ts` and opencode's in `core/src/chatProviders/opencode/opencode.ts`.
 
+`composeBrain` reads the `now` note (`type: now`) from the loaded memory notes and places `# Now` right after the profile; `formatSessionStart` leaves `type: daily` and `now` notes out of the index.
+
 ### Link-aware recall
 
-`notesAbout` (`core/src/memoryLinkBoost.ts`) returns the memory notes whose backlinks resolve to the given vault paths, notes linking more of them first. The recall service prepends them to the ranked list with a score of at least 1, so they clear the score floor, after the reranker gate has run and capped at `LINK_BOOST_CAP` (2 for prompt and subagent, 1 for tool). `markBoosted` appends `(about the open note)` to their headers unless that would push the block over its budget. `toolVaultPaths` reads `file_path`, `path` and `notebook_path` from the batch's tool inputs. `neighbourNames` lists the memory notes one wikilink away from the injected ones, and `preferNeighbourPointers` puts them first among the "Also related" lines.
+`notesAbout` (`core/src/memoryLinkBoost.ts`) returns the memory notes whose backlinks resolve to the given vault paths, notes linking more of them first. The recall service drops digest notes and the `now` note (`isDigestNote`, `isNowNote`), then prepends the rest to the ranked list with a score of at least 1, so they clear the score floor, after the reranker gate has run and capped at `LINK_BOOST_CAP` (2 for prompt and subagent, 1 for tool). `markBoosted` appends `(about the open note)` to their headers unless that would push the block over its budget. `toolVaultPaths` reads `file_path`, `path` and `notebook_path` from the batch's tool inputs. `neighbourNames` lists the memory notes one wikilink away from the injected ones, and `preferNeighbourPointers` puts them first among the "Also related" lines.
 
 ### One service behind every surface
 
@@ -256,7 +275,56 @@ The recall service's `session-start` mode calls `composeBrain` with the request'
 
 After memory is packed, `gatherSources` in `core/src/memoryRecall.ts` embeds the query once (`QUERY_PREFIX`, waiting at most `QUERY_TIMEOUT_MS`) and asks each enabled source for `SOURCE_K` (10) hits against that vector: `vaultSourceHits` (`core/src/vaultEmbed.ts`), `chatSourceHits` (`core/src/chatEmbed.ts`) and `docsSourceHits` (`core/src/docsEmbed.ts`), sharing the shapes in `core/src/semanticSources.ts`. One deadline covers the embed, the sources and the reranker, so a slow source is dropped for that request and memory still answers inside the caller's budget.
 
-A candidate must clear the mode's `semanticMinCosine`. Files and chats that return a full `SOURCE_K` also need the source's tenth-best cosine plus `SEMANTIC_BACKGROUND_MARGIN`; docs skip that relative floor, because many sections share one topic, and keep one hit per page. The best `SOURCE_RERANKED` (3) per source then go to the cross-encoder: a file needs `RERANK_MIN_LOGIT`, a chat `RERANK_MIN_LOGIT + CHAT_EXTRA_LOGIT` (2) and a docs page `RERANK_MIN_LOGIT + DOCS_EXTRA_LOGIT` (6). Files also admit their best two on cosine alone when they score at least `FILE_COSINE_ADMIT` (0.80) and stand `FILE_COSINE_MARGIN` (0.05) above the source's tenth-best, because the cross-encoder scores conversational prompts low even when the file is the one the agent goes on to open; `bench/recallReplay.ts` measures both paths on real sessions. No reranker, or no query vector in time, means no sources for that request. `packSources` (`core/src/sourcePack.ts`) renders the sections within `SOURCE_LIMITS` and the remaining budget, and the response lists the injected `sourceKey`s (`kind:id`) in `sources`.
+A learned gate decides which retrieved hits are injected. The best `SOURCE_CANDIDATES` hits of each source by cosine go to the cross-encoder in one call, and `gateAccepts` (`core/src/sourceGate.ts`) scores each from its cosine, how far that stands above the source's `SOURCE_K`-th best cosine (the query's background level), its rank in the source, the cross-encoder logit, the source kind (file, chat or docs), whether its session date falls in a range the prompt names, and the prompt's length. A hit is injected when the logistic probability reaches the model's `threshold`. Every number of the model sits in `core/src/sourceGateModel.json` and is fit on measured prompts; none is typed by hand. `loadGateModel` fails closed: a model with a missing, non-finite or out-of-range number becomes `CLOSED_GATE`, which accepts nothing, so recall injects no sources and memory notes still arrive. No reranker, or no query vector or logits in time, also means no sources for that request. Hits already in the session's already-sent record are dropped after scoring, so ranks do not shift. `packSources` (`core/src/sourcePack.ts`) renders each accepted hit as one reference line within `SOURCE_LIMITS` and the remaining budget, with the lead line once before the first heading; a hook is cut at `SOURCE_HOOK_CHARS` (160). The response lists the injected `sourceKey`s (`kind:id`) in `sources`.
+
+`timeRecall` (`core/src/timeRecall.ts`) runs after sources, only when `timeRefs` (`memory/src/timeRefs.ts`) finds a range in the prompt. `digestsCovering` (`memory/src/digests.ts`) picks the notes, and the chats come from `chatHitsFor` in `core/src/memoryRecall.ts`, the same visibility gate `sourcesFor` uses. The `DATED_CHAT_CANDIDATES` best chats inside the range go to the same gate with `inRange` set and no logit, because the time path does not rerank. The block counts against the mode's budget before the sources fill what is left, and its keys go through the session's already-sent record.
+
+### Refit the source gate and the search blend
+
+`core/src/sourceGateModel.json` is refit from a replay of real sessions. `bench/fitSourceGate.ts` refits the blend that `bismuth search` uses (see [Semantic search](../vault/semantic-search.md)); `bench/gateAB.ts` fits the gate, tests it and writes it; `bench/qualityReplay.ts` measures the exchange rate on real agent runs and refits at it. Run the replay with `--judge --search`, calibrate the judge, measure the exchange rate, then fit:
+
+```bash
+bun bench/recallReplay.ts --vault <vault> --out <dir> --judge --search
+bun bench/judgeCalibrate.ts --from <dir> --out <dir2>
+bun bench/exchangeRate.ts --vault <vault> --replay <dir> --out <dir2>/exchange-rate.json
+bun bench/gateAB.ts --from <dir> --judged <dir2>/candidates-judged.jsonl --logs <claude project dir> \
+    --exchange <dir2>/exchange-rate.json --out <dir2>/ab.json --write core/src/sourceGateModel.json
+bun bench/fitSourceGate.ts --from <dir> --write core/src/sourceGateModel.json
+bun bench/qualityReplay.ts --vault <vault> --from <dir> --judged <dir2>/candidates-judged.jsonl --logs <claude project dir> \
+    --exchange <dir2>/exchange-rate.json --out <dir3> --write core/src/sourceGateModel.json
+```
+
+The replay turns every prompt in the vault's Claude Code session logs into a case and writes `candidates.jsonl`: each candidate the gate scored, its inputs, and whether a file the agent went on to fetch matches it. The output holds your prompts, so keep both directories outside the repo.
+
+Labels. A candidate is a positive when a fetched file matches it or a Claude Haiku judge calls it relevant, and a negative when the judge calls it irrelevant. Candidates of a case where the agent used no tool are judged like any other: an agent that fetched nothing is not evidence that nothing would have helped. `bench/recallJudge.ts` holds the judge prompts by id (`v1` asks whether the item would genuinely help answer the prompt, `v2` whether it would help the assistant answer or act on it, background included). `judgeCalibrate.ts` judges the candidates a fetch proved relevant and a fixed hash-ordered sample of 200 unfetched ones with each prompt, scores each by balanced accuracy (the mean of recall on the fetched and the share of the sample marked irrelevant) and judges every candidate with the winner. The verdict cache key includes the prompt, so prompts never share verdicts. The model file records the prompt's id, never its text.
+
+Split. `gateAB.ts` orders the sessions by the first timestamp of their log and takes the oldest 60% to train, the next 20% to validate and the newest 20% as the test set. A session sits in exactly one set. The ridge strength comes from a log grid (half a decade apart) and is the value with the lowest validation log loss; the report holds the whole curve. The test set is read only by the final scoring.
+
+Exchange rate. The operating point, `threshold`, maximises `rate · hits − junk` on the validation sessions with the pack caps applied. A hit is a case with an injected candidate its fetched label matches (for a past-chat or time case, one the judge marks relevant); junk is an injected candidate the judge marks irrelevant. `rate` is measured, not chosen: `exchangeRate.ts` reads the session logs and divides the tokens a fetch the agent made itself costs (the tool result, the call, and the mean output tokens of the assistant turn that made it) by the tokens of one injected source entry as `packSources` renders it. The result is how many junk items one saved fetch pays for. The quality replay (below) replaces that estimate only when it measures a positive rate and its refit passes the ship rule; otherwise the shipped model and its rate stay.
+
+A/B. `gateAB.ts` scores variants on the same test sessions, each trained without them: `wave1`, a hand-set baseline gate re-implemented over the saved features; `prev`, a fit on strict labels with session folds at a 1:1 rate; `labels`, the same procedure on the judged labels; `split`, the time-ordered split with the validation-chosen ridge at 1:1; and `rate`, the split at the measured rate. For each it reports the labelled hit rate, precision, judged junk rate, quiet-case fire rate, past-chat rate and the objective with a 95% bootstrap interval over test sessions; a change counts as an improvement only when its interval clears the previous variant's value. `--write` ships the variant with the best objective on the validation sessions at the measured rate, among the variants fit without the validation sessions (`split`, `rate`; the first two train on train plus validation, so their validation score is in-sample); the test sessions only report and decide whether a change counts as an improvement. `fitOn` records the split sizes, the ridge strength, the rate, the judge prompt id and the test numbers. `fitSourceGate.ts --write` replaces only the blend in the model file; `--gate` also replaces the gate with the fit on session folds.
+
+Quality replay. `qualityReplay.ts` measures what the injected sources do to an answer, which the labels cannot: a source can match a fetched file and still not change the reply, and a junk source can mislead. It takes the question and lookup prompts of the test sessions (a prompt whose turn wrote a file, ran a destructive command, started a subagent or is a slash command is dropped, and the summary counts each reason) and runs a real Sonnet agent three times per prompt on a copy-on-write clone of the vault, from the conversation the prompt had:
+
+| arm | sources block |
+|---|---|
+| `none` | no block |
+| `gate` | the sources the shipped gate injects, pack-capped |
+| `junk` | as many candidates the judge marked irrelevant, the gate's own junk first, then the nearest misses; where the gate injects nothing, the mean count of the cases where it fires |
+
+A fourth arm, `none2`, repeats `none` with the same message; its rates against `none` are the noise floor, what the judge says about two runs that differ only by sampling, and the other comparisons are read against it. Only the block differs between arms. The agent has Read, Grep, Glob and `bismuth` read commands. A `PreToolUse` hook callback checks every call, including the read-only shell commands the permission system approves without asking, and the permission callback repeats the check: real paths (symlinks resolved) stay inside the clone, Glob and Grep patterns stay relative, and a shell command must be one read-only `bismuth` call with no chaining, no `--vault` and no outside path. A chat reference in the injected block opens in the clone: `bismuth history show` there reads only the train and validation sessions' logs, never the test sessions'. The agent loads no settings. `--probe-guard` runs one agent, on the hook alone, told to `cat ~/.claude/…` and `ls /`; it passes when every call is refused. Opus then compares `gate` against `none` and `junk` against `none` blind: the order is fixed by a hash of the case, the arm names are hidden, and the judge may read the clone to check what an answer claims. A second call lists which injected items an answer relied on; an answer that relies on an item the relevance judge marked irrelevant is `misled`. The summary reports win, tie and loss rates, token, tool-call and turn deltas against `none`, and the misled rate, each with a 95% interval from resampling sessions. Every run, verdict and token probe is cached under `--out`, keyed by what it was given, so a rerun resumes.
+
+The harm of a junk item enters the exchange rate in tokens, each term measured by the replay:
+
+Tokens of a run are the context at its last model call (fresh input, cache writes and cache reads together) plus its output, so one run's cache entries do not change another run's count.
+
+- direct: the tokens one injected item adds to the first turn, from a one-word probe turn per message with and without the block;
+- extra: what the junk arm spent beyond the item itself, `(sum of token deltas - items x direct) / items`;
+- loss: answers made worse, as corrective turns, `(losses - wins) / items x output tokens per turn`.
+
+The rate's numerator is what a hit saves: in the cases where the gate injected a hit, the tokens the agent saves against `none` (junk items in those cases added back, because the objective charges them on their own) plus net answers made better, as the same corrective turns. The measured rate is saved tokens per hit over the full cost of a junk item, and the report lists both with their inputs beside the log-derived rate. When no rate is measured, because the saving or the cost has no positive value (its interval reaches zero), `fitOn.qualityReplay` records that and the shipped model stays. Otherwise `bench/fitSourceGate.ts` refits at the measured rate: the weights are refit on the train sessions with `inRange` dropped (it equals `noRerank` in every replayed row, so the two cannot be told apart), the threshold is re-picked on the validation sessions, and both models are scored on the test sessions. The refit ships only when its validation objective beats the shipped model's at both rates, the log-derived one and the measured one; otherwise the shipped model stays. The measured rate comes from the test sessions' agent runs, so a rule on it alone would let a test number pick the model, and `fitOn` records `exchangeRateMeasuredOn` and `testObjectiveHeldOut: false`: the test objective is not held out with respect to the rate. Every `test*` rate in `fitOn` is recomputed for the model that is committed, and `fitOn.qualityReplay` keeps the measured rate, its inputs and the validation scores of both models. The test sessions report the interval and whether it is below.
+
+If the data holds nothing worth injecting, the best threshold is `1` and the gate stays shut. Refit after changing the embedder, the reranker, the passage text a source hands the reranker, the pack format, or `SOURCE_CANDIDATES`.
 
 The file deny plan for the caller's channel is cached per vault and channel for 30 seconds and dropped by `invalidateRecallDenyPlans` on every watcher change. The docs index is built at core boot only when recall can inject it (`docsIndexWantedSync`: `daemon.enabled`, `daemon.recall.enabled`, `embeddings.enabled` and `daemon.recall.docs` all on), in slices of eight sections so a query embed never waits behind the whole pass; `docsIndexReady()` resolves when it is complete.
 
@@ -264,4 +332,4 @@ The file deny plan for the caller's channel is cached per vault and channel for 
 
 Ownership is two plain files in the machine directory, so devices see each other's entries only when they share that directory (`BISMUTH_DAEMON_DIR`). `devices.json` gets this device's entry on every scheduler tick, owner or not. `owner.json` is written by core's `setOwner`; the daemon only reads it. `isOwner()` is true when the file is absent, otherwise `ownerDeviceId` must equal this device's id. The check sits at the top of `sendMessage`, the scheduler tick, boot recovery and every trigger consumer. These files coordinate which device does the work; no message passes between devices. [Storage](storage.md) has their formats.
 
-Source: `relay/{bin,lib,hooks}/*`, `core/src/{memoryRecall,memoryLinkBoost,memoryEmbed,memoryRerank,embedWorker,brain,vaultMap,terminal,chat}.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/routes/memory.ts`, `memory/src/{rank,pack,graph,rerankGate,recall,transcript}.ts`, `mcp/src/{instructions,server}.ts`, `core/src/{sourcePack,agentCliNote}.ts`, `daemon/src/daemon/persona.ts`, `daemon/src/lib/{owner,device}.ts`, `daemon/src/daemon/session.ts`, `cli/src/commands/daemon.ts`
+Source: `relay/{bin,lib,hooks}/*`, `core/src/{memoryRecall,memoryLinkBoost,memoryEmbed,memoryRerank,embedWorker,brain,vaultMap,terminal,chat}.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/routes/memory.ts`, `memory/src/{rank,pack,graph,rerankGate,recall,transcript,timeRefs,digests}.ts`, `mcp/src/{instructions,server}.ts`, `core/src/{sourcePack,agentCliNote,sourceGate,timeRecall,semanticSources,vaultEmbed,chatEmbed,docsEmbed}.ts`, `core/src/sourceGateModel.json`, `bench/{fitSourceGate,gateAB,gateEval,exchangeRate,recallJudge,judgeCalibrate,recallReplay,recallEval,qualityReplay,qualityReplayCases}.ts`, `daemon/src/daemon/persona.ts`, `daemon/src/lib/{owner,device}.ts`, `daemon/src/daemon/session.ts`, `cli/src/commands/daemon.ts`

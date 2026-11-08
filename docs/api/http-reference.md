@@ -193,6 +193,8 @@ If the extension in `path` disagrees with the content type, the extension is cor
 | `POST /search` | `{query, opts: {caseSensitive, wholeWord, regex}, snippetLimit?}` | `[{path, matchCount, snippets}]`, every matching note. `400` on an invalid regex. | filtered; none |
 | `POST /search-prompt` | `{query}`, a natural-language question | The `/search` shape plus a `reason` per hit. | filtered; none |
 | `POST /search/semantic` | `{query?, around?, k?, chats?}`; `query` is a text, `around` a note path | `{hits: [{path, score, excerpt}]}` or `{unavailable, message}`, always `200`. `400` when neither `query` nor `around` is a string. | filtered; none |
+| `POST /search/hybrid` | `{query, limit?, channel?, rerank?, agent?}` | `{hits: [{path, kind, score, excerpt}], mode, reason?}`. `400` when `query` is missing or blank. | filtered; none |
+| `POST /docs/search` | `{query, limit?}` | `{hits: [{path, heading, snippet, score}], mode, reason?}`. `400` when `query` is missing or blank. | open; none |
 
 `snippetLimit` caps the snippets per note (default 20) and does not change `matchCount`.
 Without `regex`, results are ranked in three tiers: full-text matches, then literal matches the index missed, then typo matches when `caseSensitive` is false.
@@ -209,6 +211,21 @@ The route reads `embeddings.enabled` from the vault's `.settings` on every call.
 | `failed` | The embedding model raised an error; `message` carries it. |
 
 Notes on the deny list are dropped before `k` is applied, so a hidden best match never takes a slot. An `around` note the deny list hides, or one that does not exist, returns `{hits: []}`. [Semantic search](../vault/semantic-search.md) covers what the feature does for a user.
+
+`POST /search/hybrid` is the route behind `bismuth search`. It blends the keyword ranking of the vault's notes with the meaning ranking of its notes, PDF pages, images and past chats into one list, and answers `200` in every case. `limit` is the number of hits (default `10`; a value that is not a positive number falls back to it). `score` runs from 0 to 1 and the best hit is `1`. A hit carries `kind` (`note`, `pdf`, `image` or `chat`), an `excerpt` of at most 300 characters, and `page` for a PDF page; a chat hit has `path` `chat <session-id>` and also `session` and `date`.
+
+`mode` is `hybrid` when both rankings were fused and `keyword` when only the keyword ranking answered. A `keyword` answer carries a `reason`: `off` (`embeddings.enabled` is not `true`), `blend model missing`, or one of the `unavailable` values in the table above. `rerank: false` skips the reordering of the top hits by the reranking model; any other value follows the fitted blend, so the field cannot turn reranking on. Denied files are dropped before the two rankings are fused and before `limit` is applied. A vault that restricts any note or folder for the caller returns no chat hits. [Semantic search](../vault/semantic-search.md) explains the blend.
+
+Two optional body fields apply only to an `owner` request, which sees everything by default. `channel` (`daemon` or anything else, read as `chat`) picks whose chat view the hits follow. `agent` (`chat` or `daemon`) picks whose deny list is applied before fusion, so a caller acting for an agent gets that agent's view. On any other channel both fields are ignored and the request's own channel decides.
+
+```bash
+curl -s -X POST http://localhost:4321/search/hybrid \
+    -H 'content-type: application/json' \
+    -H 'X-Bismuth-Channel: chat' \
+    -d '{"query":"how do I plan a launch","limit":3}'
+```
+
+`POST /docs/search` is the route behind `bismuth docs search`. It searches Bismuth's own documentation sections by keyword and, when the vault has `embeddings.enabled` on, by meaning, and fuses the two. `limit` defaults to `8`. A hit's `path` is the docs page, with `#anchor` when the hit is one section. The response has the same `mode` and `reason` as `/search/hybrid`, plus the reason `no-docs` with no hits when the docs tree is not found. A `keyword` answer keeps the keyword scores; a `hybrid` answer scales them so the best hit is `1`. Docs are not vault data, so no visibility filter applies.
 
 `POST /search-prompt` re-ranks candidates with one Haiku turn through the user's own `claude` binary. It returns `400` when `claude` is not on the path and `500` when the model call fails. The model may read restricted notes while ranking; only the returned list is filtered.
 

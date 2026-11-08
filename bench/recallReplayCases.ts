@@ -4,6 +4,9 @@
 // a tool touched). Those are what recall should have handed it up front. A prompt that refers to an
 // earlier conversation ("yesterday", "last time") is a past-chat case.
 import { CRON_PREFIX, stripInjectedBlocks } from '../memory/src/transcript'
+import { timeRefs, type TimeRange } from '../memory/src/timeRefs'
+import type { SourceHit } from '../core/src/semanticSources'
+import { sourceSection } from '../core/src/sourcePack'
 
 export type ReplayCase = {
     session: string
@@ -19,6 +22,8 @@ export type ReplayCase = {
     usedTools: boolean
     /** The prompt points at an earlier conversation. */
     refersToPast: boolean
+    /** Date ranges the prompt's time words name, read against the prompt's own time. Non-empty = a time case. */
+    timeRanges: TimeRange[]
 }
 
 export type ReplaySession = { id: string; started: string | null; cases: ReplayCase[] }
@@ -99,6 +104,13 @@ const isNoise = (t: string) =>
     /^<(command-|local-command-|system-reminder|task-notification)/.test(t.trim()) ||
     t.startsWith('[Request interrupted')
 
+/** The source keys one tool call fetched: a docs page it read, or the vault files its input names. A write is not a fetch. */
+export function labelsOfToolUse(b: { name?: string; input?: Record<string, unknown> }, vault: string, files: ReadonlySet<string>): string[] {
+    if (b.name === DOCS_READ && typeof b.input?.path === 'string') return [`docs:${b.input.path.replace(/#.*$/, '')}`]
+    if (WRITE_TOOLS.has(b.name ?? '')) return []
+    return vaultPathsIn(b.input, vault, files).flatMap(rel => fileKey(rel) ?? [])
+}
+
 /** Parse one session log into cases. Sidechain (subagent) entries are ignored; a cron session
  *  yields none. */
 export function parseReplaySession(
@@ -143,6 +155,7 @@ export function parseReplaySession(
                 labels: [],
                 usedTools: false,
                 refersToPast: refersToPast(prompt),
+                timeRanges: timeRangesAt(prompt, e.timestamp ?? ''),
             }
             continue
         }
@@ -152,15 +165,7 @@ export function parseReplaySession(
         for (const b of c as { type?: string; name?: string; input?: Record<string, unknown> }[]) {
             if (b?.type !== 'tool_use') continue
             ;(cur as ReplayCase).usedTools = true
-            if (b.name === DOCS_READ && typeof b.input?.path === 'string') {
-                labels.add(`docs:${b.input.path.replace(/#.*$/, '')}`)
-                continue
-            }
-            if (WRITE_TOOLS.has(b.name ?? '')) continue
-            for (const rel of vaultPathsIn(b.input, vault, files)) {
-                const k = fileKey(rel)
-                if (k) labels.add(k)
-            }
+            for (const k of labelsOfToolUse(b, vault, files)) labels.add(k)
         }
     }
     close()
@@ -171,4 +176,82 @@ export function parseReplaySession(
 export function keyMatches(label: string, injected: string): boolean {
     if (label.startsWith('docs:')) return injected.startsWith('docs:') && injected.slice(5).replace(/#.*$/, '') === label.slice(5)
     return label === injected
+}
+
+/** The ranges a prompt's time words name, with the prompt's own time as "now". */
+export function timeRangesAt(prompt: string, at: string): TimeRange[] {
+    const t = Date.parse(at)
+    return Number.isNaN(t) ? [] : timeRefs(prompt, new Date(t))
+}
+
+export type Section = 'files' | 'chats' | 'docs'
+export const SECTIONS: Section[] = ['files', 'chats', 'docs']
+
+/** The block an injected key belongs to. */
+export function sectionOf(key: string): Section {
+    return key.startsWith('chat:') ? 'chats' : key.startsWith('docs:') ? 'docs' : 'files'
+}
+
+/** Injected items that matched a label, over injected items. A case counts as injected with >= 1 item.
+ *  Labels hold no chat keys, so chats have no precision (null): the judge's junk rate covers them. */
+export function precisionOf(rows: { labels: string[]; injected: string[] }[], section?: Section) {
+    if (section === 'chats') return { cases: 0, items: 0, matched: 0, precision: null }
+    let cases = 0
+    let items = 0
+    let matched = 0
+    for (const r of rows) {
+        const inj = section ? r.injected.filter(k => sectionOf(k) === section) : r.injected
+        if (inj.length) cases++
+        items += inj.length
+        matched += inj.filter(k => r.labels.some(l => keyMatches(l, k))).length
+    }
+    return { cases, items, matched, precision: items ? matched / items : null }
+}
+
+export type Verdict = 'relevant' | 'irrelevant'
+
+/** A model reply as a verdict; null when it says neither. "irrelevant" is tested first, it contains "relevant". */
+export function parseVerdict(text: string): Verdict | null {
+    const t = text.trim().toLowerCase()
+    if (t.startsWith('irrelevant')) return 'irrelevant'
+    if (t.startsWith('relevant')) return 'relevant'
+    return null
+}
+
+/** Judged items: how many were relevant, and the share that were not. */
+export function junkStats(verdicts: Verdict[]) {
+    const judged = verdicts.length
+    const relevant = verdicts.filter(v => v === 'relevant').length
+    return { judged, relevant, junk: judged - relevant, junkRate: judged ? (judged - relevant) / judged : null }
+}
+
+/** Whether recall hit (some label in the top k of a ranking), and the reciprocal rank of the first label. */
+export function rankMetrics(ranked: string[], labels: string[], k = 10) {
+    const i = ranked.findIndex(r => labels.some(l => keyMatches(l, r)))
+    return { hit: i >= 0 && i < k, rr: i >= 0 && i < k ? 1 / (i + 1) : 0 }
+}
+
+/** Mean recall@k and MRR over cases' rankings. */
+export function searchScore(cases: { ranked: string[]; labels: string[] }[], k = 10) {
+    const ms = cases.map(c => rankMetrics(c.ranked, c.labels, k))
+    const n = Math.max(1, ms.length)
+    return { cases: ms.length, recall: ms.filter(m => m.hit).length / n, mrr: ms.reduce((a, m) => a + m.rr, 0) / n }
+}
+
+/** Whether a YYYY-MM-DD date falls in any of the ranges (inclusive). */
+export function inRanges(date: string | undefined, ranges: { start: string; end: string }[]): boolean {
+    return !!date && ranges.some(r => date >= r.start && date <= r.end)
+}
+
+/** Parallel judge calls: the smaller of the CPU budget and what a quarter of total memory holds. macOS `freemem()` counts only free pages, so it reads far too low. */
+export function judgePoolSize(cpus: number, totalBytes: number, perWorkerBytes = 400 * 1024 * 1024, cap = 8): number {
+    return Math.max(1, Math.min(cap, cpus - 1, Math.floor((totalBytes * 0.25) / perWorkerBytes)))
+}
+
+/** The top `k` hits of each section by score: what the recall service sees once the replay has dropped hits it must not see.
+ *  The caller asks for an uncapped list first, so a section's background (its 10th best score) is read off the true ranking. */
+export function capPerSection(hits: SourceHit[], k: number): SourceHit[] {
+    const groups: Record<Section, SourceHit[]> = { files: [], chats: [], docs: [] }
+    for (const h of hits) groups[sourceSection(h)].push(h)
+    return SECTIONS.flatMap(s => groups[s].sort((a, b) => b.score - a.score).slice(0, k))
 }

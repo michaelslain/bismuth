@@ -2,7 +2,7 @@ import type { MemoryNote } from '@bismuth/memory'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { bismuthHome } from './bismuthHome'
-import { createVectorStore, hashOf, noteChunks, sharedSemanticChannel } from './memoryEmbed'
+import { QUERY_PREFIX, createVectorStore, hashOf, noteChunks, sharedSemanticChannel } from './memoryEmbed'
 import type { SemanticChannel, VectorStore } from './memoryEmbed'
 import { SOURCE_EXCERPT_CHARS } from './semanticSources'
 import type { SourceHit, SourceQuery } from './semanticSources'
@@ -152,8 +152,8 @@ function excerptOf(note: MemoryNote, chunk: number): string {
 export const DOCS_PASS_BATCH_NOTES = 8
 
 /** The store and the current section list, or null when there is no docs root or no embedder. */
-function open(): { st: VectorStore; notes: MemoryNote[] } | null {
-    const root = resolveDocsRoot()
+function open(rootOverride?: string): { st: VectorStore; notes: MemoryNote[] } | null {
+    const root = rootOverride ?? resolveDocsRoot()
     if (!root) return null
     const emb = (config.channel ?? sharedSemanticChannel()).embedder()
     if (!emb) return null
@@ -194,8 +194,8 @@ const DOCS_SECTIONS_PER_HIT = 4
 /** The page a section id belongs to: `a/b.md#anchor` -> `a/b.md`. */
 export const docPage = (id: string): string => id.split('#')[0]!
 
-export async function docsSourceHits(q: SourceQuery): Promise<SourceHit[]> {
-    const o = open()
+export async function docsSourceHits(q: SourceQuery, root?: string): Promise<SourceHit[]> {
+    const o = open(root)
     if (!o) return []
     const { st, notes } = o
     st.sync(notes) // re-embeds only sections whose content hash changed, in the background
@@ -221,4 +221,50 @@ export async function docsSourceHits(q: SourceQuery): Promise<SourceHit[]> {
         })
     }
     return hits.sort((a, b) => b.score - a.score)
+}
+
+/** Budget for a docs meaning query, ms: the model load plus, with `build`, the index pass. */
+export const DOCS_WAIT_MS = 20_000
+
+export type DocsMeaning = { hits: SourceHit[] } | { unavailable: string }
+
+const within = <T>(p: Promise<T>, ms: number): Promise<T | 'timeout'> => {
+    let t: ReturnType<typeof setTimeout>
+    return Promise.race([p, new Promise<'timeout'>(res => (t = setTimeout(() => res('timeout'), ms)))]).finally(() =>
+        clearTimeout(t),
+    )
+}
+
+/** Docs sections nearest a query this function embeds itself: `docsSourceHits` plus the ways the
+ *  meaning side can be missing, each as an `unavailable` reason (`no-docs`, `no-worker`, `indexing`,
+ *  `warming`, `failed`). `build` waits for the index pass (a one-shot CLI with no core to embed for
+ *  it); without it, a half-built index answers with what it has. `root` overrides the docs directory. */
+export async function docsQueryHits(
+    query: string,
+    opts: { k: number; root?: string; build?: boolean; waitMs?: number },
+): Promise<DocsMeaning> {
+    const root = opts.root ?? resolveDocsRoot()
+    if (!root) return { unavailable: 'no-docs' }
+    const emb = (config.channel ?? sharedSemanticChannel()).embedder()
+    if (!emb) return { unavailable: 'no-worker' }
+    const o = open(root)
+    if (!o) return { unavailable: 'no-worker' }
+    const deadline = Date.now() + (opts.waitMs ?? DOCS_WAIT_MS)
+    const left = () => Math.max(0, deadline - Date.now())
+    o.st.sync(o.notes)
+    const embedded = emb.embed([QUERY_PREFIX + query])
+    embedded.catch(() => {})
+    if (opts.build && (await within(o.st.flush(), left())) === 'timeout') return { unavailable: 'indexing' }
+    let vec: Float32Array | undefined
+    try {
+        const got = await within(embedded, left())
+        if (got === 'timeout') return { unavailable: 'warming' }
+        vec = got[0]
+    } catch {
+        return { unavailable: 'failed' }
+    }
+    if (!vec) return { unavailable: 'warming' }
+    const hits = await docsSourceHits({ vec, k: opts.k, channel: 'chat' }, root)
+    if (hits.length === 0 && o.st.size() === 0 && o.notes.length > 0) return { unavailable: 'warming' }
+    return { hits }
 }

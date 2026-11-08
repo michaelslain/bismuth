@@ -104,7 +104,7 @@ Dear diary, the integral of $x^2$ is $x^3/3$.
 - Everything outside the two marker comments (tags, other properties, text you wrote) is kept byte for byte on a re-run. Only the block is replaced.
 - An image is one page and its text is the block. A PDF gets one `### Page N` heading per page, in page order.
 
-The companion is an ordinary note, so `bismuth search "<a word on the page>"` finds it, and with embeddings on, `--semantic` finds it by meaning. See [semantic search](semantic-search.md).
+The companion is an ordinary note, so `bismuth search "<a word on the page>"` finds it, and with embeddings on, the same search also finds it by meaning. See [semantic search](semantic-search.md).
 
 ## Review flagged lines
 

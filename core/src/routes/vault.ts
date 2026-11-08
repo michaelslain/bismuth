@@ -52,6 +52,8 @@ import { searchVault } from '../search'
 import { promptSearch } from '../searchPrompt'
 import { vaultSemanticNeighbours, vaultSemanticSearch } from '../vaultEmbed'
 import { chatSemanticSearch } from '../chatEmbed'
+import { hybridSearchRoute } from '../hybridSearch'
+import { docsSearchRoute } from '../docsHybrid'
 import { listFsPaths } from '../fsPaths'
 import { replaceInVault } from '../replace'
 import { spawnVaultBackend } from '../openFolder'
@@ -550,6 +552,17 @@ export default function vaultRoutes(
         // `k` is applied. Chats join only for the owner or an agent in a vault that restricts nothing;
         // the owner's token may narrow its chat view to `daemon` with `channel` (the CLI does so for
         // an agent hand), and `chats: false` leaves chats out for any caller. A chat source that is unavailable while files answered leaves files alone.
+        // Keyword + meaning search for `bismuth search` (core/src/hybridSearch.ts). Read-only despite POST.
+        'POST /search/hybrid': async (req, __) =>
+            hybridSearchRoute(req, {
+                vault: cfg.vault,
+                deny: await denyEntriesForRequest(req),
+                channel: requestChannel(req),
+            }),
+
+        // Keyword + meaning search over Bismuth's own docs for `bismuth docs search` (core/src/docsHybrid.ts).
+        'POST /docs/search': async (req, __) => docsSearchRoute(req, { vault: cfg.vault }),
+
         'POST /search/semantic': async (req, __) => {
             const { query, around, k, channel, chats: withChats } = (await req.json()) as {
                 query?: string

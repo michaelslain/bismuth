@@ -123,7 +123,7 @@ An owner check opens `sendMessage`: a device that is not the owner throws, so on
 
 ### The persona carries the vault brain
 
-`buildDaemonPersona` ends the persona with the brain block: the user profile, the vault map and the memory index, composed for the daemon channel, which leaves out hidden and chat-only notes. Every cron fire and approved page therefore starts knowing the vault. Claude sessions receive the block through the system-prompt append and Codex sessions through `developer_instructions`. [The vault map](../vault/map.md) describes what the block holds.
+`buildDaemonPersona` ends the persona with the brain block: the user profile, the `now` note when the vault has one, the vault map and the memory index, composed for the daemon channel, which leaves out hidden and chat-only notes. Every cron fire and approved page therefore starts knowing the vault. Claude sessions receive the block through the system-prompt append and Codex sessions through `developer_instructions`. [The vault map](../vault/map.md) describes what the block holds.
 
 A cold vault map is waited for up to 30 seconds (`DAEMON_BRAIN_WAIT_MS`). If the build fails or returns nothing, the persona goes out without the block and the session still runs.
 

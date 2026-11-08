@@ -16,7 +16,7 @@ export function getMemoryDir(): string {
 }
 
 export type NoteType =
-    'person' | 'project' | 'workflow' | 'fact' | 'preference' | 'daily' | 'auto' | 'profile' | 'hub'
+    'person' | 'project' | 'workflow' | 'fact' | 'preference' | 'daily' | 'auto' | 'profile' | 'hub' | 'now'
 
 export interface NoteFrontmatter {
     type: NoteType

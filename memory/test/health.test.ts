@@ -189,3 +189,51 @@ describe('no-description', () => {
         expect(item.notes).toEqual(['b'])
     })
 })
+
+describe('brainHealth digests', () => {
+    const today = new Date(2026, 10, 6, 12)
+    const run = (notes: MemoryNote[]) => brainHealth(notes, { now: today }).items
+
+    test('a day digest of type daily is exempt from dated-name, cluster, status-lines and dated-tags', () => {
+        const old = Array.from({ length: 4 }, () => '- Oct 1: shipped the thing').join('\n')
+        const items = run([
+            note('day-2026-11-06', `## Sessions\n${old}`, 'daily', { tags: ['latest'] }),
+            note('day-2026-11-05', `## Sessions\n${old}`, 'daily', { tags: ['latest'] }),
+        ])
+        for (const k of ['dated-name', 'cluster', 'status-lines', 'dated-tags'])
+            expect(items.filter(i => i.kind === k && i.notes.some(n => n.startsWith('day-')))).toEqual([])
+    })
+
+    test('near-identical day notes are not duplicates and session-id lines are not no-source', () => {
+        const body = '## Sessions\n- (session abcd1234) worked on the graph'
+        const items = brainHealth([note('day-2026-11-06', body, 'daily'), note('day-2026-11-05', body, 'daily')], { now: today, vaultNames: new Set<string>() }).items
+        expect(items.filter(i => i.kind === 'duplicate' || i.kind === 'no-source')).toEqual([])
+    })
+
+    test('the same name with type fact is still flagged', () => {
+        const items = run([note('day-2026-11-06', 'x', 'fact'), note('other-2026-11-06', 'x', 'fact')])
+        expect(items.some(i => i.kind === 'dated-name' && i.notes.includes('day-2026-11-06'))).toBe(true)
+    })
+
+    test('lookalike names of type daily are still flagged', () => {
+        const items = run([note('2026-11-06-day', 'x', 'daily')])
+        expect(items.some(i => i.kind === 'dated-name')).toBe(true)
+    })
+
+    test('rollup items follow rollupPlan', () => {
+        const items = run([note('day-2026-10-05', 'x', 'daily'), note('day-2026-10-06', 'x', 'daily'), note('day-2026-11-05', 'x', 'daily'), note('week-2026-W06', 'x', 'daily')])
+        const rolls = items.filter(i => i.kind === 'rollup')
+        expect(rolls).toEqual([
+            { kind: 'rollup', notes: ['day-2026-10-05', 'day-2026-10-06'], detail: 'fold into week-2026-W41' },
+            { kind: 'rollup', notes: ['week-2026-W06'], detail: 'fold into month-2026-02' },
+        ])
+    })
+})
+
+describe('brainHealth now', () => {
+    test('the now note is exempt from status-lines', () => {
+        const old = Array.from({ length: 5 }, () => '- Sep 1: was doing the thing').join('\n')
+        const items = brainHealth([note('now', `## Today\n${old}`, 'now')], { now: new Date('2026-10-08T12:00:00Z') }).items
+        expect(items.filter(i => i.kind === 'status-lines')).toEqual([])
+    })
+})

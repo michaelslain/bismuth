@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { registry } from '../src/registry'
 import { MEMORY_UNAVAILABLE } from '../../mcp/src/memory'
+import { searchDocs } from '../../mcp/src/docs'
 
 // The `docs` and `memory` groups run IN-PROCESS here (no subprocess): console.log is captured and
 // process.exit is turned into a throw, so a failing command is observable without killing the runner.
@@ -70,6 +71,19 @@ test('docs search prints ranked hits and honours --limit', async () => {
     expect(hits[0].path).toBe('topic/alpha.md#stripes')
     const one = JSON.parse((await run('docs search', ['zebra', '--limit', '1'])).stdout)
     expect(one).toHaveLength(1)
+})
+
+test('docs search without embeddings is today\'s keyword list plus a stderr line, exit 0', async () => {
+    const vault = join(root, 'vault-off')
+    mkdirSync(vault)
+    writeFileSync(join(vault, '.settings'), 'embeddings:\n  enabled: false\n')
+    const r = await run('docs search', ['zebra', 'stripes', '--vault', vault])
+    expect(r.exit).toBeNull()
+    expect(r.stderr).toContain('meaning search unavailable (off): keyword results only')
+    const hits = JSON.parse(r.stdout)
+    expect(hits.map((h: { path: string }) => h.path)).toEqual(['topic/alpha.md#stripes', 'topic/alpha.md'])
+    expect(Object.keys(hits[0]).sort()).toEqual(['heading', 'path', 'score', 'snippet'])
+    expect(hits[0].score).toBe(searchDocs(docsDir, 'zebra stripes')[0]!.score)
 })
 
 test('docs read prints the page raw, or one section', async () => {

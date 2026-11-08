@@ -298,3 +298,22 @@ describe('formatSessionStart with a lead', () => {
         for (const m of out.matchAll(/^## (pref-\d+)$/gm)) expect(out).not.toContain(`[[${m[1]}]]`)
     })
 })
+
+describe('formatSessionStart index excludes digest and now notes', () => {
+    test('no type daily note and no now note is listed', () => {
+        const notes = [
+            note('alice', 'friend', 'person'),
+            note('day-2026-11-05', 'did things', 'daily'),
+            note('now', '## Active', 'now'),
+        ]
+        const out = formatSessionStart(notes)!
+        expect(out).toContain('alice')
+        expect(out).not.toContain('day-2026-11-05')
+        expect(out).not.toContain('[[now]]')
+        expect(out).not.toMatch(/^- now\b/m)
+    })
+
+    test('only digest and now notes means no index block', () => {
+        expect(formatSessionStart([note('day-2026-11-05', 'x', 'daily'), note('now', 'y', 'now')])).toBeNull()
+    })
+})

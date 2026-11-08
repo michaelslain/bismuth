@@ -60,7 +60,7 @@ describe('search', () => {
             async () => {
                 makeLeakVault()
                 for (const key of Object.keys(TOKENS) as (keyof typeof TOKENS)[]) {
-                    const r = await runCli(['search', TOKENS[key]], opts)
+                    const r = await runCli(['search', TOKENS[key], '--json'], opts)
                     expect(r.code, r.stderr).toBe(0)
                     const paths = (
                         JSON.parse(r.stdout) as { path: string }[]
@@ -86,7 +86,7 @@ describe('search', () => {
         async () => {
             makeLeakVault()
             for (const { name, opts } of CASES) {
-                const r = await runCli(['search', 'TOKEN'], opts)
+                const r = await runCli(['search', 'TOKEN', '--case'], opts)
                 expect(r.code, r.stderr).toBe(0)
                 const paths = (JSON.parse(r.stdout) as { path: string }[])
                     .map(h => h.path)

@@ -272,6 +272,11 @@ export function formatProfile(notes: MemoryNote[], maxChars: number = 1500): str
     return defang(kept.length ? kept.join('\n').trimEnd() : cut(body, maxChars))
 }
 
+/** Digest (`type: daily`) and `now` notes are reached through the session-start `# Now` section
+ *  and time routing; a note per day would flood the index. */
+const isOffIndex = (n: MemoryNote): boolean =>
+    n.frontmatter.type === 'daily' || (n.frontmatter.type as string) === 'now' || n.name === 'now'
+
 /** Rank value of a note for the index: how many other memory notes link to it. */
 function inLinkCounts(notes: MemoryNote[]): Map<string, number> {
     const { inbound } = memoryLinkIndex(notes)
@@ -287,7 +292,7 @@ function inLinkCounts(notes: MemoryNote[]): Map<string, number> {
  */
 export function formatSessionStart(notes: MemoryNote[], opts?: SessionStartOpts): string | null {
     const visible = notes.filter(isMemoryNoteVisibleToDaemon)
-    if (visible.filter(n => !isProfileNote(n)).length === 0) return null
+    if (visible.filter(n => !isProfileNote(n) && !isOffIndex(n)).length === 0) return null
     const inLinks = inLinkCounts(visible)
     const typeRank = (t: string) => {
         const i = INDEX_TYPE_ORDER.indexOf(t)
@@ -300,7 +305,7 @@ export function formatSessionStart(notes: MemoryNote[], opts?: SessionStartOpts)
         b.frontmatter.updated.localeCompare(a.frontmatter.updated) ||
         typeRank(a.frontmatter.type) - typeRank(b.frontmatter.type) ||
         a.name.localeCompare(b.name)
-    const ranked = visible.filter(n => !isProfileNote(n)).sort(byValue)
+    const ranked = visible.filter(n => !isProfileNote(n) && !isOffIndex(n)).sort(byValue)
 
     const footerReserve = 90
     const budget = opts?.budgetChars ?? SESSION_START_BUDGET

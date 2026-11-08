@@ -530,6 +530,8 @@ export type ServiceOpts = {
         embedder: () => Embedder | null
         reranker: () => Reranker | null
         sources: (q: any) => Promise<any[]>
+        /** The source gate; absent = the committed model. */
+        gateModel?: import('../core/src/sourceGate').GateModel
     }
 }
 export type ServiceRunner = {
@@ -610,6 +612,7 @@ export async function createServiceRunner(memoryDir: string, opts: ServiceOpts):
         settings: () => ({ enabled: true, midTurn: true, semantic: on || !!opts.inject }),
         embedder: () => (opts.inject ? opts.inject.embedder() : channel ? channel.embedder() : null),
         ...(opts.inject ? { reranker: opts.inject.reranker } : {}),
+        ...(opts.inject?.gateModel ? { gateModel: opts.inject.gateModel } : {}),
         ...(sourcesOn ? { sources: (opts.inject?.sources ?? realSources) as any } : {}),
         ...(channel
             ? {

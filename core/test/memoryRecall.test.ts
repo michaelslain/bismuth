@@ -655,6 +655,14 @@ test('link boost: at most 2 prompt notes, ahead of ranked notes; none without ed
     expect(plain.injected).toEqual(['ranked'])
 })
 
+test('link boost: digest notes and now never take a boost slot', async () => {
+    const day = (name: string) => ({ ...linkNote(name, ['plan']), frontmatter: { type: 'daily', tags: [], description: name } }) as unknown as MemoryNote
+    const now = { ...linkNote('now', ['plan']), frontmatter: { type: 'now', tags: [], description: 'now' } } as unknown as MemoryNote
+    const notes = [day('day-2026-11-06'), day('day-2026-11-05'), now, linkNote('fact', ['plan'])]
+    const r = await realSvc(notes).recall({ mode: 'prompt', sessionId: 's', prompt: editorCtx('plan.md', 'zzzz') })
+    expect(r.injected).toEqual(['fact'])
+})
+
 test('link boost: tool mode takes 1 note from a file the batch touched, inside the vault only', async () => {
     const notes = [linkNote('t1', ['plan']), linkNote('t2', ['plan'])]
     const call = (file_path: string) => ({

@@ -1,4 +1,4 @@
-// Semantic (embedding) queries for the CLI: `search --semantic` and `map --around`'s `similar:`.
+// Meaning queries for the CLI: the blended `search` (hybridQuery) and `map --around`'s `similar:`.
 // A reachable running core for this vault answers over POST /search/semantic; otherwise, when this
 // build can run the embedding worker, the query runs in-process.
 import { resolve } from 'node:path'
@@ -18,9 +18,10 @@ import {
 import { chatSemanticSearch } from '../../core/src/chatEmbed'
 import { cliGateChannel } from '../../core/src/visibilityCliGate'
 import { filterByPath } from '../../core/src/visibilityFilter'
+import { hybridSearch, type HybridResult } from '../../core/src/hybridSearch'
 import type { DenyEntry } from '../../core/src/visibility'
 
-/** One `search --semantic` hit: a file (note, pdf with `page`, image by its binary path) or a chat
+/** One semantic hit: a file (note, pdf with `page`, image by its binary path) or a chat
  *  (`path` is `chat <session-id>`, with `date` and `session`). */
 export type SearchHit = Omit<SemanticHit, 'kind'> & {
     kind?: 'note' | 'pdf' | 'image' | 'chat'
@@ -33,7 +34,7 @@ export type SemanticResult = SearchHit[] | SemanticUnavailable
  *  run registry lists for this vault. Never the :4321 guess, which may serve another vault. An
  *  explicit base whose port the run registry lists for a DIFFERENT vault (an app terminal for
  *  vault A exports its own core to every command) is ignored for this vault's registry core. */
-function coreFor(args: string[], vault: string): string | undefined {
+export function coreFor(args: string[], vault: string): string | undefined {
     const target = optionalVault(args) ?? vault
     const explicit = flag(args, 'api') ?? process.env.BISMUTH_API ?? process.env.CLAUDE_RELAY_URL
     if (explicit) {
@@ -157,4 +158,44 @@ export async function semanticQuery(
         : await run
     clearTimeout(timer)
     return !Array.isArray(r) ? r : withoutChats(filterByPath(r, deny, h => h.path), deny)
+}
+
+const isHybrid = (v: unknown): v is HybridResult =>
+    !!v && Array.isArray((v as { hits?: unknown }).hits) && typeof (v as { mode?: unknown }).mode === 'string'
+
+/** What `bismuth search <query>` runs: keyword and meaning blended (core's `hybridSearch`). A reachable
+ *  running core answers over POST /search/hybrid; otherwise the query runs in-process, which builds
+ *  the index itself when the build can host the model. Every way the meaning side can be missing (off,
+ *  no worker, warming, a core too slow) yields the keyword list with a `reason`; a core that answers
+ *  with an error is not an absent one and fails. Hits are filtered by `deny` here as well, so an agent
+ *  never sees a denied note whichever side answered. */
+export async function hybridQuery(
+    args: string[],
+    vault: string,
+    query: string,
+    deny: DenyEntry[],
+    limit: number,
+    timeoutMs?: number,
+): Promise<HybridResult> {
+    const channel = agentChannel() === 'daemon' ? 'daemon' : 'chat'
+    const keywordOnly = (reason: string) => hybridSearch(vault, query, { limit, deny, channel, keywordOnly: reason })
+    const base = coreFor(args, vault)
+    if (base) {
+        // The CLI's owner token proves "owner", so an agent names its channel and the route applies
+        // that deny list to both lists before fusion.
+        const agent = agentChannel()
+        const r = await tryCall(
+            base,
+            'POST',
+            '/search/hybrid',
+            { query, limit, ...(agent ? { agent } : {}), ...(channel === 'daemon' ? { channel } : {}) },
+            timeoutMs ?? DEFAULT_WAIT_MS + 5000,
+        )
+        if ('timeout' in r) return keywordOnly('warming')
+        if ('error' in r) return fail(`POST /search/hybrid → ${r.error}: ${r.message || 'the running server failed the request'}`)
+        if ('value' in r && isHybrid(r.value)) {
+            return { ...r.value, hits: filterByPath(r.value.hits, deny, h => h.path) }
+        }
+    }
+    return hybridSearch(vault, query, { limit, deny, channel, build: true, waitMs: timeoutMs ?? DEFAULT_WAIT_MS })
 }

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { semanticQuery } from '../src/semantic'
+import { hybridQuery, semanticQuery } from '../src/semantic'
 import { semanticLabel } from '../src/commands/search'
 import { tryCall } from '../src/http'
 import type { DenyEntry } from '../../core/src/visibility'
@@ -110,10 +110,10 @@ describe('a failing live core is not an absent one', () => {
         expect('unreachable' in r).toBe(false)
     }, T)
 
-    test('search --semantic prints the core error and exits non-zero without a local fallback', async () => {
+    test('search prints the core error and exits non-zero without a local fallback', async () => {
         makeLeakVault()
         mode = 'fail'
-        const r = await runCli(['search', 'x', '--semantic', '--api', api], { channel: 'owner' })
+        const r = await runCli(['search', 'x', '--api', api], { channel: 'owner' })
         expect(r.code).not.toBe(0)
         expect(r.stderr).toContain('500')
         expect(r.stderr).toContain('index exploded')
@@ -161,5 +161,31 @@ describe('semantic hits of every kind', () => {
         const r = await runCli(['map', '--around', 'open.md', '--json', '--api', api], { channel: 'owner' })
         expect(r.code).toBe(0)
         expect(r.stdout).not.toContain('chat s1')
+    }, T)
+})
+
+describe('hybridQuery over a running core', () => {
+    test('an agent channel is sent as agent with the plain limit, and the reply is not padded or cut', async () => {
+        const bodies: Array<Record<string, unknown>> = []
+        const stub = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch: async req => {
+                bodies.push((await req.json()) as Record<string, unknown>)
+                const hits = ['n1.md', 'n2.md'].map(path => ({ path, kind: 'note', score: 1, excerpt: path }))
+                return Response.json({ hits, mode: 'hybrid' })
+            },
+        })
+        const saved = process.env.BISMUTH_AGENT_CHANNEL
+        process.env.BISMUTH_AGENT_CHANNEL = 'chat'
+        try {
+            const r = await hybridQuery(['--api', `http://127.0.0.1:${stub.port}`], '/vault-that-does-not-exist', 'x', [entry('Private/a.md')], 2)
+            expect(bodies[0]).toMatchObject({ limit: 2, agent: 'chat' })
+            expect(r.hits.map(h => h.path)).toEqual(['n1.md', 'n2.md'])
+        } finally {
+            if (saved === undefined) delete process.env.BISMUTH_AGENT_CHANNEL
+            else process.env.BISMUTH_AGENT_CHANNEL = saved
+            stub.stop(true)
+        }
     }, T)
 })

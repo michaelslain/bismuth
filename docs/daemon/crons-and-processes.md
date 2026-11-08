@@ -107,6 +107,8 @@ An incremental cron needs a git repository with at least one commit in each area
 
 If a cron's prompt contains `{{brainReport}}`, the daemon replaces it with a ranked health report of the vault's memory graph before the session starts: oversized notes, dated or status-suffixed names, near-duplicate clusters, orphans, notes without a source, broken links, and a missing profile or hub. It works on every cron, incremental or not. The report checks links against the names of the vault's markdown notes, and a note hidden from the daemon by [visibility](../vault/visibility.md) contributes no name. When the report cannot be built, the placeholder becomes the single line `brain report unavailable: <reason>` and the run goes on. A prompt without the placeholder runs unchanged.
 
+A cron whose prompt contains `{{nowFacts}}` gets a markdown block of facts for the dream's `now` note: tasks due in the next 7 days in date order (the query `bismuth task list --query 'not done and due before <today + 7 days>'` runs), the vault folders with notes modified in the last 7 days with counts, and the three newest day notes with their descriptions. It is at most 2,500 characters, an empty section reads `(none)`, and paths hidden from the daemon are left out. If the facts cannot be built, the placeholder becomes `facts unavailable: <reason>`. A prompt without the placeholder runs unchanged.
+
 The report's first line is `notes=<count> size=<KB> items=<total>`, followed by numbered items worst first. It is capped at 3,000 characters; when items do not fit, its last line is `(<n> more not shown; the agenda total is <total>)`, so a session counts against the full total rather than the visible items.
 
 ## Run, enable, disable and delete
@@ -147,17 +149,18 @@ A vault's brain starts by writing any default file that is missing, so a new vau
 
 `dream` runs hourly with a 30-minute timeout at `tier: balanced` and `effort: high`, is incremental over both the vault and the memory directory, and has no `notify`. In one session it:
 
-1. Reads the vault notes and memory notes that changed, and every session transcript note (`auto-*`) in the memory graph.
-2. Works the `{{brainReport}}` agenda worst first, item after item until 12 are fixed, the list runs out, or about 25 minutes pass; anything beyond 12 waits for the next hourly run, which runs for it even when nothing else changed. That covers collapsing dated snapshot notes into one note that carries its history inside it, merging duplicates, linking orphans, adding sources and splitting oversized notes.
+1. Reads the vault notes and memory notes that changed, and every session transcript note (`auto-*`) in the memory graph. Before it deletes a transcript, it adds a line for the session to that day's `day-YYYY-MM-DD` note, and it lists changed vault notes there too ([day notes and `now`](memory.md#day-notes-and-now)).
+2. Works the `{{brainReport}}` agenda worst first, item after item until 12 are fixed, the list runs out, or about 25 minutes pass; anything beyond 12 waits for the next hourly run, which runs for it even when nothing else changed. That covers collapsing dated snapshot notes into one note that carries its history inside it, merging duplicates, linking orphans, adding sources and splitting oversized notes. A `rollup` item folds old day notes into a week note and old week notes into a month note.
 3. Folds what matters into a small set of canonical memory notes (`user-profile`, `user-beliefs`, `user-reading`, `user-writing`, `user-projects`, `user-routine`, `user-context`, or one note named for a topic) with `remember`, and deletes each transcript note after extracting from it.
 4. Keeps `user-profile` (a `type: profile` note of at most 1,500 characters: who you are, what you do, how you work) current. Every session starts with it.
 5. Writes atomic notes of at most 2,000 characters, gives a topic with four or more notes one `type: hub` note, links each fact to its vault note or ends it with `(session YYYY-MM-DD)`, and moves a replaced fact to a dated line under `## History`.
-6. Files an inbox page only for something that needs you, with `source: "cron:dream"`.
+6. Rewrites the `now` note from the `{{nowFacts}}` block and the transcripts.
+7. Files an inbox page only for something that needs you, with `source: "cron:dream"`.
 
 It writes memory and pages only. Its prompt forbids it from editing crons, processes, `identity.md` or your notes, and from writing a memory note about its own runs. It ends by printing one report line, which the activity log stores as the `summary` of its `finished` event. The summary is the session's last line made of three or more `key=value` pairs, so prose printed after the report does not replace it; a session with no such line logs its last line:
 
 ```
-vault=3 memory=1 transcripts=2 snapshots-collapsed=0 merged=1 pages=0 notes=48 size=212KB profile=unchanged hubs=1 agenda=5/5
+vault=3 memory=1 transcripts=2 snapshots-collapsed=0 merged=1 pages=0 notes=48 size=212KB profile=unchanged hubs=1 agenda=5/5 days=2 now=updated
 ```
 
 Read the last reports with `bismuth daemon logs --vault <vault> --kind cron --name dream --limit 5 --pretty`. [Memory](memory.md) covers the graph `dream` maintains.
@@ -198,7 +201,7 @@ Crons and processes are read by `daemon/src/lib/frontmatter.ts`, which is not a 
 1. When the body contains `{{brainReport}}`, build the report and its agenda fingerprint (`resolveBrainAgenda` in `daemon/src/daemon/brainReport.ts`). For an incremental cron, resolve the checkpoint plan, passing whether the agenda is pending (`agendaPending`). A skip records the result and returns before any bookkeeping.
 2. Add the job to the in-memory running set, write it to `.running.json`, and log `started` with `cronStartDetail`'s line: the caller's `FireReason` and the cron's model.
 3. Snapshot the cron's own file and the processes folder, and list the existing inbox pages.
-4. Replace `{{brainReport}}` in the body with the report built in step 1, build the prompt with `buildCronPrompt`, and call `sendMessage` with `newSession: true`, the cron's `model`, `effort`, `tier` and `timeout`. The session measures `timeout` with `startAwakeTimeout` (`daemon/src/daemon/awakeTimeout.ts`), which polls every 5 seconds and counts a gap longer than the poll plus 30 seconds as a suspend that adds nothing.
+4. Replace `{{brainReport}}` in the body with the report built in step 1, and `{{nowFacts}}` with the block `nowFacts` (`daemon/src/daemon/nowFacts.ts`) builds, build the prompt with `buildCronPrompt`, and call `sendMessage` with `newSession: true`, the cron's `model`, `effort`, `tier` and `timeout`. The session measures `timeout` with `startAwakeTimeout` (`daemon/src/daemon/awakeTimeout.ts`), which polls every 5 seconds and counts a gap longer than the poll plus 30 seconds as a suspend that adds nothing.
 5. If `waitFor` is set, poll `pgrep -f` every 5 seconds until it stops matching or the time runs out.
 6. Parse the last result marker with `parseCronResult` (a `FAILURE` marker's same-line text is the reason), write `.last-fired.json` with the agenda fingerprint, log `finished` with the report line (`lastReportLine`) and `cronResultDetail`'s reason, advance the incremental bookmarks on success, and send the `notify` notification.
 7. A timeout or shutdown abort records `killed`; any other error records `failed` with its classified cause.
@@ -218,4 +221,4 @@ Each vault has one recursive `fs.watch` (`daemon/src/daemon/fileWatch.ts`), neve
 
 The upgrade rule depends on `PRIOR_SEED_HASHES` in `daemon/src/daemon/seeds.ts`, an append-only list of the SHA-256 of every earlier stock body of each default cron. A hash missing from the list does not raise an error: the daemon treats that stock file as customized and never upgrades it. To change `dream`, append the SHA-256 of the outgoing body to `PRIOR_SEED_HASHES.dream`, then edit `defaultCrons.ts`. Never list the current body. The hash is taken without the frontmatter `enabled:` line (`stripEnabled` in `core/src/seededCronSwitch.ts`), so a cron switched on or off still matches its stock version, and core edits that line as text (`withEnabled`) rather than through a YAML round-trip. `bun test daemon` walks the git history of `defaultCrons.ts` and fails, naming the hash to add, if any shipped body is neither current nor listed.
 
-Source: `daemon/src/daemon/{cron,awakeTimeout,fileWatch,incrementalCron,brainReport,process,defaultCrons,seeds,pages}.ts`, `daemon/src/lib/{frontmatter,checkpointRef,config,drainTriggers,activityLog}.ts`, `core/src/daemon.ts`, `core/src/seededCronSwitch.ts`, `core/src/schema/cronSchema.ts`
+Source: `daemon/src/daemon/{cron,awakeTimeout,fileWatch,incrementalCron,brainReport,nowFacts,process,defaultCrons,seeds,pages}.ts`, `daemon/src/lib/{frontmatter,checkpointRef,config,drainTriggers,activityLog}.ts`, `core/src/daemon.ts`, `core/src/seededCronSwitch.ts`, `core/src/schema/cronSchema.ts`

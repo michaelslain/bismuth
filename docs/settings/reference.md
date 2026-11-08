@@ -296,7 +296,7 @@ When `enabled` is off the daemon is dormant: its state stays on disk and the `.d
 | `inheritUserMcp` | boolean | `false` | | Let daemon sessions use the MCP servers and plugins of your own `claude` CLI. |
 | `recall.enabled` | boolean | `false` | | Master switch for automatic memory injection into agent sessions. Needs `daemon.enabled`. |
 | `recall.midTurn` | boolean | `false` | | Also recall memory once per tool batch inside a long turn. |
-| `recall.files` | boolean | `true` | | Also inject vault notes, PDFs and described images that match by meaning. Needs `embeddings.enabled`. |
+| `recall.files` | boolean | `true` | | Also inject pointers to vault notes, PDFs and described images that match by meaning. Needs `embeddings.enabled`. |
 | `recall.chats` | boolean | `true` | | Also inject pointers to past chats that match by meaning. Needs `embeddings.enabled`. |
 | `recall.docs` | boolean | `true` | | Also inject pointers to Bismuth documentation pages that match by meaning. Needs `embeddings.enabled`. Core indexes the pages at boot and keeps the index between runs, so only changed pages are indexed again. |
 | `email.enabled` | boolean | `false` | | Mail this vault's new inbox pages to you; a reply naming a button presses it. Needs `daemon.enabled` and `~/.bismuth/email.json`. |

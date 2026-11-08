@@ -17,6 +17,7 @@ export const ARG_HELPERS: Record<string, Record<string, FlagRead>> = {
     out: { pretty: 'bool' },
     // cli/src/semantic.ts: coreFor() reads --api and the vault
     semanticQuery: { api: 'value', vault: 'value' },
+    hybridQuery: { api: 'value', vault: 'value' },
     // cli/src/commands/memory.ts: unconfinedMemoryDir() and confineAgentToVaultMemory()
     resolveMemory: { memory: 'value', vault: 'value' },
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { PACK_LIMITS } from '../src/pack'
+import { logitGate } from '../../core/test/gateStub'
 import type { CaseRun } from '../../bench/recallEval'
 import {
     createServiceRunner,
@@ -252,7 +253,7 @@ describe('recall eval (source injections)', () => {
         const runner = await createServiceRunner(DIR, {
             embeddings: 'off',
             sources: 'on',
-            inject: { embedder: () => embedder, reranker: () => reranker, sources: fakeSources },
+            inject: { embedder: () => embedder, reranker: () => reranker, sources: fakeSources, gateModel: logitGate },
         })
         try {
             const runs: CaseRun[] = []
@@ -281,6 +282,7 @@ describe('recall eval (source injections)', () => {
             inject: {
                 embedder: () => embedder,
                 reranker: () => reranker,
+                gateModel: logitGate,
                 // every query, even small talk, gets a standout note
                 sources: async () => [hit('note', 'Projects/Launch.md', 0.9), ...Array.from({ length: 9 }, (_, i) => hit('note', `bg${i}`, 0.6))],
             },

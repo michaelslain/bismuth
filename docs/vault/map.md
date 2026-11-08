@@ -92,7 +92,7 @@ Run `bismuth map` with the vault to read.
 
 The text output is capped at about 6,000 characters. A larger vault loses detail in a fixed order (see [What drops first when space is short](#what-drops-first-when-space-is-short)); `--json` is never trimmed.
 
-`bismuth brain --vault <dir>` prints the whole session-start block: the profile, the map and the memory index, as the calling channel sees it. Run it to check exactly what an agent receives.
+`bismuth brain --vault <dir>` prints the whole session-start block: the profile, the `now` note when the vault has one, the map and the memory index, as the calling channel sees it. Run it to check exactly what an agent receives.
 
 ## How do I see where one note sits?
 

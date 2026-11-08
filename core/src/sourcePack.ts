@@ -1,11 +1,11 @@
 import { join } from 'node:path'
 import { defang } from '@bismuth/memory'
-import { SOURCE_EXCERPT_CHARS } from './semanticSources'
 import type { SourceHit } from './semanticSources'
 
 /** Renders the source half of the recall block: `# Vault files`, `# Past chats`, `# Bismuth docs`,
- *  each only when it has an item. Pure: no fs, no model. Recall appends the text just before the
- *  closing `</bismuth-memory>` tag, after whatever memory packed. */
+ *  each only when it has an item. Every item is a reference (one line naming the thing and how to
+ *  open it), never its text, so a wrong item costs one line. Pure: no fs, no model. Recall appends
+ *  the text just before the closing `</bismuth-memory>` tag, after whatever memory packed. */
 
 export type SourceLimits = { files: number; chats: number; docs: number }
 
@@ -26,31 +26,45 @@ const SECTIONS: { key: Section; heading: string }[] = [
 export const sourceSection = (h: SourceHit): Section =>
     h.kind === 'chat' ? 'chats' : h.kind === 'docs' ? 'docs' : 'files'
 
-const excerptOf = (h: SourceHit): string =>
-    defang(h.excerpt.replace(/\s+/g, ' ').trim().slice(0, SOURCE_EXCERPT_CHARS))
+/** Width of a reference's one-line description. A line width, not a relevance threshold. */
+export const SOURCE_HOOK_CHARS = 160
+
+const LEAD = 'Possibly related, unverified. Open one only if it helps; ignore the rest.'
+
+/** The item's best one-line description: its title, else the first sentence of its excerpt. */
+function hookOf(h: SourceHit): string {
+    const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
+    const title = flat(h.title ?? '')
+    const text = title || flat(h.excerpt).split(/(?<=[.!?])\s/)[0]!
+    if (text.length <= SOURCE_HOOK_CHARS) return defang(text)
+    const head = text.slice(0, SOURCE_HOOK_CHARS)
+    const atWord = text[SOURCE_HOOK_CHARS] === ' ' ? head : head.replace(/\s*\S*$/, '')
+    return defang((atWord || head) + '…')
+}
 
 function render(h: SourceHit, vault: string): string {
     const id = defang(h.id)
     switch (h.kind) {
         case 'chat':
-            return `- ${h.date ? `${defang(h.date)} — ` : ''}"${excerptOf(h)}" (open: \`bismuth history show ${id}\`)`
+            return `- ${h.date ? `${defang(h.date)} — ` : ''}"${hookOf(h)}" (open: \`bismuth history show ${id}\`)`
         case 'docs':
             return `- ${id}${h.title ? ` — ${defang(h.title.replace(/\s+/g, ' ').trim())}` : ''} (read: \`bismuth docs read ${id}\`)`
         default: {
             const label = h.kind === 'pdf' && h.page ? `pdf, page ${h.page}` : h.kind
-            return `## ${id} (${label})\nPath: ${defang(join(vault, h.id))}\n${excerptOf(h)}`
+            return `- ${id} (${label}) — ${hookOf(h)} (open: \`${defang(join(vault, h.id))}\`)`
         }
     }
 }
 
-/** The text of the chosen items: a section is its heading, a blank line, then its items (files
- *  one blank line apart, chats and docs as a list), and a blank line closes it. */
+/** The text of the chosen items: the lead line and a blank line once, then per section its
+ *  heading, a blank line, its items one per line, and a blank line closing it. */
 function compose(chosen: Record<Section, string[]>): string {
     const out: string[] = []
     for (const { key, heading } of SECTIONS) {
         const items = chosen[key]
         if (!items.length) continue
-        out.push(heading, '', key === 'files' ? items.join('\n\n') : items.join('\n'), '')
+        if (!out.length) out.push(LEAD, '')
+        out.push(heading, '', items.join('\n'), '')
     }
     return out.length ? out.join('\n') + '\n' : ''
 }

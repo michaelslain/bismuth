@@ -4,7 +4,7 @@
 // app's file watcher picks up the writes live.
 import type { CommandMap } from '../types'
 import { BOOLEAN_FLAGS, bool, fail, flag, out, positionals, requireVault } from '../args'
-import { semanticQuery, type SearchHit } from '../semantic'
+import { hybridQuery, type SearchHit } from '../semantic'
 import { searchVault, type SearchOpts } from '../../../core/src/search'
 import { replaceInVault } from '../../../core/src/replace'
 import { commitVault, snapshotMessage } from '../../../core/src/backup'
@@ -23,7 +23,7 @@ function buildOpts(args: string[]): SearchOpts {
     }
 }
 
-/** The left column of a `--semantic` line: a note's path as is, `a.pdf p.4`, `a.png (image)`, or
+/** The left column of a search line: a note's path as is, `a.pdf p.4`, `a.png (image)`, or
  *  `chat <date> <session-id>`. */
 export function semanticLabel(h: SearchHit): string {
     if (h.kind === 'chat') return `chat ${h.date ?? ''} ${h.session ?? ''}`.replace(/ {2,}/g, ' ').trim()
@@ -34,27 +34,25 @@ export function semanticLabel(h: SearchHit): string {
 
 export const commands: CommandMap = {
     search: {
-        summary: 'Search the vault for a query (ranked, with match snippets)',
-        usage: '<query> [--regex] [--case] [--word] [--semantic [--limit n] [--json]]',
+        summary: 'Search the vault for a query: keyword and meaning blended when embeddings are on',
+        usage: '<query> [--limit n] [--json] [--regex] [--case] [--word]',
         run: async args => {
             const vault = requireVault(args)
-            const semantic = bool(args, 'semantic')
-            const [query] = positionals(
-                args,
-                semantic ? [...BOOLEAN_FLAGS, 'semantic', 'json'] : BOOLEAN_FLAGS,
-            )
+            const literal = bool(args, 'regex') || bool(args, 'case') || bool(args, 'word')
+            // `--semantic` is accepted and ignored: older agent prompts still pass it.
+            const [query] = positionals(args, [...BOOLEAN_FLAGS, 'semantic', 'json'])
             // Fail closed: agentDenyEntries throws when visibility cannot be determined, and that
             // propagates so the CLI exits non-zero. [] is the owner.
             const entries = await agentDenyEntries(vault)
-            if (semantic) {
-                if (!query) fail('usage: bismuth search <query> --semantic [--limit n] [--json]')
+            if (!literal) {
+                if (!query) fail('usage: bismuth search <query> [--limit n] [--json]')
                 const limit = Number(flag(args, 'limit') ?? 10)
-                if (!Number.isInteger(limit) || limit < 1)
-                    fail('--limit must be a positive whole number')
-                const r = await semanticQuery(args, vault, { query }, entries, limit)
-                if (!Array.isArray(r)) fail(r.message)
-                if (bool(args, 'json')) return out(r, args)
-                for (const h of r) console.log(`${semanticLabel(h)}  ${h.score.toFixed(3)}  ${h.excerpt}`)
+                if (!Number.isInteger(limit) || limit < 1) fail('--limit must be a positive whole number')
+                const r = await hybridQuery(args, vault, query, entries, limit)
+                if (r.mode === 'keyword' && r.reason)
+                    console.error(`meaning search unavailable (${r.reason}): keyword results only`)
+                if (bool(args, 'json')) return out(r.hits, args)
+                for (const h of r.hits) console.log(`${semanticLabel(h)}  ${h.score.toFixed(3)}  ${h.excerpt}`)
                 return
             }
             const results = await searchVault(

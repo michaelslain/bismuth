@@ -22,7 +22,7 @@ beforeAll(() => {
         port: 0,
         hostname: '127.0.0.1',
         async fetch(req) {
-            if (new URL(req.url).pathname !== '/search/semantic')
+            if (new URL(req.url).pathname !== '/search/hybrid')
                 return new Response('no', { status: 404 })
             seen.push((await req.json()) as Record<string, unknown>)
             return Response.json(reply)
@@ -37,57 +37,71 @@ const HITS = [
     { path: 'Private/secret.md', score: 0.8, excerpt: 'SECRETTOKEN' },
 ]
 
-describe('bismuth search --semantic', () => {
+describe('bismuth search (blended)', () => {
     test('prints path score excerpt per hit and sends the limit', async () => {
         makeLeakVault()
-        reply = { hits: [HITS[0]] }
+        reply = { mode: 'hybrid', hits: [HITS[0]] }
         seen.length = 0
-        const r = await runCli(['search', 'open things', '--semantic', '--limit', '3', '--api', API], { channel: 'owner' })
+        const r = await runCli(['search', 'open things', '--limit', '3', '--api', API], { channel: 'owner' })
         expect(r.code).toBe(0)
         expect(r.stdout.trim()).toBe('open.md  0.912  about open things')
-        expect(seen[0]).toEqual({ query: 'open things', k: 3 })
+        expect(seen[0]).toEqual({ query: 'open things', limit: 3 })
     }, T)
 
-    test('defaults to ten and --json prints the hits', async () => {
+    test('defaults to ten, --json prints the hits and a stale --semantic is ignored', async () => {
         makeLeakVault()
-        reply = { hits: [HITS[0]] }
+        reply = { mode: 'hybrid', hits: [HITS[0]] }
         seen.length = 0
         const r = await runCli(['search', '--semantic', 'open things', '--json', '--api', API], { channel: 'owner' })
         expect(r.code).toBe(0)
         expect(JSON.parse(r.stdout)).toEqual([HITS[0]])
-        expect(seen[0].k).toBe(10)
+        expect(seen[0].limit).toBe(10)
     }, T)
 
-    test('an unavailable reply exits non-zero with its message', async () => {
+    test('a keyword answer from the core prints the stderr line and exits 0', async () => {
         makeLeakVault()
-        reply = { unavailable: 'warming', message: 'the semantic index is still warming up' }
-        const r = await runCli(['search', 'x', '--semantic', '--api', API], { channel: 'owner' })
-        expect(r.code).not.toBe(0)
-        expect(r.stderr).toContain('still warming up')
+        reply = { mode: 'keyword', reason: 'warming', hits: [HITS[0]] }
+        const r = await runCli(['search', 'x', '--api', API], { channel: 'owner' })
+        expect(r.code).toBe(0)
+        expect(r.stderr).toContain('meaning search unavailable (warming): keyword results only')
+        expect(r.stdout).toContain('open.md')
     }, T)
 
-    test('with no reachable core and embeddings off it names embeddings.enabled', async () => {
+    test('with no reachable core and embeddings off it prints keyword hits in the hit shape', async () => {
         makeLeakVault()
-        const r = await runCli(['search', 'x', '--semantic', '--api', DEAD], { channel: 'owner' })
-        expect(r.code).not.toBe(0)
-        expect(r.stderr).toContain('embeddings.enabled')
+        const r = await runCli(['search', 'OPENTOKEN', '--json', '--api', DEAD], { channel: 'owner' })
+        expect(r.code).toBe(0)
+        expect(r.stderr).toContain('meaning search unavailable (off): keyword results only')
+        const hits = JSON.parse(r.stdout) as { path: string; kind: string; score: number; excerpt: string }[]
+        expect(hits.find(h => h.path === 'open.md')).toMatchObject({ kind: 'note' })
+        expect(hits[0].score).toBe(1)
+        expect(typeof hits[0].excerpt).toBe('string')
+        expect(hits.some(h => h.path.includes('secret'))).toBe(false)
     }, T)
 
     test('a daemon agent never sees a hidden hit', async () => {
         makeLeakVault()
-        reply = { hits: HITS }
-        const r = await runCli(['search', 'x', '--semantic', '--json', '--api', API], { channel: 'daemon' })
+        reply = { mode: 'hybrid', hits: HITS }
+        const r = await runCli(['search', 'x', '--json', '--api', API], { channel: 'daemon' })
         expect(r.code).toBe(0)
         expect(r.stdout).not.toContain('secret')
         expect(r.stdout).toContain('open.md')
     }, T)
 
-    test('without --semantic the plain search is unchanged', async () => {
+    test('a keyword fallback for a daemon agent never names a hidden note', async () => {
+        makeLeakVault()
+        const r = await runCli(['search', 'SECRETTOKEN', '--json', '--api', DEAD], { channel: 'daemon' })
+        expect(r.code).toBe(0)
+        expect(r.stdout).not.toContain('secret')
+    }, T)
+
+    test('--regex keeps the literal keyword output and never asks the core', async () => {
         makeLeakVault()
         seen.length = 0
-        const r = await runCli(['search', 'OPENTOKEN'], { channel: 'owner' })
+        const r = await runCli(['search', 'OPENTOK.N', '--regex'], { channel: 'owner' })
         expect(r.code).toBe(0)
         expect(JSON.parse(r.stdout).some((h: { path: string }) => h.path === 'open.md')).toBe(true)
+        expect(JSON.parse(r.stdout)[0]).toHaveProperty('matchCount')
         expect(seen.length).toBe(0)
     }, T)
 })
@@ -134,7 +148,7 @@ describe('semantic core selection and timing', () => {
         )
         otherSeen.length = 0
         const proc = Bun.spawn(
-            ['bun', 'run', join(import.meta.dir, '../src/index.ts'), 'search', 'x', '--semantic', '--vault', vault],
+            ['bun', 'run', join(import.meta.dir, '../src/index.ts'), 'search', 'x', '--vault', vault],
             {
                 env: {
                     ...process.env,
@@ -148,8 +162,8 @@ describe('semantic core selection and timing', () => {
             },
         )
         const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited])
-        expect(code).not.toBe(0)
-        expect(err).toContain('embeddings.enabled')
+        expect(code).toBe(0)
+        expect(err).toContain('meaning search unavailable (off): keyword results only')
         expect(otherSeen).toEqual([])
     }, T)
 

@@ -183,14 +183,14 @@ try {
     // ---- 3. pdf page 2 --------------------------------------------------------------------------
     {
         const q = 'storm cone hoisted when barometric pressure drops below nine hundred ninety millibars'
-        const r = await bismuth(300, ['search', q, '--semantic', '--json', '--vault', vault])
+        const r = await bismuth(300, ['search', q, '--json', '--vault', vault])
         let hits: any[] = []
         try {
             const j = JSON.parse(r.stdout)
             hits = Array.isArray(j) ? j : (j.hits ?? j.results ?? [])
         } catch {}
         const hit = hits.find(h => h.kind === 'pdf' && h.page === 2)
-        record('pdf: search --semantic returns kind pdf page 2', !!hit, hit ? JSON.stringify(hit).slice(0, 200) : `exit=${r.code} stdout=${clip(r.stdout)} stderr=${clip(r.stderr, 400)}`)
+        record('pdf: blended search returns kind pdf page 2', !!hit, hit ? JSON.stringify(hit).slice(0, 200) : `exit=${r.code} stdout=${clip(r.stdout)} stderr=${clip(r.stderr, 400)}`)
     }
 
     // ---- 4. image describe + search -------------------------------------------------------------
@@ -211,14 +211,14 @@ try {
         const comp = existsSync(companion) ? readFileSync(companion, 'utf8') : ''
         const mentions = /harbou?r/i.test(desc) && /budget/i.test(desc) && /description/.test(comp)
         record('image: describe writes a description mentioning the image text', mentions, mentions ? clip(desc, 200) : `exit=${d.code} skipped=${skipped} stdout=${clip(d.stdout)} stderr=${clip(d.stderr, 400)} companion=${clip(comp, 400)}`)
-        const s = await bismuth(300, ['search', 'quarterly harbor budget', '--semantic', '--json', '--vault', vault])
+        const s = await bismuth(300, ['search', 'quarterly harbor budget', '--json', '--vault', vault])
         let hits: any[] = []
         try {
             const j = JSON.parse(s.stdout)
             hits = Array.isArray(j) ? j : (j.hits ?? j.results ?? [])
         } catch {}
         const hit = hits[0]?.kind === 'image' ? hits[0] : undefined
-        record('image: search --semantic for its text returns kind image first', !!hit, hit ? JSON.stringify(hit).slice(0, 200) : `exit=${s.code} stdout=${clip(s.stdout)} stderr=${clip(s.stderr, 400)}`)
+        record('image: blended search for its text returns kind image first', !!hit, hit ? JSON.stringify(hit).slice(0, 200) : `exit=${s.code} stdout=${clip(s.stdout)} stderr=${clip(s.stderr, 400)}`)
     }
 
     // ---- 4b. technical prompt with no docs answer -----------------------------------------------

@@ -22,6 +22,10 @@ import type { RecallSourceSwitches } from './embeddingsSetting'
 import { sourceKey } from './semanticSources'
 import type { SourceHit, SourceQuery } from './semanticSources'
 import { packSources, sourceSection } from './sourcePack'
+import { gateAccepts, gateProbability, loadGateModel } from './sourceGate'
+import type { GateFeatures, GateModel, GateTraceRow } from './sourceGate'
+import { hasTimeRefs, timeRecall } from './timeRecall'
+import type { TimeApi, TimeRecallResult } from './timeRecall'
 import { resolveDenyPlan } from './visibility'
 import type { DenyPlan } from './visibility'
 import { SETTINGS_FILE, readDaemonEnabledSync } from './settings'
@@ -136,6 +140,14 @@ export type RecallDeps = {
     /** Candidates from the vault-file, past-chat and docs sources for a query vector the service
      *  embedded once (prompt + subagent only). Absent = no sources. */
     sources?: (q: SourceQuery & { switches: RecallSourceSwitches }) => Promise<SourceHit[]>
+    /** Past chats for a time-worded prompt (visibility-gated like `sources`' chats). Absent = digests only. */
+    timeChats?: (q: SourceQuery) => Promise<SourceHit[]>
+    /** Test seam for time routing; defaults to `@bismuth/memory`'s `timeRefs` and `digestsCovering`. */
+    time?: TimeApi
+    /** The learned source gate; defaults to the committed `sourceGateModel.json`, which fails closed. */
+    gateModel?: GateModel
+    /** Receives every candidate the gate scored, accepted or not, once per gate run. The bench fits on it. */
+    gateTrace?: (rows: GateTraceRow[]) => void
 }
 
 /** Memory notes injected because they link a note the user has open or a tool just touched. */
@@ -384,24 +396,11 @@ function preferNeighbourPointers(
     return `${head}${POINTER_TITLE}\n${lines.join('\n')}\n\n${close}`
 }
 
-/** Hits asked of the sources: enough to find a source's tenth-best cosine. */
+/** Hits asked of the sources: enough to find a source's tenth-best cosine (the gate's `background`). */
 const SOURCE_K = 10
-/** Candidates per source that reach the reranker. */
-const SOURCE_RERANKED = 3
-/** Past chats are noisier evidence than files or docs: they need this much more logit. */
-const CHAT_EXTRA_LOGIT = 2
-/** Docs hold many near-miss pages for any technical prompt: measured unrelated pointers score up to
- *  -1.67 where real hits score 5.4 or more, so the docs bar is the rerank gate plus this. */
-const DOCS_EXTRA_LOGIT = 6
-/** Files also admit their best `FILE_COSINE_TAKE` on cosine alone when they score at least
- *  `FILE_COSINE_ADMIT` and stand `FILE_COSINE_MARGIN` above the source's tenth-best. The cross-encoder
- *  reads conversational prompts poorly: replaying real sessions (`bench/recallReplay.ts`), the file
- *  the agent went on to open ranked first by cosine in 56 of 126 retrievable cases while its median
- *  logit was -8.3, under `RERANK_MIN_LOGIT`. Adding this path took injected right files from 12 to 34
- *  of 237 prompts, with a file injected on 15 of 80 prompts that used no tool. */
-const FILE_COSINE_ADMIT = 0.8
-const FILE_COSINE_MARGIN = 0.05
-const FILE_COSINE_TAKE = 2
+/** Candidates per source the cross-encoder reads and the gate scores. Bounds cost only: 15 passages
+ *  rerank in about 130 ms; what is injected among them is the gate's decision. */
+export const SOURCE_CANDIDATES = 5
 
 const withTimeout = async <T>(p: Promise<T>, ms: number): Promise<T | undefined> => {
     p.catch(() => {})
@@ -416,28 +415,36 @@ const withTimeout = async <T>(p: Promise<T>, ms: number): Promise<T | undefined>
     }
 }
 
-/** The source hits worth injecting for a query: each source's candidates clear the mode's cosine
- *  floor and sit `SEMANTIC_BACKGROUND_MARGIN` above that source's own tenth-best, are not already in
- *  the session's ledger, and the best few are judged by the cross-encoder. No reranker, no
- *  embedder, a slow source or any failure = no hits (a source hit is semantic-only evidence, never
- *  injected without the second check). Never rejects. */
 /** What the reranker reads a source hit as: its title, if any, over its best excerpt. */
 export function sourcePassage(h: SourceHit): string {
     return h.title ? `${h.title}\n${h.excerpt}` : h.excerpt
 }
 
+/** The source's k-th best cosine, or its last hit when it returned fewer than k. */
+export const backgroundOf = (sortedDesc: SourceHit[]): number =>
+    sortedDesc.length ? sortedDesc[Math.min(sortedDesc.length, SOURCE_K) - 1]!.score : 0
+
+const kindOfHit = (h: SourceHit): GateFeatures['kind'] => ({ files: 'file', chats: 'chat', docs: 'docs' } as const)[sourceSection(h)]
+
+/** The source hits worth injecting for a query. Each source's best `SOURCE_CANDIDATES` by cosine are
+ *  read by the cross-encoder and scored by the learned gate (`core/src/sourceGate.ts`), which alone
+ *  decides; hits already in the session's ledger are dropped after scoring so ranks stay stable.
+ *  No reranker, no embedder, a slow source or any failure = no hits (a source hit is semantic-only
+ *  evidence, never injected without the second check). Never rejects. */
 async function gatherSources(a: {
     sources: NonNullable<RecallDeps['sources']>
     switches: RecallSourceSwitches
     embedder: Embedder | null
     reranker: Reranker | null
-    mode: 'prompt' | 'subagent'
     queryText: string
     rerankText: string
+    promptChars: number
     channel: 'chat' | 'daemon'
     sessionId: string
     sent: Map<string, string>
     timeoutMs: number
+    gate: GateModel
+    trace?: (rows: GateTraceRow[]) => void
 }): Promise<SourceHit[]> {
     try {
         if (!a.embedder || !a.reranker) return []
@@ -456,54 +463,34 @@ async function gatherSources(a: {
             left(),
         )
         if (!all?.length) return []
-        const minCosine = mem.PACK_LIMITS[a.mode].semanticMinCosine
         const groups = { files: [] as SourceHit[], chats: [] as SourceHit[], docs: [] as SourceHit[] }
         for (const h of all) groups[sourceSection(h)].push(h)
-        const reranker = a.reranker
-        const judged = await Promise.all(
-            (Object.keys(groups) as (keyof typeof groups)[]).map(async key => {
-                const hits = groups[key].sort((x, y) => y.score - x.score)
-                if (!hits.length) return []
-                // Files and chats must stand SEMANTIC_BACKGROUND_MARGIN above their own tenth-best, the
-                // query's background level. Docs are held to the cosine floor and the reranker only: one
-                // topic owns many sections (a calendar question matches a dozen calendar sections within
-                // 0.06 of each other), so the tenth-best there is the topic itself, not background, and
-                // the relative floor would refuse every well-matched docs question.
-                const floor =
-                    hits.length >= SOURCE_K && key !== 'docs'
-                        ? Math.max(minCosine, hits[SOURCE_K - 1]!.score + mem.SEMANTIC_BACKGROUND_MARGIN)
-                        : minCosine
-                const fresh = (h: SourceHit) => a.sent.get(sourceKey(h)) !== h.hash
-                const background = hits.length >= SOURCE_K ? hits[SOURCE_K - 1]!.score : 0
-                const byCosine =
-                    key === 'files'
-                        ? hits
-                              .slice(0, FILE_COSINE_TAKE)
-                              .filter(h => h.score >= FILE_COSINE_ADMIT && h.score - background >= FILE_COSINE_MARGIN && fresh(h))
-                        : []
-                const cands = hits.filter(h => h.score >= floor && fresh(h)).slice(0, SOURCE_RERANKED)
-                if (!cands.length) return byCosine
-                const logits = await withTimeout(
-                    reranker.rerank(
-                        a.rerankText,
-                        cands.map(sourcePassage),
-                    ),
-                    left(),
-                )
-                if (!logits || logits.length !== cands.length) return byCosine
-                // the gate is written over ranked notes; it only reads their order, so a hit rides in `note`
-                const wrapped = cands.map(hit => ({ hit, lexical: 0, score: hit.score }) as unknown as RankedNote)
-                const kept = mem.gateByRerank(wrapped, logits, {
-                    minLogit:
-                        mem.RERANK_MIN_LOGIT +
-                        (key === 'chats' ? CHAT_EXTRA_LOGIT : key === 'docs' ? DOCS_EXTRA_LOGIT : 0),
-                })
-                const gated = kept.map(r => (r as unknown as { hit: SourceHit }).hit)
-                const keys = new Set(gated.map(sourceKey))
-                return [...gated, ...byCosine.filter(h => !keys.has(sourceKey(h)))].sort((x, y) => y.score - x.score)
-            }),
-        )
-        return judged.flat()
+        const cands: { hit: SourceHit; rank: number; background: number }[] = []
+        for (const key of Object.keys(groups) as (keyof typeof groups)[]) {
+            const hits = groups[key].sort((x, y) => y.score - x.score)
+            const background = backgroundOf(hits)
+            hits.slice(0, SOURCE_CANDIDATES).forEach((hit, rank) => cands.push({ hit, rank, background }))
+        }
+        if (!cands.length) return []
+        const logits = await withTimeout(a.reranker.rerank(a.rerankText, cands.map(c => sourcePassage(c.hit))), left())
+        if (!logits || logits.length !== cands.length) return []
+        const rows: GateTraceRow[] = cands.map((c, i) => {
+            const features: GateFeatures = {
+                cosine: c.hit.score,
+                background: c.background,
+                rank: c.rank,
+                rerank: Number.isFinite(logits[i]) ? logits[i]! : null,
+                kind: kindOfHit(c.hit),
+                inRange: false,
+                promptChars: a.promptChars,
+            }
+            return { key: sourceKey(c.hit), path: 'ordinary', features, probability: gateProbability(features, a.gate), accepted: gateAccepts(features, a.gate) }
+        })
+        a.trace?.(rows)
+        return cands
+            .filter((c, i) => rows[i]!.accepted && a.sent.get(sourceKey(c.hit)) !== c.hit.hash)
+            .map(c => c.hit)
+            .sort((x, y) => y.score - x.score)
     } catch {
         return []
     }
@@ -727,15 +714,59 @@ export function createRecallService(deps: RecallDeps): {
                           : { files: true, chats: true, docs: true },
                       embedder: deps.embedder(),
                       reranker: deps.reranker?.() ?? null,
-                      mode: req.mode as 'prompt' | 'subagent',
                       queryText: mem.semanticQueryText({ primary, context, location }),
                       rerankText: mem.rerankQuery({ primary, ...(context ? { context } : {}) }),
+                      promptChars: primary.length,
+                      gate: deps.gateModel ?? loadGateModel(),
+                      ...(deps.gateTrace ? { trace: deps.gateTrace } : {}),
                       channel: req.channel ?? 'daemon',
                       sessionId: req.sessionId,
                       sent: ledger.injected,
                       timeoutMs: deps.rerankTimeoutMs ?? RERANK_TIMEOUT_MS,
                   })
                 : Promise.resolve([])
+
+        // A prompt that names a time also gets the digests covering it and the chats dated in it.
+        // It starts now, beside the memory pipeline, and learns what the ordinary path injected
+        // through `settle` before it filters; a late or failed lookup adds nothing.
+        let settle: (v: { skipNames: Set<string>; skipKeys: Set<string>; budgetChars: number }) => void = () => {}
+        const settled = new Promise<{ skipNames: Set<string>; skipKeys: Set<string>; budgetChars: number }>(res => {
+            settle = res
+        })
+        const timedP: Promise<TimeRecallResult | null> =
+            (req.mode === 'prompt' || req.mode === 'subagent') && primary.trim() && hasTimeRefs(primary, new Date(t), deps.time)
+                ? (async () => {
+                          const embedder = deps.embedder()
+                          const vec =
+                              settings.semantic && embedder && deps.timeChats
+                                  ? (await withTimeout(embedder.embed([QUERY_PREFIX + mem.semanticQueryText({ primary, context, location })]), QUERY_TIMEOUT_MS))?.[0]
+                                  : undefined
+                          return timeRecall(
+                              {
+                                  vault: deps.vault ?? '',
+                                  memoryDir: dir,
+                                  prompt: primary,
+                                  now: new Date(t),
+                                  channel: req.channel ?? 'daemon',
+                                  sessionId: req.sessionId,
+                                  vec: vec ? Array.from(vec) : null,
+                                  sent: ledger.injected,
+                                  settled,
+                              },
+                              {
+                                  loadNotes,
+                                  ...(deps.timeChats ? { chatHits: q => deps.timeChats!(q) } : {}),
+                                  gate: deps.gateModel ?? loadGateModel(),
+                                  ...(deps.gateTrace ? { trace: deps.gateTrace } : {}),
+                                  ...(deps.time ? { time: deps.time } : {}),
+                              },
+                          )
+                  })()
+                      .then(r => r ?? null)
+                      .catch(() => null)
+                : Promise.resolve(null)
+        // the deadline runs from here, not from `settled`: a slow ordinary path must not eat the time path's budget
+        const timeDeadline = Date.now() + (deps.rerankTimeoutMs ?? RERANK_TIMEOUT_MS)
 
         let semantic: Map<string, number> | undefined
         if (settings.semantic) {
@@ -766,6 +797,7 @@ export function createRecallService(deps: RecallDeps): {
         // without a word match; the ledger still skips what was already sent.
         const boosted = notesAbout(notes, vaultPaths)
             .filter(n => !exclude.has(n.name))
+            .filter(n => !mem.isDigestNote(n) && !mem.isNowNote(n))
             .slice(0, LINK_BOOST_CAP[req.mode])
         const boostedNames = new Set(boosted.map(n => n.name))
         const withBoost = (list: RankedNote[], pool: RankedNote[] = ranked): RankedNote[] =>
@@ -818,15 +850,21 @@ export function createRecallService(deps: RecallDeps): {
             packed = withKeywordPicks(packed, onList, keyword, floor, limits.maxNotes, packOn)
         }
         const sourceHits = await sourcesP
+        const limits = mem.PACK_LIMITS[req.mode]
+        settle({
+            skipNames: new Set(packed.injected.map(i => i.name)),
+            skipKeys: new Set(sourceHits.map(sourceKey)),
+            budgetChars: Math.max(0, limits.budgetChars - (packed.text ?? '').length),
+        })
+        const timed = (await withTimeout(timedP, Math.max(0, timeDeadline - Date.now()))) ?? null
         // `semantic: true` says the semantic channel scored this request, matched or not.
-        if (!packed.text && !sourceHits.length)
+        if (!packed.text && !sourceHits.length && !timed)
             return {
                 ...none(notes.length ? 'no-match' : 'no-memory'),
                 ...(scored ? { semantic: true as const } : {}),
                 ...(gated ? { reranked: true as const } : {}),
             }
 
-        const limits = mem.PACK_LIMITS[req.mode]
         if (packed.text) {
             const injectedNow = new Set(packed.injected.map(i => i.name))
             packed.text = markBoosted(packed.text, boosted.filter(n => injectedNow.has(n.name)), limits.budgetChars)
@@ -837,20 +875,23 @@ export function createRecallService(deps: RecallDeps): {
         // Sources fill what budget memory left; with no memory the block is the banner and sources.
         let block: string | null = packed.text
         let sourcesNow: SourceHit[] = []
-        if (sourceHits.length) {
+        if (sourceHits.length || timed) {
             const tag = mem.MEMORY_BLOCK_TAG
             const bare = `<${tag}>\n${mem.MEMORY_BANNER}\n\n</${tag}>`
-            const room = limits.budgetChars - (packed.text ?? bare).length
-            const sp = packSources(sourceHits, req.mode as 'prompt' | 'subagent', room, deps.vault ?? '')
-            if (sp.text) {
+            const room = limits.budgetChars - (packed.text ?? bare).length - (timed?.block.length ?? 0)
+            const chatsNow = (timed?.chats ?? []).filter(h => !sourceHits.some(s => sourceKey(s) === sourceKey(h)))
+            const sp = packSources([...sourceHits, ...chatsNow], req.mode as 'prompt' | 'subagent', room, deps.vault ?? '')
+            // the time block sits before `# Vault files`
+            const text = `${timed?.block ?? ''}${sp.text ?? ''}`
+            if (text) {
                 sourcesNow = sp.injected
-                if (!packed.text) block = `<${tag}>\n${mem.MEMORY_BANNER}\n\n${sp.text}</${tag}>`
+                if (!packed.text) block = `<${tag}>\n${mem.MEMORY_BANNER}\n\n${text}</${tag}>`
                 else {
                     const closeAt = packed.text.lastIndexOf(`</${tag}>`)
                     block =
                         closeAt < 0
-                            ? `${packed.text}\n${sp.text}`
-                            : `${packed.text.slice(0, closeAt)}${sp.text}${packed.text.slice(closeAt)}`
+                            ? `${packed.text}\n${text}`
+                            : `${packed.text.slice(0, closeAt)}${text}${packed.text.slice(closeAt)}`
                 }
             }
         }
@@ -865,12 +906,16 @@ export function createRecallService(deps: RecallDeps): {
         if (req.signal?.aborted) return none('no-match')
         for (const i of packed.injected) ledger.injected.set(i.name, i.hash)
         for (const h of sourcesNow) ledger.injected.set(sourceKey(h), h.hash)
+        if (timed) for (const [k, h] of timed.hashes) ledger.injected.set(k, h)
         if (req.mode === 'tool') ledger.toolBatches++
         ledger.lastSeen = t
         ledgers.set(key, ledger)
         return {
             context: block,
-            injected: packed.injected.map(i => i.name),
+            injected: [
+                ...packed.injected.map(i => i.name),
+                ...(timed ? timed.injected : []),
+            ],
             ...(scored ? { semantic: true as const } : {}),
             ...(gated ? { reranked: true as const } : {}),
             ...(sourcesNow.length ? { sources: sourcesNow.map(sourceKey) } : {}),
@@ -902,6 +947,16 @@ export function invalidateRecallDenyPlans(vault: string): void {
     denyPlans.delete(`${vault}|daemon`)
 }
 
+/** Past chats for a query, only where the vault shows them: as `bismuth history`, a transcript may
+ *  quote any restricted note, so a vault that restricts a note or folder (per-chat levels alone do
+ *  not count) recalls no chats. A folderVisibility rule on an empty folder yields no deny entries,
+ *  so chats still inject there (nothing in it to quote). */
+export async function chatHitsFor(vault: string, q: SourceQuery): Promise<SourceHit[]> {
+    const plan = await denyPlanFor(vault, q.channel)
+    if (!plan.determined || plan.entries.some(e => e.kind !== 'chat')) return []
+    return (await import('./chatEmbed')).chatSourceHits(vault, q)
+}
+
 /** The three real sources, run side by side; each is dropped alone when it is slower than the
  *  rerank budget or fails. Loaded lazily: nothing here is needed until a semantic query runs. */
 export async function sourcesFor(
@@ -917,14 +972,7 @@ export async function sourcesFor(
             if (!plan.determined) return []
             return (await import('./vaultEmbed')).vaultSourceHits(vault, { ...q, deny: plan.entries })
         }),
-        run(q.switches.chats, async () => {
-            const plan = await denyPlanFor(vault, q.channel)
-            // as `bismuth history`: a transcript may quote any restricted note, so a vault that
-            // restricts a note or folder (per-chat levels alone do not count) recalls no chats
-            // a folderVisibility rule on an empty folder yields no deny entries, so chats still inject there (nothing in it to quote)
-            if (!plan.determined || plan.entries.some(e => e.kind !== 'chat')) return []
-            return (await import('./chatEmbed')).chatSourceHits(vault, q)
-        }),
+        run(q.switches.chats, () => chatHitsFor(vault, q)),
         run(q.switches.docs, async () => (await import('./docsEmbed')).docsSourceHits(q)),
     ])
     return [...files, ...chats, ...docs]
@@ -955,6 +1003,7 @@ export function recallServiceFor(
             semanticOff: () => sharedSemanticChannel().pause(),
             reranker: () => sharedReranker(),
             sources: q => sourcesFor(vault, q),
+            timeChats: async q => (readRecallSourcesSync(vault).chats ? await chatHitsFor(vault, q) : []),
             vault,
         })
         shared.set(key, svc)

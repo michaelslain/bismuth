@@ -351,8 +351,10 @@ Reads Bismuth's own documentation. The docs directory is `BISMUTH_DOCS_DIR`, els
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `docs list` | none | Lists every page as `{path, title}`. Start here. | no |
-| `docs search` | `<query…> [--limit <n>]` | Prints ranked `{path, heading, snippet}` hits. | no |
+| `docs search` | `<query…> [--limit <n>] [--vault <dir>]` | Prints ranked `{path, heading, snippet}` hits, blending keyword and meaning matches when the vault has `embeddings.enabled` on. `score` is the blended score, 1 for the best hit. | optional |
 | `docs read` | `<path> [--section <heading>]` | Prints one page raw, or one `##` section. | no |
+
+`docs search` finds the vault from `--vault`, `BISMUTH_VAULT` or the working directory. When embeddings are off, no vault is found, the docs index is still building or the build cannot run the model, it prints the keyword hits, writes `meaning search unavailable (<reason>): keyword results only` on stderr and exits `0`. A running server for the vault answers when there is one; otherwise the first search builds the docs index itself, which takes a while once and is cached after. A running server that answers with an error prints it and exits `1`.
 
 An agent in a shell runs `bismuth docs search <words>` and `bismuth docs read <page> [--section <heading>]`. A host with no shell calls the MCP tool `bismuth_cli` with the same arguments, for example `{"args": ["docs", "read", "bases/overview.md"]}`.
 
@@ -460,7 +462,7 @@ An agent must pass `--vault` to `gcal sync`, and a hidden base is refused.
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `map` | `[--folder <f>] [--around <note>] [--json] [--vault <dir>]` | Prints the vault map as markdown within 6000 characters: folders, clusters, hub notes, tags and surfaces. `--json` prints the map object. `--folder` limits folders, clusters and hubs to that subtree. `--around` prints one note's neighbourhood (cluster, links, backlinks, siblings, tags, memories) and exits non-zero when the note is not in the vault. When embeddings are on, `--around` also prints `similar:` with up to five semantically near notes within a two second budget, and `--json` adds a `similar` array. | optional |
-| `brain` | `[--vault <dir>]` | Prints the profile, vault map and memory index an agent gets at session start. Without the daemon it prints the map section alone. | no |
+| `brain` | `[--vault <dir>]` | Prints the profile, the `now` note when the vault has one, the vault map and the memory index an agent gets at session start. Without the daemon it prints the map section alone. | no |
 
 ```bash
 bismuth map --around "Projects/Launch.md" --vault ~/vault
@@ -631,21 +633,19 @@ Full-text search and vault-wide find-and-replace. Both share three booleans: `--
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
-| `search` | `<query> [--regex] [--case] [--word]` | Prints ranked matches with snippets, with no cap on results. | no |
-| `search --semantic` | `<query> [--limit n] [--json]` | Ranks notes, PDFs, images and past chats by meaning instead of text. Prints one `path  score  excerpt` line per hit (a PDF adds `p.<page>`, an image `(image)`, a chat `chat <date> <session-id>`), or the hits as JSON. `--limit` defaults to `10`. | optional |
+| `search` | `<query> [--limit n] [--json]` | Blends keyword and meaning ranking into one list of notes, PDFs, images and past chats. Prints one `path  score  excerpt` line per hit (a PDF adds `p.<page>`, an image `(image)`, a chat `chat <date> <session-id>`), or the hits as JSON. `--limit` defaults to `10`. | optional |
+| `search` | `<query> --regex\|--case\|--word` | Literal modes: prints ranked matches with snippets, with no cap on results. | no |
 | `replace` | `<query> <replacement> [--scope <path>] [--no-snapshot] [--regex] [--case] [--word]` | Replaces across the vault, or in one note with `--scope`. Prints the result object. | no |
 
-Without `--regex`, search is mid-word and typo tolerant.
+Without `--regex`, the literal modes are mid-word and typo tolerant.
 
-`search --semantic` needs `embeddings.enabled` set to `true` in the vault `.settings`.
+The blended `search` uses the meaning side only when `embeddings.enabled` is `true` in the vault `.settings`.
 It asks the running server for this vault when one is reachable, and otherwise embeds in the CLI process, indexing any new or changed notes before it ranks.
 A server that is registered for a different vault is never asked, even when `--api`, `BISMUTH_API` or `CLAUDE_RELAY_URL` names it.
-A server that does not answer within the model-load wait plus five seconds reports that the index is warming, and the CLI does not start its own model beside it.
-A build that cannot run the model, with no app answering for the vault, tells you to open the vault in the Bismuth app.
-When embeddings are off, the index is still warming up, or the build cannot run the model, the command prints the reason on stderr and exits `1`.
-`--regex`, `--case` and `--word` do not apply to it.
+A server that does not answer within the model-load wait plus five seconds counts as warming, and the CLI does not start its own model beside it.
+When embeddings are off, the index is still warming up, or the build cannot run the model, the command prints the keyword hits in the same shape, writes `meaning search unavailable (<reason>): keyword results only` on stderr and exits `0`. A running server that answers with an error prints it and exits `1`.
 ```bash
-bismuth search "how do I plan a launch" --semantic --limit 5 --vault ~/vault
+bismuth search "how do I plan a launch" --limit 5 --vault ~/vault
 ```
 `replace` commits a git snapshot of the vault first, so the change can be undone.
 A failed snapshot prints a `warning:` and the replace still runs; `--no-snapshot` skips the snapshot.
@@ -773,6 +773,6 @@ The run registry is `core/src/runRegistry.ts`; a core that exits removes only a 
 `history` parses each session log with `memory/src/sessionHistory.ts`, which reuses the turn folding in `memory/src/transcript.ts`.
 `image describe` calls `describeImage` in `core/src/imageDescribe.ts`, which sends the bytes to Haiku through the Agent SDK and records a content hash in `describedHash`.
 `cli/src/ocr.ts` builds the engine argv for `ocr`; Marker and engine lookup, shared with `transcribe`, are in `core/src/marker.ts`.
-`cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
+`cli/src/semantic.ts` serves the meaning commands: `search` posts to `/search/hybrid` on the vault's running server and falls back to `core/src/hybridSearch.ts` in process, and `map --around` posts to `/search/semantic` and falls back to `core/src/vaultEmbed.ts`.
 
 Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `core/src/findVaultRoot.ts`, `core/src/runRegistry.ts`, `core/src/imageDescribe.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`

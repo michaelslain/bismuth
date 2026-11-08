@@ -38,6 +38,7 @@ import {
     SEEDED_CRONS,
     PENDING_ENABLED_FILE,
     setPendingEnabled,
+    stripEnabled,
     withEnabled,
 } from '../../core/src/seededCronSwitch.ts'
 import {
@@ -486,4 +487,34 @@ test('daemon.dream: true with no dream.md yet seeds dream on', async () => {
     expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(
         withEnabled(CURRENT_DREAM, true),
     )
+})
+
+// The day-notes + now release: the previous stock body (this tree's parent) upgrades in place with
+// its enabled: switch kept, and an edited copy of it is left alone.
+const PRE_DIGEST_COMMIT = 'bb6bf4c8'
+
+test('an unedited pre-digest stock dream is upgraded in place and keeps its enabled value', async () => {
+    const old = await shippedCronAtCommit(PRE_DIGEST_COMMIT, 'dream')
+    if (!old) return
+    expect(PRIOR_SEED_HASHES.dream).toContain(sha256(stripEnabled(old)))
+    expect(CURRENT_DREAM).not.toBe(old)
+
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), withEnabled(old, true), 'utf-8')
+    const result = await reconcileSeeds(ctx)
+    expect(result.refreshed).toContain(join(ctx.cronsDir, 'dream.md'))
+    const after = readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')
+    expect(after).toBe(withEnabled(CURRENT_DREAM, true))
+    expect(after).toContain('## Step 8')
+})
+
+test('an edited pre-digest dream is left alone', async () => {
+    const old = await shippedCronAtCommit(PRE_DIGEST_COMMIT, 'dream')
+    if (!old) return
+    const edited = `${old}\nAlways answer in French.\n`
+    mkdirSync(ctx.cronsDir, { recursive: true })
+    writeFileSync(join(ctx.cronsDir, 'dream.md'), edited, 'utf-8')
+    const result = await reconcileSeeds(ctx)
+    expect(result.refreshed).not.toContain(join(ctx.cronsDir, 'dream.md'))
+    expect(readFileSync(join(ctx.cronsDir, 'dream.md'), 'utf-8')).toBe(edited)
 })

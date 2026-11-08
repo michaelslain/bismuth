@@ -224,3 +224,37 @@ test('the lead-only fallback defangs an envelope tag inside a note name', async 
     expect(out!.match(/<\/bismuth-memory>/g)).toHaveLength(1)
     expect(out!.endsWith('</bismuth-memory>')).toBe(true)
 })
+
+const nowNote = (body: string): MemoryNote =>
+    ({
+        name: 'now',
+        content: body,
+        backlinks: [],
+        frontmatter: { type: 'now', updated: '2026-11-06 21:00', visibility: 'all' },
+    }) as unknown as MemoryNote
+
+test('a now note becomes a # Now section right after the profile, headed with its age', async () => {
+    const { composeBrain } = setup({ loadNotes: async () => [mkNote('a'), nowNote('## Active\n- bismuth memory')] })
+    const out = (await composeBrain({ vaultDir: '/v', memoryDir: '/m', channel: 'chat' }))!
+    const at = (s: string) => out.indexOf(s)
+    expect(out).toContain('# Now (written 2026-11-06 21:00)\n\n## Active\n- bismuth memory')
+    expect(at('# Who you are working with')).toBeLessThan(at('# Now'))
+    expect(at('# Now')).toBeLessThan(at('# Vault map'))
+})
+
+test('the now body is cut at a line boundary within 1500 chars and the brain stays in budget', async () => {
+    const body = Array.from({ length: 100 }, (_, i) => `- line ${i} ${'x'.repeat(30)}`).join('\n')
+    const { composeBrain } = setup({ loadNotes: async () => [mkNote('a'), nowNote(body)] })
+    const out = (await composeBrain({ vaultDir: '/v', memoryDir: '/m', channel: 'chat' }))!
+    const section = out.slice(out.indexOf('# Now'), out.indexOf('# Vault map'))
+    const text = section.slice(section.indexOf('\n\n') + 2).trim()
+    expect(text.length).toBeLessThanOrEqual(1500)
+    expect(text.split('\n').every(l => /^- line \d+ x{30}$/.test(l))).toBe(true)
+    expect(out.length).toBeLessThanOrEqual(BRAIN_BUDGET_CHARS)
+})
+
+test('no now note, no # Now section', async () => {
+    const { composeBrain } = setup()
+    const out = (await composeBrain({ vaultDir: '/v', memoryDir: '/m', channel: 'chat' }))!
+    expect(out).not.toContain('# Now')
+})

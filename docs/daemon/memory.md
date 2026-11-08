@@ -20,7 +20,7 @@ Alice climbs with me on weekends. See [[spring-trip]].
 
 | Key | Values | Effect |
 |---|---|---|
-| `type` | `person`, `project`, `workflow`, `fact`, `preference`, `daily`, `auto`, `profile`, `hub`; other text is accepted | Groups notes; recall ranks `preference` and `workflow` slightly higher and `daily` and `auto` lower. `profile` and `hub` have their own roles, below. Defaults to `fact` |
+| `type` | `person`, `project`, `workflow`, `fact`, `preference`, `daily`, `auto`, `profile`, `hub`, `now`; other text is accepted | Groups notes; recall ranks `preference` and `workflow` slightly higher and `daily` and `auto` lower. `profile`, `hub` and `now` have their own roles, below. Defaults to `fact` |
 | `tags` | inline list `[a, b]` | Matched by `tag:` queries and ranked as a title field |
 | `created`, `updated` | `YYYY-MM-DD`, local date | `updated` drives `after:` and `before:` filters. Missing values default to today |
 | `description` | one line | Says when the note matters. The session-start index shows only this line for each note, clipped to 160 characters. Without one, the index uses the note's first prose sentence, which skips headings, lines ending in `:` and short `Label:` prefixes such as `Status:` |
@@ -54,6 +54,7 @@ The memory health report lists structural problems in the graph, worst first, as
 | `no-source` | A note links to no vault note and carries no `(session YYYY-MM-DD)` marker; profile and hub notes are exempt |
 | `orphan` | A note has no wikilink in or out |
 | `no-description` | A note other than the profile has no `description` |
+| `rollup` | Day notes more than 30 days old, or week notes more than 182 days old, that fold into a week or month note |
 
 Transcript notes (`auto-*`) are skipped, and a restricted note never appears. `broken-link` and `no-source` need the vault's note names, so they appear only when the daemon supplies them. A `(session YYYY-MM-DD)` marker counts as a source.
 
@@ -133,6 +134,16 @@ The seeded `dream` cron works the memory health report worst first, up to 12 ite
 
 The dream deletes each `auto-*` note once it has folded it in, so memory keeps facts, not conversations. To find what was said in a past conversation, run `bismuth history` ([CLI reference](../cli/reference.md#history)).
 
+### Day notes and `now`
+
+The dream keeps a dated trail of what happened, in notes of `type: daily` with exactly these names: `day-YYYY-MM-DD`, `week-YYYY-Www` (ISO week) and `month-YYYY-MM`. They are the one exception to the no-dates-in-names rule. The `now` note, below, is the other note the health report treats as exempt: the `dated-name`, `status-lines`, `dated-tags`, `cluster`, `duplicate` and `no-source` checks skip digest notes and `now`, because a digest is a dated log and `now` states what is true when it is written. The size, link and description checks still apply to them. The dream never merges or forgets either kind outside a `rollup` item, which folds digest notes only. A name such as `day-notes` is not a digest note and is still reported.
+
+- **Day note.** Before it deletes a transcript note, the dream adds a line for that session to the day note of the transcript's date. A day note is at most 2,000 characters with three sections in order: `## Sessions` (one line per session, ending `(session <first 8 characters of the id>)` when the transcript names one), `## Notes changed` (links to the vault notes that changed that day) and `## Facts touched` (links to the memory notes it wrote from the session). Its `description` says what the day was about.
+- **Roll-up.** The health report lists a `rollup` item for day notes more than 30 days old, grouped by week, and for week notes more than 182 days old, grouped by month. The dream writes the week or month note, at most 2,000 characters, then deletes the finer notes it folded in. It never deletes a note whose content is not in the coarser one.
+- **`now`.** One note named `now`, `type: now`, is rewritten in full on every run, at most 1,500 characters, with `## Active` (projects with activity in the last 7 days), `## Due` (tasks due in the next 7 days as `- <task text> [due YYYY-MM-DD] — [[note]]`), `## Open threads` (started and not finished, from the transcripts) and `## Recent days` (one line for each of the last 3 days that have a day note). An empty section reads `(none)`. It is the one note allowed to state what is true at the moment it is written. Recall treats it like a digest: it is left out of the session-start index and is never injected as a note about the open note (the link boost); the session-start brain shows it under `# Now`.
+
+The daemon computes the facts for `## Due` and `## Recent days` before the session starts, so the model copies them: the tasks come from the query `bismuth task list --query 'not done and due before <today + 7 days>'` runs, the vault folders with notes modified in the last 7 days come with counts, and the three newest day notes come with their descriptions. Paths hidden from the daemon by [visibility](../vault/visibility.md) are left out.
+
 The rules it follows when it writes a note:
 
 - It keeps one `user-profile` note of at most 1,500 characters.
@@ -164,11 +175,12 @@ The memory folder is its own git repository, separate from the vault's. While th
 | `graph.ts` | Note create, read, delete, list; backlinks; the visibility check; `noteDescription`, the index line's description |
 | `query.ts` | The filter syntax above, behind the `recall` tool |
 | `rank.ts` | BM25 ranking for injection |
-| `pack.ts`, `recall.ts` | Cut ranked notes into the bounded `<bismuth-memory>` block; `pack.ts` also holds `formatProfile` (the profile, cut at 1,500 characters on a line boundary) and the index order (hubs first, then in-links, recency, type) |
+| `pack.ts`, `recall.ts` | Cut ranked notes into the bounded `<bismuth-memory>` block; `pack.ts` also holds `formatProfile` (the profile, cut at 1,500 characters on a line boundary) and the index order (hubs first, then in-links, recency, type); the index leaves out digest and `now` notes |
+| `digests.ts` | Digest note names (`day-…`, `week-…`, `month-…`), `isDigestNote` and `isNowNote`, `digestsCovering` for time routing and `rollupPlan` for the `rollup` health item |
 | `health.ts` | `brainHealth` computes the health report items and `formatBrainHealth` renders them as a numbered list capped at 3,000 characters under a header carrying the item total; the daemon fills `{{brainReport}}` in a cron prompt with it (`daemon/src/daemon/brainReport.ts`) |
 | `transcript.ts` | Turn a finished conversation into an `auto-*` note; `relay/lib/memory.ts` and `core/src/chat.ts` call it only when `daemon.saveSessions` is `true` |
 | `resultBudget.ts` | Order `recall` matches and split them into whole notes and pointers at the result budget |
 | `sessionHistory.ts` | Parse a Claude Code session log for `bismuth history`, and apply the same budget to its sessions |
 | `search.ts` | `searchMemory`, a ranked search that returns whole notes (up to 10) above the prompt-mode score floor |
 
-Source: `memory/src/{graph,query,rank,pack,recall,search,health,noteCache,transcript,resultBudget,sessionHistory}.ts`, `daemon/src/daemon/{brainReport,defaultCrons}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,backup,chat}.ts`, `relay/lib/memory.ts`
+Source: `memory/src/{graph,query,rank,pack,recall,search,health,digests,noteCache,transcript,resultBudget,sessionHistory}.ts`, `daemon/src/daemon/{brainReport,defaultCrons,nowFacts}.ts`, `mcp/src/memory.ts`, `cli/src/commands/memory.ts`, `core/src/{memoryRecall,memoryLinkBoost,backup,chat}.ts`, `relay/lib/memory.ts`

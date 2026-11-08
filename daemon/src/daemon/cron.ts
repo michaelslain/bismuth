@@ -9,6 +9,7 @@ import {
     substituteBrainReport,
     type BrainAgenda,
 } from './brainReport'
+import { NOW_FACTS_PLACEHOLDER, nowFacts } from './nowFacts'
 import { atomicWriteJson } from '../lib/atomicJson.ts'
 import { processPageTriggers } from './pages'
 import { processButtonTriggers } from './buttons'
@@ -1277,6 +1278,22 @@ export async function notifyNewPages(
     }
 }
 
+/** Fill {{nowFacts}} when the prompt carries it; a failure reads as an empty facts block, never a
+ *  literal placeholder. */
+export async function substituteNowFacts(
+    prompt: string,
+    ctx: VaultContext,
+): Promise<string> {
+    if (!prompt.includes(NOW_FACTS_PLACEHOLDER)) return prompt
+    let facts: string
+    try {
+        facts = await nowFacts(ctx.root, ctx.memoryDir, new Date())
+    } catch (e) {
+        facts = `facts unavailable: ${e instanceof Error ? e.message : String(e)}`
+    }
+    return prompt.split(NOW_FACTS_PLACEHOLDER).join(facts)
+}
+
 /**
  * Start a cron job for a vault: marks it as running (in-memory + on-disk)
  * synchronously, then runs the session in the background. Callers should await
@@ -1369,12 +1386,15 @@ async function fireJob(
         try {
             const prompt = buildCronPrompt({
                 jobName: job.name,
-                body: agenda
-                    ? substituteBrainReport(
-                          promptOverride ?? job.prompt,
-                          agenda.text,
-                      )
-                    : (promptOverride ?? job.prompt),
+                body: await substituteNowFacts(
+                    agenda
+                        ? substituteBrainReport(
+                              promptOverride ?? job.prompt,
+                              agenda.text,
+                          )
+                        : (promptOverride ?? job.prompt),
+                    ctx,
+                ),
                 memoryDir: ctx.memoryDir,
                 triggerContext,
                 notify: job.notify,

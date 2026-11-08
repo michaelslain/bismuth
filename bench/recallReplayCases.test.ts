@@ -1,5 +1,21 @@
 import { describe, expect, test } from 'bun:test'
-import { fileKey, keyMatches, parseReplaySession, refersToPast, vaultPathsIn } from './recallReplayCases'
+import {
+    capPerSection,
+    fileKey,
+    inRanges,
+    judgePoolSize,
+    junkStats,
+    keyMatches,
+    parseReplaySession,
+    parseVerdict,
+    precisionOf,
+    rankMetrics,
+    refersToPast,
+    searchScore,
+    sectionOf,
+    timeRangesAt,
+    vaultPathsIn,
+} from './recallReplayCases'
 
 const VAULT = '/Users/me/my vault'
 const FILES = new Set(['notes/plan.md', 'papers/a b.pdf', 'photos/board.png', 'photos/board.png.md'])
@@ -73,5 +89,81 @@ describe('keyMatches + refersToPast', () => {
     test('past-chat phrasing', () => {
         expect(refersToPast('remember when we fixed the cron?')).toBe(true)
         expect(refersToPast('write a calendar base')).toBe(false)
+    })
+})
+
+describe('time cases', () => {
+    test('a prompt with time words carries ranges read against its own time', () => {
+        const r = timeRangesAt('what did we do yesterday?', '2026-10-10T12:00:00')
+        expect(r.length).toBe(1)
+        expect(r[0]!.start).toBe('2026-10-09')
+        expect(timeRangesAt('write a calendar base', '2026-10-10T12:00:00')).toEqual([])
+        expect(timeRangesAt('yesterday', 'not a date')).toEqual([])
+        const s = parseReplaySession('t', user('what happened yesterday?', '2026-10-10T12:00:00'), VAULT, FILES)
+        expect(s.cases[0]!.timeRanges.length).toBe(1)
+    })
+    test('inRanges is inclusive', () => {
+        const rs = [{ start: '2026-10-01', end: '2026-10-03' }]
+        expect(inRanges('2026-10-01', rs)).toBe(true)
+        expect(inRanges('2026-10-03', rs)).toBe(true)
+        expect(inRanges('2026-10-04', rs)).toBe(false)
+        expect(inRanges(undefined, rs)).toBe(false)
+    })
+})
+
+describe('precision and junk arithmetic', () => {
+    const rows = [
+        { labels: ['note:a.md'], injected: ['note:a.md', 'chat:s1', 'docs:x.md#y'] },
+        { labels: ['pdf:p.pdf'], injected: [] as string[] },
+        { labels: ['docs:x.md'], injected: ['docs:x.md#z'] },
+    ]
+    test('precision counts injected items matching a label, per section', () => {
+        expect(precisionOf(rows)).toEqual({ cases: 2, items: 4, matched: 2, precision: 0.5 })
+        expect(precisionOf(rows, 'chats').precision).toBeNull()
+        expect(precisionOf(rows, 'docs')).toEqual({ cases: 2, items: 2, matched: 1, precision: 0.5 })
+        expect(precisionOf([], 'files').precision).toBeNull()
+        expect(sectionOf('image:a.png')).toBe('files')
+    })
+    test('junk rate is the irrelevant share of judged items', () => {
+        expect(junkStats(['relevant', 'irrelevant', 'irrelevant', 'irrelevant'])).toEqual({ judged: 4, relevant: 1, junk: 3, junkRate: 0.75 })
+        expect(junkStats([]).junkRate).toBeNull()
+    })
+    test('verdict parsing tests irrelevant first', () => {
+        expect(parseVerdict('irrelevant.')).toBe('irrelevant')
+        expect(parseVerdict(' Relevant')).toBe('relevant')
+        expect(parseVerdict('maybe')).toBeNull()
+    })
+    test('pool size is the smaller of cpu and memory budgets', () => {
+        expect(judgePoolSize(16, 64 * 1024 ** 3)).toBe(8)
+        expect(judgePoolSize(16, 1024 ** 3)).toBe(1)
+        expect(judgePoolSize(4, 64 * 1024 ** 3)).toBe(3)
+        expect(judgePoolSize(1, 0)).toBe(1)
+    })
+})
+
+describe('recall@10 and MRR', () => {
+    test('first matching rank within k', () => {
+        expect(rankMetrics(['note:x', 'note:a.md'], ['note:a.md'])).toEqual({ hit: true, rr: 0.5 })
+        expect(rankMetrics(['note:x'], ['note:a.md'])).toEqual({ hit: false, rr: 0 })
+        const long = [...Array(10).fill('note:x'), 'note:a.md']
+        expect(rankMetrics(long, ['note:a.md'])).toEqual({ hit: false, rr: 0 })
+    })
+    test('score averages over cases', () => {
+        const s = searchScore([
+            { ranked: ['note:a.md'], labels: ['note:a.md'] },
+            { ranked: ['note:q', 'note:b.md'], labels: ['note:b.md'] },
+            { ranked: [], labels: ['note:c.md'] },
+            { ranked: ['note:z'], labels: ['note:c.md'] },
+        ])
+        expect(s).toEqual({ cases: 4, recall: 0.5, mrr: 0.375 })
+    })
+})
+
+describe('capPerSection', () => {
+    const hit = (id: string, score: number, kind: 'chat' | 'file') => ({ kind, id, score }) as never
+    test('caps each section by score, after the caller has dropped hits', () => {
+        const hits = [hit('1', 0.2, 'chat'), hit('2', 0.9, 'chat'), hit('3', 0.5, 'chat'), hit('f', 0.1, 'file')]
+        const out = capPerSection(hits, 2) as { id: string }[]
+        expect(out.map(h => h.id).sort()).toEqual(['2', '3', 'f'])
     })
 })

@@ -4,6 +4,7 @@ import type { MemoryNote } from '@bismuth/memory'
 import { createRecallService } from '../src/memoryRecall'
 import type { RecallDeps, RecallEngine } from '../src/memoryRecall'
 import type { SourceHit } from '../src/semanticSources'
+import { logitGate } from './gateStub'
 
 // Ten docs candidates within 0.06 of each other, one page each: one topic, many pages, no standout.
 const docs = (kind: SourceHit['kind'] = 'docs'): SourceHit[] =>
@@ -40,6 +41,7 @@ function make(hits: SourceHit[], logits: (n: number) => number[]) {
             dispose() {},
         }),
         sources: async () => hits,
+        gateModel: logitGate,
         vault: '/v',
     }
     return { svc: createRecallService(deps), judged }
@@ -49,7 +51,7 @@ const ask = { mode: 'prompt' as const, sessionId: 's', prompt: 'how do I write a
 test('docs: ten close candidates still admit the top one when its logit clears the gate', async () => {
     const { svc, judged } = make(docs(), n => Array.from({ length: n }, (_, i) => (i === 0 ? RERANK_MIN_LOGIT + 8 : RERANK_MIN_LOGIT - 4)))
     const r = await svc.recall(ask)
-    expect(judged).toEqual([3])
+    expect(judged).toEqual([5])
     expect(r.sources).toEqual(['docs:bases/p0.md#calendar'])
     expect(r.context).toContain('# Bismuth docs')
 })
@@ -61,12 +63,11 @@ test('docs: a negative logit below the gate admits none', async () => {
     expect(r.sources ?? []).toEqual([])
 })
 
-test('files keep the relative floor: the same ten close candidates reach no reranker', async () => {
-    // under FILE_COSINE_ADMIT, so only the reranker path could admit them, and the relative floor stops it
-    const close = docs('note').map(h => ({ ...h, score: h.score - 0.05 }))
-    const { svc, judged } = make(close, n => Array.from({ length: n }, () => RERANK_MIN_LOGIT + 8))
-    expect((await svc.recall(ask)).context).toBeNull()
-    expect(judged).toEqual([])
+test('files: ten close candidates reach the reranker, five at most, and the gate alone decides what is kept', async () => {
+    const close = docs('note')
+    const { svc, judged } = make(close, n => Array.from({ length: n }, (_, i) => (i < 2 ? RERANK_MIN_LOGIT + 8 : RERANK_MIN_LOGIT - 4)))
+    expect((await svc.recall(ask)).sources).toEqual(['note:p0.md'])
+    expect(judged).toEqual([5])
 })
 
 test('docs: a logit above the rerank gate but under the docs bar is refused', async () => {
