@@ -12,5 +12,8 @@
 /* `gutter`: clip the slide vertically only, so a control hung in the gutter beside the body's lines
    (a fold triangle) stays visible. `clip`, not `hidden`: `overflow-x: visible` beside
    `overflow-y: hidden` computes to `auto` (a scroller); beside `clip` it stays visible. */
+/* Not a scroll container, so the grid's implicit `auto` column would size to the body's min-content
+   and a wide child would widen the whole panel past its host. */
+.gutter { grid-template-columns: minmax(0, 1fr); }
 .gutter > .ft-collapse-inner { overflow-x: visible; overflow-y: clip; }
 @media (prefers-reduced-motion: reduce) { .ft-collapse { transition: none; } }

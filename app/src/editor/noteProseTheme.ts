@@ -49,6 +49,18 @@ export const fitContentTheme = Prec.highest(
             paddingBottom: '0',
             position: 'relative',
             left: `-${CM_LINE_INSET_PX}px`,
+            // The scroller is `overflow: visible` here, so nothing else stops a wide block widening
+            // the host: the content box holds the host's width and the block scrolls inside it.
+            minWidth: '0',
+        },
+        // Display math too long to break scrolls on its own (a table already has `.cm-table-scroll`).
+        // Vertical is `hidden` (a lone `overflow-x: auto` makes y `auto` too), and
+        // `overscroll-behavior-y: auto` undoes global.css's app-wide `none`, which would stop the
+        // wheel here instead of scrolling the host.
+        '.cm-math-block': {
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            overscrollBehaviorY: 'auto',
         },
     }),
 )

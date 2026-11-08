@@ -19,6 +19,9 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    /* Set explicitly: `overflow-y: auto` alone computes x to `auto`, and a transcript never scrolls
+       sideways. A wide block scrolls inside itself (fitContentTheme). */
+    overflow-x: hidden;
     padding: 28px 40px 20px;
     /* the side gutter is the shared token (the composer's inset reads it too), so the two cannot
        drift; the shorthand above keeps its vertical literals */

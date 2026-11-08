@@ -32,6 +32,7 @@ import {
     SYSTEM_NOTE_ITEMS,
     THINKING_ITEMS,
     TOOL_CALL_ITEMS,
+    WIDE_CONTENT_ITEMS,
     longFrames,
 } from './_transcriptFixtures'
 
@@ -524,6 +525,39 @@ export const Narrow360: Story = {
         await expect(
             canvas.getByText(/A few things landed/),
         ).toBeInTheDocument()
+    },
+}
+
+/** Content wider than the reading column: the table wraps into it, the math scrolls inside itself,
+ *  and the transcript has no sideways range at all. */
+export const WideContent: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '620px', display: 'flex' }}>
+            <ChatTranscript
+                items={WIDE_CONTENT_ITEMS}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError={`A failure about ${'unbroken'.repeat(40)}`}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
+        const block = (selector: string) =>
+            canvasElement.querySelector<HTMLElement>(selector)
+        await waitFor(() => expect(block('.cm-math-block')).not.toBeNull())
+        // The table wraps into the column; the unbreakable math scrolls inside itself.
+        const table = block('.cm-table-scroll')!
+        await expect(table.clientWidth).toBeLessThanOrEqual(680)
+        await waitFor(() => {
+            const math = block('.cm-math-block')!
+            return expect(math.scrollWidth).toBeGreaterThan(math.clientWidth)
+        })
+        const list = block('[data-note-prose]')!.closest<HTMLElement>(
+            '[data-chat-list]',
+        )!
+        await expect(list.scrollWidth).toBe(list.clientWidth)
     },
 }
 

@@ -239,6 +239,50 @@ export const THINKING_ITEMS: readonly TurnItem[] = [
     },
 ]
 
+const WIDE_TOKEN = 'unbroken'.repeat(40)
+const wideRow = (cell: string) =>
+    `| ${Array.from({ length: 14 }, (_, i) => `${cell}${i} a fairly long cell`).join(' | ')} |`
+
+/** Everything a message can hold that is wider than the reading column: a table with too many
+ *  columns, display math too long to break, and an unbroken token in each kind of row. */
+export const WIDE_CONTENT_ITEMS: readonly TurnItem[] = [
+    { role: 'user', text: `Why is this so wide? ${WIDE_TOKEN}` },
+    {
+        role: 'assistant',
+        footer: { numTurns: 1, costUsd: 0.0081 },
+        parts: [
+            { kind: 'thinking', text: `Reasoning about ${WIDE_TOKEN}` },
+            {
+                kind: 'text',
+                text: [
+                    'Prose above the table stays in the reading column.',
+                    '',
+                    wideRow('head'),
+                    `|${' --- |'.repeat(14)}`,
+                    wideRow('cell'),
+                    '',
+                    'Prose between them stays in the column too.',
+                    '',
+                    '$$',
+                    `${Array.from({ length: 60 }, (_, i) => `x_{${i}}+`).join('')}y`,
+                    '$$',
+                ].join('\n'),
+            },
+            {
+                kind: 'tool',
+                id: 'wide-1',
+                name: 'Grep',
+                toolKind: 'search',
+                input: { pattern: WIDE_TOKEN, path: 'app/src' },
+                result: WIDE_TOKEN,
+                isError: false,
+                pending: false,
+            },
+        ],
+    },
+    { role: 'system', text: `A notice about ${WIDE_TOKEN}` },
+]
+
 /** `turns` exchanges of the same shape (a question, an answer with a list and a fence, a tool call
  *  and its result) as `/chat` frames: a long chat for scroll and streaming stories. */
 export function longFrames(turns: number): ChatFrame[] {
