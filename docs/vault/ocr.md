@@ -35,7 +35,7 @@ A page whose only real text is a publisher watermark (a "Downloaded from …" li
 
 ## Read an image or a page into a note
 
-`bismuth ocr` works on a PDF only. A path that is not a PDF is refused with `ocr adds a text layer to a PDF; to read an image into its note, run: bismuth transcribe <file>`. To get a PDF's or an image's words into its companion note, run [`bismuth transcribe`](transcription.md); to convert a PDF into a note of its own, use [Convert a PDF to markdown](pdf-to-markdown.md).
+`bismuth ocr` works on a PDF only. A path that is not a PDF is refused with `ocr adds a text layer to a PDF; to read an image into its note, run: bismuth transcribe <file>`. To get a PDF's or an image's words into its companion note, run [`bismuth transcribe`](transcription.md).
 
 ## Options
 
@@ -57,7 +57,7 @@ In either route the command finds the vault from the session's working directory
 
 ## How it works
 
-`cli/src/commands/ocr.ts` is the command; `cli/src/ocr.ts` holds the pure argv builders, and `core/src/marker.ts` holds the engine lookup and page parsing, shared with [PDF to markdown](pdf-to-markdown.md) and [transcription](transcription.md); both are unit-tested in `cli/test/ocr.test.ts` against a fixture scan with a watermark.
+`cli/src/commands/ocr.ts` is the command; `cli/src/ocr.ts` holds the pure argv builders, and `core/src/marker.ts` holds the engine lookup and page parsing, shared with [transcription](transcription.md); both are unit-tested in `cli/test/ocr.test.ts` against a fixture scan with a watermark.
 
 The text layer comes from `ocrmypdf --redo-ocr --output-type pdf`. `--redo-ocr` keeps visible vector text and OCRs the rest without rasterising the page; `--skip-text` would skip any page with a watermark. `--output-type pdf` skips the PDF/A conversion through Ghostscript. ocrmypdf writes a hidden `.<file>.ocr-tmp.pdf` beside the original, which is renamed over it, so the watcher sees one change and a reader never sees a half-written file.
 

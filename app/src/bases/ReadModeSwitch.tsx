@@ -1,34 +1,44 @@
 // app/src/bases/ReadModeSwitch.tsx
-// The reader's one worded switch, `scroll | pages | text`, in the PDF and image bar and in a book's
-// bar alike: the same three ways to read a page file, whichever surface opened it.
+// What the reader shows, as three icons in the PDF and image bar and in a book's bar alike: the page,
+// its text, or the page beside its text. How it moves (scroll down one column, or flip a page at a
+// time) is a row of the `Aa` panel, set once like a reading app's layout.
 import type { Component } from 'solid-js'
 import SegmentedToggle from '../ui/SegmentedToggle'
 
-export type ReadMode = 'scroll' | 'pages' | 'text'
+export type ReadView = 'pages' | 'text' | 'side'
+export type ReadFlow = 'scroll' | 'flip'
 
 export type ReadModeSwitchProps = {
-    value: ReadMode
-    onChange: (mode: ReadMode) => void
-    /** Why `text` cannot be chosen yet (its title); undefined leaves it enabled. */
+    view: ReadView
+    onView: (view: ReadView) => void
+    /** Why `text` and `side by side` cannot be chosen yet (their tooltip); undefined leaves them enabled. */
     textUnavailable?: string
     class?: string
 }
 
 const ReadModeSwitch: Component<ReadModeSwitchProps> = props => (
-    <SegmentedToggle<ReadMode>
+    <SegmentedToggle<ReadView>
+        look="icon"
         class={props.class}
         options={[
-            { id: 'scroll', label: 'scroll', title: 'one long column of pages' },
-            { id: 'pages', label: 'pages', title: 'turn the pages, two at a time when they fit' },
+            { id: 'pages', icon: 'File', ariaLabel: 'pages', title: 'pages' },
             {
                 id: 'text',
-                label: 'text',
+                icon: 'FileText',
+                ariaLabel: 'text',
                 disabled: props.textUnavailable !== undefined,
-                title: props.textUnavailable ?? 'the transcription, set as a book',
+                title: props.textUnavailable ?? 'text',
+            },
+            {
+                id: 'side',
+                icon: 'Columns2',
+                ariaLabel: 'side by side',
+                disabled: props.textUnavailable !== undefined,
+                title: props.textUnavailable ?? 'side by side',
             },
         ]}
-        value={props.value}
-        onChange={props.onChange}
+        value={props.view}
+        onChange={props.onView}
     />
 )
 

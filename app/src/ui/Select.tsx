@@ -7,7 +7,13 @@ import styles from './Select.module.css'
 
 /** `detail` renders as the muted right-side text on the option's row (MenuRow detail) — e.g. the
  *  chat model picker's Free/Paid badge. The closed trigger shows only the label. */
-export type SelectOption = { value: string; label: string; detail?: string }
+export type SelectOption = {
+    value: string
+    label: string
+    detail?: string
+    /** Shown in the list but not choosable: keyboard moves skip it and a click does nothing. */
+    disabled?: boolean
+}
 
 /**
  * A custom dropdown that replaces the native `<select>`. The trigger reuses the
@@ -65,6 +71,7 @@ function Select(props: SelectProps) {
         count: () => props.options.length,
         onSelect: i => choose(i),
         onEscape: () => dismiss(),
+        isDisabled: i => !!props.options[i]?.disabled,
         wrap: true,
     })
 
@@ -86,6 +93,7 @@ function Select(props: SelectProps) {
     }
     function choose(i: number) {
         const opt = props.options[i]
+        if (opt?.disabled) return
         if (opt) props.onChange(opt.value)
         close()
     }
@@ -148,6 +156,7 @@ function Select(props: SelectProps) {
                     items={props.options.map(o => ({
                         label: o.label,
                         detail: o.detail,
+                        disabled: o.disabled,
                         // Every row reserves the icon cell: the chosen row draws the Check, the
                         // rest an empty gutter of the same width, so labels share one left edge.
                         icon: o.value === props.value ? 'Check' : undefined,

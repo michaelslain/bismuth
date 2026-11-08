@@ -138,8 +138,11 @@ export interface ViewConfig {
     page?: string // default "page"
     // Book view: two pages side by side, or one page at a time.
     bookLayout?: 'spread' | 'single' // default "spread"
-    // Book view: the pages as photographed or scanned, or their transcriptions set as text.
-    bookMode?: 'scroll' | 'pages' | 'text' // default "pages"
+    // Book view: what it shows: the pages, their transcriptions, or each page beside its text.
+    // `scroll` is the pages scrolled, read as `pages` with `bookFlow: scroll`.
+    bookMode?: 'scroll' | 'pages' | 'text' | 'side' // default "pages"
+    // Book view: one long column, or a page at a time.
+    bookFlow?: 'scroll' | 'flip' // default "flip" for pages, "scroll" for scroll, text and side
     // Book view: pages drawn dark, as the PDF viewer's dark mode draws them. Default appearance.pdfDarkMode.
     bookDark?: boolean
     // Chart views (bar, line, stat): axis + aggregation config.

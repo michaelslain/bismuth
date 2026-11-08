@@ -573,18 +573,17 @@ Gives a PDF a selectable text layer. Headless; it drives `ocrmypdf` installed on
 |---|---|---|---|
 | `ocr` | `<file.pdf> [--force] [--lang <codes>] [--pages <spec>] [--vault <dir>]` | Adds the text layer to the PDF in place. Prints `{ok, path, layer}`. | no |
 
-A path that is not a PDF is refused with a message pointing at [`transcribe`](#transcribe). Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes, except `pdf md` and `transcribe`. `ocr` is path-scoped.
+A path that is not a PDF is refused with a message pointing at [`transcribe`](#transcribe). Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes, except `pdf` and `transcribe`. `ocr` is path-scoped.
 
 ## pdf
 
-Converts a PDF into a new markdown note beside it, with math as LaTeX and a `source` link back, and rewrites a PDF's pages. Headless. `pdf md` drives Marker installed on the machine; output and options are in [Convert a PDF to markdown](../vault/pdf-to-markdown.md). `pdf pages` is in [Rewrite a PDF's pages](../vault/pdf-pages.md).
+Rewrites a PDF's pages. Headless. `pdf pages` is in [Rewrite a PDF's pages](../vault/pdf-pages.md).
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
-| `pdf md` | `<file.pdf> [--pages <spec>] [--force] [--replace] [--vault <dir>]` | Writes `<name>.md` beside the PDF. Prints `{ok, path, note}`. | no |
 | `pdf pages` | `<file.pdf> [--order <spec>] [--vault <dir>]` | Rewrites the PDF to hold the pages `--order` lists, such as `1,3,2,blank,@scans/a.png`; highlights, ink, bookmarks and transcript follow their page. Without `--order` prints `{pages}` and changes nothing. Prints `{pages}`, the page count. | no |
 
-`pdf md` refuses with `EEXIST` when `<name>.md` exists, unless `--replace` is given. Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes. `pdf md` and `pdf pages` are path-scoped; for an agent, a hidden PDF, companion, sidecar or `@` file reads as missing.
+Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes. `pdf pages` is path-scoped; for an agent, a hidden PDF, companion, sidecar or `@` file reads as missing.
 
 ## page
 
@@ -735,10 +734,10 @@ Reads an image, a handwritten scan or a PDF into its companion note, with math a
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `transcribe setup` | `[--vault <dir>]` | Installs Marker, the local math reader, into `~/.bismuth/tools` (uv, marker-pdf, llama-server; about 1.2 GB; Mac only) and waits, naming each step on stderr. Prints `{installed, missing, dir}`. See [Install Marker](../vault/transcription.md#install-marker). | no |
-| `transcribe` | `<file> [--engine auto\|on-device\|marker\|ai] [--math careful\|fast] [--pages <spec>] [--book <base>] [--missing] [--vault <dir>]` | Writes the transcript of an image or PDF into `<file>.md`. Without `--engine` the `transcription.engine` setting decides. Prints `{ok, companion, engine, pages, skipped?, escalated?, math?, markerSkipped?, aiSkipped?}`. | no |
+| `transcribe` | `<file> [--engine auto\|on-device\|marker\|ai] [--math careful\|fast] [--pages <spec>] [--book <base>] [--missing] [--progress] [--vault <dir>]` | Writes the transcript of an image or PDF into `<file>.md`. Without `--engine` the `transcription.engine` setting decides. Prints `{ok, companion, engine, pages, skipped?, escalated?, math?, markerSkipped?, aiSkipped?}`. | no |
 | `transcript set` | `<file> --page <n> (--text "…" \| --stdin) [--vault <dir>]` | Sets one page's transcript text in `<file>.md` as written, keeping the other pages and the `transcribed` stamp; empty text removes the page's text. Prints `{ok, companion, page}`. See [Edit a page's transcript by hand](../vault/transcription.md#edit-a-pages-transcript-by-hand). | no |
 
-`--missing` skips a file whose companion already has `transcribed:`. Through the MCP tool `bismuth_cli` `transcribe` may run 30 minutes. `transcribe` and `transcript set` are path-scoped; for an agent a hidden page file reads as missing.
+`--missing` skips a file whose companion already has `transcribed:`. `--progress` writes one JSON line per page state change to stderr, such as `{"page":3,"status":"done","engine":"on-device","ms":1840}`, and Ctrl-C stops the run. Through the MCP tool `bismuth_cli` `transcribe` may run 30 minutes. `transcribe` and `transcript set` are path-scoped; for an agent a hidden page file reads as missing.
 
 ## update
 
@@ -771,7 +770,7 @@ Server commands share `cli/src/http.ts`: `resolveCore` picks the address and `ca
 The run registry is `core/src/runRegistry.ts`; a core that exits removes only a record naming its own pid, and restores the record of a live core it had replaced for the same vault.
 `history` parses each session log with `memory/src/sessionHistory.ts`, which reuses the turn folding in `memory/src/transcript.ts`.
 `image describe` calls `describeImage` in `core/src/imageDescribe.ts`, which sends the bytes to Haiku through the Agent SDK and records a content hash in `describedHash`.
-`cli/src/ocr.ts` builds the engine argv for `ocr`; Marker and engine lookup, shared with `pdf md` and `transcribe`, are in `core/src/marker.ts`.
+`cli/src/ocr.ts` builds the engine argv for `ocr`; Marker and engine lookup, shared with `transcribe`, are in `core/src/marker.ts`.
 `cli/src/semantic.ts` serves the semantic commands: it posts to `/search/semantic` on the vault's running server, and falls back to `core/src/vaultEmbed.ts` in process.
 
 Source: `cli/src/index.ts`, `cli/src/registry.ts`, `cli/src/args.ts`, `cli/src/baseResolve.ts`, `cli/src/http.ts`, `cli/src/semantic.ts`, `cli/src/ocr.ts`, `core/src/marker.ts`, `core/src/findVaultRoot.ts`, `core/src/runRegistry.ts`, `core/src/imageDescribe.ts`, `cli/src/commands/*.ts`, `memory/src/sessionHistory.ts`, `core/src/visibilityCliGate.ts`

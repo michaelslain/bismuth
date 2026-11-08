@@ -323,7 +323,8 @@ function normalizeView(raw: unknown): ViewConfig {
                   ? 'single'
                   : 'spread',
         bookMode:
-            o.bookMode === undefined ? undefined : o.bookMode === 'text' || o.bookMode === 'scroll' ? o.bookMode : 'pages',
+            o.bookMode === undefined ? undefined : o.bookMode === 'text' || o.bookMode === 'scroll' || o.bookMode === 'side' ? o.bookMode : 'pages',
+        bookFlow: o.bookFlow === 'scroll' || o.bookFlow === 'flip' ? o.bookFlow : undefined,
         bookDark: typeof o.bookDark === 'boolean' ? o.bookDark : undefined,
         // chart bindings
         x: strOrUndef(o.x),

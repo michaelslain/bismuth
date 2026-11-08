@@ -1,8 +1,9 @@
-// Visual spec for <ReadModeSwitch>: the reader's `scroll | pages | text` switch.
+// Visual spec for <ReadModeSwitch>: the reader's three view icons, pages, text and side by side.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, within } from 'storybook/test'
-import ReadModeSwitch, { type ReadMode } from './ReadModeSwitch'
+import ViewBar, { Crumb } from '../ui/ViewBar'
+import ReadModeSwitch, { type ReadView } from './ReadModeSwitch'
 
 const meta = {
     title: 'Bases/ReadModeSwitch',
@@ -12,27 +13,45 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** All three ways to read; a click picks one. */
+const Live = (props: { view?: ReadView; textUnavailable?: string }) => {
+    const [view, setView] = createSignal<ReadView>(props.view ?? 'pages')
+    return <ReadModeSwitch view={view()} onView={setView} textUnavailable={props.textUnavailable} />
+}
+
+/** Three icons; the one in use is lit, and a click picks another. */
 export const Default: Story = {
-    render: () => {
-        const [mode, setMode] = createSignal<ReadMode>('scroll')
-        return <ReadModeSwitch value={mode()} onChange={setMode} />
-    },
+    render: () => <Live />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await expect(c.getByRole('button', { name: 'scroll' })).toHaveAttribute('aria-pressed', 'true')
-        await userEvent.click(c.getByRole('button', { name: 'text' }))
-        await expect(c.getByRole('button', { name: 'text' })).toHaveAttribute('aria-pressed', 'true')
+        await expect(c.getByRole('button', { name: 'pages' })).toHaveAttribute('aria-pressed', 'true')
+        await userEvent.click(c.getByRole('button', { name: 'side by side' }))
+        await expect(c.getByRole('button', { name: 'side by side' })).toHaveAttribute('aria-pressed', 'true')
+        await expect(c.getByRole('button', { name: 'pages' })).toHaveAttribute('aria-pressed', 'false')
     },
 }
 
-/** No transcript yet: `text` is disabled and its title says why. */
+/** The icons in a view bar. */
+export const InBar: Story = {
+    name: 'In bar',
+    render: () => (
+        <div style={{ width: '480px', 'max-width': 'none' }}>
+            <ViewBar identity={<Crumb icon="File">lecture.pdf</Crumb>} config={<Live view="text" />} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(within(canvasElement).getByRole('button', { name: 'text' })).toHaveAttribute('aria-pressed', 'true')
+    },
+}
+
+/** No transcript yet: `text` and `side by side` are disabled and their tooltip says why. */
 export const TextUnavailable: Story = {
     name: 'Text unavailable',
-    render: () => <ReadModeSwitch value="pages" onChange={() => {}} textUnavailable="no page is transcribed yet" />,
+    render: () => <Live textUnavailable="no page is transcribed yet" />,
     play: async ({ canvasElement }) => {
-        const text = within(canvasElement).getByRole('button', { name: 'text' })
-        await expect(text).toBeDisabled()
-        await expect(text).toHaveAttribute('title', 'no page is transcribed yet')
+        for (const name of ['text', 'side by side']) {
+            const b = within(canvasElement).getByRole('button', { name })
+            await expect(b).toBeDisabled()
+            await expect(b).toHaveAttribute('data-tooltip', 'no page is transcribed yet')
+        }
     },
 }

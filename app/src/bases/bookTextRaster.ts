@@ -1,4 +1,5 @@
 // app/src/bases/bookTextRaster.ts
+// Kept for the _bookPages.ts story fixture (with bookText.ts); the reader no longer draws text pages itself.
 // Draws one typeset text page to a 2x canvas: the face the page curl shows in text mode.
 import type { TextPage, TextRun } from './bookText'
 

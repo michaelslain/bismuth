@@ -3,6 +3,7 @@ import { companionPathFor } from '../fileKinds'
 import {
     transcriptLines,
     markTranscript,
+    withCompanion,
     transcribe,
     checkPageFile,
     readStoredTranscript,
@@ -14,6 +15,13 @@ import { writeTranscriptPage } from '../transcript'
 import { rewritePdfPages, type PageSource } from '../pdfPages'
 import { inkSidecarFor, isPdfPath } from '../fileKinds'
 import { markerStatus, startMarkerSetup } from '../markerSetup'
+import {
+    cancelTranscribeJob,
+    decideTranscribeMath,
+    startTranscribeJob,
+    transcribeJobState,
+} from '../transcribeJob'
+import type { TranscribeJobRequest } from '../transcribeJobTypes'
 import { error, ok, requireQueryParam, type Handler, type RouteContext } from './context'
 
 /** Both page file and its companion must be visible to the caller; a hidden one reads as forbidden. */
@@ -42,6 +50,13 @@ export default function transcribeRoutes(ctx: RouteContext): Record<string, Hand
             checkPageFile(file)
             if (!(await visible(ctx, req, file))) return error('forbidden', 403)
             return ok(await readStoredTranscript(ctx.cfg.vault, file))
+        },
+        // The file's current or last transcription job; null when this server run has none.
+        'GET /transcribe/job': async (req, url) => {
+            const file = requireQueryParam(url, 'file')
+            checkPageFile(file)
+            if (!(await visible(ctx, req, file))) return error('forbidden', 403)
+            return ok(transcribeJobState(file))
         },
         // Line boxes are recognised on demand and stored nowhere, so this POST is a read.
         'POST /transcript/lines': async req => {
@@ -77,6 +92,52 @@ export function transcribeMutatingRoutes(ctx: RouteContext): Record<string, Hand
             },
             body => (typeof body?.file === 'string' ? companionPathFor(body.file) : undefined),
         ),
+        // Transcribe in the background and answer the job at once; the pages land in the companion
+        // as they finish (transcribeJob.ts). A start while the file's job runs joins it.
+        // Not a mutatingHandler: the handler answers before any page is written, so a mark or an
+        // invalidate here would fire on an unchanged file. Each page write reaches the watcher like any
+        // external write and refreshes the caches and SSE clients.
+        'POST /transcribe/job': async req => {
+            const body = (await req.json()) as TranscribeJobRequest
+            try {
+                checkPageFile(body.file)
+                if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)
+                return ok(startTranscribeJob(ctx.cfg.vault, body))
+            } catch (e) {
+                if (e instanceof AppError) return error(e.message, e.statusCode)
+                throw e
+            }
+        },
+        'POST /transcribe/job/cancel': ctx.mutatingHandler(
+            async req => {
+                const body = (await req.json()) as { file: string }
+                try {
+                    checkPageFile(body.file)
+                    if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)
+                    const job = cancelTranscribeJob(body.file)
+                    return job ? ok(job) : error('no transcription job for this file', 404)
+                } catch (e) {
+                    if (e instanceof AppError) return error(e.message, e.statusCode)
+                    throw e
+                }
+            },
+            body => (typeof body?.file === 'string' ? companionPathFor(body.file) : undefined),
+        ),
+        'POST /transcribe/job/math': ctx.mutatingHandler(
+            async req => {
+                const body = (await req.json()) as { file: string; choice: 'careful' | 'fast' }
+                try {
+                    checkPageFile(body.file)
+                    if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)
+                    const job = decideTranscribeMath(body.file, body.choice)
+                    return job ? ok(job) : error('no transcription job for this file', 404)
+                } catch (e) {
+                    if (e instanceof AppError) return error(e.message, e.statusCode)
+                    throw e
+                }
+            },
+            body => (typeof body?.file === 'string' ? companionPathFor(body.file) : undefined),
+        ),
         'POST /transcript/mark': ctx.mutatingHandler(
             async req => {
                 const body = (await req.json()) as MarkRequest
@@ -101,13 +162,11 @@ export function transcribeMutatingRoutes(ctx: RouteContext): Record<string, Hand
                     if (!Number.isInteger(body.page) || body.page < 1)
                         return error('page must be a positive integer', 400)
                     if (typeof body.text !== 'string') return error('text must be a string', 400)
-                    await writeTranscriptPage(
-                        ctx.cfg.vault,
-                        companionPathFor(body.file),
-                        body.page,
-                        body.text,
-                        kind,
-                        { mark: ctx.markSelfWritten },
+                    const companion = companionPathFor(body.file)
+                    await withCompanion(companion, () =>
+                        writeTranscriptPage(ctx.cfg.vault, companion, body.page, body.text, kind, {
+                            mark: ctx.markSelfWritten,
+                        }),
                     )
                     return ok({ ok: true })
                 } catch (e) {

@@ -4,6 +4,7 @@ import { createSignal, Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import MathPrompt, { estimate } from './MathPrompt'
 import Text from '../ui/Text'
+import { TextButton } from '../ui/TextButton'
 
 const meta = {
     title: 'Bases/MathPrompt',
@@ -58,5 +59,30 @@ export const NeedsInstall: Story = {
     play: async () => {
         const body = within(document.body)
         await expect(await body.findByText(/the math reader downloads itself \(about 1\.2 GB/)).toBeInTheDocument()
+    },
+}
+
+/** A run is still reading: the count is what it has found so far and grows as more math pages turn up. */
+export const CountGrows: Story = {
+    name: 'Count grows',
+    render: () => {
+        const [n, setN] = createSignal(3)
+        return (
+            <>
+                <MathPrompt pages={n()} running onChoose={() => {}} />
+                <TextButton data-found-more onClick={() => setN(c => c + 1)}>
+                    found one more
+                </TextButton>
+            </>
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await expect(await body.findByText('3 pages have math')).toBeInTheDocument()
+        await expect(body.getByText(/\(3 pages, about 45 s\)/)).toBeInTheDocument()
+        await expect(body.getByText(/keep reading meanwhile/)).toBeInTheDocument()
+        await userEvent.click(body.getByRole('button', { name: /found one more/ }))
+        await expect(await body.findByText('4 pages have math')).toBeInTheDocument()
+        await expect(body.getByText(/\(4 pages, about 60 s\)/)).toBeInTheDocument()
     },
 }

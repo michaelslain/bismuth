@@ -22,6 +22,8 @@ export type MathPromptProps = {
     pages: number
     /** Marker, the local math reader, is not installed yet: reading properly downloads it first. */
     install?: boolean
+    /** The run is still reading: `pages` is what it has found so far and may grow. */
+    running?: boolean
     onChoose: (choice: MathChoice, remember: boolean) => void
 }
 
@@ -42,6 +44,11 @@ const MathPrompt: Component<MathPromptProps> = props => {
                 <Text size="ui" tone="muted" data-math-prompt-body>
                     {`reading math properly takes about ${CAREFUL_SECONDS_PER_PAGE} s a page${one() ? '' : ` (${props.pages} pages, ${estimate(props.pages)})`}. the fast read garbles formulas.`}
                 </Text>
+                <Show when={props.running}>
+                    <Text size="ui" tone="muted" data-math-prompt-running>
+                        {`the other pages keep reading meanwhile, and ${one() ? 'any more' : 'later ones'} found get the same choice.`}
+                    </Text>
+                </Show>
                 <Show when={props.install}>
                     <Text size="ui" tone="muted" data-math-prompt-install>
                         the first time, the math reader downloads itself (about 1.2 GB, a few minutes).

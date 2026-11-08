@@ -1,7 +1,6 @@
 // core/src/marker.ts
-// The external-engine plumbing shared by `bismuth ocr` (cli/src/commands/ocr.ts) and PDF → markdown
-// (pdfMarkdown.ts, behind `bismuth pdf md` and the PDF bar's
-// button): finding an engine binary on a short PATH, running it, and Marker (marker-pdf, run
+// The external-engine plumbing shared by `bismuth ocr` (cli/src/commands/ocr.ts) and transcription
+// (transcribe.ts): finding an engine binary on a short PATH, running it, and Marker (marker-pdf, run
 // through llama.cpp's llama-server), which transcribes a PDF or image to markdown with math as
 // `$…$` / `$$…$$` LaTeX.
 //
@@ -149,13 +148,6 @@ export function splitMarkerPages(md: string): { page: number; text: string }[] {
     return pages
 }
 
-/** A transcription note for `sourceName` (a basename): a `source` link back to the file, then
- *  the markdown. */
-export function sourcedNote(body: string, sourceName: string): string {
-    const link = JSON.stringify(`[[${sourceName}]]`)
-    return `---\nsource: ${link}\n---\n\n${tidyMarkdown(body)}`
-}
-
 /** Directories searched after PATH. A daemon or app-spawned agent often runs with a minimal PATH
  *  that misses Homebrew and `uv tool install`'s `~/.local/bin`. Last, the tools the app installs
  *  itself (markerSetup.ts): `~/.bismuth/tools/bin`, or `$BISMUTH_TOOLS_DIR/bin`. */
@@ -254,9 +246,10 @@ export async function runTool(
         stdout: 'pipe',
         stderr: 'pipe',
     })
+    let helpers: number[] = []
     const end = () => {
         signal(proc.pid, 'SIGSTOP')
-        const helpers = descendants(proc.pid)
+        helpers = descendants(proc.pid)
         signal(proc.pid, 'SIGKILL')
         for (const pid of helpers) signal(pid, 'SIGTERM')
         setTimeout(() => {
@@ -271,6 +264,19 @@ export async function runTool(
             new Response(proc.stderr).text(),
             proc.exited,
         ])
+        // A stopped run settles only once its helpers are gone, so a run started next cannot attach to a dying server.
+        if (stop?.aborted && helpers.length) {
+            const alive = (p: number) => {
+                try {
+                    process.kill(p, 0)
+                    return true
+                } catch {
+                    return false
+                }
+            }
+            const until = Date.now() + STOP_GRACE_MS + 1000
+            while (helpers.some(alive) && Date.now() < until) await new Promise(r => setTimeout(r, 100))
+        }
         return { code, stdout, stderr }
     } finally {
         stop?.removeEventListener('abort', end)

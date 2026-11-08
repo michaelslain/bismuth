@@ -173,7 +173,7 @@ const CHECKS = `(() => {
     // container entry never reaches them. They are Univer's own plain-DOM markup at its own 14px — a
     // third-party library this project does not control — surfaced once app-panecontent--sheet got a
     // real height (ds-improve-r1 Task 40). Scoped to the Univer popup, not a global 14px exemption.
-    // [data-text-spread] (the book base's text mode, TextSpread.tsx) is NOT here: only the type-scale
+    // [data-text-spread] (the book base's text mode) is NOT here: only the type-scale
     // membership check below skips it (its size is the typesetter's own, page width / 26, so the
     // still pages match the canvas faces the page curl turns, never a scale step); every other check
     // still sees it.

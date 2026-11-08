@@ -1,0 +1,43 @@
+/* The scroller is its own size container: the stacked layout follows the pane, not the window. */
+.scroller {
+    container-type: inline-size;
+    position: relative;
+    height: 100%;
+    overflow-y: auto;
+    padding: 0 var(--sp-5);
+}
+
+.row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: var(--sp-7);
+    align-items: start;
+    padding: var(--sp-6) 0 0;
+}
+
+.row + .row {
+    margin-top: calc(var(--sp-7) + var(--sp-4));
+    padding-top: 0;
+}
+
+.image {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+}
+
+.text {
+    min-width: 0;
+}
+
+/* A narrow pane keeps the two columns, the page giving up width to its text: stacked, each page's
+   text sat below a full-width picture, out of view. */
+@container (max-width: 719px) {
+    .scroller {
+        padding: 0 var(--sp-4);
+    }
+    .row {
+        grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+        column-gap: var(--sp-5);
+    }
+}

@@ -241,8 +241,8 @@ const PATH_SCOPED_COMMANDS = new Set([
     'ocr',
     // `highlights` reads one PDF's or image's `.draw` sidecar and prints its highlighted text.
     'highlights',
-    // `pdf md` reads one PDF and writes `<name>.md` beside it; `pdf pages` rewrites one PDF's pages
-    // and reads the images and PDFs its --order names, all of which the argv path check covers.
+    // `pdf pages` rewrites one PDF's pages and
+    // reads the images and PDFs its --order names, all of which the argv path check covers.
     'pdf',
     // `book pages` lists a base's page files, returns none when its source reads a hidden base, and
     // filters rows and page files through `agentDenyEntries` itself.

@@ -1,0 +1,20 @@
+/* app/src/bases/PageStatus.module.css — the status cell at a page divider's right end. */
+.page-status {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--sp-4);
+    min-width: 0;
+    max-width: 100%;
+    white-space: nowrap;
+}
+
+/* the failure reason gives way before [ retry ] does */
+.page-status-reason {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.page-status-action {
+    flex: none;
+}

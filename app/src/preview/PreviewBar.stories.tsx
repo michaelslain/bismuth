@@ -9,8 +9,6 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import PreviewBar, { type PreviewBarProps } from './PreviewBar'
 import {
-    inkRect,
-    INK_GAP_TOLERANCE,
     median,
     mutedColor,
     OPTICAL_LINE_TOLERANCE,
@@ -39,8 +37,6 @@ type HarnessProps = {
     /** `annotReady` — false until the sidecar has loaded (default true). */
     ready?: boolean
     imageSize?: { w: number; h: number }
-    /** A PDF → markdown conversion already running. */
-    converting?: boolean
     /** PDF dark mode on. */
     dark?: boolean
 }
@@ -53,7 +49,6 @@ function Harness(props: HarnessProps): JSX.Element {
     const [armed, setArmed] = createSignal(false)
     const [scratch, setScratch] = createSignal(props.scratch ?? false)
     const [panel, setPanel] = createSignal(props.panel ?? false)
-    const [converting, setConverting] = createSignal(props.converting ?? false)
     const [dark, setDark] = createSignal(props.dark ?? false)
     const [hlColor, setHlColor] = createSignal('hl')
     return (
@@ -84,9 +79,6 @@ function Harness(props: HarnessProps): JSX.Element {
                 onToggleDark={() => setDark(v => !v)}
                 panelOpen={panel}
                 onTogglePanel={() => setPanel(v => !v)}
-                converting={converting}
-                onConvert={() => setConverting(true)}
-                onCancelConvert={() => setConverting(false)}
                 nativeActions={() => props.native ?? false}
                 onOpenExternal={() => {}}
                 imageSize={() => props.imageSize}
@@ -293,113 +285,6 @@ export const PdfDarkOn: Story = {
     },
 }
 
-/** Convert to markdown pressed: the button disables (it runs for minutes; a second press would
- *  only rejoin the same job) and `// converting to markdown [ cancel ]` reads after the page
- *  readout. The PDF is untouched, so nothing else in the bar changes. */
-export const PdfConverting: Story = {
-    render: () => <Harness width={1000} kind="pdf" />,
-    play: async ({ canvasElement }) => {
-        const bar = barOf(canvasElement)
-        const canvas = within(bar)
-        const convert = canvas.getByLabelText('Convert to markdown') as HTMLButtonElement
-        await expect(convert.disabled).toBe(false)
-        await expect(canvas.queryByTestId('preview-converting')).toBeNull()
-        await fireEvent.click(convert)
-        await waitFor(() => expect(convert.disabled).toBe(true))
-        const said = canvas.getByTestId('preview-converting').innerText.replace(/\s+/g, ' ').trim()
-        await expect(said).toBe('// converting to markdown cancel')
-        await expect(convert.getAttribute('data-tooltip')).toBe('Converting to markdown…')
-        // probeBar measures controls only, so the label's own spacing is checked here, ink to ink
-        // against the bar's own distances: the page readout → `// converting to markdown` and the
-        // words → `[ cancel ]` are neighbours inside a group, the label → zoom group a seam.
-        const p = probeBar(bar)
-        const range = (el: Element) => {
-            const r = document.createRange()
-            r.selectNodeContents(el)
-            return r.getBoundingClientRect()
-        }
-        const label = canvas.getByTestId('preview-converting')
-        const readout = inkRect(canvas.getByTestId('page-readout').querySelector('button')!)
-        const words = range(label.firstElementChild!)
-        const cancel = inkRect(canvas.getByTestId('preview-convert-cancel'))
-        const zoomOut = inkRect(canvas.getByLabelText('Zoom out'))
-        const withinMid = median(p.withinGaps)
-        const near = (g: number, want: number) => Math.abs(g - want) <= INK_GAP_TOLERANCE
-        const rg = Math.round((words.left - readout.right) * 10) / 10
-        const cg = Math.round((cancel.left - words.right) * 10) / 10
-        const zg = Math.round((zoomOut.left - cancel.right) * 10) / 10
-        const said2 = `ink gaps: readout → label ${rg}, words → cancel ${cg}, label → zoom ${zg}; bar gap ${withinMid}`
-        await expect(near(rg, withinMid), said2).toBe(true)
-        await expect(near(cg, withinMid), said2).toBe(true)
-        await expect(near(zg, withinMid), said2).toBe(true)
-        await expect(p.selectedCount, 'converting is not a toggle').toBe(0)
-        await expect(p.frames).toBe(0)
-        await expect(p.overlaps).toEqual([])
-        await expect(p.maxCentreOffset).toBeLessThanOrEqual(1)
-    },
-}
-
-/** `[ cancel ]` while converting: the words and the button go, and convert is pressable again. */
-export const PdfConvertCancel: Story = {
-    render: () => <Harness width={1000} kind="pdf" converting />,
-    play: async ({ canvasElement }) => {
-        const bar = barOf(canvasElement)
-        const canvas = within(bar)
-        const convert = canvas.getByLabelText('Convert to markdown') as HTMLButtonElement
-        await expect(convert.disabled).toBe(true)
-        const cancel = canvas.getByTestId('preview-convert-cancel')
-        await expect(cancel.textContent).toContain('cancel')
-        await fireEvent.click(cancel)
-        await waitFor(() => expect(canvas.queryByTestId('preview-converting')).toBeNull())
-        await expect(convert.disabled).toBe(false)
-        await expect(probeBar(bar).overlaps).toEqual([])
-    },
-}
-
-/** A narrow pane while converting: the page readout and the `//` drop, the words shorten to
- *  `converting`, and `[ cancel ]` stays — it is the only way to stop the run, and the word keeps it
- *  from reading as cancelling the zoom beside it. */
-export const PdfConvertingNarrow: Story = {
-    render: () => <Harness width={460} kind="pdf" converting />,
-    play: async ({ canvasElement }) => {
-        const bar = barOf(canvasElement)
-        const canvas = within(bar)
-        const label = canvas.getByTestId('preview-converting')
-        // At 460px the full trail does not fit beside the filename and `[ cancel ]`, so the fit rule
-        // hides level 2 (the page readout and its `//`) and level 4; it measures after layout.
-        await waitFor(() =>
-            expect(
-                bar.querySelector('[data-bar-drop="2"]:not([data-bar-menu-label])')?.hasAttribute(
-                    'data-bar-hidden',
-                ),
-                'the // drops with the readout',
-            ).toBe(true),
-        )
-        await expect(label.innerText.replace(/\s+/g, ' ').trim()).toBe('converting cancel')
-        const cancel = canvas.getByTestId('preview-convert-cancel')
-        await expect(cancel.getBoundingClientRect().width).toBeGreaterThan(0)
-        const p = probeBar(bar)
-        await expect(p.overlaps).toEqual([])
-        await expect(p.maxCentreOffset).toBeLessThanOrEqual(1)
-        // Every panel row has a label: an unlabelled droppable (a `//`) hides without a row.
-        const trigger = bar.querySelector<HTMLElement>('[data-bar-overflow]')
-        if (trigger) {
-            await fireEvent.click(trigger)
-            await waitFor(() =>
-                expect(document.querySelectorAll('[data-bar-drop]').length).toBeGreaterThan(0),
-            )
-            const moved = [...document.querySelectorAll<HTMLElement>('[data-bar-drop]')].filter(
-                el => !bar.contains(el),
-            )
-            await expect(moved.length).toBeGreaterThan(0)
-            for (const el of moved) {
-                const label = el.parentElement?.previousElementSibling?.textContent?.trim()
-                await expect(label, 'panel row label').toBeTruthy()
-            }
-        }
-    },
-}
-
 /** The lead's minimum is the clamped lead measured directly and respects the consumer floor: at
  *  370 and 380px the PDF trail ends inside the bar. */
 const trailInside = (width: number): Story => ({
@@ -539,13 +424,13 @@ export const Narrow: Story = {
     },
 }
 
-/** A pane where the full trail plus the filename's 7ch minimum does not fit: the level-4 elements
- *  (zoom steps, dark mode, to markdown, the file actions) are dropped for fit (`data-bar-hidden`)
+/** A 480px pane (the trail lost its to-markdown glyph, so 500px now holds the zoom steps) where the full trail plus the filename's 7ch minimum does not fit: the level-4 elements
+ *  (zoom steps, dark mode, the file actions) are dropped for fit (`data-bar-hidden`)
  *  and `More controls` is the trail's last control. Opening it lists them, and a toggle pressed in
  *  the panel is the real one: dark mode turns on. Those assertions need ui/ViewBar's fit-driven drop
  *  (the pdf-bar-redesign overflow task): they read `data-bar-hidden` and the `More controls` label. */
 export const PdfNarrowOverflow: Story = {
-    render: () => <Harness width={500} kind="pdf" native />,
+    render: () => <Harness width={480} kind="pdf" native />,
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
         const level4 = Array.from(bar.querySelectorAll<HTMLElement>('[data-bar-drop="4"]'))
@@ -570,8 +455,7 @@ export const PdfNarrowOverflow: Story = {
             if (!el.getClientRects().length) throw new Error('dark mode not shown in the panel')
             return el
         })
-        // One row per label, in bar order: zoom, dark mode, file. The convert button and the file
-        // actions both say `file`, so they share one row.
+        // One row per label, in bar order: zoom, dark mode, file. The file actions share one row.
         const panel = dark.closest('[data-popover]') as HTMLElement
         // No tooltip over the panel (focus rests on the rows, not a control), the panel sits inside
         // the bar's right edge, and every plain icon in it rests muted like its bar neighbours.
@@ -580,7 +464,7 @@ export const PdfNarrowOverflow: Story = {
             bar.getBoundingClientRect().right + 1,
         )
         const zoomOut = within(panel).getByLabelText('Zoom out')
-        for (const l of ['Convert to markdown', 'Open in default app', 'Reveal in file manager']) {
+        for (const l of ['Open in default app', 'Reveal in file manager']) {
             await expect(getComputedStyle(within(panel).getByLabelText(l)).color, l).toBe(
                 getComputedStyle(zoomOut).color,
             )
@@ -592,7 +476,7 @@ export const PdfNarrowOverflow: Story = {
         const fileLabel = within(panel).getByText('file')
         await expect(within(panel).getAllByText('file').length, 'one file row').toBe(1)
         const fileRow = fileLabel.parentElement as HTMLElement
-        for (const l of ['Convert to markdown', 'Open in default app', 'Reveal in file manager']) {
+        for (const l of ['Open in default app', 'Reveal in file manager']) {
             await expect(within(fileRow).getByLabelText(l), l).toBeTruthy()
         }
         await expect(dark.getAttribute('aria-pressed')).toBe('false')
@@ -611,7 +495,7 @@ export const PdfNarrowFits: Story = {
         const bar = barOf(canvasElement)
         await expect(bar.querySelectorAll('[data-bar-hidden]').length, 'hidden elements').toBe(0)
         await expect(within(bar).queryByLabelText('More controls')).toBeNull()
-        for (const label of ['Zoom in', 'Dark mode', 'Convert to markdown', 'Open in default app']) {
+        for (const label of ['Zoom in', 'Dark mode', 'Open in default app']) {
             await expect(within(bar).getByLabelText(label).getClientRects().length, label).toBeGreaterThan(0)
         }
         const p = probeBar(bar)

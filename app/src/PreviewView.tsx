@@ -62,7 +62,8 @@ import PageInk, { type PageInkPage } from './preview/PageInk'
 import HighlightLayer from './preview/HighlightLayer'
 import PreviewBar from './preview/PreviewBar'
 import BookView from './bases/BookView'
-import type { ReadMode } from './bases/ReadModeSwitch'
+import type { ReadFlow, ReadView } from './bases/ReadModeSwitch'
+import type { TranscriptionController } from './bases/transcription'
 import ViewBar, { Crumb, type ViewBarSlots } from './ui/ViewBar'
 import ScratchTextLayer from './preview/ScratchTextLayer'
 import CodeFindBar from './preview/CodeFindBar'
@@ -106,12 +107,6 @@ import { Loading } from './ui/EmptyState'
 import { isTauri } from './platform'
 import { openPathInDefaultApp, revealPath } from './appWindow'
 import { pushToast } from './ui/ToastHost'
-import {
-    cancelConversion,
-    convertPdf,
-    isConverting,
-    watchPdf,
-} from './preview/pdfMarkdownJobs'
 import { settings, setSettings } from './settings'
 import { matchesKeybinding } from './keybindings'
 import styles from './PreviewView.module.css'
@@ -130,6 +125,8 @@ const MAX_MATCHES = 2000
 export function PreviewView(props: {
     path: string
     tagNames: () => string[]
+    /** The reader's transcription controller; a story hands in one over a fake job client. */
+    transcription?: TranscriptionController
     /** Vault notes for a scratch note's `[[wikilink]]` completion (ScratchTextLayer ->
      *  ScratchBlock -> MarkdownField), the same `NoteCandidate[]` shape App.tsx's `noteCandidates`
      *  already computes for the note editor. Absent = no note candidates (today's behaviour).
@@ -179,17 +176,13 @@ export function PreviewView(props: {
     const path = createMemo(() => props.path)
     const kind = (): PreviewKind => previewKind(path()) ?? 'external'
 
-    // PDF → markdown: a conversion started from this PDF (here, in another pane, or before a
-    // reload) shows in the bar while it runs; the job itself lives in preview/pdfMarkdownJobs.
-    createEffect(() => {
-        if (kind() !== 'pdf') return
-        onCleanup(watchPdf(path()))
-    })
     const name = () => path().split('/').pop() ?? path()
 
-    // How an image or PDF is read: `scroll` is this viewer; `pages` and `text` are the book reader
-    // over this one file, the same reader a book base uses. Remembered per file.
-    const [readMode, setReadMode] = createSignal<ReadMode>('scroll')
+    // How an image or PDF is read: its pages scrolled is this viewer; flipped pages, text and side by
+    // side are the book reader over this one file, the same reader a book base uses. Remembered per file.
+    const [readView, setReadView] = createSignal<ReadView>('pages')
+    const [readFlow, setReadFlow] = createSignal<ReadFlow>('scroll')
+    const inViewer = (v: ReadView, f: ReadFlow) => v === 'pages' && f === 'scroll'
     const [bookLayout, setBookLayout] = createSignal<'spread' | 'single'>('spread')
     // Switching between the viewer and the book lands on the page the reader was on, and about as
     // far down it: the viewer's page and scroll into it open the book there, and the book's page
@@ -199,7 +192,8 @@ export function PreviewView(props: {
     createEffect(
         on(path, p => {
             const saved = loadPreviewView(p)
-            setReadMode(saved?.readMode ?? 'scroll')
+            setReadView(saved?.readMode ?? 'pages')
+            setReadFlow(saved?.flow ?? (saved?.readMode === 'pages' ? 'flip' : 'scroll'))
             bookAt = undefined
             setBookStart(undefined)
             setBookLayout(saved?.bookLayout ?? 'spread')
@@ -211,22 +205,29 @@ export function PreviewView(props: {
         if (!el || !b || b.h <= 0) return 0
         return Math.min(1, Math.max(0, (el.scrollTop - b.top) / b.h))
     }
-    const pickReadMode = (m: ReadMode) => {
-        const was = readMode()
-        if (kind() === 'pdf' && was === 'scroll' && m !== 'scroll') setBookStart({ leaf: currentPage(), frac: viewerFrac() })
-        if (kind() === 'pdf' && was !== 'scroll' && m === 'scroll' && bookAt) {
+    const pickReading = (v: ReadView, f: ReadFlow) => {
+        const was = inViewer(readView(), readFlow())
+        const now = inViewer(v, f)
+        if (kind() === 'pdf' && was && !now) setBookStart({ leaf: currentPage(), frac: viewerFrac() })
+        if (kind() === 'pdf' && !was && now && bookAt) {
             const at = bookAt
             requestAnimationFrame(() => pdfController?.scrollToPage(at.leaf, at.frac))
         }
-        setReadMode(m)
-        savePreviewView(path(), { readMode: m === 'scroll' ? undefined : m })
+        setReadView(v)
+        setReadFlow(f)
+        savePreviewView(path(), {
+            readMode: now ? undefined : v,
+            flow: v === 'pages' ? undefined : f === 'flip' ? 'flip' : undefined,
+        })
     }
+    const pickReadView = (v: ReadView) => pickReading(v, readFlow())
+    const pickReadFlow = (f: ReadFlow) => pickReading(readView(), f)
     const pickBookLayout = (l: 'spread' | 'single') => {
         setBookLayout(l)
         savePreviewView(path(), { bookLayout: l === 'single' ? 'single' : undefined })
     }
     const [bookSlots, setBookSlots] = createSignal<ViewBarSlots | undefined>()
-    const reading = () => inkable() && readMode() !== 'scroll'
+    const reading = () => inkable() && !inViewer(readView(), readFlow())
     // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
     // through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/` encoding that lets
     // macOS-screenshot filenames load can never silently regress.
@@ -1028,14 +1029,12 @@ export function PreviewView(props: {
                 onToggleDark={togglePdfDark}
                 panelOpen={panelOpen}
                 onTogglePanel={() => setPanelOpen(v => !v)}
-                converting={() => isConverting(path())}
-                onConvert={() => void convertPdf(path())}
-                onCancelConvert={() => void cancelConversion(path())}
                 nativeActions={nativeActions}
                 onOpenExternal={reveal => void openExternal(reveal)}
                 imageSize={imageSize}
-                readMode={inkable() ? readMode : undefined}
-                onReadMode={pickReadMode}
+                reading={inkable() ? () => ({ view: readView(), flow: readFlow() }) : undefined}
+                onReadView={pickReadView}
+                onReadFlow={pickReadFlow}
             />
                 }
             >
@@ -1073,14 +1072,16 @@ export function PreviewView(props: {
                     <BookView
                         rows={[]}
                         files={[path()]}
-                        view={{ type: 'book', bookMode: readMode() === 'text' ? 'text' : 'pages', bookLayout: bookLayout() }}
+                        view={{ type: 'book', bookMode: readView(), bookFlow: readFlow(), bookLayout: bookLayout() }}
                         ownsRows={false}
                         onChange={() => {}}
                         onBarSlots={setBookSlots}
-                        onReadMode={pickReadMode}
+                        onReadView={pickReadView}
+                        onReadFlow={pickReadFlow}
                         onLayout={pickBookLayout}
                         dark={pdfDark}
                         onDark={on => store()?.edit(d => setDark(d, on))}
+                        transcription={props.transcription}
                         start={bookStart()}
                         onPosition={at => (bookAt = at)}
                     />

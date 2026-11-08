@@ -25,7 +25,7 @@
   gap: var(--bar-icon-gap);
   flex: 0 0 auto;
 }
-/* The readouts are all text (`p. N / M`, `// converting to markdown [cancel]`, `W × H`): text has no
+/* The readouts are all text (`p. N / M`, `W × H`): text has no
    bracket room, so the plain --bar-icon-gap left them 8px apart beside ~16.5px icon pairs. --sp-6
    lands text-to-text on the same distance as everything else inside a group. */
 .readouts,
@@ -86,15 +86,18 @@
   margin-inline-start: calc(var(--sp-2) + 3px);
 }
 
-/* The `scroll | pages | text` switch, after the page readout's text: like `.afterText`, the start
-   adds back the bracket room text lacks, so the readout-to-switch gap measures the bar's one
-   ~16.5px. Its last segment keeps its right bracket room unpainted, and the zoom run after it adds
-   `.afterText`'s room for text it no longer follows, so the end takes both back. On the switch, not
-   the zoom run, so the pull leaves with the switch when the bar drops it. */
+/* The reader's view icons, after the page readout's text: like `.afterText`, the start adds back
+   the bracket room text lacks, so the readout-to-icons gap measures the bar's one ~16.5px. */
 .readMode {
-  margin-inline-start: calc(var(--sp-2) - 0.6px);
-  margin-inline-end: calc(-1 * var(--sp-2) - 1.5px);
+  margin-inline-start: calc(var(--sp-4) + 2.2px);
+  margin-inline-end: calc(var(--sp-1) - 0.7px);
 }
+/* With the zoom steps dropped, `fit` (quiet text) follows the icons themselves rather than the
+   readout's text, so it takes the icon run's bracket room back too. */
+.readMode + .afterText:has(> [data-bar-hidden]) {
+  margin-inline-start: calc(var(--sp-4) + 0.8px);
+}
+
 
 /* A plain icon (to markdown, open, reveal) rests in the bar's one muted ink, like an off toggle:
    Button paints a `normal` icon --fg. Hover keeps Button's own accent, and a disabled icon keeps the

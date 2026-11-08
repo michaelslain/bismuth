@@ -24,14 +24,18 @@
 import { createSignal, For, onCleanup, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
+import { pickRead, readState } from './bases/_readModePick'
 import { ToastHost } from './ui/ToastHost'
 import { jsPDF } from 'jspdf'
 import { PreviewView } from './PreviewView'
 import { api, setTransport, type Transport } from './api'
 import bookPdfUrl from '../../core/test/drawing/fixtures/pdfkit-highlights.pdf?url'
-import { setSettings } from './settings'
+import { settings, setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
-import { clearPreviewView, loadPreviewView } from './preview/previewViewMemory'
+import { clearPreviewView, loadPreviewView, savePreviewView } from './preview/previewViewMemory'
+import { fakeTranscribe, type FakeOptions, type FakeTranscription } from './bases/_transcriptionFake'
+import { bookPageUrl } from './bases/_bookPages'
+import { toasts } from './ui/toastStore'
 import { anchorAt, positionAt } from './preview/pageLayout'
 import { ZOOM_TWEEN_MS } from './preview/zoomGesture'
 import { inkSidecarFor } from '../../core/src/fileKinds'
@@ -95,6 +99,12 @@ type Story = StoryObj<typeof meta>
 // PreviewView's `tagNames` (companion-note tag autocomplete, not exercised by any story here —
 // see Preview/CompanionFrontmatter.stories.tsx) — a fixed empty candidate list is enough to
 // satisfy the prop.
+/** The text a person sees in a bar: the long variants only (BarLabel keeps both lengths in the DOM). */
+const shown = (el: HTMLElement) => {
+    const c = el.cloneNode(true) as HTMLElement
+    c.querySelectorAll('[data-bar-abbr="short"]').forEach(n => n.remove())
+    return c.textContent ?? ''
+}
 const NO_TAGS = () => [] as string[]
 
 const CODE_PATH = 'src/example.ts'
@@ -624,7 +634,7 @@ export const Pdf: Story = {
 }
 
 /** A PDF read as a book: `pages` swaps the viewer and its bar for the book reader over this one
- *  file, with the same `scroll | pages | text` switch; `scroll` brings the viewer back as it was. */
+ *  file, with the same view icons and `move by` row; `pages` with `scroll` brings the viewer back as it was. */
 export const PdfReadAsBook: Story = {
     name: 'Pdf read as a book',
     render: () => {
@@ -642,13 +652,13 @@ export const PdfReadAsBook: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await waitFor(() => expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBeGreaterThanOrEqual(1))
-        await expect(canvas.getByRole('button', { name: 'scroll' })).toHaveAttribute('aria-pressed', 'true')
-        await userEvent.click(canvas.getByRole('button', { name: 'pages' }))
+        await expect(await readState(canvasElement, 'scroll or flip')).toBe('scroll')
+        await pickRead(canvasElement, 'scroll or flip', 'flip')
         await waitFor(() => expect(canvasElement.querySelector('[data-preview-book] [data-book]')).not.toBeNull())
         await waitFor(() => expect(canvas.getByText(/^page 1 \/\/ \d+$/)).toBeInTheDocument(), { timeout: 8000 })
         await expect(canvasElement.querySelector('[data-testid="page-readout"]')).toBeNull()
-        await expect(canvas.getByRole('button', { name: 'pages' })).toHaveAttribute('aria-pressed', 'true')
-        await userEvent.click(canvas.getByRole('button', { name: 'scroll' }))
+        await expect(await readState(canvasElement, 'scroll or flip')).toBe('flip')
+        await pickRead(canvasElement, 'scroll or flip', 'scroll')
         await waitFor(() => expect(canvasElement.querySelector('[data-preview-book]')).toBeNull())
         await waitFor(() => expect(canvasElement.querySelector('[data-testid="page-readout"] button')?.textContent).toBe('p. 1 / 6'))
     },
@@ -2446,7 +2456,7 @@ export const PdfViewBarNarrow: Story = {
             // The FIT rule, not fixed breakpoints: an element drops only when it does not fit beside
             // the filename's 7ch, cumulatively level 4 (zoom steps, file actions) first. Measured in
             // this story (the PDF here never loads, so there is no page readout to drop): the full
-            // trail, `scroll | pages | text` included, fits at 720px; level 4 is hidden at 520px and
+            // trail, the view icons included, fits at 720px; level 4 is hidden at 520px and
             // below, and the switch (level 3) at 380px. A hidden element is behind [≡].
             const level4Hidden = w <= 520
             const hidden = (el: Element) => el.hasAttribute('data-bar-hidden')
@@ -3670,6 +3680,221 @@ export const ImageDrawExitCancelsStroke: Story = {
         // Well past the save debounce: nothing was written.
         await new Promise(res => setTimeout(res, 1500))
         await expect(measuredSidecarPuts).toBe(0)
+    },
+}
+
+
+// ── the reader's text and side by side modes, over a fake transcription seam ──
+let fk!: FakeTranscription
+const READER_PDF = 'docs/real.pdf'
+const READER_IMAGE = 'docs/photo.png'
+const readerText = (page: number) => `Page ${page}\nI went to the woods because I wished to live deliberately\nand see if I could not learn what it had to teach.`
+/** A fake reader over `file`, `have` pages already transcribed, and the file's remembered mode. */
+function readerSetup(file: string, mode: 'text' | 'side', have: number[], auto: boolean, extra: FakeOptions = {}) {
+    fk = fakeTranscribe({ pageCount: () => (file === READER_PDF ? 6 : 1), text: (_f, p) => readerText(p), ...extra })
+    for (const p of have) fk.texts.set(`${file}#${p}`, readerText(p))
+    const restore = fk.install()
+    const prior = (settings as { transcription?: unknown }).transcription
+    ;(setSettings as (k: string, v: unknown) => void)('transcription', { auto, engine: 'auto', math: 'ask', provider: 'auto', model: '' })
+    setTransport(fakeTransport({}))
+    clearPreviewView(file)
+    savePreviewView(file, { readMode: mode })
+    const original = api.assetUrl
+    const sixPages = URL.createObjectURL(new Blob([buildChurnTestPdf()], { type: 'application/pdf' }))
+    api.assetUrl = (target: string) => (target === READER_PDF ? sixPages : target === READER_IMAGE ? bookPageUrl(1) : original(target))
+    return () => {
+        api.assetUrl = original
+        restore()
+        ;(setSettings as (k: string, v: unknown) => void)('transcription', prior)
+    }
+}
+const reader = (file: string) => (
+    <div style={{ height: '100vh' }}>
+        <PreviewView path={file} tagNames={NO_TAGS} transcription={fk.controller()} pdfLoad={file === READER_PDF ? () => Promise.resolve(buildChurnTestPdf()) : undefined} />
+    </div>
+)
+const readerSections = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>('[data-preview-book] [data-page-key]'))
+
+/** A PDF in text mode: one editable column with a divider per page, the reader in each divider, no convert-to-markdown button. */
+export const PdfTextMode: Story = {
+    name: 'Pdf text mode',
+    beforeEach: () => readerSetup(READER_PDF, 'text', [1, 2, 3, 4, 5, 6], false),
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => expect(readerSections(canvasElement).length).toBe(6), { timeout: 8000 })
+        await waitFor(() => expect(readerSections(canvasElement)[0].textContent).toContain('page 1'))
+        await expect(readerSections(canvasElement)[0].querySelector('[data-page-status]')?.textContent).toBe('')
+        await expect(canvas.queryByRole('button', { name: /markdown/i })).toBeNull()
+        await expect(await readState(canvasElement, 'read as')).toBe('text')
+        await expect(await readState(canvasElement, 'scroll or flip')).toBe('scroll')
+    },
+}
+
+/** A PDF side by side: each page's picture beside its text. */
+export const PdfSideBySide: Story = {
+    name: 'Pdf side by side',
+    beforeEach: () => readerSetup(READER_PDF, 'side', [1, 2, 3, 4, 5, 6], false),
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-side-by-side] [data-row-key]').length).toBe(6), { timeout: 8000 })
+        await waitFor(() => expect(canvasElement.querySelector<HTMLCanvasElement>('[data-row-key] canvas')!.width).toBeGreaterThan(0), { timeout: 8000 })
+        await waitFor(() => expect(canvasElement.textContent).toContain('page 1 // 6'))
+    },
+}
+
+/** Transcribing a PDF: the readout counts the same pages as the bar, then `[ cancel ]` stops it. */
+export const PdfTranscribing: Story = {
+    name: 'Pdf transcribing',
+    beforeEach: () => readerSetup(READER_PDF, 'text', [], true),
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => expect(shown(canvasElement)).toContain('page 1 // 6 // transcribing 1 of 6'), { timeout: 8000 })
+        await fk.tick(2)
+        await waitFor(() => expect(shown(canvasElement)).toContain('transcribing 2 of 6 // about 5 min left'))
+        await userEvent.click(canvas.getByRole('button', { name: 'cancel' }))
+        await waitFor(() => expect(toasts().some(t => t.message === 'stopped transcribing real.pdf')).toBe(true))
+        await canvas.findByRole('button', { name: 'transcribe 5 pages' })
+    },
+}
+
+/** An image in text mode: no divider, its text beneath. */
+export const ImageTextMode: Story = {
+    name: 'Image text mode',
+    beforeEach: () => readerSetup(READER_IMAGE, 'text', [1], false),
+    render: () => reader(READER_IMAGE),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(readerSections(canvasElement).length).toBe(1), { timeout: 8000 })
+        await waitFor(() => expect(readerSections(canvasElement)[0].textContent).toContain('I went to the woods'))
+        await expect(readerSections(canvasElement)[0].querySelector('[data-page-status]')).toBeNull()
+    },
+}
+
+
+// ── reader stories added in fix round 2d ──
+const readerLines = (_file: string, page: number) => [
+    { text: `Page ${page}`, x: 0.1, y: 0.1, w: 0.2, h: 0.04 },
+    { text: 'I went to the woods because I wished to live deliberately', x: 0.1, y: 0.2, w: 0.7, h: 0.04 },
+]
+const readerBar = (root: HTMLElement) => within(root)
+const ctxMenu = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect()
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }))
+}
+async function pickFirstLine(section: HTMLElement) {
+    await userEvent.click(section.querySelector<HTMLElement>('.cm-line')!)
+    await userEvent.keyboard('{Home}{Shift>}{End}{/Shift}')
+}
+
+/** Under a minute of work left reads `under a minute left`. */
+export const PdfUnderAMinuteLeft: Story = {
+    name: 'Pdf under a minute left',
+    beforeEach: () => readerSetup(READER_PDF, 'text', [], true, { etaMs: () => 20_000 }),
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(shown(canvasElement)).toContain('transcribing 1 of 6'), { timeout: 8000 })
+        await expect(canvasElement.textContent).not.toContain('left')
+        await fk.tick(2)
+        await waitFor(() => expect(shown(canvasElement)).toContain('transcribing 2 of 6 // under a minute left'))
+    },
+}
+
+const [pdfMounted, setPdfMounted] = createSignal(true)
+/** Unmount mid-run and mount again with a fresh controller over the same client: `transcribing 3 of 6` and a working `[ cancel ]` return without a second request. */
+export const PdfRemountMidRun: Story = {
+    name: 'Pdf remount mid run',
+    beforeEach: () => {
+        setPdfMounted(true)
+        return readerSetup(READER_PDF, 'text', [], false)
+    },
+    render: () => {
+        const first = fk.controller()
+        let mounts = 0
+        const Mount = () => {
+            const ctl = mounts++ === 0 ? first : fk.controller()
+            return (
+                <div style={{ height: '100vh' }}>
+                    <PreviewView path={READER_PDF} tagNames={NO_TAGS} transcription={ctl} pdfLoad={() => Promise.resolve(buildChurnTestPdf())} />
+                </div>
+            )
+        }
+        return <Show when={pdfMounted()}><Mount /></Show>
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(await canvas.findByRole('button', { name: 'transcribe 6 pages' }, { timeout: 3000 }))
+        await waitFor(() => expect(shown(canvasElement)).toContain('transcribing 1 of 6'), { timeout: 8000 })
+        await fk.tick(2)
+        await waitFor(() => expect(shown(canvasElement)).not.toContain('transcribing 1 of 6'))
+        const at = () => Number(/transcribing (\d+) of 6/.exec(canvasElement.textContent ?? '')?.[1] ?? 0)
+        const mid = at()
+        await expect(mid).toBeGreaterThan(1)
+        const before = fk.calls.length
+        setPdfMounted(false)
+        await waitFor(() => expect(canvasElement.querySelector('[data-preview-book]')).toBeNull())
+        setPdfMounted(true)
+        // the adopting poll is itself one step of the fake's job, so the count is at least where it was
+        await waitFor(() => expect(at()).toBeGreaterThanOrEqual(mid), { timeout: 8000 })
+        await expect(fk.calls.length).toBe(before)
+        await userEvent.click(within(canvasElement).getByRole('button', { name: 'cancel' }))
+        await waitFor(() => expect(toasts().some(t => t.message === 'stopped transcribing real.pdf')).toBe(true))
+        await waitFor(() => expect(shown(canvasElement)).not.toContain('transcribing'))
+    },
+}
+
+/** One run over a PDF: the prompt's count grows, one choice is sent, and math pages found after it are not asked about again. */
+export const PdfMathChoiceCoversLater: Story = {
+    name: 'Pdf math choice covers later pages',
+    beforeEach: () => readerSetup(READER_PDF, 'text', [], true, { mathKeys: [2, 3, 5].map(n => `${READER_PDF}#${n}`) }),
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        const body = within(document.body)
+        await waitFor(() => expect(shown(canvasElement)).toContain('transcribing'), { timeout: 8000 })
+        for (let i = 0; i < 8 && !body.queryByText('this page has math'); i++) await fk.tick()
+        await body.findByText('this page has math')
+        await fk.tick()
+        await body.findByText('2 pages have math')
+        await userEvent.click(body.getByRole('button', { name: 'go fast' }))
+        await waitFor(() => expect(body.queryByText('2 pages have math')).toBeNull())
+        await fk.tick(10)
+        await waitFor(() => expect(shown(canvasElement)).not.toContain('transcribing'), { timeout: 8000 })
+        await expect(body.queryByText(/have math|has math/)).toBeNull()
+        await expect(fk.decisions).toEqual(['fast'])
+    },
+}
+
+/** Side by side over a PDF: selecting text boxes the matching lines on that page's picture. */
+export const PdfLocate: Story = {
+    name: 'Pdf locate',
+    beforeEach: () => readerSetup(READER_PDF, 'side', [1, 2, 3, 4, 5, 6], false, { lines: readerLines }),
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-side-by-side] [data-row-key]').length).toBe(6), { timeout: 8000 })
+        const row = canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        await waitFor(() => expect(row.querySelector('.cm-content')?.textContent).toContain('Page 1'), { timeout: 8000 })
+        await pickFirstLine(row)
+        await waitFor(() => expect(row.querySelectorAll('[data-locate-box]').length).toBeGreaterThan(0), { timeout: 8000 })
+    },
+}
+
+/** Right-click a section in text mode: `edit text`, then the three read-again rows, no `transcribe again with ai`; a read-again row runs just that page. */
+export const PdfPageMenu: Story = {
+    name: 'Pdf page menu',
+    beforeEach: () => readerSetup(READER_PDF, 'text', [1, 2, 3, 4, 5, 6], false),
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(readerSections(canvasElement).length).toBe(6), { timeout: 8000 })
+        await waitFor(() => expect(readerSections(canvasElement)[1].textContent).toContain('page 2'))
+        ctxMenu(readerSections(canvasElement)[1].querySelector<HTMLElement>('.cm-content')!)
+        const body = within(document.body)
+        const items = ['edit text', 'read again on-device', 'read again with the math reader', 'read again with ai']
+        const nodes = await Promise.all(items.map(t => body.findByText(t)))
+        for (let i = 1; i < nodes.length; i++) await expect(nodes[i - 1].compareDocumentPosition(nodes[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        await expect(body.queryByText('transcribe again with ai')).toBeNull()
+        await userEvent.click(nodes[3])
+        await waitFor(() => expect(fk.calls.at(-1)).toMatchObject({ file: READER_PDF, pages: [2], engine: 'ai' }))
+        await readerBar(canvasElement)
     },
 }
 

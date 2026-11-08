@@ -1,6 +1,6 @@
 # Transcribe pages and handwritten scans
 
-Transcription turns the pictures in a vault into text: a photographed notebook page, a handwritten scan, a scanned PDF or a page of lecture math becomes markdown inside the file's companion note, where search and embeddings index it, with math written as LaTeX. Use it for the pages of a [book view](../bases/views/book.md) or any image or PDF. For a typeset PDF you want as a note of its own, [Convert a PDF to markdown](pdf-to-markdown.md) fits better; to make a scanned PDF's text selectable in the viewer, use [OCR](ocr.md).
+Transcription turns the pictures in a vault into text: a photographed notebook page, a handwritten scan, a scanned PDF or a page of lecture math becomes markdown inside the file's companion note, where search and embeddings index it, with math written as LaTeX. Use it for the pages of a [book view](../bases/views/book.md) or any image or PDF. To make a scanned PDF's text selectable in the viewer, use [OCR](ocr.md).
 
 ```bash
 bismuth transcribe math/math110-2025-09-22.pdf --book Math.base.jsonl --vault ~/vault
@@ -69,8 +69,6 @@ Marker 2 is the release line that runs its models on `llama-server`, and the `>=
 ```bash
 uv tool install --reinstall 'marker-pdf>=2,<3'
 ```
-
-[Convert a PDF to markdown](pdf-to-markdown.md) runs the same Marker.
 
 ## Settings
 
@@ -144,6 +142,17 @@ bismuth transcript set scans/notes.pdf --page 2 --text "Dear diary, the integral
 
 `x`, `y`, `w` and `h` are fractions of the page, with the origin at the top left. Boxes are never stored in the companion. A line belongs to a region when the box overlaps it by at least 30% of the line's height. Where on-device recognition is absent (no Mac helper, or the iPad) the route answers 503 `VISION_UNAVAILABLE`.
 
+## Transcribe in the background
+
+A reader that transcribes a long file starts a background job instead of waiting on one request: `POST /transcribe/job` answers the job at once and the pages land in the companion note as they finish. Reading the stored transcript mid-run shows every page done so far.
+
+- **Progress.** The job lists every page it covers with a status of `queued`, `reading`, `done` or `failed`. A `done` page carries the engine whose text it holds and how long it took in milliseconds; a `failed` page carries a one-line reason, and the run goes on with the next page. The job's `etaMs` is the mean time of the pages done so far times the pages left, and is absent until one page is done. `on-device` and `ai` read one page at a time; `marker` reads its pages as one batch, so they change status together.
+- **Cancel.** `POST /transcribe/job/cancel` ends the job with the state `cancelled`. `on-device` and `ai` stop after the page being read; `marker` stops at once. Pages already done keep their text and nothing is written after the cancel. A job started for the file after a cancel waits until the stopped engine has settled.
+- **One at a time.** Jobs for different files run one after another in start order, because the engines are heavy. Starting a job for a file whose job is running returns that job.
+- **A math question during the run.** With `math` at `ask`, the job reads every page on-device first and lists the pages that look like math in `mathPending` as soon as each is found, while it goes on with the other pages. `POST /transcribe/job/math` with `careful` re-reads every pending page, and every math page found later, with `marker` (with `ai` where marker is not installed, and the job then sets `markerMissing`); `fast` keeps the on-device text and clears the list. With no choice the job ends `done` with `mathPending` still listed, and a `careful` choice made afterward starts the re-read.
+
+The job lives in the running server, so a restart forgets it; the finished pages stay in the companion. `GET /transcribe/job?file=<file>` answers the file's current or last job, or `null`. Under `ask` the CLI, the MCP tool and `POST /transcribe` have no one to ask and read math pages carefully.
+
 ## Transcribe from the command line
 
 `bismuth transcribe <file>` runs in the calling process and needs no running app. The path is vault-relative and names an image or a PDF; anything else is refused.
@@ -155,6 +164,7 @@ bismuth transcript set scans/notes.pdf --page 2 --text "Dear diary, the integral
 | `--pages <spec>` | 1-based PDF pages, such as `3`, `1-4` or `1-3,7`. Default all |
 | `--book <base>` | Add `[[<base>]]` to the companion's `books` list |
 | `--missing` | Skip a file whose companion already has `transcribed:`; the result carries `"skipped": true` |
+| `--progress` | Write one JSON line to stderr per page state change, such as `{"page":3,"status":"done","engine":"on-device","ms":1840}`; stdout is unchanged. Ctrl-C stops the run after the page being read |
 
 `bismuth book pages <base>` prints a book base's page files in the view's sorted order, one per line; `--json` prints each as `{ file, kind, rowIndex }`. Pipe it into `transcribe` to do a whole book:
 
@@ -177,19 +187,25 @@ An agent runs `bismuth transcribe` from its shell with the flags in the table ab
 - If the engine is `on-device` and the helper is absent (the app is not installed, or the machine is not a Mac), the call fails with `VISION_UNAVAILABLE` and status 503, and no companion is written. Retry with `--engine marker` or `--engine ai`.
 - If the engine is `marker` and `marker_single` or `llama-server` is missing, the call fails with `MARKER_UNAVAILABLE` and status 503, naming the install command, and no companion is written. Under `auto` the math pages go to `ai` instead and the result carries `markerSkipped`.
 - If the engine is `ai` and the resolved backend is not installed or cannot read images, the call fails with `AI_UNAVAILABLE` and status 503, naming the backend. Under `auto` the on-device text is kept instead.
-- An unknown `engine`, or a `math` other than `careful` or `fast`, fails with status 400.
+- An unknown `engine`, or a `math` other than `careful`, `fast` or `ask`, fails with status 400.
+- If a job's every page fails, the job ends `failed` with the reason in `error`.
+- If you start a job on the iPad, the call fails with `VISION_UNAVAILABLE` and status 503; `GET /transcribe/job` answers `null`.
 - If the file is a note or any other kind, the call fails with status 422. If it does not exist, status 404.
 - If a page is blank or unreadable, the block is written with empty text for that page. Re-run it with another engine, or with `auto`.
 - If you delete the marker comments, the next run appends a new block after your text instead of replacing the old one.
 
 ## How it works
 
-`core/src/transcribe.ts` holds the one path every entry point shares: it checks the file, reads the `transcription` settings, picks the engine, runs it and writes the companion. `transcribeAuto` there routes each page. The HTTP routes are `POST /transcribe`, `GET /transcript`, `POST /transcript/mark`, `POST /transcript/page` and `POST /transcript/lines` in `core/src/routes/transcribe.ts` ([HTTP reference](../api/http-reference.md)); the CLI commands are `transcribe` and `transcript set`, and `cliTimeoutMs` in `mcp/src/cli.ts` gives it `bismuth_cli`'s long timeout.
+`core/src/transcribe.ts` holds the one path every entry point shares: it checks the file, reads the `transcription` settings, picks the engine, runs it and writes the companion. `transcribeAuto` there routes each page. The HTTP routes are `POST /transcribe`, the four `/transcribe/job` routes, `GET /transcript`, `POST /transcript/mark`, `POST /transcript/page` and `POST /transcript/lines` in `core/src/routes/transcribe.ts` ([HTTP reference](../api/http-reference.md)); the CLI commands are `transcribe` and `transcript set`, and `cliTimeoutMs` in `mcp/src/cli.ts` gives it `bismuth_cli`'s long timeout.
+
+`core/src/transcribeJob.ts` holds the jobs, keyed by file, and runs them through one promise chain so only one engine works at a time. A job calls `transcribe` with `onPage`, which makes it run page by page (`createPager` in `transcribe.ts`), `signal`, `onMath` and `mathChoice`; the same function serves `POST /transcribe` and the CLI, which pass none of them (the CLI's `--progress` passes `onPage` and a `SIGINT` signal). Each finished page is written with `writeTranscript` before the next starts. A choice that arrives after the reading pass runs `transcribeMathPages` over the pages still pending. The job types are in `core/src/transcribeJobTypes.ts`.
+
+`runTool` in `core/src/marker.ts` stops Marker when its signal aborts. Marker ignores `SIGINT` and tears down its `llama-server` helper, which runs in its own session, only from a Python `atexit` that no signal reliably reaches. So `runTool` freezes Marker with `SIGSTOP`, lists its descendants with `ps`, kills Marker with `SIGKILL`, sends each descendant `SIGTERM`, and sends `SIGKILL` to any still alive after `STOP_GRACE_MS`. A Marker run started while `llama-server` is still dying would attach to it, so `runTool` returns only after those descendants have exited, and a job started after a cancel waits for the stopped run to settle before its engine starts.
 
 `core/src/mathDetect.ts` decides whether a page looks like math from its on-device text. `core/src/marker.ts` runs Marker: `markerPageTexts` runs it with `--paginate_output` and `splitMarkerPages` splits the markdown on Marker's page labels, so each page keeps its own text. `INSTALL_HINTS` there holds the install commands in [Install Marker](#install-marker).
 
 `core/src/bookMarks.ts` finds a page's text inside the block and wraps or unwraps its spans, and `linesInRegion` picks the lines under a region. `core/src/transcript.ts` renders, merges and reads the marked block and stamps the frontmatter through `mutateFrontmatter`; `setTranscriptPage` and `writeTranscriptPage` there set one page without stamping, and `remapTranscriptPages` renumbers the pages after a PDF rewrite. `core/src/visionOcr.ts` runs the `bismuth-vision` helper, which is found through `BISMUTH_VISION_PATH`, then the app bundle, then the development build in `app/src-tauri/binaries`, then, on a Mac with `swiftc`, a build of `main.swift` compiled once and cached in `~/.bismuth/cache/vision`. `core/src/aiTranscribe.ts` runs one headless turn per page image on the resolved backend, in an empty temp folder.
 
-The engines load through dynamic `import()`, so the iPad's in-process core, which has no child processes, still loads the module. Its backend in `core/src/localBackend.ts` answers `POST /transcribe` with 503 `AI_UNAVAILABLE` for `ai` and 503 `VISION_UNAVAILABLE` otherwise, answers `POST /transcript/lines` with 503 `VISION_UNAVAILABLE`, and serves `GET /transcript`, `POST /transcript/mark` and `POST /transcript/page`. `transcribe` and `transcript` are in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
+The engines load through dynamic `import()`, so the iPad's in-process core, which has no child processes, still loads the module. Its backend in `core/src/localBackend.ts` answers `POST /transcribe` with 503 `AI_UNAVAILABLE` for `ai` and 503 `VISION_UNAVAILABLE` otherwise, answers `POST /transcript/lines` and the three `POST /transcribe/job` routes with 503 `VISION_UNAVAILABLE`, answers `GET /transcribe/job` with `null`, and serves `GET /transcript`, `POST /transcript/mark` and `POST /transcript/page`. `transcribe` and `transcript` are in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
 
-Source: `core/src/markerSetup.ts`, `core/src/transcribe.ts`, `core/src/transcript.ts`, `core/src/mathDetect.ts`, `core/src/marker.ts`, `core/src/bookMarks.ts`, `core/src/visionOcr.ts`, `core/src/aiTranscribe.ts`, `core/src/routes/transcribe.ts`, `core/src/localBackend.ts`, `cli/src/commands/transcribe.ts`, `mcp/src/cli.ts`
+Source: `core/src/markerSetup.ts`, `core/src/transcribe.ts`, `core/src/transcript.ts`, `core/src/mathDetect.ts`, `core/src/marker.ts`, `core/src/bookMarks.ts`, `core/src/visionOcr.ts`, `core/src/aiTranscribe.ts`, `core/src/transcribeJob.ts`, `core/src/transcribeJobTypes.ts`, `core/src/routes/transcribe.ts`, `core/src/localBackend.ts`, `cli/src/commands/transcribe.ts`, `mcp/src/cli.ts`

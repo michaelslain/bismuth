@@ -1,0 +1,26 @@
+/* TranscriptDoc.module.css — text mode's scrolling column (TranscriptDoc.tsx ONLY): the pane's own
+   background, one centred column at note width, a section per page. */
+.doc {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+}
+
+.column {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--note-column) + 2 * var(--note-gutter));
+  margin: 0 auto;
+  padding: var(--sp-5) var(--note-gutter);
+}
+
+.section {
+  box-sizing: border-box;
+}
+
+/* A section off the window: only its height, so the column's length does not change. */
+.pending {
+  box-sizing: border-box;
+  overflow: hidden;
+}

@@ -1,4 +1,5 @@
 // app/src/bases/bookText.ts
+// Kept for the _bookPages.ts story fixture (with bookTextRaster.ts); the reader no longer typesets text itself.
 // Pure typesetter for the reader's text mode and its stories: sets transcript markdown as an ebook,
 // justified lines and pages inside book margins (outer wider than the spine side), with headings,
 // bold, `==marks==`, and math as measured boxes (`$…$` inline, `$$…$$` on its own centred line).

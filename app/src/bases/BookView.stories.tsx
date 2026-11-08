@@ -5,6 +5,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { pickRead, readRow, readState } from './_readModePick'
 import { ToastHost } from '../ui/ToastHost'
 import { api, setTransport, type Transport } from '../api'
 import { settings, setSettings } from '../settings'
@@ -16,7 +17,10 @@ import ViewBar, { Crumb, type ViewBarSlots } from '../ui/ViewBar'
 import pdfFixtureUrl from '../../../core/test/drawing/fixtures/pdfkit-highlights.pdf?url'
 import type { Row, ViewConfig } from '../../../core/src/bases/types'
 import BookView from './BookView'
-import { bookPageUrl } from './_bookPages'
+import type { TranscriptionController } from './transcription'
+import { fakeTranscribe, type FakeOptions, type FakeTranscription } from './_transcriptionFake'
+import { bookPage, bookPageUrl } from './_bookPages'
+import { darkRgb } from './darkPage'
 import { ARTICLE_CHART, ARTICLE_PHOTO, buildArticlePdf } from '../preview/_articlePdf'
 import { paneMenuItemsOf, withPaneItems } from '../paneMenuExtras'
 import { ContextMenu } from '../ui/ContextMenu'
@@ -77,7 +81,7 @@ const images = (n: number): Row[] => Array.from({ length: n }, (_, i) => row(ima
 const bookView = (over: Partial<ViewConfig> = {}): ViewConfig => ({ type: 'book', ...over }) as ViewConfig
 
 /** The bar and the pane, sized like an editor pane. */
-function Harness(props: { w: number; h?: number; basePath?: string; rows: Row[]; view?: ViewConfig; transcribing?: { done: number; total: number }; onOuterMenu?: () => void }) {
+function Harness(props: { w: number; h?: number; basePath?: string; rows: Row[]; view?: ViewConfig; transcription?: TranscriptionController; onOuterMenu?: () => void }) {
     const [slots, setSlots] = createSignal<ViewBarSlots | undefined>()
     return (
         <div
@@ -100,15 +104,23 @@ function Harness(props: { w: number; h?: number; basePath?: string; rows: Row[];
                     ownsRows
                     onChange={() => {}}
                     onBarSlots={setSlots}
-                    transcribing={props.transcribing}
+                    transcription={props.transcription}
                 />
             </div>
         </div>
     )
 }
 
-const readout = (root: HTMLElement) =>
-    within(root.querySelector<HTMLElement>('[data-testid="book-bar"]')!).queryByText(/^pages? \d/)?.textContent
+/** The text a person sees in the bar: the long variants only (BarLabel keeps both lengths in the DOM). */
+const shown = (el: HTMLElement) => {
+    const c = el.cloneNode(true) as HTMLElement
+    c.querySelectorAll('[data-bar-abbr="short"]').forEach(n => n.remove())
+    return c.textContent ?? ''
+}
+const readout = (root: HTMLElement) => {
+    const n = within(root.querySelector<HTMLElement>('[data-testid="book-bar"]')!).queryByText(/^pages? \d/)
+    return n ? shown(n) : undefined
+}
 
 const host = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-book]')!
 
@@ -163,8 +175,8 @@ export const ScrollMode: Story = {
         col.scrollTop = third.offsetTop - col.offsetTop + 4
         col.dispatchEvent(new Event('scroll'))
         await waitFor(() => expect(readout(canvasElement)).toBe('page 3 // 6'), { timeout: 8000 })
-        await expect(within(canvasElement).getByRole('button', { name: 'scroll' })).toHaveAttribute('aria-pressed', 'true')
-        await userEvent.click(within(canvasElement).getByRole('button', { name: 'pages' }))
+        await expect(await readState(canvasElement, 'scroll or flip')).toBe('scroll')
+        await pickRead(canvasElement, 'scroll or flip', 'flip')
         await waitFor(() => expect(readout(canvasElement)).toBe('pages 2–3 // 6'), { timeout: 8000 })
         await expect(canvasElement.querySelector('[data-book-scroll]')).toBeNull()
     },
@@ -337,14 +349,6 @@ export const MixedImagesAndPdf: Story = {
     },
 }
 
-export const Transcribing: Story = {
-    beforeEach: () => serveFixtures(6),
-    render: () => <Harness w={900} rows={images(6)} transcribing={{ done: 3, total: 12 }} />,
-    play: async ({ canvasElement }) => {
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 6 // transcribing 3 of 12'), { timeout: 8000 })
-    },
-}
-
 export const FullBook: Story = {
     name: 'Full book',
     beforeEach: () => withText(6),
@@ -357,7 +361,7 @@ export const FullBook: Story = {
         await expect(c.queryByRole('button', { name: 'transcript' })).toBeNull()
         await expect(c.queryByText(/^text \/\//)).toBeNull()
         await expect(c.queryByText(/^transcribe \d+ pages?$/)).toBeNull()
-        await expect(modeButton(canvasElement, 'text')).not.toBeDisabled()
+        await expect((await readRow(canvasElement, 'text')).disabled).toBe(false)
     },
 }
 
@@ -551,581 +555,442 @@ export const RegionHighlight: Story = {
 
 // ── text mode ──
 
-const WORDS = `I went to the woods because I wished to live deliberately, to front only the essential facts of life, and see if I could not learn what it had to teach, and not, when I came to die, discover that I had not lived. I did not wish to live what was not life, living is so dear; nor did I wish to practise resignation, unless it was quite necessary. I wanted to live deep and suck out all the marrow of life, to live so sturdily and Spartan-like as to put to rout all that was not life, to cut a broad swath and shave close, to drive life into a corner, and reduce it to its lowest terms.`
+const WORDS = `I went to the woods because I wished to live deliberately, to front only the essential facts of life, and see if I could not learn what it had to teach, and not, when I came to die, discover that I had not lived.`
 
-/** One transcript per page file, each a paragraph that starts with its own number. */
-const TRANSCRIPTS = new Map<string, string>()
-const marked: { file: string; page?: number; add?: string[]; remove?: string[] }[] = []
+// ── transcription stories: a fake job client advances one page per controller tick ──
+const pageText = (n: number) => `Page ${n}\nI went to the woods because I wished to live deliberately\n${WORDS}`
+const LINE_TWO = 'I went to the woods because I wished to live deliberately'
+let fk!: FakeTranscription
 
-/** Serves transcripts for the fixture pages (`texts`, or numbered prose) and a `markTranscript` that
- *  rewrites them, as the route would. */
-function serveTranscripts(count: number, texts?: string[], engine: 'on-device' | 'marker' = 'on-device') {
-    TRANSCRIPTS.clear()
-    marked.length = 0
-    for (let n = 1; n <= count; n++) TRANSCRIPTS.set(imagePath(n), texts?.[n - 1] ?? `Page ${n}. ${WORDS}`)
-    const original = { transcript: api.storedTranscript, mark: api.markTranscript }
-    api.storedTranscript = async (file: string) => ({
-        engine,
-        at: '2026-10-31T00:00:00.000Z',
-        pages: TRANSCRIPTS.has(file) ? [{ page: 1, text: TRANSCRIPTS.get(file)! }] : [],
+type FakeSetup = FakeOptions & { count: number; have?: number[]; auto?: boolean; math?: 'ask' | 'careful' | 'fast' }
+/** Fixture pages, a fake reader and the `transcription` settings; the returned function puts it all back. */
+function startFake(o: FakeSetup) {
+    const fixtures = serveFixtures(o.count)
+    fk = fakeTranscribe({
+        text: (file, page) => pageText(Number(file.match(/(\d+)/)?.[1] ?? page)),
+        lines: (_file, page) => [
+            { text: `Page ${page}`, x: 0.1, y: 0.1, w: 0.2, h: 0.04 },
+            { text: LINE_TWO, x: 0.1, y: 0.2, w: 0.7, h: 0.04 },
+        ],
+        ...o,
     })
-    api.markTranscript = async req => {
-        marked.push(req)
-        let text = TRANSCRIPTS.get(req.file) ?? ''
-        for (const q of req.add ?? []) text = text.replace(q, `==${q}==`)
-        for (const q of req.remove ?? []) text = text.replace(`==${q}==`, q)
-        TRANSCRIPTS.set(req.file, text)
-        return { ok: true, companion: `${req.file}.md`, marks: [] }
-    }
+    for (const n of o.have ?? []) fk.texts.set(`${imagePath(n)}#1`, pageText(n))
+    const restore = fk.install()
+    const prior = (settings as { transcription?: unknown }).transcription
+    ;(setSettings as (k: string, v: unknown) => void)('transcription', { auto: o.auto ?? false, engine: 'auto', math: o.math ?? 'ask', provider: 'auto', model: '' })
     return () => {
-        api.storedTranscript = original.transcript
-        api.markTranscript = original.mark
-    }
-}
-
-const withText = (n: number) => {
-    const a = serveFixtures(n)
-    const b = serveTranscripts(n)
-    return () => {
-        a()
-        b()
-    }
-}
-
-const textSpread = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-text-spread]')
-const textLines = (root: HTMLElement, side: 'left' | 'right') =>
-    Array.from(root.querySelectorAll<HTMLElement>(`[data-text-page="${side}"] [data-text-line]`))
-const readyText = async (root: HTMLElement) => {
-    await waitFor(() => expect(textSpread(root)).not.toBeNull(), { timeout: 8000 })
-    await waitFor(() => expect(host(root).hasAttribute('data-book-prefetched')).toBe(true), { timeout: 8000 })
-}
-const modeButton = (root: HTMLElement, name: 'pages' | 'text') => within(root).getByRole('button', { name })
-
-/** Lecture notes as Marker transcribed them from a handwritten notebook: headings, inline and
- *  display math, short lines. */
-const MATH_NOTES = [
-    String.raw`## Polynomials Applied to Operators
-
-$$\alpha : \mathcal{P}(\mathbb{F}) \rightarrow \mathcal{L}(V), \quad p \mapsto p(t)$$
-
-plug in the operator into the polynomials
-
-Nul $\alpha$ = set of multiples of same m: minimal polynomial
-
-minimal polynomial is unique
-
-degree of minimal polynomial is $\leq \dim V$
-
-dim 2 example
-
-$$A = \begin{bmatrix} a & b \\ c & d \end{bmatrix}$$
-
-$$z^2 - (a+d)z = (ad-bc) \quad \leftarrow \text{characteristic polynomial}$$`,
-    String.raw`Claim
-
-$$\lim_{n \rightarrow \infty} \frac{1}{n^2} = 0$$
-
-proof
-
-Let $\epsilon > 0$
-
-$$\text{define } N = \frac{1}{\sqrt{\epsilon}}$$
-
-$$\left| \frac{1}{n^2} \right| = \frac{1}{n^2} \quad (\forall n > N)$$
-
-Assume $\lim_{n \rightarrow \infty} s_n = a \in \mathbb{R} \rightarrow$ for $\epsilon = 1$ exists $N > 0$ such that $|(-1)^n - a| < 1 \quad \forall n > N$
-
-Therefore $s_n$ cannot have a limit $\square$`,
-]
-
-const withMathText = () => {
-    const a = serveFixtures(2)
-    const b = serveTranscripts(2, MATH_NOTES, 'marker')
-    return () => {
-        a()
-        b()
-    }
-}
-
-/** Handwritten lecture notes in text mode: headings set bold, formulas set by KaTeX, display math
- *  centred on its own line; `+` on the display panel's text size sets the type larger and the pages reflow. */
-export const MathText: Story = {
-    name: 'Math text',
-    beforeEach: withMathText,
-    render: () => <Harness w={1100} h={720} rows={images(2)} view={bookView({ bookMode: 'text' })} />,
-    play: async ({ canvasElement }) => {
+        fixtures()
+        restore()
+        ;(setSettings as (k: string, v: unknown) => void)('transcription', prior)
         setSettings('reader', 'textScale', 1)
-        await readyText(canvasElement)
-        const spread = () => textSpread(canvasElement)!
-        await waitFor(() => expect(spread().querySelectorAll('[data-text-math] .katex').length).toBeGreaterThan(3), { timeout: 8000 })
-        const display = spread().querySelector<HTMLElement>('[data-text-math="display"]')!
-        await expect(display.dataset.source).toMatch(/^\$\$/)
-        await expect(spread().querySelector('[data-text-line] [data-text-run]')!.textContent).toBe('Polynomials Applied to Operators')
-        const size = () => parseFloat(getComputedStyle(spread()).fontSize)
-        const pagesNow = () => Number(readout(canvasElement)!.match(/\/\/ (\d+)$/)![1])
-        const [px, count] = [size(), pagesNow()]
-        await userEvent.click(within(canvasElement).getByRole('button', { name: 'display' }))
-        await userEvent.click(await within(document.body).findByRole('button', { name: 'larger text' }))
-        await waitFor(() => expect(settings.reader.textScale).toBeGreaterThan(1))
-        // the type grows and the pages reflow to it
-        await waitFor(() => expect(size()).toBeGreaterThan(px), { timeout: 8000 })
-        await expect(pagesNow()).toBeGreaterThanOrEqual(count)
-        setSettings('reader', 'textScale', 1)
-    },
+    }
+}
+const withText = (n: number) => startFake({ count: n, have: Array.from({ length: n }, (_, i) => i + 1) })
+const textBook = (n: number, bookMode: ViewConfig['bookMode'], w = 900) => (
+    <Harness w={w} rows={images(n)} view={bookView({ bookMode })} transcription={fk.controller()} />
+)
+
+const sections = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>('[data-page-key]'))
+const editorOf = (s: HTMLElement | undefined) => s?.querySelector<HTMLElement>('.cm-content') ?? null
+const statusOf = (s: HTMLElement | undefined) => s?.querySelector('[data-page-status]')?.textContent ?? ''
+const barNode = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-testid="book-bar"]')!
+const barText = (root: HTMLElement) => within(barNode(root))
+const textReady = (root: HTMLElement, n: number) =>
+    waitFor(
+        () => {
+            expect(sections(root).length).toBe(n)
+            expect(editorOf(sections(root)[0])?.textContent).toContain('Page 1')
+        },
+        { timeout: 8000 },
+    )
+const sideReady = (root: HTMLElement, n: number) =>
+    waitFor(() => {
+        expect(root.querySelectorAll('[data-side-by-side] [data-row-key]').length).toBe(n)
+        expect(editorOf(root.querySelector<HTMLElement>('[data-row-key]')!)?.textContent).toContain('Page 1')
+    }, { timeout: 8000 })
+const bodyText = () => within(document.body)
+const rightClick = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect()
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }))
+}
+/** Click into a section and select its first line with the keyboard. */
+async function selectFirstLine(section: HTMLElement) {
+    await userEvent.click(section.querySelector<HTMLElement>('.cm-line')!)
+    await userEvent.keyboard('{Home}{Shift>}{End}{/Shift}')
+}
+/** Scroll a text-mode column so section `i` is at its top. */
+const scrollToSection = (root: HTMLElement, i: number, into = 0) => {
+    const scroller = sections(root)[0].parentElement!.parentElement!
+    scroller.scrollTop += sections(root)[i].getBoundingClientRect().top - scroller.getBoundingClientRect().top + into
+}
+const clickLayer = (row: HTMLElement, x: number, y: number) => {
+    const layer = row.querySelector<HTMLElement>('[data-locate-layer]')!
+    const r = layer.getBoundingClientRect()
+    layer.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + x * r.width, clientY: r.top + y * r.height }))
 }
 
-/** The transcripts set as a book: serif lines, a cover page, then spreads, with the page number under it. */
+/** Text mode is one scrolling column on the pane's own background: a divider row per page (its file
+ *  name, the reader that produced the text), the text rendered like a note. */
 export const TextMode: Story = {
     name: 'Text mode',
-    beforeEach: () => withText(6),
-    render: () => <Harness w={1100} h={720} rows={images(6)} view={bookView({ bookMode: 'text' })} />,
+    beforeEach: () => withText(3),
+    render: () => textBook(3, 'text'),
     play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        await waitFor(() => expect(readout(canvasElement)).toMatch(/^page 1 \/\/ \d+$/), { timeout: 8000 })
-        await expect(textLines(canvasElement, 'right').length).toBeGreaterThan(5)
-        const count = Number(readout(canvasElement)!.match(/\/\/ (\d+)$/)![1])
-        await pressNext(canvasElement, 1, `pages 2–3 // ${count}`)
-        await expect(within(canvasElement).getByText(`2–3 of ${count}`)).toBeInTheDocument()
-        // the pages sit on the pane: no page edges
-        await expect(getComputedStyle(canvasElement.querySelector('[data-text-page="right"]')!).borderTopWidth).toBe('0px')
+        await textReady(canvasElement, 3)
+        const first = sections(canvasElement)[0]
+        await expect(first.textContent).toContain('page-1.png')
+        // stored pages with no job record in this run show no reader
+        await expect(statusOf(first)).toBe('')
+        await expect(canvasElement.querySelector('[data-text-spread]')).toBeNull()
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 3'))
+        // one column: every section starts at the same left edge
+        await expect(new Set(sections(canvasElement).map(s => Math.round(s.getBoundingClientRect().left))).size).toBe(1)
     },
 }
 
-/** Pages to text and back keeps the reader on the same words. */
+/** Right-click a page: `edit text` opens text mode at that page with the caret in its section, then
+ *  the three `read again` rows. There is no `transcribe again with ai`. The pages flip, so the text
+ *  does too: that one page's text. */
+export const EditText: Story = {
+    name: 'Edit text',
+    beforeEach: () => withText(3),
+    render: () => textBook(3, 'pages'),
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 3')
+        rightClick(canvasElement.querySelector<HTMLElement>('[data-book-page="right"]')!)
+        for (const label of ['edit text', 'read again on-device', 'read again with the math reader', 'read again with ai'])
+            await bodyText().findByText(label)
+        await expect(bodyText().queryByText('transcribe again with ai')).toBeNull()
+        await userEvent.click(bodyText().getByText('edit text'))
+        await textReady(canvasElement, 1)
+        await waitFor(() => expect(sections(canvasElement)[0].contains(document.activeElement)).toBe(true))
+        await expect(await readState(canvasElement, 'scroll or flip')).toBe('flip')
+    },
+}
+
+/** `read again with ai` reads only that page again, with that reader, and shows it in the cell. */
+export const ReadAgainWithEngine: Story = {
+    name: 'Read again with engine',
+    beforeEach: () => withText(3),
+    render: () => textBook(3, 'pages'),
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 3')
+        rightClick(canvasElement.querySelector<HTMLElement>('[data-book-page="right"]')!)
+        await userEvent.click(await bodyText().findByText('read again with ai'))
+        await waitFor(() => expect(fk.calls.at(-1)).toMatchObject({ file: imagePath(1), pages: [1], engine: 'ai' }))
+        await fk.tick(2)
+        await pickRead(canvasElement, 'read as', 'text')
+        await pickRead(canvasElement, 'scroll or flip', 'scroll')
+        await textReady(canvasElement, 3)
+        await waitFor(() => expect(statusOf(sections(canvasElement)[0])).toBe('ai'))
+        // a page with no job record shows no reader
+        await expect(statusOf(sections(canvasElement)[1])).toBe('')
+    },
+}
+
+/** Pages fill in place as the job reads them: queued, then reading, then the text and the reader. */
+export const Transcribing: Story = {
+    beforeEach: () => startFake({ count: 6, auto: true }),
+    render: () => textBook(6, 'text'),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 6 // transcribing 1 of 6'), { timeout: 8000 })
+        await waitFor(() => expect(sections(canvasElement).length).toBe(6))
+        await expect(statusOf(sections(canvasElement)[3])).toBe('queued')
+        await expect(sections(canvasElement)[3].querySelector('.cm-placeholder')?.textContent).toBe('no text yet')
+        await fk.tick(3)
+        await waitFor(() => expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('Page 1'))
+        await waitFor(() => expect(statusOf(sections(canvasElement)[0])).toBe('on-device'))
+        // a tick finishes the page being read and starts the next job's
+        await waitFor(() => expect(statusOf(sections(canvasElement)[2])).toBe('reading // on-device'))
+    },
+}
+
+/** A 560px pane: the estimate and the word `transcribing` give way first, and `[ cancel ]` stays in the bar
+ *  or, when the bar cannot hold it, lands in the `[≡]` panel as `cancel transcribing`. */
+export const PdfTranscribingNarrow: Story = {
+    name: 'Transcribing narrow',
+    beforeEach: () => startFake({ count: 6, auto: true }),
+    render: () => textBook(6, 'text', 560),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('6'), { timeout: 8000 })
+        await waitFor(() => expect(sections(canvasElement).length).toBe(6))
+        const bar = barNode(canvasElement)
+        const cancel = () => bar.querySelector<HTMLElement>('[data-bar-menu-label="cancel transcribing"]')
+        await waitFor(() => expect(cancel(), bar.innerHTML.slice(0, 600)).not.toBeNull())
+        const inBar = () => !cancel()!.hasAttribute('data-bar-hidden') && cancel()!.getClientRects().length > 0
+        if (!inBar()) {
+            const more = within(bar).getByLabelText('More controls')
+            await userEvent.click(more)
+            await waitFor(() => expect(within(document.body).getByText('cancel transcribing')).toBeTruthy())
+        }
+    },
+}
+
+/** `[ cancel ]` stops the run at once with a toast; pages done keep their text, the rest return to
+ *  `not transcribed`, and the bar's `transcribe` button comes back. */
+export const CancelTranscribing: Story = {
+    name: 'Cancel transcribing',
+    beforeEach: () => startFake({ count: 4, auto: true }),
+    render: () => textBook(4, 'text'),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('transcribing'), { timeout: 8000 })
+        await fk.tick(2)
+        await waitFor(() => expect(statusOf(sections(canvasElement)[0])).toBe('on-device'))
+        await userEvent.click(barText(canvasElement).getByRole('button', { name: 'cancel' }))
+        await waitFor(() => expect(toasts().some(t => t.message === 'stopped transcribing page-2.png')).toBe(true))
+        await waitFor(() => expect(shown(barNode(canvasElement))).not.toContain('transcribing'))
+        await waitFor(() => expect(statusOf(sections(canvasElement)[1])).toBe('not transcribedtranscribe'))
+        await expect(statusOf(sections(canvasElement)[0])).toBe('on-device')
+        await barText(canvasElement).findByRole('button', { name: 'transcribe 3 pages' })
+    },
+}
+
+/** With `transcription.math` at `ask`, the prompt appears as soon as a running job reads its first math page. */
+export const MathAskedMidRun: Story = {
+    name: 'Math asked mid run',
+    beforeEach: () => startFake({ count: 4, auto: true, mathKeys: [`${imagePath(2)}#1`] }),
+    render: () => textBook(4, 'text'),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('transcribing'), { timeout: 8000 })
+        await fk.tick(3)
+        await bodyText().findByText('this page has math')
+        await expect(canvasElement.ownerDocument.querySelector('[data-math-prompt-running]')).not.toBeNull()
+        await expect(shown(barNode(canvasElement))).toContain('transcribing')
+        // the choice decides every running file: one decide per running file (pages 1-3); the fourth
+        // file is still queued and inherits the choice when it starts
+        const files = [...new Set(fk.calls.map(c => c.file))]
+        await expect(files).toEqual([1, 2, 3, 4].map(imagePath))
+        await userEvent.click(bodyText().getByRole('button', { name: 'go fast' }))
+        await waitFor(() => expect(bodyText().queryByText('this page has math')).toBeNull())
+        await waitFor(() => expect(fk.decisions).toEqual(['fast', 'fast', 'fast']))
+    },
+}
+
+/** The 4th switch: each page's picture on the left, that page's section on the right, row tops aligned. */
+export const SideBySide: Story = {
+    name: 'Side by side',
+    beforeEach: () => withText(3),
+    render: () => textBook(3, 'side', 1000),
+    play: async ({ canvasElement }) => {
+        await sideReady(canvasElement, 3)
+        const row = canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        const image = row.children[0].getBoundingClientRect()
+        const text = row.children[1].getBoundingClientRect()
+        await expect(image.right).toBeLessThanOrEqual(text.left + 1)
+        await expect(Math.abs(image.top - text.top)).toBeLessThan(2)
+        await expect(image.width / row.getBoundingClientRect().width).toBeGreaterThan(0.4)
+        await expect(image.width / row.getBoundingClientRect().width).toBeLessThan(0.55)
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 3'))
+        await waitFor(() => expect(row.querySelector('canvas')!.width).toBeGreaterThan(0))
+    },
+}
+
+/** A narrow pane keeps each page beside its text, the page narrower, so the text is in view. */
+export const SideBySideNarrow: Story = {
+    name: 'Side by side narrow',
+    beforeEach: () => withText(2),
+    render: () => textBook(2, 'side', 480),
+    play: async ({ canvasElement }) => {
+        await sideReady(canvasElement, 2)
+        const row = canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        const image = row.querySelector<HTMLElement>('[data-page-image]')!.getBoundingClientRect()
+        const field = editorOf(row)!.getBoundingClientRect()
+        const view = canvasElement.querySelector<HTMLElement>('[data-side-by-side]')!.getBoundingClientRect()
+        await expect(image.right).toBeLessThanOrEqual(field.left + 1)
+        await expect(field.top).toBeLessThan(view.bottom - 40)
+        await expect(field.width).toBeGreaterThan(image.width)
+    },
+}
+
+/** The page keys move side by side a page at a time, scrolling the column to the next page. */
+export const SideBySideKeys: Story = {
+    name: 'Side by side keys',
+    beforeEach: () => withText(3),
+    render: () => textBook(3, 'side', 1000),
+    play: async ({ canvasElement }) => {
+        await sideReady(canvasElement, 3)
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 3'))
+        await userEvent.keyboard('{ArrowRight}')
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 2 // 3'))
+        const scroller = canvasElement.querySelector<HTMLElement>('[data-side-by-side]')!
+        const second = canvasElement.querySelectorAll<HTMLElement>('[data-row-key]')[1]
+        await waitFor(() => expect(Math.abs(second.getBoundingClientRect().top - scroller.getBoundingClientRect().top)).toBeLessThan(40))
+        await userEvent.keyboard('{ArrowLeft}')
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 3'))
+    },
+}
+
+/** Text read a page at a time: one page's text, turned by the arrows under it or the page keys. */
+export const TextFlip: Story = {
+    name: 'Text flip',
+    beforeEach: () => withText(3),
+    render: () => <Harness w={900} rows={images(3)} view={bookView({ bookMode: 'text', bookFlow: 'flip' })} transcription={fk.controller()} />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await waitFor(() => expect(sections(canvasElement).length).toBe(1), { timeout: 8000 })
+        await waitFor(() => expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('Page 1'), { timeout: 8000 })
+        await expect(await readState(canvasElement, 'scroll or flip')).toBe('flip')
+        await expect(c.getByRole('button', { name: 'previous page' })).toBeDisabled()
+        await userEvent.click(c.getByRole('button', { name: 'next page' }))
+        await waitFor(() => expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('Page 2'), { timeout: 8000 })
+        await userEvent.keyboard('{ArrowRight}')
+        await waitFor(() => expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('Page 3'), { timeout: 8000 })
+        await expect(sections(canvasElement).length).toBe(1)
+        await expect(c.getByRole('button', { name: 'next page' })).toBeDisabled()
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 3 // 3'))
+    },
+}
+
+/** Side by side a page at a time: one page beside its text; switching to scroll keeps the page. */
+export const SideBySideFlip: Story = {
+    name: 'Side by side flip',
+    beforeEach: () => withText(3),
+    render: () => <Harness w={1000} rows={images(3)} view={bookView({ bookMode: 'side', bookFlow: 'flip' })} transcription={fk.controller()} />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-side-by-side] [data-row-key]').length).toBe(1), { timeout: 8000 })
+        await userEvent.click(c.getByRole('button', { name: 'next page' }))
+        await waitFor(() => expect(editorOf(canvasElement.querySelector<HTMLElement>('[data-row-key]')!)?.textContent).toContain('Page 2'), { timeout: 8000 })
+        await pickRead(canvasElement, 'scroll or flip', 'scroll')
+        await sideReady(canvasElement, 3)
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 2 // 3'))
+        await expect(c.queryByRole('button', { name: 'next page' })).toBeNull()
+    },
+}
+
+/** Selecting text in a section boxes its lines on that page's picture, and clears when the selection empties. */
+export const LocateFromText: Story = {
+    name: 'Locate from text',
+    beforeEach: () => withText(2),
+    render: () => textBook(2, 'side', 1000),
+    play: async ({ canvasElement }) => {
+        await sideReady(canvasElement, 2)
+        const row = canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        await selectFirstLine(row)
+        await waitFor(() => expect(row.querySelectorAll('[data-locate-box]').length).toBeGreaterThan(0), { timeout: 8000 })
+        await userEvent.keyboard('{ArrowRight}')
+        await waitFor(() => expect(row.querySelectorAll('[data-locate-box]').length).toBe(0), { timeout: 8000 })
+    },
+}
+
+/** Clicking a line on the picture puts the caret at the start of that line's text and tints it. */
+export const LocateFromPage: Story = {
+    name: 'Locate from page',
+    beforeEach: () => withText(2),
+    render: () => textBook(2, 'side', 1000),
+    play: async ({ canvasElement }) => {
+        await sideReady(canvasElement, 2)
+        const row = canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        clickLayer(row, 0.3, 0.22)
+        await waitFor(() => expect(row.querySelector('.cm-tr-flash')?.textContent).toContain('I went to the woods'), { timeout: 8000 })
+        await waitFor(() => expect(row.querySelector('.cm-tr-flash')).toBeNull(), { timeout: 4000 })
+    },
+}
+
+/** In text mode, right-click with a selection offers `show on page` first; it opens side by side at that page with the boxes drawn. */
+export const ShowOnPage: Story = {
+    name: 'Show on page',
+    beforeEach: () => withText(3),
+    render: () => textBook(3, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 3)
+        await selectFirstLine(sections(canvasElement)[0])
+        rightClick(editorOf(sections(canvasElement)[0])!)
+        const show = await bodyText().findByText('show on page')
+        await expect(show.compareDocumentPosition(await bodyText().findByText('edit text')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        await userEvent.click(show)
+        await sideReady(canvasElement, 3)
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-locate-box]').length).toBeGreaterThan(0), { timeout: 8000 })
+    },
+}
+
+/** With a selection the bar's highlight button wraps it in `==…==`; saved on the page. */
+export const HighlightSelection: Story = {
+    name: 'Highlight selection',
+    beforeEach: () => withText(2),
+    render: () => textBook(2, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 2)
+        await selectFirstLine(sections(canvasElement)[0])
+        await userEvent.click(barText(canvasElement).getByRole('button', { name: 'highlight' }))
+        await waitFor(() => expect(fk.saves.at(-1)).toMatchObject({ file: imagePath(1), page: 1 }), { timeout: 8000 })
+        await expect(fk.saves.at(-1)!.text).toContain('==Page 1==')
+        await expect(fk.saves.every(s => s.file === imagePath(1))).toBe(true)
+    },
+}
+
+/** text -> pages -> side by side -> text keeps the page. */
 export const SwitchKeepsPlace: Story = {
     name: 'Switch keeps place',
     beforeEach: () => withText(6),
-    render: () => <Harness w={1100} h={720} rows={images(6)} />,
+    render: () => textBook(6, 'text'),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
-        await pressNext(canvasElement, 2, 'pages 4–5 // 6')
-        await userEvent.click(modeButton(canvasElement, 'text'))
-        await readyText(canvasElement)
-        await waitFor(() => expect(readout(canvasElement)).toMatch(/^pages \d+–\d+ \/\/ \d+$/), { timeout: 8000 })
-        const left = textLines(canvasElement, 'left')
-        const leaves = [...left, ...textLines(canvasElement, 'right')].map(l => Number(l.dataset.leaf))
-        // the notebook page being read (4, leaf 3) is on screen, and the left page began at or before it
-        await expect(leaves).toContain(3)
-        const leftFirst = Number(left[0].dataset.leaf)
-        await expect(leftFirst).toBeLessThanOrEqual(3)
-        await userEvent.click(modeButton(canvasElement, 'pages'))
-        // straight back, no page turned: exactly the spread the reader left, every round trip
-        await waitFor(() => expect(readout(canvasElement)).toBe('pages 4–5 // 6'), { timeout: 8000 })
-        await expect(host(canvasElement).querySelector('[data-text-spread]')).toBeNull()
-        for (let i = 0; i < 2; i++) {
-            await userEvent.click(modeButton(canvasElement, 'text'))
-            await readyText(canvasElement)
-            await userEvent.click(modeButton(canvasElement, 'pages'))
-            await waitFor(() => expect(readout(canvasElement)).toBe('pages 4–5 // 6'), { timeout: 8000 })
-        }
-        // from the last page too
-        await pressNext(canvasElement, 1, 'page 6 // 6')
-        await userEvent.click(modeButton(canvasElement, 'text'))
-        await readyText(canvasElement)
-        await userEvent.click(modeButton(canvasElement, 'pages'))
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 6 // 6'), { timeout: 8000 })
-        // after turning in text mode: the notebook page whose text begins on the text spread shown
-        await userEvent.click(modeButton(canvasElement, 'text'))
-        await readyText(canvasElement)
-        await userEvent.keyboard('{ArrowLeft}')
-        await waitFor(() => expect(host(canvasElement).dataset.turnState).toBe('settled'), { timeout: 8000 })
-        const shown = [...textLines(canvasElement, 'left'), ...textLines(canvasElement, 'right')]
-        const begins = shown.find(l => l.dataset.start === '0') ?? shown[0]
-        const leaf = Number(begins.dataset.leaf)
-        await userEvent.click(modeButton(canvasElement, 'pages'))
-        const expected = leaf === 0 ? 'page 1 // 6' : leaf === 5 ? 'page 6 // 6' : `pages ${leaf % 2 === 1 ? leaf + 1 : leaf}–${leaf % 2 === 1 ? leaf + 2 : leaf + 1} // 6`
-        await waitFor(() => expect(readout(canvasElement)).toBe(expected), { timeout: 8000 })
+        await textReady(canvasElement, 6)
+        // the column settles after mounting, and sections measure as they mount: scroll until it holds
+        await new Promise(r => setTimeout(r, 400))
+        let at = 0
+        await waitFor(() => {
+            scrollToSection(canvasElement, 3, 60)
+            at = Number(/page (\d+) \/\/ 6/.exec(barNode(canvasElement).textContent ?? '')?.[1])
+            expect(at).toBeGreaterThan(2)
+        })
+        await pickRead(canvasElement, 'read as', 'pages')
+        await waitFor(() => {
+            const m = /pages? (\d+)(?:–(\d+))? \/\/ 6/.exec(barNode(canvasElement).textContent ?? '')
+            expect(Number(m?.[1])).toBeLessThanOrEqual(at)
+            expect(Number(m?.[2] ?? m?.[1])).toBeGreaterThanOrEqual(at)
+        }, { timeout: 8000 })
+        await pickRead(canvasElement, 'read as', 'side by side')
+        await sideReady(canvasElement, 6)
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain(`page ${at} // 6`), { timeout: 8000 })
+        await pickRead(canvasElement, 'read as', 'text')
+        await textReady(canvasElement, 6)
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain(`page ${at} // 6`), { timeout: 8000 })
     },
 }
 
-/** A selection of words, then `highlight`, saves one quote and the run renders marked. */
-export const HighlightSelection: Story = {
-    name: 'Highlight selection',
-    beforeEach: () => withText(6),
-    render: () => <Harness w={1100} h={720} rows={images(6)} view={bookView({ bookMode: 'text' })} />,
-    play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        await waitFor(() => expect(textLines(canvasElement, 'right').length).toBeGreaterThan(3), { timeout: 8000 })
-        const line = textLines(canvasElement, 'right')[2]
-        const node = line.firstChild!.firstChild as Text
-        const from = 0
-        const to = node.data.indexOf(' ', 12)
-        const range = document.createRange()
-        range.setStart(node, from)
-        range.setEnd(node, to)
-        const sel = window.getSelection()!
-        sel.removeAllRanges()
-        sel.addRange(range)
-        const quote = node.data.slice(from, to).trim()
-        // a plain click: user-event would move the selection with the press
-        within(canvasElement).getByRole('button', { name: 'highlight' }).click()
-        await waitFor(() => expect(marked.length).toBe(1), { timeout: 8000 })
-        await expect(marked[0]).toMatchObject({ file: line.dataset.file, page: 1, add: [quote] })
-        await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')?.textContent).toContain(quote.split(' ')[0]), { timeout: 8000 })
-    },
-}
-
-/** Text mode: the pointer over a highlight turns into an X and a click unmarks the words in the
- *  transcript; the toast's `undo` marks them again. Click the tinted words to try it. */
-export const TextHighlightClickRemoves: Story = {
-    name: 'Text highlight click removes',
-    beforeEach: () => withText(6),
-    render: () => (
-        <>
-            <Harness w={1100} h={720} rows={images(6)} view={bookView({ bookMode: 'text' })} />
-            <ToastHost />
-        </>
-    ),
-    play: async (ctx) => {
-        await HighlightSelection.play!(ctx)
-        const { canvasElement } = ctx
-        window.getSelection()?.removeAllRanges()
-        const mark = canvasElement.querySelector<HTMLElement>('[data-text-mark]')!
-        const quote = marked[0]!.add![0]!
-        hoverOver(mark)
-        await waitFor(() => expect(cursorIsX()).toBe(true))
-        clickOn(mark)
-        await waitFor(() => expect(marked.at(-1)).toMatchObject({ remove: [quote] }), { timeout: 8000 })
-        await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')).toBeNull(), { timeout: 8000 })
-        await userEvent.click(await undoButton())
-        await waitFor(() => expect(marked.at(-1)).toMatchObject({ add: [quote] }), { timeout: 8000 })
-        await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')).not.toBeNull(), { timeout: 8000 })
-    },
-}
-
-/** Nothing selected: `highlight` arms, the next selection is highlighted, a click on a highlight removes it. */
-export const HighlightArmed: Story = {
-    name: 'Highlight armed',
-    beforeEach: () => withText(6),
-    render: () => <Harness w={1100} h={720} rows={images(6)} view={bookView({ bookMode: 'text' })} />,
-    play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        await waitFor(() => expect(textLines(canvasElement, 'right').length).toBeGreaterThan(3), { timeout: 8000 })
-        const button = within(canvasElement).getByRole('button', { name: 'highlight' })
-        button.click()
-        const line = textLines(canvasElement, 'right')[1]
-        const node = line.firstChild!.firstChild as Text
-        const range = document.createRange()
-        range.setStart(node, 0)
-        range.setEnd(node, node.data.indexOf(' ', 8))
-        const sel = window.getSelection()!
-        sel.removeAllRanges()
-        sel.addRange(range)
-        window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
-        await waitFor(() => expect(marked.filter(m => m.add).length).toBe(1), { timeout: 8000 })
-        await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')).not.toBeNull(), { timeout: 8000 })
-        // armed again, a click on the highlight removes it
-        button.click()
-        canvasElement.querySelector<HTMLElement>('[data-text-mark]')!.click()
-        await waitFor(() => expect(marked.filter(m => m.remove).length).toBe(1), { timeout: 8000 })
-        await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')).toBeNull(), { timeout: 8000 })
-    },
-}
-
-/** No page has a transcript: `text` is disabled and says why. */
+/** Until a page has text, and while nothing is transcribing, `text` and `side by side` are disabled and say why. */
 export const TextDisabledWithoutTranscripts: Story = {
     name: 'Text disabled without transcripts',
-    beforeEach: () => serveFixtures(4),
-    render: () => <Harness w={900} rows={images(4)} />,
+    beforeEach: () => startFake({ count: 3 }),
+    render: () => textBook(3, 'pages'),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 4')
-        const text = modeButton(canvasElement, 'text')
-        await expect(text).toBeDisabled()
-        await expect(text.getAttribute('title')).toBe('no page is transcribed yet')
-    },
-}
-
-// ── transcription ──
-
-/** The transcription a story drives. `api.transcribe` waits until the story calls `finish()` (or fails
- *  with `failWith`), so every state in between is observable without a timer. */
-const seam = {
-    calls: [] as Parameters<typeof api.transcribe>[0][],
-    waiting: [] as (() => void)[],
-    open: false,
-    failWith: undefined as string | undefined,
-    /** Page files whose fast read looks like math: a `math: 'fast'` run reports page 1 back. */
-    mathFiles: new Set<string>(),
-    finish() {
-        this.open = true
-        for (const r of this.waiting.splice(0)) r()
-    },
-}
-
-/** Pages `have` start with text; the rest get it when a run finishes. Auto-transcription is `auto`. */
-function serveTranscription(count: number, have: number[], auto: boolean) {
-    seam.calls = []
-    seam.waiting = []
-    seam.open = false
-    seam.failWith = undefined
-    seam.mathFiles = new Set()
-    TRANSCRIPTS.clear()
-    for (const n of have) TRANSCRIPTS.set(imagePath(n), `Page ${n}. ${WORDS}`)
-    const original = { transcript: api.storedTranscript, transcribe: api.transcribe }
-    api.storedTranscript = async (file: string) => ({
-        engine: 'on-device' as const,
-        at: '2026-10-31T00:00:00.000Z',
-        pages: TRANSCRIPTS.has(file) ? [{ page: 1, text: TRANSCRIPTS.get(file)! }] : [],
-    })
-    api.transcribe = async body => {
-        seam.calls.push(body)
-        if (!seam.open) await new Promise<void>(r => seam.waiting.push(r))
-        if (seam.failWith) throw new Error(seam.failWith)
-        TRANSCRIPTS.set(body.file, `Page ${body.file.match(/(\d+)/)![1]}. ${WORDS}`)
-        const math = body.math === 'fast' && seam.mathFiles.has(body.file) ? { math: [1] } : {}
-        return { ok: true, companion: `${body.file}.md`, engine: body.engine === 'ai' ? 'ai' : 'on-device', pages: [{ page: 1, chars: 10 }], ...math }
-    }
-    const prior = (settings as { transcription?: unknown }).transcription
-    ;(setSettings as (k: string, v: unknown) => void)('transcription', { auto, engine: 'auto', math: 'ask', provider: 'auto', model: '' })
-    const fixtures = serveFixtures(count)
-    return () => {
-        fixtures()
-        api.storedTranscript = original.transcript
-        api.transcribe = original.transcribe
-        ;(setSettings as (k: string, v: unknown) => void)('transcription', prior)
-    }
-}
-
-const barText = (root: HTMLElement) => within(root.querySelector<HTMLElement>('[data-testid="book-bar"]')!)
-const transcribeButton = (root: HTMLElement, name: string) => barText(root).findByRole('button', { name })
-
-/** Pages 4 to 6 have no text and nothing runs: the bar's first action is `transcribe 3 pages`. A click starts the run, and when it ends nothing replaces the button. */
-export const TranscribeButton: Story = {
-    name: 'Transcribe button',
-    beforeEach: () => serveTranscription(6, [1, 2, 3], false),
-    render: () => <Harness w={1100} h={720} rows={images(6)} />,
-    play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
-        const button = await transcribeButton(canvasElement, 'transcribe 3 pages')
-        const buttons = within(canvasElement.querySelector<HTMLElement>('[data-testid="book-bar"]')!).getAllByRole('button')
-        await expect(buttons.indexOf(button)).toBeLessThan(buttons.indexOf(barText(canvasElement).getByRole('button', { name: 'highlight' })))
-        await expect(seam.calls.length).toBe(0)
-        await userEvent.click(button)
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 6 // transcribing 1 of 3'), { timeout: 8000 })
-        await expect(barText(canvasElement).queryByRole('button', { name: /^transcribe \d+ pages?$/ })).toBeNull()
-        // the button's run sends no engine and fills only the gaps
-        await waitFor(() => expect(seam.calls.length).toBe(1), { timeout: 8000 })
-        await expect(seam.calls[0]).toMatchObject({ file: 'pages/page-4.png', pages: [1], onlyMissing: false })
-        await expect('engine' in seam.calls[0]).toBe(false)
-        seam.finish()
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 6'), { timeout: 8000 })
-        await expect(seam.calls.length).toBe(3)
-        await expect(barText(canvasElement).queryByRole('button', { name: /^transcribe \d+ pages?$/ })).toBeNull()
-    },
-}
-
-/** One page without text says `transcribe 1 page`. */
-export const TranscribeOnePage: Story = {
-    name: 'Transcribe one page',
-    beforeEach: () => serveTranscription(4, [1, 2, 3], false),
-    render: () => <Harness w={900} rows={images(4)} />,
-    play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 4')
-        await transcribeButton(canvasElement, 'transcribe 1 page')
-    },
-}
-
-/** `transcription.auto` on: opening a book with untranscribed pages transcribes them with no click. */
-export const AutoTranscribes: Story = {
-    name: 'Auto transcribes',
-    beforeEach: () => serveTranscription(4, [1], true),
-    render: () => <Harness w={900} rows={images(4)} />,
-    play: async ({ canvasElement }) => {
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 4 // transcribing 1 of 3'), { timeout: 8000 })
-        await expect(barText(canvasElement).queryByRole('button', { name: /^transcribe \d+ pages?$/ })).toBeNull()
-        seam.finish()
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 4'), { timeout: 8000 })
-        await expect(seam.calls.length).toBe(3)
-        await expect(seam.calls.every(c => !('engine' in c))).toBe(true)
-    },
-}
-
-/** Two of three pages read as math on the fast pass, with `transcription.math` at `ask`: once the run
- *  ends one prompt asks about both. `read it properly` re-reads only those pages, carefully. */
-export const MathPromptAfterRun: Story = {
-    name: 'Math prompt after a run',
-    beforeEach: () => {
-        const undo = serveTranscription(3, [], true)
-        seam.mathFiles = new Set([imagePath(2), imagePath(3)])
-        return undo
-    },
-    render: () => <Harness w={900} rows={images(3)} />,
-    play: async () => {
-        await waitFor(() => expect(seam.calls.length).toBe(1), { timeout: 8000 })
-        await expect(seam.calls[0].math).toBe('fast')
-        seam.finish()
-        const body = within(document.body)
-        await expect(await body.findByText('2 pages have math', undefined, { timeout: 8000 })).toBeInTheDocument()
-        await expect(seam.calls.length).toBe(3)
-        await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
-        await waitFor(() => expect(seam.calls.length).toBe(5), { timeout: 8000 })
-        await expect(seam.calls.slice(3).map(c => [c.file, c.pages, c.math])).toEqual([
-            [imagePath(2), [1], 'careful'],
-            [imagePath(3), [1], 'careful'],
-        ])
-        await waitFor(() => expect(body.queryByText('2 pages have math')).toBeNull())
-    },
-}
-
-/** The math reader is not installed: the prompt says it downloads, `read it properly` starts the
- *  install, the readout says so while it runs, and the careful re-reads follow when it is done. */
-export const MathPromptInstallsReader: Story = {
-    name: 'Math prompt installs the reader',
-    beforeEach: () => {
-        const undo = serveTranscription(2, [], true)
-        seam.mathFiles = new Set([imagePath(1)])
-        const original = { status: api.markerSetup, start: api.startMarkerSetup }
-        let polls = 0
-        api.markerSetup = async () => ({
-            installed: polls > 1,
-            missing: polls > 1 ? [] : ['marker_single'],
-            job: polls++ > 1 ? { state: 'done', startedAt: 0, endedAt: 1 } : { state: 'running', step: 'marker', startedAt: 0 },
-        })
-        api.startMarkerSetup = async () => ({ state: 'running', step: 'uv', startedAt: 0 })
-        return () => {
-            undo()
-            api.markerSetup = original.status
-            api.startMarkerSetup = original.start
+        await ready(canvasElement, 'page 1 // 3')
+        for (const name of ['text', 'side by side']) {
+            const row = await readRow(canvasElement, name)
+            await expect(row.disabled).toBe(true)
+            await expect(row.text).toContain('no page is transcribed yet')
         }
     },
-    render: () => <Harness w={900} rows={images(2)} />,
-    play: async ({ canvasElement }) => {
-        seam.finish()
-        const body = within(document.body)
-        await expect(await body.findByText(/the math reader downloads itself/, undefined, { timeout: 8000 })).toBeInTheDocument()
-        await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
-        await waitFor(() => expect(readout(canvasElement)).toMatch(/\/\/ setting up the math reader$/), { timeout: 8000 })
-        await waitFor(() => expect(seam.calls.some(c => c.math === 'careful' && c.file === imagePath(1))).toBe(true), { timeout: 12000 })
-        await waitFor(() => expect(readout(canvasElement)).not.toMatch(/setting up/), { timeout: 8000 })
-    },
 }
 
-/** A page the built-in reader transcribed before math was looked for: its stored text looks like
- *  math, so opening the book asks once, and `read it properly` re-reads only that page carefully. */
-export const StoredMathAsks: Story = {
-    name: 'Stored math asks',
-    beforeEach: () => {
-        const undo = serveTranscription(2, [1, 2], true)
-        TRANSCRIPTS.set(imagePath(1), ['Limit', "Sn't S= (1) doint converge", 'lim s n', 'n5-6 =nsa', 'IN#6NnZN 1351-515'].join('\n'))
-        return undo
-    },
-    render: () => <Harness w={900} rows={images(2)} />,
-    play: async () => {
-        const body = within(document.body)
-        await expect(await body.findByText('this page has math', undefined, { timeout: 8000 })).toBeInTheDocument()
-        await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
-        seam.finish()
-        await waitFor(() => expect(seam.calls.map(c => [c.file, c.pages, c.math])).toEqual([[imagePath(1), [1], 'careful']]), { timeout: 8000 })
-    },
-}
-
-/** `transcription.auto` off: nothing runs on open; the button is the only way to start. */
-export const AutoOff: Story = {
-    name: 'Auto off',
-    beforeEach: () => serveTranscription(4, [], false),
-    render: () => <Harness w={900} rows={images(4)} />,
-    play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 4')
-        const button = await transcribeButton(canvasElement, 'transcribe 4 pages')
-        await expect(seam.calls.length).toBe(0)
-        await expect(modeButton(canvasElement, 'text')).toBeDisabled()
-        await userEvent.click(button)
-        await waitFor(() => expect(seam.calls.length).toBe(1), { timeout: 8000 })
-    },
-}
-
-/** Text mode with page 2 untranscribed: its text page holds one muted line, and the neighbours'
- *  pages hold their text; each notebook page starts its own text page. */
-export const PlaceholderPage: Story = {
-    name: 'Placeholder page',
-    beforeEach: () => serveTranscription(4, [1, 3, 4], false),
-    render: () => <Harness w={1100} h={720} rows={images(4)} view={bookView({ bookMode: 'text' })} />,
-    play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        // page 1's text is the cover; page 2's begins the next spread
-        await waitFor(() => expect(readout(canvasElement)).toMatch(/^page 1 \/\/ \d+$/), { timeout: 8000 })
-        await userEvent.keyboard('{ArrowRight}')
-        await waitFor(() => expect(host(canvasElement).dataset.turnState).toBe('settled'), { timeout: 8000 })
-        await waitFor(() => expect(canvasElement.querySelector('[data-text-placeholder]')).not.toBeNull(), { timeout: 8000 })
-        const held = Array.from(canvasElement.querySelectorAll<HTMLElement>('[data-text-placeholder]'))
-        await expect(held.map(l => l.textContent).join(' ')).toBe("page 2 isn't transcribed yet")
-        const real = canvasElement.querySelector<HTMLElement>('[data-text-line]:not([data-text-placeholder])')!
-        await expect(getComputedStyle(held[0]).color).not.toBe(getComputedStyle(real).color)
-        await transcribeButton(canvasElement, 'transcribe 1 page')
-    },
-}
-
-const rightClick = (el: HTMLElement) => {
-    const r = el.getBoundingClientRect()
-    el.dispatchEvent(
-        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }),
-    )
-}
-
-/** Counts contextmenu events that reach past the book to an ancestor (the pane's own menu listens there). */
-let outerMenus = 0
-
-/** Right-click a page: one row, `transcribe again with ai`. It redoes that page only; a failure toasts the server's message. */
-export const RedoWithAiMenu: Story = {
-    name: 'Redo with ai menu',
-    beforeEach: () => serveTranscription(6, [1, 2, 3, 4, 5, 6], false),
-    render: () => <Harness w={1100} h={720} rows={images(6)} onOuterMenu={() => outerMenus++} />,
-    play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
-        outerMenus = 0
-        rightClick(canvasElement.querySelector<HTMLElement>('[data-book-page="right"]')!)
-        const row = await within(document.body).findByText('transcribe again with ai')
-        // the book's menu claims the event: the pane menu behind it never opens
-        await expect(outerMenus).toBe(0)
-        await expect(document.body.textContent?.toLowerCase()).not.toContain('claude')
-        seam.failWith = 'ai transcription needs a backend that reads images: opencode does not'
-        await userEvent.click(row)
-        await waitFor(() => expect(seam.calls.length).toBe(1), { timeout: 8000 })
-        await expect(seam.calls[0]).toMatchObject({ file: 'pages/page-1.png', engine: 'ai', pages: [1], onlyMissing: false })
-        seam.finish()
-        await waitFor(() => expect(toasts().some(t => t.message === seam.failWith)).toBe(true), { timeout: 8000 })
-    },
-}
-
-/** In text mode the menu acts on the notebook page whose text was under the pointer. */
-export const RedoWithAiInText: Story = {
-    name: 'Redo with ai in text',
-    beforeEach: () => serveTranscription(4, [1, 2, 3, 4], false),
-    render: () => <Harness w={1100} h={720} rows={images(4)} view={bookView({ bookMode: 'text' })} onOuterMenu={() => outerMenus++} />,
-    play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        outerMenus = 0
-        await waitFor(() => expect(textLines(canvasElement, 'right').length).toBeGreaterThan(3), { timeout: 8000 })
-        const line = textLines(canvasElement, 'right')[1]
-        rightClick(line)
-        const row = await within(document.body).findByText('transcribe again with ai')
-        await expect(outerMenus).toBe(0)
-        seam.finish()
-        await userEvent.click(row)
-        await waitFor(() => expect(seam.calls.length).toBe(1), { timeout: 8000 })
-        await expect(seam.calls[0]).toMatchObject({ file: line.dataset.file, engine: 'ai', pages: [1] })
-    },
-}
-
-// ── dark pages, the prose face, editing text and pages, one right-click menu ──
-
-/** The light-or-dark of a CSS colour: the mean of its channels, 0..255. */
-const lightness = (css: string) => {
-    const m = css.match(/\d+(\.\d+)?/g)?.map(Number) ?? [255, 255, 255]
-    return (m[0] + m[1] + m[2]) / 3
-}
-
-/** Text mode with dark pages: near-black paper and light ink, the way the PDF viewer's dark mode turns a page. */
+/** Dark pages turn the side-by-side pictures dark; text mode keeps the pane's own background. */
 export const DarkText: Story = {
     name: 'Dark text',
-    beforeEach: () => withText(6),
-    render: () => <Harness w={1100} h={720} rows={images(6)} view={bookView({ bookMode: 'text', bookDark: true })} />,
+    beforeEach: () => withText(2),
+    render: () => (
+        <Harness w={1000} rows={images(2)} view={bookView({ bookMode: 'side', bookDark: true })} transcription={fk.controller()} />
+    ),
     play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        const page = canvasElement.querySelector<HTMLElement>('[data-text-page="right"]')!
-        await expect(lightness(getComputedStyle(page).backgroundColor)).toBeLessThan(40)
-        await expect(lightness(getComputedStyle(page).color)).toBeGreaterThan(200)
-        await expect(within(canvasElement).getByRole('button', { name: 'dark pages' })).toHaveAttribute('aria-pressed', 'true')
+        await sideReady(canvasElement, 2)
+        const canvas = canvasElement.querySelector<HTMLCanvasElement>('[data-row-key] canvas')!
+        // a blank canvas is 300x150 and transparent: wait until the page is really drawn, then read its paper
+        await waitFor(
+            () => {
+                const px = canvas.getContext('2d')!.getImageData(4, 4, 1, 1).data
+                expect(px[3]).toBeGreaterThan(0)
+                // the fixture's paper is the pane background; dark pages draw it through the PDF viewer's transform
+                const paper = bookPage(1).getContext('2d')!.getImageData(4, 4, 1, 1).data
+                const want = darkRgb(paper[0], paper[1], paper[2])
+                expect(Math.abs(px[0] - want[0]) + Math.abs(px[1] - want[1]) + Math.abs(px[2] - want[2])).toBeLessThanOrEqual(6)
+                expect([px[0], px[1], px[2]]).not.toEqual([paper[0], paper[1], paper[2]])
+            },
+            { timeout: 4000 },
+        )
+        // text mode keeps the pane's own background
+        await pickRead(canvasElement, 'read as', 'text')
+        await textReady(canvasElement, 2)
+        await expect(canvasElement.querySelector('[data-text-page]')).toBeNull()
     },
 }
 
@@ -1176,52 +1041,72 @@ export const DarkPagesKeepPhotos: Story = {
     },
 }
 
-/** Text mode sets the transcripts in the notes' prose face (`appearance.proseFont`), not a stock serif. */
+/** The `Aa` panel still sets text mode's size: a larger step grows the section's type. */
 export const ProseFace: Story = {
     name: 'Prose face',
-    beforeEach: () => withText(4),
-    render: () => <Harness w={1100} h={720} rows={images(4)} view={bookView({ bookMode: 'text' })} />,
+    beforeEach: () => withText(2),
+    render: () => textBook(2, 'text'),
     play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        await expect(getComputedStyle(textSpread(canvasElement)!).fontFamily).toContain(settings.appearance.proseFont)
+        await textReady(canvasElement, 2)
+        const size = () => parseFloat(getComputedStyle(editorOf(sections(canvasElement)[0])!.closest('.cm-scroller')!).fontSize)
+        const before = size()
+        await userEvent.click(barText(canvasElement).getByRole('button', { name: 'display' }))
+        await userEvent.click(await bodyText().findByRole('button', { name: 'larger text' }))
+        await waitFor(() => expect(size()).toBeGreaterThan(before))
     },
 }
 
-/** Right-click a line, `edit text`, fix the words and save: the page's transcript is written and the
- *  page sets the new text. */
-export const EditText: Story = {
-    name: 'Edit text',
-    beforeEach: () => {
-        const restore = withText(4)
-        const original = api.setTranscriptPage
-        api.setTranscriptPage = async (file: string, _page: number, text: string) => {
-            TRANSCRIPTS.set(file, text)
-            return { ok: true }
-        }
-        return () => {
-            restore()
-            api.setTranscriptPage = original
-        }
-    },
-    render: () => <Harness w={1100} h={720} rows={images(4)} view={bookView({ bookMode: 'text' })} />,
+/** A 300 page book opens at once, mounts only the sections near the view, and saves one page when one page is edited. */
+export const TextMode300Pages: Story = {
+    name: 'Text mode 300 pages',
+    beforeEach: () => startFake({ count: 3, have: Array.from({ length: 300 }, (_, i) => i + 1) }),
+    render: () => textBook(300, 'text'),
     play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        await waitFor(() => expect(textLines(canvasElement, 'right').length).toBeGreaterThan(3), { timeout: 8000 })
-        rightClick(textLines(canvasElement, 'right')[1])
-        await userEvent.click(await within(document.body).findByText('edit text'))
-        const editor = await waitFor(() => {
-            const el = canvasElement.querySelector<HTMLElement>('[data-transcript-editor]')
-            expect(el).not.toBeNull()
-            return el!
+        await textReady(canvasElement, 300)
+        await expect(canvasElement.querySelectorAll('[data-page-key] .cm-content').length).toBeLessThan(30)
+        await new Promise(r => setTimeout(r, 400))
+        const scroller = sections(canvasElement)[0].parentElement!.parentElement!
+        await waitFor(() => {
+            scroller.scrollTop = scroller.scrollHeight
+            expect(editorOf(sections(canvasElement)[299])?.textContent ?? '').toContain('Page 300')
         })
-        await expect(within(editor).getByText('edit text // page 1')).toBeInTheDocument()
-        const cm = editor.querySelector<HTMLElement>('.cm-content')!
-        await waitFor(() => expect(cm.textContent).toContain('Page 1.'))
-        cm.focus()
-        await userEvent.keyboard('{Control>}a{/Control}{Meta>}a{/Meta}Fixed by hand.')
-        await userEvent.click(within(editor).getByRole('button', { name: 'save' }))
-        await waitFor(() => expect(canvasElement.querySelector('[data-transcript-editor]')).toBeNull(), { timeout: 8000 })
-        await waitFor(() => expect(textSpread(canvasElement)!.textContent).toContain('Fixed by hand.'), { timeout: 8000 })
+        await waitFor(() => {
+            scrollToSection(canvasElement, 279)
+            expect(editorOf(sections(canvasElement)[279])?.textContent ?? '').toContain('Page 280')
+        })
+        await userEvent.click(sections(canvasElement)[279].querySelector<HTMLElement>('.cm-line')!)
+        await userEvent.keyboard('edited ')
+        await waitFor(() => expect(fk.saves.length).toBe(1), { timeout: 4000 })
+        await expect(fk.saves[0]).toMatchObject({ file: imagePath(280), page: 1 })
+    },
+}
+
+/** Inside a pane, the page's rows join the pane's own menu rather than replacing it. */
+export const PageRowsJoinPaneMenu: Story = {
+    name: 'Page rows join the pane menu',
+    beforeEach: () => withText(4),
+    render: () => (
+        <div
+            data-pane-leaf="leaf-1"
+            onContextMenu={e => {
+                e.preventDefault()
+                const rows = withPaneItems(paneMenuItemsOf(e), [{ label: 'Split right' }, { label: 'Close pane' }])
+                document.body.dataset.paneMenu = rows.map(r => r.label).join('|')
+            }}
+        >
+            {textBook(4, 'pages', 1100)}
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 4')
+        delete document.body.dataset.paneMenu
+        rightClick(canvasElement.querySelector<HTMLElement>('[data-book-page="right"]')!)
+        await waitFor(() =>
+            expect(document.body.dataset.paneMenu).toBe(
+                'edit text|read again on-device|read again with the math reader|read again with ai|Split right|Close pane',
+            ),
+        )
+        await expect(within(document.body).queryByRole('menu')).toBeNull()
     },
 }
 
@@ -1271,35 +1156,6 @@ export const EditPages: Story = {
         await userEvent.click(within(canvasElement).getByRole('button', { name: 'save' }))
         await waitFor(() => expect(canvasElement.querySelector('[data-book-page-editor]')).toBeNull(), { timeout: 8000 })
         await expect(rowWrites).toEqual(['delete notebook.base.jsonl 1'])
-    },
-}
-
-/** Inside a pane, the page's rows join the pane's own menu rather than replacing it. */
-export const PageRowsJoinPaneMenu: Story = {
-    name: 'Page rows join the pane menu',
-    beforeEach: () => withText(4),
-    render: () => (
-        <div
-            data-pane-leaf="leaf-1"
-            onContextMenu={e => {
-                e.preventDefault()
-                const rows = withPaneItems(paneMenuItemsOf(e), [{ label: 'Split right' }, { label: 'Close pane' }])
-                document.body.dataset.paneMenu = rows.map(r => r.label).join('|')
-            }}
-        >
-            <Harness w={1100} h={720} rows={images(4)} view={bookView({ bookMode: 'text' })} />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        await readyText(canvasElement)
-        await waitFor(() => expect(textLines(canvasElement, 'right').length).toBeGreaterThan(3), { timeout: 8000 })
-        delete document.body.dataset.paneMenu
-        rightClick(textLines(canvasElement, 'right')[1])
-        await waitFor(() =>
-            expect(document.body.dataset.paneMenu).toBe('edit text|transcribe again with ai|Split right|Close pane'),
-        )
-        // the book shows no menu of its own inside a pane
-        await expect(within(document.body).queryByRole('menu')).toBeNull()
     },
 }
 
@@ -1370,6 +1226,293 @@ export const BurstTurns: Story = {
         await waitFor(() => expect(host(canvasElement).dataset.turnState).toBe('settled'), { timeout: 8000 })
         watch.disconnect()
         await expect(layers.size).toBe(1)
+    },
+}
+
+
+// ── restored and added reader stories (fix round 2d) ──
+const pagesBook = (n: number, w = 1100) => <Harness w={w} h={720} rows={images(n)} transcription={fk.controller()} />
+const transcribeBtn = (root: HTMLElement, name: string) => barText(root).findByRole('button', { name })
+const transcribeRe = /^transcribe \d+ pages?$/
+const GARBLED = ['Limit', "Sn't S= (1) doint converge", 'lim s n', 'n5-6 =nsa', 'IN#6NnZN 1351-515'].join('\n')
+
+/** Pages 4 to 6 have no text and nothing runs: the bar's `transcribe 3 pages` starts one run per file, and the button goes when they end. */
+export const TranscribeButton: Story = {
+    name: 'Transcribe button',
+    beforeEach: () => startFake({ count: 6, have: [1, 2, 3] }),
+    render: () => pagesBook(6),
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 6')
+        const button = await transcribeBtn(canvasElement, 'transcribe 3 pages')
+        await expect(fk.calls.length).toBe(0)
+        await userEvent.click(button)
+        await waitFor(() => expect(readout(canvasElement)).toContain('transcribing 1 of 3'), { timeout: 8000 })
+        await expect(barText(canvasElement).queryByRole('button', { name: transcribeRe })).toBeNull()
+        // grouped per file: one request each for pages 4 to 6, no engine chosen
+        await waitFor(() => expect(fk.calls.map(c => c.file).sort()).toEqual([imagePath(4), imagePath(5), imagePath(6)]))
+        await expect(fk.calls.every(c => !c.engine)).toBe(true)
+        await fk.tick(8)
+        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 6'), { timeout: 8000 })
+        await expect(barText(canvasElement).queryByRole('button', { name: transcribeRe })).toBeNull()
+    },
+}
+
+/** One page without text says `transcribe 1 page`. */
+export const TranscribeOnePage: Story = {
+    name: 'Transcribe one page',
+    beforeEach: () => startFake({ count: 4, have: [1, 2, 3] }),
+    render: () => pagesBook(4, 900),
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 4')
+        await transcribeBtn(canvasElement, 'transcribe 1 page')
+    },
+}
+
+/** `transcription.auto` on: opening a book with untranscribed pages transcribes them with no click. */
+export const AutoTranscribes: Story = {
+    name: 'Auto transcribes',
+    beforeEach: () => startFake({ count: 4, have: [1], auto: true }),
+    render: () => pagesBook(4, 900),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(readout(canvasElement)).toContain('transcribing 1 of 3'), { timeout: 8000 })
+        await expect(barText(canvasElement).queryByRole('button', { name: transcribeRe })).toBeNull()
+        await expect(fk.calls.length).toBe(3)
+        await expect(fk.calls.every(c => !c.engine)).toBe(true)
+        await fk.tick(8)
+        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 4'), { timeout: 8000 })
+    },
+}
+
+/** `transcription.auto` off: nothing runs on open; the button is the only way to start. */
+export const AutoOff: Story = {
+    name: 'Auto off',
+    beforeEach: () => startFake({ count: 4 }),
+    render: () => pagesBook(4, 900),
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 4')
+        const button = await transcribeBtn(canvasElement, 'transcribe 4 pages')
+        await expect(fk.calls.length).toBe(0)
+        await expect((await readRow(canvasElement, 'text')).disabled).toBe(true)
+        await userEvent.click(button)
+        await waitFor(() => expect(fk.calls.length).toBe(4), { timeout: 8000 })
+    },
+}
+
+/** A page whose stored text looks like math (read on-device before math was looked for): opening the book asks once, and `read it properly` re-reads only that page carefully. */
+export const StoredMathAsks: Story = {
+    name: 'Stored math asks',
+    beforeEach: () => {
+        const undo = startFake({ count: 2, have: [1, 2], auto: true })
+        fk.texts.set(`${imagePath(1)}#1`, GARBLED)
+        return undo
+    },
+    render: () => pagesBook(2, 900),
+    play: async () => {
+        const body = within(document.body)
+        await expect(await body.findByText('this page has math', undefined, { timeout: 8000 })).toBeInTheDocument()
+        await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
+        await waitFor(() => expect(fk.calls.map(c => [c.file, c.pages, c.math])).toEqual([[imagePath(1), [1], 'careful']]), { timeout: 8000 })
+    },
+}
+
+/** The math reader is missing: the prompt says it downloads itself, and `read it properly` installs it before the choice reaches the run. */
+export const MathPromptInstallsReader: Story = {
+    name: 'Math prompt installs the reader',
+    beforeEach: () => startFake({ count: 3, auto: true, markerInstalled: false, mathKeys: [`${imagePath(1)}#1`] }),
+    render: () => textBook(3, 'text'),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('transcribing'), { timeout: 8000 })
+        await fk.tick(1)
+        const body = within(document.body)
+        await expect(await body.findByText(/the math reader downloads itself/, undefined, { timeout: 8000 })).toBeInTheDocument()
+        await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
+        // install first, then a careful decide for each running file
+        await waitFor(() => expect(fk.events.filter(e => e.startsWith('decide')).length).toBeGreaterThan(0), { timeout: 8000 })
+        const files = [...new Set(fk.calls.map(c => c.file))]
+        await expect(fk.events).toEqual(['install', ...files.map(() => 'decide:careful')])
+    },
+}
+
+/** The prompt's count grows while the run goes on, and one choice answers every file waiting on it. */
+export const MathCountGrows: Story = {
+    name: 'Math count grows',
+    beforeEach: () => startFake({ count: 6, auto: true, mathKeys: [2, 3].map(n => `${imagePath(n)}#1`) }),
+    render: () => textBook(6, 'text'),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('transcribing'), { timeout: 8000 })
+        const body = within(document.body)
+        // the files start in whatever order their transcripts load: tick until the prompt shows
+        for (let i = 0; i < 14 && !body.queryByText('this page has math'); i++) await fk.tick()
+        await body.findByText('this page has math')
+        for (let i = 0; i < 14 && !body.queryByText('2 pages have math'); i++) await fk.tick()
+        await body.findByText('2 pages have math')
+        await userEvent.click(body.getByRole('button', { name: 'go fast' }))
+        await waitFor(() => expect(body.queryByText('2 pages have math')).toBeNull())
+        await fk.tick(12)
+        await waitFor(() => expect(shown(barNode(canvasElement))).not.toContain('transcribing'), { timeout: 8000 })
+        await expect(body.queryByText(/have math|has math/)).toBeNull()
+        await expect(fk.decisions.length).toBeGreaterThan(0)
+        await expect(fk.decisions.every(d => d === 'fast')).toBe(true)
+    },
+}
+
+/** Text mode with page 2 untranscribed: its section is empty and says `not transcribed`, the neighbours hold their text. */
+export const PlaceholderPage: Story = {
+    name: 'Placeholder page',
+    beforeEach: () => startFake({ count: 4, have: [1, 3, 4] }),
+    render: () => textBook(4, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 4)
+        await waitFor(() => expect(statusOf(sections(canvasElement)[1])).toBe('not transcribedtranscribe'))
+        await expect(editorOf(sections(canvasElement)[2])?.textContent).toContain('Page 3')
+        await expect(editorOf(sections(canvasElement)[1])?.textContent ?? '').not.toContain('Page 2')
+    },
+}
+
+/** Math in a transcript is typeset in text mode. */
+export const MathText: Story = {
+    name: 'Math text',
+    beforeEach: () => {
+        const undo = startFake({ count: 2 })
+        for (const n of [1, 2]) fk.texts.set(`${imagePath(n)}#1`, `Page ${n}\n\nwith $a^2 + b^2 = c^2$ inline\n\n$$\\lim_{n \\to \\infty} \\frac{1}{n^2} = 0$$`)
+        return undo
+    },
+    render: () => textBook(2, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 2)
+        await waitFor(() => expect(canvasElement.querySelectorAll('.katex').length).toBeGreaterThan(1), { timeout: 8000 })
+    },
+}
+
+/** A page that fails shows `failed // <reason>` and `[ retry ]`, and retry asks for just that page again. */
+export const FailedPageRetry: Story = {
+    name: 'Failed page retry',
+    beforeEach: () => startFake({ count: 3, auto: true, failKeys: [`${imagePath(2)}#1`] }),
+    render: () => textBook(3, 'text'),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('transcribing'), { timeout: 8000 })
+        await fk.tick(8)
+        await waitFor(() => expect(statusOf(sections(canvasElement)[1])).toContain('failed // the reader returned nothing for this page'), { timeout: 8000 })
+        const before = fk.calls.length
+        await userEvent.click(within(sections(canvasElement)[1]).getByRole('button', { name: 'retry' }))
+        await waitFor(() => expect(fk.calls.length).toBe(before + 1))
+        await expect(fk.calls.at(-1)).toMatchObject({ file: imagePath(2), pages: [1] })
+    },
+}
+
+/** With the selection inside a mark, the bar's highlight button unwraps it. */
+export const HighlightUnwraps: Story = {
+    name: 'Highlight unwraps',
+    beforeEach: () => {
+        const undo = startFake({ count: 2, have: [1, 2] })
+        fk.texts.set(`${imagePath(1)}#1`, '==Page 1==\nthe rest of the page')
+        return undo
+    },
+    render: () => textBook(2, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 2)
+        await waitFor(() => expect(sections(canvasElement)[0].querySelector('.cm-tr-mark')).not.toBeNull())
+        await selectFirstLine(sections(canvasElement)[0])
+        await userEvent.click(barText(canvasElement).getByRole('button', { name: 'highlight' }))
+        await waitFor(() => expect(fk.saves.at(-1)).toMatchObject({ file: imagePath(1), page: 1 }), { timeout: 8000 })
+        await expect(fk.saves.at(-1)!.text).not.toContain('==')
+        await waitFor(() => expect(sections(canvasElement)[0].querySelector('.cm-tr-mark')).toBeNull())
+    },
+}
+
+/** A book of images and one PDF: text mode labels the PDF's pages `<file name> // page N`, the images show no divider. */
+export const MixedBookText: Story = {
+    name: 'Mixed book text',
+    beforeEach: () => {
+        const undo = startFake({ count: 3, have: [1, 2, 3] })
+        fk.texts.set(`${PDF_PATH}#1`, 'Page 1 of the lecture')
+        return undo
+    },
+    render: () => <Harness w={900} rows={[row(imagePath(1)), row(PDF_PATH), row(imagePath(2)), row(imagePath(3))]} view={bookView({ bookMode: 'text' })} transcription={fk.controller()} />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(sections(canvasElement).length).toBeGreaterThanOrEqual(4), { timeout: 8000 })
+        await waitFor(() => expect(canvasElement.textContent).toContain('lecture.pdf // page 1'), { timeout: 8000 })
+        await expect(sections(canvasElement)[0].textContent).not.toMatch(/^page \d|page-1\.png \/\/ page/)
+    },
+}
+
+/** The same mixed book side by side: each row carries its `<file name> // page N` label beside its picture. */
+export const MixedBookSideBySide: Story = {
+    name: 'Mixed book side by side',
+    beforeEach: () => {
+        const undo = startFake({ count: 3, have: [1, 2, 3] })
+        fk.texts.set(`${PDF_PATH}#1`, 'Page 1 of the lecture')
+        return undo
+    },
+    render: () => <Harness w={1000} rows={[row(imagePath(1)), row(PDF_PATH), row(imagePath(2)), row(imagePath(3))]} view={bookView({ bookMode: 'side' })} transcription={fk.controller()} />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-side-by-side] [data-row-key]').length).toBeGreaterThanOrEqual(4), { timeout: 8000 })
+        await waitFor(() => expect(canvasElement.textContent).toContain('lecture.pdf // page 1'), { timeout: 8000 })
+    },
+}
+
+const [remountOn, setRemountOn] = createSignal(true)
+/** Unmount the reader mid-run and mount it again with a fresh controller: the running jobs are picked up, so progress and `[ cancel ]` work. */
+export const RemountMidRun: Story = {
+    name: 'Remount mid run',
+    beforeEach: () => {
+        setRemountOn(true)
+        return startFake({ count: 6 })
+    },
+    render: () => {
+        const first = fk.controller()
+        let mounts = 0
+        const Mount = () => {
+            const ctl = mounts++ === 0 ? first : fk.controller()
+            return <Harness w={1100} h={720} rows={images(6)} transcription={ctl} />
+        }
+        return <Show when={remountOn()}><Mount /></Show>
+    },
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'page 1 // 6')
+        await userEvent.click(await transcribeBtn(canvasElement, 'transcribe 6 pages'))
+        await waitFor(() => expect(readout(canvasElement)).toContain('transcribing 1 of 6'), { timeout: 8000 })
+        await fk.tick(4)
+        // pages done so far, whatever order the files started in
+        const mid = /transcribing \d+ of 6/.exec(readout(canvasElement) ?? '')![0]
+        await expect(mid).not.toBe('transcribing 1 of 6')
+        const callsBefore = fk.calls.length
+        setRemountOn(false)
+        await waitFor(() => expect(canvasElement.querySelector('[data-book]')).toBeNull())
+        setRemountOn(true)
+        // nothing was posted again: the new controller found the running jobs itself
+        // finished jobs started with the running ones stay in the count
+        await waitFor(() => expect(readout(canvasElement)).toMatch(/transcribing \d+ of 6\b/), { timeout: 8000 })
+        await expect(fk.calls.length).toBe(callsBefore)
+        await userEvent.click(barText(canvasElement).getByRole('button', { name: 'cancel' }))
+        await waitFor(() => expect(toasts().some(t => t.message.startsWith('stopped transcribing'))).toBe(true))
+        await waitFor(() => expect(readout(canvasElement)).not.toMatch(/transcribing/))
+    },
+}
+
+let bumpRows!: () => void
+/** The parent rerenders with fresh `rows` and `view` objects: the focused section's editor is the same DOM node. */
+export const RerenderKeepsEditor: Story = {
+    name: 'Rerender keeps the editor',
+    beforeEach: () => withText(3),
+    render: () => {
+        const [rows, setRows] = createSignal(images(3))
+        const [view, setView] = createSignal(bookView({ bookMode: 'text' }))
+        bumpRows = () => {
+            setRows(images(3))
+            setView(bookView({ bookMode: 'text' }))
+        }
+        return <Harness w={900} rows={rows()} view={view()} transcription={fk.controller()} />
+    },
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 3)
+        const node = editorOf(sections(canvasElement)[0])!
+        await userEvent.click(node)
+        await expect(node.contains(document.activeElement)).toBe(true)
+        bumpRows()
+        await expect(editorOf(sections(canvasElement)[0])).toBe(node)
+        await expect(node.isConnected).toBe(true)
+        await expect(node.contains(document.activeElement)).toBe(true)
     },
 }
 

@@ -1,0 +1,11 @@
+.layer {
+    position: absolute;
+    inset: 0;
+    cursor: text;
+}
+
+.box {
+    position: absolute;
+    background: var(--selection);
+    pointer-events: none;
+}

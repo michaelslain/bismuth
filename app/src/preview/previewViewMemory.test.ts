@@ -132,10 +132,14 @@ describe('previewViewMemory storage', () => {
         const { storage } = backing([
             ['notes.pdf', { zoom: 1, panelOpen: false, readMode: 'text', bookLayout: 'single' }],
             ['odd.pdf', { zoom: 1, panelOpen: false, readMode: 'scroll', bookLayout: 'spread' }],
+            ['flip.pdf', { zoom: 1, panelOpen: false, readMode: 'side', flow: 'flip' }],
+            ['fast.pdf', { zoom: 1, panelOpen: false, readMode: 'text', flow: 'fast' }],
         ])
         attachPreviewViewStorage(storage)
         expect(loadPreviewView('notes.pdf')).toMatchObject({ readMode: 'text', bookLayout: 'single' })
         expect(loadPreviewView('odd.pdf')).toEqual({ zoom: 1, panelOpen: false })
+        expect(loadPreviewView('flip.pdf')).toMatchObject({ readMode: 'side', flow: 'flip' })
+        expect(loadPreviewView('fast.pdf')).toEqual({ zoom: 1, panelOpen: false, readMode: 'text' })
     })
 
     test('a path saved this session keeps its newer state over the stored one', () => {

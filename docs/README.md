@@ -49,7 +49,6 @@ bun run build:app
 - [Vault map](vault/map.md) — the folders, hubs, clusters and surfaces overview agents get at session start, and `bismuth map`
 - [Semantic search](vault/semantic-search.md) — find notes by meaning with `bismuth search --semantic`, the `embeddings.enabled` switch and what it costs
 - [Frontmatter and properties](vault/frontmatter.md) — YAML properties, their types, and companion notes for images and PDFs
-- [Convert a PDF to markdown](vault/pdf-to-markdown.md) — a new note beside the PDF with LaTeX math and a `source` link back, from the PDF bar or `bismuth pdf md`
 - [Rewrite a PDF's pages](vault/pdf-pages.md) — reorder, delete and add pages (images, other PDFs, blanks) with highlights, ink and transcript following each page, with `bismuth pdf pages`
 - [OCR for PDFs](vault/ocr.md) — make a scanned PDF's text selectable, with `bismuth ocr`
 - [Transcribe pages and handwritten scans](vault/transcription.md) — turn a book's page images, handwritten scans and scanned PDFs into text in their companion notes, with math as LaTeX, with `bismuth transcribe`

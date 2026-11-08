@@ -4,9 +4,9 @@
 // in the app uses. Left to right:
 //
 //   identity  file icon + filename (ellipsizes first, never vanishes)
-//   readouts  p. N / M (pdf) + `// converting to markdown [ cancel ]` while it runs // W × H (image)
+//   readouts  p. N / M (pdf) // W × H (image)
 //   config    [− 100% + fit]   [highlight draw scratch]   [dark]   pdf  ·  [− 100% + fit] [draw] on an image
-//   actions   [to markdown] [bookmarks]  [open-externally reveal]   pdf only · file actions Tauri
+//   actions   [bookmarks]  [open-externally reveal]   pdf only · file actions Tauri
 //
 // ONE DISTANCE: every pair of neighbouring controls sits ~16.5px apart, ink to ink, inside a group
 // and between groups alike; the groups exist for the drop ladder, not as visible gaps. Every icon carries the same
@@ -28,12 +28,11 @@
 // they are the only way into what they open. There is no second row.
 import { createSignal, type JSX, Show } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
-import ReadModeSwitch, { type ReadMode } from '../bases/ReadModeSwitch'
-import BarLabel from '../ui/BarLabel'
+import ReadModeSwitch, { type ReadFlow, type ReadView } from '../bases/ReadModeSwitch'
+import FlowToggle from '../bases/FlowToggle'
+import BarSettings from '../ui/BarSettings'
 import IconButton from '../ui/IconButton'
-import TextButton from '../ui/TextButton'
 import Label from '../ui/Label'
-import Text from '../ui/Text'
 import PageReadout from './PageReadout'
 import PdfZoom from './PdfZoom'
 import HighlightColorMenu from './HighlightColorMenu'
@@ -70,19 +69,15 @@ export type PreviewBarProps = {
      *  default); disabled with the annotate tools until the sidecar has loaded */
     darkOn?: () => boolean
     onToggleDark?: () => void
-    /** pdf → markdown: true while the conversion runs (the button is disabled, a readout says so) */
-    converting?: () => boolean
-    onConvert?: () => void
-    /** stop the running conversion; no note is written */
-    onCancelConvert?: () => void
     /** pdf panel */
     panelOpen?: () => boolean
     onTogglePanel?: () => void
     /** the loaded image's natural pixel size; undefined = not loaded / failed / not an image */
     imageSize?: () => { w: number; h: number } | undefined
-    /** image / pdf: the reader's `scroll | pages | text` switch; absent → no switch */
-    readMode?: () => ReadMode
-    onReadMode?: (mode: ReadMode) => void
+    /** image / pdf: the reader's two pickers, what it shows and scroll or flip; absent → no pickers */
+    reading?: () => { view: ReadView; flow: ReadFlow }
+    onReadView?: (view: ReadView) => void
+    onReadFlow?: (flow: ReadFlow) => void
     /** native file actions; false → group absent */
     nativeActions: () => boolean
     onOpenExternal: (reveal: boolean) => void
@@ -132,28 +127,6 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             />
                         </div>
                     </Show>
-                    {/* After the page readout, `//` between them (the app's one separator), so the
-                        two never read as one phrase; the `//` drops with the readout at level 2.
-                        The words shorten to `converting` but stay, so `[ cancel ]` never reads as
-                        cancelling whatever control sits next to it; it never drops, since it is
-                        the only way to stop the run. */}
-                    <Show when={pdf() && props.converting?.()}>
-                        <div class={styles.group} data-testid="preview-converting">
-                            <Label tone="muted">
-                                <Show when={(props.pageCount?.() ?? 0) > 0}>
-                                    <Text as="span" inherit data-bar-drop="2">{'// '}</Text>
-                                </Show>
-                                <BarLabel long="converting to markdown" short="converting" />
-                            </Label>
-                            <TextButton
-                                title="Stop converting; no note is written"
-                                data-testid="preview-convert-cancel"
-                                onClick={() => props.onCancelConvert?.()}
-                            >
-                                cancel
-                            </TextButton>
-                        </div>
-                    </Show>
                     <Show when={props.kind() === 'image' && props.imageSize?.()}>
                         {size => (
                             <div
@@ -171,10 +144,10 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
             }
             config={
                 <Show when={inkable()}>
-                    <Show when={props.readMode}>
-                        {mode => (
+                    <Show when={props.reading}>
+                        {reading => (
                             <div class={styles.readMode} data-bar-drop="3" data-bar-menu-label="read as">
-                                <ReadModeSwitch value={mode()()} onChange={m => props.onReadMode?.(m)} />
+                                <ReadModeSwitch view={reading()().view} onView={v => props.onReadView?.(v)} />
                             </div>
                         )}
                     </Show>
@@ -269,6 +242,26 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             />
                         </div>
                     </Show>
+                    {/* scroll or flip, set once like a reading app's layout: the same `move by` row
+                        the book's `Aa` panel has, behind the bar's settings icon (the viewer has no
+                        text size, so no `Aa`) */}
+                    <Show when={props.reading}>
+                        {reading => (
+                            <div class={styles.tools} data-bar-drop="4" data-bar-menu-label="display">
+                                <BarSettings
+                                    label="display"
+                                    rows={[
+                                        {
+                                            label: 'move by',
+                                            control: (
+                                                <FlowToggle flow={reading()().flow} onFlow={f => props.onReadFlow?.(f)} />
+                                            ),
+                                        },
+                                    ]}
+                                />
+                            </div>
+                        )}
+                    </Show>
                 </Show>
             }
             actions={
@@ -279,25 +272,6 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             only flips the inner svg (PLACEMENT of the glyph, not the button's look —
                             no border/background/padding/size changes here). */}
                         <div class={styles.tools}>
-                            {/* A new note beside the PDF, `x.pdf` → `x.md`; the PDF is untouched.
-                                Minutes on a long file, so it stays disabled while it runs and the
-                                readout says so. Drops with the file actions at level 4: the file
-                                tree's PDF and `bismuth pdf md` are other ways in. */}
-                            <IconButton
-                                icon="FileText"
-                                bracketRoom
-                                label="Convert to markdown"
-                                title={
-                                    props.converting?.()
-                                        ? 'Converting to markdown…'
-                                        : 'Convert to a markdown note beside this PDF'
-                                }
-                                disabled={props.converting?.() ?? false}
-                                data-testid="preview-convert"
-                                data-bar-drop="4"
-                                data-bar-menu-label="file"
-                                onClick={() => props.onConvert?.()}
-                            />
                             <IconButton
                                 icon="PanelRight"
                                 label="Bookmarks"

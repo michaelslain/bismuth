@@ -166,10 +166,10 @@ describe('decideCliGate', () => {
         expect(decideCliGate(['highlights', 'papers/x.pdf'], RESTRICTED).allowed).toBe(true)
         expect(decideCliGate(['highlights', 'Private/secret.md'], RESTRICTED).allowed).toBe(false)
     })
-    test('`pdf md` is path-scoped: a visible PDF runs, a hidden one refuses', () => {
-        expect(commandTier(['pdf', 'md', 'papers/x.pdf'])).toBe('path-scoped')
-        expect(decideCliGate(['pdf', 'md', 'papers/x.pdf'], RESTRICTED).allowed).toBe(true)
-        expect(decideCliGate(['pdf', 'md', 'Private/secret.md'], RESTRICTED).allowed).toBe(false)
+    test('`pdf pages` is path-scoped: a visible PDF runs, a hidden one refuses', () => {
+        expect(commandTier(['pdf', 'pages', 'papers/x.pdf'])).toBe('path-scoped')
+        expect(decideCliGate(['pdf', 'pages', 'papers/x.pdf'], RESTRICTED).allowed).toBe(true)
+        expect(decideCliGate(['pdf', 'pages', 'Private/secret.md'], RESTRICTED).allowed).toBe(false)
     })
     test('`checkpoint diff` is filtered, not refused — it prints paths only, which the command filters', () => {
         // `git diff --name-status` carries no note body; checkpoint.ts drops restricted paths itself.

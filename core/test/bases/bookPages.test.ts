@@ -122,10 +122,16 @@ describe('book view config', () => {
     test('bookMode parses and an invalid one reads as pages', () => {
         expect(parseBase('type: base\nview: book\nbookMode: text\n').view.bookMode).toBe('text')
         expect(parseBase('type: base\nview: book\nbookMode: scroll\n').view.bookMode).toBe('scroll')
+        expect(parseBase('type: base\nview: book\nbookMode: side\n').view.bookMode).toBe('side')
         expect(parseBase('type: base\nview: book\nbookMode: wide\n').view.bookMode).toBe('pages')
         expect(parseBase('type: base\nview: book\n').view.bookMode).toBeUndefined()
     })
 
+    test('bookFlow parses scroll or flip and drops anything else', () => {
+        expect(parseBase('type: base\nview: book\nbookFlow: scroll\n').view.bookFlow).toBe('scroll')
+        expect(parseBase('type: base\nview: book\nbookFlow: flip\n').view.bookFlow).toBe('flip')
+        expect(parseBase('type: base\nview: book\nbookFlow: fast\n').view.bookFlow).toBeUndefined()
+    })
     test('bookDark parses a boolean and drops anything else', () => {
         expect(parseBase('type: base\nview: book\nbookDark: true\n').view.bookDark).toBe(true)
         expect(parseBase('type: base\nview: book\nbookDark: false\n').view.bookDark).toBe(false)

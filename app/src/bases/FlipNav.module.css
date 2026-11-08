@@ -1,0 +1,16 @@
+/* FlipNav.tsx — prev / page / next under a flipped text or side by side page. One importer: FlipNav.tsx. */
+
+.nav {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-4);
+    height: var(--h-control);
+    border-top: var(--rule-soft);
+}
+
+.where {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+}

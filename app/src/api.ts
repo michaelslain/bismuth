@@ -136,7 +136,7 @@ import type { ThemesFeed } from '../../core/src/theme/customTheme'
 import type { DoctorReport } from '../../core/src/doctor/types'
 import type { FeedbackPayload } from '../../core/src/feedbackContract'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
-import type { PdfMarkdownJob, PdfMarkdownStart } from '../../core/src/pdfMarkdown'
+import type { TranscribeJobRequest, TranscribeJobState } from '../../core/src/transcribeJobTypes'
 import type { DaemonSnapshot } from '../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../core/src/daemonActivity'
 import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
@@ -664,6 +664,18 @@ export const api = {
     /** Replace (or add) one page's transcript text by hand; empty text removes the page's text. */
     setTranscriptPage: (file: string, page: number, text: string) =>
         postJson<{ ok: true }>('/transcript/page', { file, page, text }),
+    /** Start (or join) a background transcription of one file; answers the job's state at once. */
+    startTranscribeJob: (req: TranscribeJobRequest) =>
+        postJson<TranscribeJobState>('/transcribe/job', req),
+    /** The file's current or last transcription job; null when none ran this server run. */
+    transcribeJob: (file: string) =>
+        getJson<TranscribeJobState | null>(`/transcribe/job?file=${encodeURIComponent(file)}`),
+    /** Stop the file's running transcription; pages already done keep their text. */
+    cancelTranscribeJob: (file: string) =>
+        postJson<TranscribeJobState>('/transcribe/job/cancel', { file }),
+    /** Answer the running job's math question: re-read math pages properly, or keep the fast text. */
+    decideTranscribeMath: (file: string, choice: 'careful' | 'fast') =>
+        postJson<TranscribeJobState>('/transcribe/job/math', { file, choice }),
     /** Rewrite a pdf's pages to exactly `order`; ink, highlights and transcript follow their page. */
     pdfPages: (file: string, order: PageSource[]) =>
         postJson<{ pages: number }>('/pdf/pages', { file, order }),
@@ -779,17 +791,6 @@ export const api = {
                   }
                 : {}),
         }),
-
-    // PDF → markdown (core/src/pdfMarkdown.ts): start Marker on a PDF in the background, then poll
-    // its job until `done` (or `error`, or `cancelled`). `exists` means the note is already there.
-    startPdfMarkdown: (path: string, replace = false) =>
-        postJson<PdfMarkdownStart>('/convert/pdf-markdown', { path, replace }),
-    pdfMarkdownStatus: (path: string) =>
-        getJson<PdfMarkdownJob>(
-            `/convert/pdf-markdown?path=${encodeURIComponent(path)}`,
-        ),
-    cancelPdfMarkdown: (path: string) =>
-        postJson<PdfMarkdownJob>('/convert/pdf-markdown/cancel', { path }),
 
     setProperty: (path: string, key: string, value: unknown) =>
         post('/set-property', { path, key, value }),

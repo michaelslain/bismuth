@@ -24,7 +24,8 @@ Transcribe a page with `bismuth transcribe scans/notebook-01.jpg --book Notebook
 | `view` | `string` | `table` | Must be `book`. |
 | `page` | `string` | `"page"` | Column holding each row's image or PDF: a vault path, `[[wikilink]]` or `![[embed]]`. `note.scan` names a column called `scan`. |
 | `bookLayout` | `string` | `"spread"` | `spread` (two pages when the pane fits them) or `single` (always one page). Any other value reads as `spread`. |
-| `bookMode` | `string` | `"pages"` | `scroll`, `pages` or `text`. Any other value reads as `pages`. |
+| `bookMode` | `string` | `"pages"` | `pages`, `text` or `side` (each page beside its text); `scroll` reads as `pages` with `bookFlow: scroll`. Any other value reads as `pages`. |
+| `bookFlow` | `string` | `"flip"` for `pages`, `"scroll"` otherwise | `scroll` (one long column) or `flip` (a page at a time). Any other value reads as the default. |
 | `bookDark` | `boolean` | `appearance.pdfDarkMode` | `true` draws the pages dark, as the PDF viewer's dark mode does. Any other value is ignored. |
 
 ## Failure modes

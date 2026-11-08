@@ -1,0 +1,30 @@
+/* TranscriptPage.module.css — one page of the transcript (TranscriptPage.tsx ONLY): a divider row
+   (label left, status right, a 1px rule under it) over the page's markdown field. The field sits on
+   the pane's own background, so there is no sheet, only the rule. */
+.page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-bottom: var(--sp-5);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: var(--h-control);
+  border-bottom: 1px solid var(--border);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.field {
+  min-width: 0;
+  cursor: text;
+}

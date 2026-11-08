@@ -540,6 +540,12 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 emit([b.file, inkSidecarFor(b.file), companionPathFor(b.file)])
                 return r
             }
+            case 'GET /transcribe/job':
+                return null
+            case 'POST /transcribe/job':
+            case 'POST /transcribe/job/cancel':
+            case 'POST /transcribe/job/math':
+                throw new AppError('VISION_UNAVAILABLE', 'transcription needs the desktop app', 503)
             case 'POST /transcribe':
                 // The ai transcriber runs an agent backend, a child process the iPad cannot start.
                 if ((b as { engine?: unknown }).engine === 'ai')

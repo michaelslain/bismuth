@@ -14,7 +14,7 @@ import { markerStatus, startMarkerSetup, toolsDir } from '../../../core/src/mark
 
 registerAiTranscriber(() => import('../../../core/src/aiTranscribe'))
 
-const BOOLS = [...BOOLEAN_FLAGS, 'missing', 'stdin']
+const BOOLS = [...BOOLEAN_FLAGS, 'missing', 'stdin', 'progress']
 
 /** `1-3,7` as [1, 2, 3, 7]. */
 function expandPages(spec: string): number[] {
@@ -53,7 +53,7 @@ export const commands: CommandMap = {
     'transcribe': {
         summary:
             "Transcribe an image or PDF into its companion note, math as LaTeX (--engine auto, on-device, marker or ai; default: the transcription.engine setting); search and embeddings then index it",
-        usage: '<file> [--engine auto|on-device|marker|ai] [--math careful|fast] [--pages 1-3,7] [--book <base>] [--missing]',
+        usage: '<file> [--engine auto|on-device|marker|ai] [--math careful|fast] [--pages 1-3,7] [--book <base>] [--missing] [--progress]',
         args: {
             positionals: ['path'],
             flags: {
@@ -62,6 +62,7 @@ export const commands: CommandMap = {
                 pages: 'value',
                 book: 'value',
                 missing: 'bool',
+                progress: 'bool',
                 vault: 'value',
                 pretty: 'bool',
             },
@@ -86,6 +87,11 @@ export const commands: CommandMap = {
                 isDeniedPath(entries, companionPathFor(file))
             )
                 throw createError('ENOENT', `transcribe: no such file: ${file}`)
+            // --progress: one JSON line per page state change on stderr; Ctrl-C stops the run.
+            const progress = bool(args, 'progress')
+            const ctrl = new AbortController()
+            const stop = () => ctrl.abort()
+            if (progress) process.once('SIGINT', stop)
             out(
                 await transcribe(vault, {
                     file,
@@ -94,7 +100,9 @@ export const commands: CommandMap = {
                     book: flag(args, 'book'),
                     onlyMissing: bool(args, 'missing'),
                     ...(math ? { math: math as MathChoice } : {}),
-                }),
+                }, progress
+                    ? { signal: ctrl.signal, onPage: p => console.error(JSON.stringify(p)) }
+                    : {}).finally(() => process.off('SIGINT', stop)),
                 args,
             )
         },
