@@ -48,7 +48,7 @@ import type { Row, ViewConfig } from '../../../core/src/bases/types'
 import { linesInRegion } from '../../../core/src/bookMarks'
 import type { Bookmark, DrawingDoc } from '../../../core/src/drawing/model'
 import { addBookmark, removeBookmark, renameBookmark } from '../../../core/src/drawing/pageBookmarks'
-import type { TranscribeEngine, TranscriptEngine } from '../../../core/src/transcript'
+import type { PageText, TranscribeEngine, TranscriptEngine } from '../../../core/src/transcript'
 import { looksLikeMath } from '../../../core/src/mathDetect'
 import { createFaceLoader, defaultFaceDeps, faceDeps, forgetPdf, type Face } from './bookFaces'
 import { darkenPixels } from './darkPage'
@@ -71,6 +71,7 @@ import FlipNav from './FlipNav'
 import FlowToggle from './FlowToggle'
 import { TEXT_FONT_FAMILY, TEXT_SCALES } from './bookText'
 import TranscriptDoc from './TranscriptDoc'
+import CheckCrop from './CheckCrop'
 import TranscriptPage, { type TranscriptPageHandle } from './TranscriptPage'
 import SideBySide, { type SideBySideRow } from './SideBySide'
 import BookPageImage from './BookPageImage'
@@ -214,7 +215,7 @@ const BookView: Component<BookViewProps> = props => {
 
 
     // ── transcripts: loaded for every page file, since text mode sets them all ──
-    type Transcript = { engine?: TranscriptEngine; at?: string; pages: { page: number; text: string }[] }
+    type Transcript = { engine?: TranscriptEngine; at?: string; pages: PageText[] }
     const [transcripts, setTranscripts] = createSignal<ReadonlyMap<string, Transcript>>(new Map())
 
     // ── mode: what shows (the pages, their transcription, or each page beside its text) and how it
@@ -368,6 +369,9 @@ const BookView: Component<BookViewProps> = props => {
     // ── the text: every page file's transcript, by page ──
     const pageTextOf = (l: { ref: { file: string }; pdfPage?: number }) =>
         transcripts().get(l.ref.file)?.pages.find(p => p.page === (l.pdfPage ?? 1))?.text ?? ''
+    /** The lines of a page flagged for review (an empty `line` flags the page as read empty). */
+    const pageChecksOf = (l: { ref: { file: string }; pdfPage?: number }) =>
+        transcripts().get(l.ref.file)?.pages.find(p => p.page === (l.pdfPage ?? 1))?.checks
     /** Text mode's type size: `reader.textScale`, kept on the steps `A-` and `A+` move between. */
     const textScale = () => {
         const v = settings.reader?.textScale
@@ -813,6 +817,34 @@ const BookView: Component<BookViewProps> = props => {
         })
         api.setTranscriptPage(l.ref.file, page, text).catch(e => pushToast(`couldn't save the text: ${(e as Error).message}`))
     }
+    /** `[ looks right ]` on a check: it goes from the page at once, then from the companion. */
+    const approveCheck = (key: string, line: string) => {
+        const l = leaves()[leafIndexOf(key)]
+        if (!l) return
+        const page = l.pdfPage ?? 1
+        setTranscripts(m => {
+            const t = m.get(l.ref.file)
+            if (!t) return m
+            const pages = t.pages.map(p => {
+                if (p.page !== page || !p.checks) return p
+                const at = p.checks.findIndex(c => c.line === line)
+                return at < 0 ? p : { ...p, checks: p.checks.filter((_, i) => i !== at) }
+            })
+            return new Map(m).set(l.ref.file, { ...t, pages })
+        })
+        api.approveTranscriptCheck(l.ref.file, page, line).catch(e => pushToast(`couldn't approve the line: ${(e as Error).message}`))
+    }
+    /** The scan strip a flagged line was read from, found through the page's on-device line boxes. */
+    const cropOf = (key: string, line: string) => {
+        const l = leaves()[leafIndexOf(key)]
+        if (!l || line === '') return undefined
+        return (
+            <CheckCrop
+                face={() => loader.face(l).then(f => shade(f)!)}
+                boxes={() => pageLines(l).then(lines => boxesForQuote(lines, line))}
+            />
+        )
+    }
     const multiFile = createMemo(() => new Set(leaves().map(l => l.ref.file)).size > 1)
     const lonelyImage = createMemo(() => leaves().length === 1 && leaves()[0].ref.kind === 'image')
     /** Each page's section, made once per page: text and labels are read live, so an edit or a
@@ -828,6 +860,7 @@ const BookView: Component<BookViewProps> = props => {
             const kind = untrack(() => l().ref.kind)
             const name = basename(file)
             const text = createMemo(() => pageTextOf(l()))
+            const checks = createMemo(() => pageChecksOf(l()))
             const stateOf = () => transcription.pageState(file, page)
             return {
                 key,
@@ -839,10 +872,15 @@ const BookView: Component<BookViewProps> = props => {
                 get text() {
                     return text()
                 },
+                get checks() {
+                    return checks()
+                },
+                onApprove: (line: string) => approveCheck(key, line),
+                crop: (line: string) => cropOf(key, line),
                 status: (
                     <PageStatus
                         state={stateOf()}
-                        empty={transcripts().has(file) && !text().trim() && !transcription.pageState(file, page)}
+                        empty={transcripts().has(file) && !text().trim() && !transcription.pageState(file, page) && !checks()?.some(c => c.line === '')}
                         onRetry={() => transcription.start(file, { pages: [page] })}
                     />
                 ),
@@ -1571,6 +1609,9 @@ const BookView: Component<BookViewProps> = props => {
                             label={p.label}
                             text={p.text}
                             status={p.status}
+                            checks={p.checks}
+                            onApprove={p.onApprove}
+                            crop={p.crop}
                             onSave={text => saveText(p.key, text)}
                             ref={h => pageRef(p.key, h)}
                             fontFamily={family()}

@@ -135,6 +135,7 @@ const EXPECTED = [
     'POST /transcribe/job/cancel',
     'POST /transcribe/job/math',
     'POST /transcribe/setup',
+    'POST /transcript/check',
     'POST /transcript/lines',
     'POST /transcript/mark',
     'POST /transcript/page',

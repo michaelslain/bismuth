@@ -5,6 +5,7 @@ import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor } from 'storybook/test'
 import TranscriptPage, { type TranscriptPageHandle } from './TranscriptPage'
 import Text from '../ui/Text'
+import type { TranscriptCheck } from '../../../core/src/transcript'
 
 const meta = {
     title: 'Bases/TranscriptPage',
@@ -146,5 +147,50 @@ export const ExternalTextNotUndoable: Story = {
         await new Promise(r => setTimeout(r, 900))
         expect(content.textContent).toContain('the transcription arrived')
         expect(canvasElement.querySelector<HTMLElement>('[data-saves]')!.dataset.saves).toBe('0')
+    },
+}
+
+/** Review checks with live state: approving a check drops it, retyping its line drops it too. */
+function CheckedHarness() {
+    const [checks, setChecks] = createSignal<TranscriptCheck[]>([
+        { line: 'to frnot only the esentail facts of lfie', level: 'garbled' },
+        { line: 'and see if I could not learn what it had to teech', level: 'unsure' },
+    ])
+    return (
+        <div style={shell}>
+            <TranscriptPage
+                label="page 1"
+                text={'I went to the woods because I wished to live deliberately\nto frnot only the esentail facts of lfie\nand see if I could not learn what it had to teech'}
+                checks={checks()}
+                onApprove={line => setChecks(cs => cs.filter(c => c.line !== line))}
+                onSave={() => {}}
+            />
+        </div>
+    )
+}
+
+export const WithChecks: Story = {
+    name: 'With checks',
+    render: () => <CheckedHarness />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-transcript-check]').length).toBe(2))
+        const glyph = canvasElement.querySelector<HTMLElement>('[data-transcript-check="unsure"]')!
+        glyph.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+        await waitFor(() => expect(document.querySelector('[data-check-popover]')).not.toBeNull())
+        await userEvent.click(document.querySelector<HTMLElement>('[data-check-approve]')!)
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-transcript-check]').length).toBe(1))
+    },
+}
+
+/** A page the reader returned nothing for: a red glyph beside the label. */
+export const EmptyPageCheck: Story = {
+    name: 'Empty page check',
+    render: () => (
+        <div style={shell}>
+            <TranscriptPage label="page 2" text="" checks={[{ line: '', level: 'garbled' }]} onSave={() => {}} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(canvasElement.querySelector('[data-page-check="garbled"]')).not.toBeNull()
     },
 }

@@ -17,6 +17,7 @@ import { AppError } from './error'
 import { installedBackendIds } from './freeAgent'
 import { runHeadlessTurn, type HeadlessTurn } from './chatProviders/headlessTurn'
 import type { PageText } from './transcript'
+import { aiChecks } from './transcriptChecks'
 
 export type AiTarget = { provider: string; model?: string }
 
@@ -25,6 +26,7 @@ export const TRANSCRIBE_PROMPT = [
     'Reply with the page text only, no commentary and no code fence.',
     'Transcribe faithfully: handwriting as written, do not correct, summarise or add words. Keep the original line breaks.',
     'Write mathematics as LaTeX in $...$. Mark any word you cannot read as [?].',
+    'When you are not sure of a word, write your best guess followed by [?] with no space, like house[?].',
 ].join('\n')
 
 const MEDIA_TYPES: Record<string, string> = {
@@ -81,7 +83,9 @@ export async function aiTranscribe(
                 text: TRANSCRIBE_PROMPT,
                 images: [{ media_type, data }],
             })
-            out.push({ page: img.page, text: text.trim() })
+            // The reader's guess marks become checks; an unreadable word's [?] stays in the text.
+            const read = aiChecks(text.trim())
+            out.push(read.checks.length ? { page: img.page, ...read } : { page: img.page, text: read.text })
         }
         return out
     } finally {

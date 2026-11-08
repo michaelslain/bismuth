@@ -106,6 +106,43 @@ Dear diary, the integral of $x^2$ is $x^3/3$.
 
 The companion is an ordinary note, so `bismuth search "<a word on the page>"` finds it, and with embeddings on, `--semantic` finds it by meaning. See [semantic search](semantic-search.md).
 
+## Review flagged lines
+
+Each transcribed line a reader may have got wrong carries a warning in the book view's text and side by side modes: a yellow triangle after a line the reader is unsure of, a red one after a line that read badly, and a red one beside the page label when the reader returned no text for a page with writing on it. A flagged line is underlined in the same colour.
+
+Pressing a triangle opens a popup with the strip of the scan the line came from, the text that was read, and two buttons:
+
+- `[ looks right ]` clears the warning and keeps the text.
+- `[ retype ]` selects the line so typing replaces it. Changing a flagged line's text in any way clears its warning.
+
+Each engine flags lines its own way:
+
+| Engine | Yellow (unsure) | Red (garbled) |
+|---|---|---|
+| `on-device` | a line with a word the system spell checker does not know | a line Apple Vision reads with confidence 0.5 or lower, or with 3 or more unknown words, or with unknown words making up a fifth of it or more |
+| `ai` | a line where the reader marked a guessed word | a line with a word the reader could not read, kept in the text as `[?]` |
+| `marker` (the math reader) | never | a page it returned empty while on-device recognition found lines on it |
+
+The on-device cut-offs come from 2,379 lines of real notes, handwriting and printed pages alike, each compared with a reference reading. On pages held out of the fit, 84% of red lines were mostly wrong, against 23% of the lines left unflagged. A transcript written before flagging existed carries no warnings until it is transcribed again.
+
+The warnings live in the companion's transcript block, on a hidden comment line after the start marker, so search, embeddings and the note view skip them:
+
+```markdown
+<!-- bismuth:transcript:start -->
+<!-- bismuth:transcript:checks {"2":[["to frnot only the esentail facts","garbled"]]} -->
+### Page 2
+```
+
+From the command line, `bismuth transcript checks <file>` lists the flagged lines and `bismuth transcript approve <file> --page N --line "<the line>"` clears one; `--line` left out clears a whole-page warning. `POST /transcript/check` does the same over HTTP.
+
+```bash
+bismuth transcript approve scans/notes.pdf --page 2 --line "to frnot only the esentail facts"
+```
+
+```json
+{"ok":true,"companion":"scans/notes.pdf.md","checks":[]}
+```
+
 ## Mark text in a transcript
 
 A highlight on a page's text is a `==marked==` span inside that page's part of the transcript block, so search and notes see it:
@@ -202,10 +239,12 @@ An agent runs `bismuth transcribe` from its shell with the flags in the table ab
 
 `runTool` in `core/src/marker.ts` stops Marker when its signal aborts. Marker ignores `SIGINT` and tears down its `llama-server` helper, which runs in its own session, only from a Python `atexit` that no signal reliably reaches. So `runTool` freezes Marker with `SIGSTOP`, lists its descendants with `ps`, kills Marker with `SIGKILL`, sends each descendant `SIGTERM`, and sends `SIGKILL` to any still alive after `STOP_GRACE_MS`. A Marker run started while `llama-server` is still dying would attach to it, so `runTool` returns only after those descendants have exited, and a job started after a cancel waits for the stopped run to settle before its engine starts.
 
+`core/src/transcriptChecks.ts` holds the fitted on-device rule (`onDeviceLevel`), the ai reader's guess marks (`aiChecks`), the math reader's empty-page check and `placeChecks`, which puts each check on the first line with its text; `core/src/transcript.ts` stores the checks line and drops a check once no line holds its text (`liveChecks`), and `approveCheck` clears one. The `bismuth-vision` helper reports each line's confidence and the spell checker's misspelled-word count. In the app, `app/src/bases/transcriptCheckMarks.ts` draws the underline and glyph in the page's editor, and `CheckPopover` and `CheckCrop` are the popup and its scan strip.
+
 `core/src/mathDetect.ts` decides whether a page looks like math from its on-device text. `core/src/marker.ts` runs Marker: `markerPageTexts` runs it with `--paginate_output` and `splitMarkerPages` splits the markdown on Marker's page labels, so each page keeps its own text. `INSTALL_HINTS` there holds the install commands in [Install Marker](#install-marker).
 
 `core/src/bookMarks.ts` finds a page's text inside the block and wraps or unwraps its spans, and `linesInRegion` picks the lines under a region. `core/src/transcript.ts` renders, merges and reads the marked block and stamps the frontmatter through `mutateFrontmatter`; `setTranscriptPage` and `writeTranscriptPage` there set one page without stamping, and `remapTranscriptPages` renumbers the pages after a PDF rewrite. `core/src/visionOcr.ts` runs the `bismuth-vision` helper, which is found through `BISMUTH_VISION_PATH`, then the app bundle, then the development build in `app/src-tauri/binaries`, then, on a Mac with `swiftc`, a build of `main.swift` compiled once and cached in `~/.bismuth/cache/vision`. `core/src/aiTranscribe.ts` runs one headless turn per page image on the resolved backend, in an empty temp folder.
 
 The engines load through dynamic `import()`, so the iPad's in-process core, which has no child processes, still loads the module. Its backend in `core/src/localBackend.ts` answers `POST /transcribe` with 503 `AI_UNAVAILABLE` for `ai` and 503 `VISION_UNAVAILABLE` otherwise, answers `POST /transcript/lines` and the three `POST /transcribe/job` routes with 503 `VISION_UNAVAILABLE`, answers `GET /transcribe/job` with `null`, and serves `GET /transcript`, `POST /transcript/mark` and `POST /transcript/page`. `transcribe` and `transcript` are in `PATH_SCOPED_COMMANDS` in `core/src/visibilityCliGate.ts`.
 
-Source: `core/src/markerSetup.ts`, `core/src/transcribe.ts`, `core/src/transcript.ts`, `core/src/mathDetect.ts`, `core/src/marker.ts`, `core/src/bookMarks.ts`, `core/src/visionOcr.ts`, `core/src/aiTranscribe.ts`, `core/src/transcribeJob.ts`, `core/src/transcribeJobTypes.ts`, `core/src/routes/transcribe.ts`, `core/src/localBackend.ts`, `cli/src/commands/transcribe.ts`, `mcp/src/cli.ts`
+Source: `core/src/transcriptChecks.ts`, `app/src/bases/transcriptCheckMarks.ts`, `core/src/markerSetup.ts`, `core/src/transcribe.ts`, `core/src/transcript.ts`, `core/src/mathDetect.ts`, `core/src/marker.ts`, `core/src/bookMarks.ts`, `core/src/visionOcr.ts`, `core/src/aiTranscribe.ts`, `core/src/transcribeJob.ts`, `core/src/transcribeJobTypes.ts`, `core/src/routes/transcribe.ts`, `core/src/localBackend.ts`, `cli/src/commands/transcribe.ts`, `mcp/src/cli.ts`

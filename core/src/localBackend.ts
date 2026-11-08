@@ -22,7 +22,7 @@
 import { buildGraph } from './engine'
 import { attachLayout, computeViewLayouts } from './layout-cache'
 import { getFileAccess } from './fileAccess'
-import { checkPageFile, markTranscript, readStoredTranscript } from './transcribe'
+import { approveTranscriptCheck, checkPageFile, markTranscript, readStoredTranscript } from './transcribe'
 import { writeTranscriptPage } from './transcript'
 import {
     editPdfHighlights,
@@ -520,6 +520,11 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
             case 'POST /transcript/mark': {
                 // Emit after the write: emit bumps the version and notifies synchronously.
                 const r = await markTranscript(vault, b as Parameters<typeof markTranscript>[1])
+                emit([r.companion])
+                return r
+            }
+            case 'POST /transcript/check': {
+                const r = await approveTranscriptCheck(vault, b as Parameters<typeof approveTranscriptCheck>[1])
                 emit([r.companion])
                 return r
             }

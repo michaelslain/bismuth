@@ -6,7 +6,14 @@ import { fileExists } from '../../../core/src/files'
 import { companionPathFor } from '../../../core/src/fileKinds'
 import { createError } from '../../../core/src/error'
 import { writeTranscriptPage } from '../../../core/src/transcript'
-import { transcribe, checkPageFile, registerAiTranscriber, type MathChoice } from '../../../core/src/transcribe'
+import {
+    approveTranscriptCheck,
+    transcribe,
+    checkPageFile,
+    readStoredTranscript,
+    registerAiTranscriber,
+    type MathChoice,
+} from '../../../core/src/transcribe'
 import type { TranscribeEngine } from '../../../core/src/transcript'
 import { agentDenyEntries, isDeniedPath } from '../../../core/src/visibilityFilter'
 import { parsePages } from '../ocr'
@@ -133,6 +140,47 @@ export const commands: CommandMap = {
                 throw createError('ENOENT', `transcript set: no such file: ${file}`)
             await writeTranscriptPage(vault, companion, page, text ?? (await Bun.stdin.text()), kind)
             out({ ok: true, companion, page }, args)
+        },
+    },
+    'transcript checks': {
+        summary:
+            'List the transcript lines flagged for review in the file\'s companion note: unsure (may hold a wrong word) or garbled (mostly wrong or unread); an empty line flags the whole page',
+        usage: '<file>',
+        args: { positionals: ['path'], flags: { vault: 'value', pretty: 'bool' } },
+        run: async args => {
+            const vault = requireVault(args)
+            const [file] = positionals(args, BOOLS)
+            if (!file) fail(`usage: transcript checks ${commands['transcript checks'].usage}`)
+            checkPageFile(file)
+            const entries = await agentDenyEntries(vault)
+            if (!fileExists(vault, file) || isDeniedPath(entries, file) || isDeniedPath(entries, companionPathFor(file)))
+                throw createError('ENOENT', `transcript checks: no such file: ${file}`)
+            const stored = await readStoredTranscript(vault, file)
+            const checks = stored.pages.flatMap(p => (p.checks ?? []).map(c => ({ page: p.page, ...c })))
+            out({ ok: true, companion: companionPathFor(file), checks }, args)
+        },
+    },
+    'transcript approve': {
+        summary:
+            'Approve one transcript line flagged for review, clearing its check and keeping its text (--line is the line as stored; leave it out to clear a whole-page check)',
+        usage: '<file> --page N [--line "..."]',
+        args: {
+            positionals: ['path'],
+            flags: { page: 'value', line: 'value', vault: 'value', pretty: 'bool' },
+        },
+        run: async args => {
+            const vault = requireVault(args)
+            const [file] = positionals(args, BOOLS)
+            if (!file) fail(`usage: transcript approve ${commands['transcript approve'].usage}`)
+            checkPageFile(file)
+            const pageSpec = flag(args, 'page')
+            const page = Number(pageSpec)
+            if (pageSpec === undefined || !Number.isInteger(page) || page < 1)
+                fail(`--page takes a page number from 1: ${pageSpec ?? ''}`)
+            const entries = await agentDenyEntries(vault)
+            if (!fileExists(vault, file) || isDeniedPath(entries, file) || isDeniedPath(entries, companionPathFor(file)))
+                throw createError('ENOENT', `transcript approve: no such file: ${file}`)
+            out(await approveTranscriptCheck(vault, { file, page, line: flag(args, 'line') ?? '' }), args)
         },
     },
 }

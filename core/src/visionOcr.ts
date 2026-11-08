@@ -4,7 +4,7 @@
 // Reached only through a dynamic import() from the book route, never statically: it needs
 // node:child_process and node:fs, which the iPad's in-process core does not have.
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { bismuthHome } from './bismuthHome'
 import { AppError } from './error'
@@ -12,8 +12,11 @@ import { AppError } from './error'
 /** One recognised line; x, y, w, h are fractions of the page (0..1), origin top-left. */
 export type TextLine = { text: string; x: number; y: number; w: number; h: number }
 
+/** One line of a recognised page, in text order: Vision's confidence (0..1) and the spell checker's
+ *  count of misspelled words. */
+export type ScoredTextLine = { text: string; confidence?: number; misspelled?: number }
 /** One recognised page; confidence (0..1) is the mean over its lines, absent when not reported. */
-export type RecognizedPage = { page: number; text: string; confidence?: number }
+export type RecognizedPage = { page: number; text: string; confidence?: number; lines?: ScoredTextLine[] }
 
 const TIMEOUT_MS = 120_000
 
@@ -29,17 +32,22 @@ function triple(): string {
 }
 
 /** Where the helper is: BISMUTH_VISION_PATH, the app bundle's MacOS dir (BISMUTH_APP_PATH, set by
- *  the Tauri shell), the dev build in app/src-tauri/binaries, then (darwin with swiftc) a build of
+ *  the Tauri shell), the dev build in app/src-tauri/binaries when it is not older than main.swift, then (darwin with swiftc) a build of
  *  app/src-tauri/vision/main.swift cached in ~/.bismuth/cache/vision, compiled on first use. Null
  *  when none exists. The first hit is cached for the process. */
 export function findVisionHelper(): string | null {
     if (cached) return cached
+    const source = join(import.meta.dir, '..', '..', 'app', 'src-tauri', 'vision', 'main.swift')
+    const devBuild = join(import.meta.dir, '..', '..', 'app', 'src-tauri', 'binaries', `bismuth-vision-${triple()}`)
+    // A dev build older than main.swift predates the helper's current output (dev.ts rebuilds it
+    // on its next start); until then the build cached by the source's hash below stands in.
+    const freshDev = existsSync(devBuild) && !(existsSync(source) && statSync(source).mtimeMs > statSync(devBuild).mtimeMs)
     const candidates = [
         process.env.BISMUTH_VISION_PATH,
         process.env.BISMUTH_APP_PATH
             ? join(process.env.BISMUTH_APP_PATH, 'Contents', 'MacOS', 'bismuth-vision')
             : undefined,
-        join(import.meta.dir, '..', '..', 'app', 'src-tauri', 'binaries', `bismuth-vision-${triple()}`),
+        freshDev ? devBuild : undefined,
     ]
     for (const c of candidates) {
         if (c && existsSync(c)) {
@@ -48,7 +56,6 @@ export function findVisionHelper(): string | null {
         }
     }
     if (process.platform === 'darwin' && Bun.which('swiftc')) {
-        const source = join(import.meta.dir, '..', '..', 'app', 'src-tauri', 'vision', 'main.swift')
         if (existsSync(source)) {
             const sha8 = new Bun.CryptoHasher('sha1').update(readFileSync(source)).digest('hex').slice(0, 8)
             const out = bismuthHome('cache', 'vision', `bismuth-vision-${sha8}`)
@@ -108,11 +115,20 @@ export async function recognizePages(
     opts: { pages?: number[]; timeoutMs?: number } = {},
 ): Promise<RecognizedPage[]> {
     const parsed = await runHelper(file, [], opts)
-    return (parsed as { page?: unknown; text?: unknown; confidence?: unknown }[])
+    const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+    return (parsed as { page?: unknown; text?: unknown; confidence?: unknown; lines?: unknown }[])
         .filter(p => typeof p?.page === 'number' && typeof p?.text === 'string')
         .map(p => {
             const page: RecognizedPage = { page: p.page as number, text: p.text as string }
-            if (typeof p.confidence === 'number' && Number.isFinite(p.confidence)) page.confidence = p.confidence
+            if (finite(p.confidence)) page.confidence = p.confidence
+            if (Array.isArray(p.lines))
+                page.lines = (p.lines as Record<string, unknown>[])
+                    .filter(l => typeof l?.text === 'string')
+                    .map(l => ({
+                        text: l.text as string,
+                        ...(finite(l.confidence) ? { confidence: l.confidence } : {}),
+                        ...(finite(l.misspelled) ? { misspelled: l.misspelled } : {}),
+                    }))
             return page
         })
 }

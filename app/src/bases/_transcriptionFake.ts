@@ -7,7 +7,8 @@ import { settings, setSettings } from '../settings'
 import { pushToast } from '../ui/toastStore'
 import { createTranscription, type TranscribeJobClient, type TranscriptionController } from './transcription'
 import type { TranscribeJobState, TranscribePageState } from '../../../core/src/transcribeJobTypes'
-import type { TranscriptEngine } from '../../../core/src/transcript'
+import type { TranscriptCheck, TranscriptEngine } from '../../../core/src/transcript'
+import { liveChecks } from '../../../core/src/transcriptChecks'
 
 export type FakeOptions = {
     /** pages a file has (default 1) */
@@ -37,6 +38,10 @@ export type FakeTranscription = {
     events: string[]
     /** `file#page` -> text: what `api.storedTranscript` serves */
     texts: Map<string, string>
+    /** `file#page` -> review checks: served with the page's text while they still apply */
+    checks: Map<string, TranscriptCheck[]>
+    /** every `api.approveTranscriptCheck` call, as `file#page:line` */
+    approvals: string[]
     /** every `api.setTranscriptPage` write */
     saves: { file: string; page: number; text: string }[]
     ctl?: TranscriptionController & { tick(): Promise<void> }
@@ -57,6 +62,8 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
     const events: string[] = []
     let setupDone = false
     const saves: FakeTranscription['saves'] = []
+    const checks = new Map<string, TranscriptCheck[]>()
+    const approvals: string[] = []
     const count = (file: string) => opts.pageCount?.(file) ?? 1
     const textOf = (file: string, page: number) => opts.text?.(file, page) ?? `Page ${page}`
     const snapshot = (j: Job): TranscribeJobState => ({
@@ -145,6 +152,8 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
         decisions,
         events,
         texts,
+        checks,
+        approvals,
         saves,
         controller: () => {
             const ctl = createTranscription({
@@ -166,13 +175,16 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
                 set: api.setTranscriptPage,
                 lines: api.transcriptLines,
                 mark: api.markTranscript,
+                approve: api.approveTranscriptCheck,
             }
             api.storedTranscript = async (file: string) => ({
                 engine: 'on-device' as const,
                 at: '2026-10-31T00:00:00.000Z',
                 pages: [...texts].flatMap(([key, text]) => {
                     const [f, page] = key.split('#')
-                    return f === file ? [{ page: Number(page), text }] : []
+                    if (f !== file) return []
+                    const live = liveChecks(text, checks.get(key))
+                    return [live.length ? { page: Number(page), text, checks: live } : { page: Number(page), text }]
                 }),
             })
             api.setTranscriptPage = (async (file: string, page: number, text: string) => {
@@ -180,6 +192,13 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
                 texts.set(`${file}#${page}`, text)
                 return { ok: true }
             }) as typeof api.setTranscriptPage
+            api.approveTranscriptCheck = (async (file: string, page: number, line: string) => {
+                const key = `${file}#${page}`
+                approvals.push(`${key}:${line}`)
+                const left = (checks.get(key) ?? []).filter(c => c.line !== line)
+                checks.set(key, left)
+                return { ok: true, companion: `${file}.md`, checks: left }
+            }) as typeof api.approveTranscriptCheck
             api.transcriptLines = (async (file: string, pages?: number[]) => ({
                 pages: (pages ?? [1]).map(page => ({ page, lines: opts.lines?.(file, page) ?? [] })),
             })) as typeof api.transcriptLines
@@ -188,6 +207,7 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
                 api.setTranscriptPage = original.set
                 api.transcriptLines = original.lines
                 api.markTranscript = original.mark
+                api.approveTranscriptCheck = original.approve
             }
         },
     }

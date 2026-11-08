@@ -52,6 +52,12 @@ describe.skipIf(!hasSwift)('visionOcr', () => {
         expect(out.length).toBe(1)
         expect(out[0].page).toBe(1)
         expect(out[0].text.toLowerCase()).toContain('milk')
+        // the real helper scores every line it read, in the text's order
+        expect(out[0].lines?.map(l => l.text).join('\n')).toBe(out[0].text)
+        for (const l of out[0].lines ?? []) {
+            expect(l.confidence).toBeGreaterThanOrEqual(0)
+            expect(typeof l.misspelled).toBe('number')
+        }
     }, 60_000)
 
     test('recognizeLines returns top-left boxes inside 0..1, top line first', async () => {
@@ -117,6 +123,18 @@ describe('visionOcr with a stand-in helper', () => {
         const out = await recognizePages('/x/y.png')
         expect(out).toEqual([{ page: 1, text: 'a', confidence: 0.8 }, { page: 2, text: 'b' }])
         expect('confidence' in out[1]).toBe(false)
+    })
+
+    test('each line carries its confidence and misspelled count in text order', async () => {
+        process.env.BISMUTH_VISION_PATH = fakeHelper(
+            '[{"page":1,"text":"a bb","lines":[{"text":"a","confidence":1,"misspelled":0,"x":0,"y":0,"w":1,"h":0.1},{"text":"bb","confidence":0.3,"x":0,"y":0.2,"w":1,"h":0.1}]}]',
+        )
+        resetVisionHelperCache()
+        const out = await recognizePages('/x/y.png')
+        expect(out[0].lines).toEqual([
+            { text: 'a', confidence: 1, misspelled: 0 },
+            { text: 'bb', confidence: 0.3 },
+        ])
     })
 
     test('renderPages returns one path per page the helper wrote', async () => {

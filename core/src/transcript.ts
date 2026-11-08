@@ -8,12 +8,21 @@
 import { mutateFrontmatter, setFrontmatterKey, FRONTMATTER_REGEX } from './frontmatter'
 import { getFileAccess } from './fileAccess'
 import { addMarks, markQuotesIn, markQuotesOnPage } from './bookMarks'
+import { checkKey, liveChecks } from './transcriptChecks'
+
+export { checkKey, liveChecks }
 
 /** Frontmatter `transcribed:` values: the transcriber that produced the text. */
 export type TranscriptEngine = 'on-device' | 'marker' | 'ai'
 /** What a request may ask for; `auto` runs on-device first, then re-reads math pages with marker and other hard pages with ai. */
 export type TranscribeEngine = 'auto' | TranscriptEngine
-export type PageText = { page: number; text: string }
+/** How much a stored line needs a person's eye: `unsure` (yellow) may hold a wrong word, `garbled`
+ *  (red) is mostly wrong or was not read at all. */
+export type CheckLevel = 'unsure' | 'garbled'
+/** One line of a page's text flagged for review, keyed by the line's text (marks and spacing
+ *  ignored). An empty `line` flags the whole page: the reader returned nothing for a page with writing. */
+export type TranscriptCheck = { line: string; level: CheckLevel }
+export type PageText = { page: number; text: string; checks?: TranscriptCheck[] }
 /** What kind of file the pages came from: one image is one page, a pdf has many. */
 type PageFileKind = 'image' | 'pdf'
 
@@ -22,9 +31,45 @@ export const TRANSCRIPT_END = '<!-- bismuth:transcript:end -->'
 
 /** The body without the transcript block's marker comments, for indexing and excerpts. */
 export const stripTranscriptMarkers = (s: string): string =>
-    s.replaceAll(TRANSCRIPT_START, '').replaceAll(TRANSCRIPT_END, '')
+    s.replace(CHECKS_LINE, '').replaceAll(TRANSCRIPT_START, '').replaceAll(TRANSCRIPT_END, '')
 
 const HEADING = /^### Page (\d+)[ \t]*$/m
+/** The block's first line when any page has checks: `{"<page>":[["<line>","unsure"|"garbled"]]}`. */
+const CHECKS_PREFIX = '<!-- bismuth:transcript:checks '
+const CHECKS_LINE = /^<!-- bismuth:transcript:checks (.*?) -->[ \t]*\n?/m
+
+
+/** The block's text with its checks line taken out, and the checks it held by page. */
+function splitChecks(inner: string): { inner: string; byPage: Map<number, TranscriptCheck[]> } {
+    const byPage = new Map<number, TranscriptCheck[]>()
+    const m = inner.match(CHECKS_LINE)
+    if (!m) return { inner, byPage }
+    try {
+        const data = JSON.parse(m[1]) as Record<string, unknown>
+        for (const [k, v] of Object.entries(data)) {
+            const page = Number(k)
+            if (!Number.isInteger(page) || !Array.isArray(v)) continue
+            const list = v
+                .filter((e): e is [string, CheckLevel] => Array.isArray(e) && typeof e[0] === 'string' && (e[1] === 'unsure' || e[1] === 'garbled'))
+                .map(([line, level]) => ({ line, level }))
+            if (list.length) byPage.set(page, list)
+        }
+    } catch {
+        // an unreadable checks line holds nothing
+    }
+    return { inner: inner.replace(CHECKS_LINE, ''), byPage }
+}
+
+function checksLine(pages: PageText[]): string {
+    const data: Record<string, [string, CheckLevel][]> = {}
+    for (const p of pages) {
+        const live = liveChecks(p.text, p.checks)
+        if (live.length) data[p.page] = live.map(c => [c.line, c.level])
+    }
+    if (Object.keys(data).length === 0) return ''
+    // `-->` inside a quoted line would end the comment early.
+    return `${CHECKS_PREFIX}${JSON.stringify(data).replaceAll('-->', '--\\u003e')} -->\n`
+}
 
 /** The block's inner markdown: `### Page N` headings in page order. A lone image page has no heading. */
 export function renderTranscript(pages: PageText[], kind: PageFileKind): string {
@@ -36,7 +81,7 @@ export function renderTranscript(pages: PageText[], kind: PageFileKind): string 
 }
 
 function blockOf(pages: PageText[], kind: PageFileKind): string {
-    return `${TRANSCRIPT_START}\n${renderTranscript(pages, kind)}\n${TRANSCRIPT_END}`
+    return `${TRANSCRIPT_START}\n${checksLine(pages)}${renderTranscript(pages, kind)}\n${TRANSCRIPT_END}`
 }
 
 /** The note body with its transcript block replaced by `block`, or the block appended when the body has none. */
@@ -105,15 +150,25 @@ export function readTranscript(companion: string): PageText[] {
     const from = start + TRANSCRIPT_START.length
     const end = companion.indexOf(TRANSCRIPT_END, from)
     if (end < 0) return []
-    const inner = companion.slice(from, end).trim()
-    if (!inner) return []
+    const split = splitChecks(companion.slice(from, end).replace(/^\n/, ''))
+    const inner = split.inner.trim()
+    const withChecks = (page: number, text: string): PageText => {
+        const checks = liveChecks(text, split.byPage.get(page))
+        return checks.length ? { page, text, checks } : { page, text }
+    }
+    // A block with no text can still flag a page the reader returned nothing for.
+    if (!inner)
+        return [...split.byPage.keys()].sort((a, b) => a - b).flatMap(page => {
+            const p = withChecks(page, '')
+            return p.checks ? [p] : []
+        })
     const parts = inner.split(/^(?=### Page \d+[ \t]*$)/m)
-    if (!HEADING.test(inner)) return [{ page: 1, text: inner }]
+    if (!HEADING.test(inner)) return [withChecks(1, inner)]
     const out: PageText[] = []
     for (const part of parts) {
         const m = part.match(HEADING)
         if (!m) continue
-        out.push({ page: Number(m[1]), text: part.slice(m[0].length).trim() })
+        out.push(withChecks(Number(m[1]), part.slice(m[0].length).trim()))
     }
     return out
 }
@@ -165,9 +220,14 @@ export async function writeTranscript(
  *  and the frontmatter as they are. The text is kept exactly as written, `==marks==` included; text
  *  empty after trim removes the page. */
 export function setTranscriptPage(companion: string, page: number, text: string, kind: PageFileKind): string {
-    const pages = readTranscript(companion).filter(p => p.page !== page)
+    const all = readTranscript(companion)
+    const old = all.find(p => p.page === page)
+    const pages = all.filter(p => p.page !== page)
     const clean = text.replaceAll(TRANSCRIPT_END, '').trim()
-    if (clean !== '') pages.push({ page, text: clean })
+    if (clean !== '') {
+        const checks = liveChecks(clean, old?.checks)
+        pages.push(checks.length ? { page, text: clean, checks } : { page, text: clean })
+    }
     return withPages(companion, pages, kind)
 }
 
@@ -198,11 +258,47 @@ export async function writeTranscriptPage(
 export function remapTranscriptPages(companion: string, sources: (number | null)[]): string {
     const old = readTranscript(companion)
     if (old.length === 0) return companion
-    const byPage = new Map(old.map(p => [p.page, p.text]))
+    const byPage = new Map(old.map(p => [p.page, p]))
     const pages: PageText[] = []
     sources.forEach((src, i) => {
-        const text = src === null ? undefined : byPage.get(src + 1)
-        if (text !== undefined) pages.push({ page: i + 1, text })
+        const was = src === null ? undefined : byPage.get(src + 1)
+        if (was !== undefined) pages.push({ ...was, page: i + 1 })
     })
     return withPages(companion, pages, 'pdf')
+}
+
+/** The companion with one check cleared: the line on `page` whose text matches `line` (an empty
+ *  `line` clears the whole-page check). The text itself is not touched. */
+export function approveCheck(companion: string, page: number, line: string, kind: PageFileKind): string {
+    const pages = readTranscript(companion)
+    const target = pages.find(p => p.page === page)
+    if (!target?.checks?.length) return companion
+    const key = checkKey(line)
+    const at = target.checks.findIndex(c => checkKey(c.line) === key)
+    if (at < 0) return companion
+    const checks = target.checks.filter((_, i) => i !== at)
+    const next = pages.map(p => (p.page === page ? { ...p, checks } : p))
+    return withPages(companion, next, kind)
+}
+
+/** Write `approveCheck` back; nothing is written when no check matched. Returns the page's checks left. */
+export async function writeApprovedCheck(
+    root: string,
+    rel: string,
+    page: number,
+    line: string,
+    kind: PageFileKind,
+    opts: { mark?: (paths: string[]) => void } = {},
+): Promise<TranscriptCheck[]> {
+    const files = await getFileAccess()
+    const current = await files.readNote(root, rel).catch(e => {
+        if ((e as { code?: string })?.code === 'ENOENT') return ''
+        throw e
+    })
+    const next = approveCheck(current, page, line, kind)
+    if (next !== current) {
+        opts.mark?.([rel])
+        await files.writeNote(root, rel, next)
+    }
+    return readTranscript(next).find(p => p.page === page)?.checks ?? []
 }

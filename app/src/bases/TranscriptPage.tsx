@@ -1,4 +1,4 @@
-import { Show, createEffect, onCleanup, onMount, type Component, type JSX } from 'solid-js'
+import { Show, createEffect, createSignal, onCleanup, onMount, type Component, type JSX } from 'solid-js'
 import { Compartment, EditorState, Transaction } from '@codemirror/state'
 import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore } from '@codemirror/commands'
@@ -10,6 +10,10 @@ import { cursor } from '../editor/cursorTheme'
 import { settings } from '../settings'
 import { api } from '../api'
 import Text from '../ui/Text'
+import IconButton from '../ui/IconButton'
+import type { TranscriptCheck } from '../../../core/src/transcript'
+import { selectLine, setChecks, transcriptChecks } from './transcriptCheckMarks'
+import CheckPopover from './CheckPopover'
 import { setFlash, toggleMark, transcriptMarks } from './transcriptMarks'
 import styles from './TranscriptPage.module.css'
 
@@ -39,6 +43,13 @@ export type TranscriptPageProps = {
     readOnly?: boolean
     onContextMenu?: (e: MouseEvent, selection: string) => void
     onSelect?: (selection: string) => void
+    /** lines flagged for review: a glyph after each (yellow unsure, red garbled); an empty `line`
+     *  flags the whole page, shown in the divider */
+    checks?: TranscriptCheck[]
+    /** the reader pressed `[ looks right ]` on a check (its `line`, '' for the whole page) */
+    onApprove?: (line: string) => void
+    /** the scan strip a flagged line came from, for its popup */
+    crop?: (line: string) => JSX.Element | undefined
     /** a divider row only, no editor: a page off the window, so a blank reads as loading */
     pending?: boolean
     className?: string
@@ -82,6 +93,10 @@ const TranscriptPage: Component<TranscriptPageProps> = props => {
     let timer: ReturnType<typeof setTimeout> | undefined
     let flashTimer: ReturnType<typeof setTimeout> | undefined
     const editable = new Compartment()
+    // The open check popup: the glyph it hangs from, the check, and its 1-based line (0 = whole page).
+    const [open, setOpen] = createSignal<{ el: HTMLElement; check: TranscriptCheck; lineNo: number }>()
+    let pageGlyph: HTMLElement | undefined
+    const pageCheck = () => (props.text.trim() === '' ? props.checks?.find(c => c.line === '') : undefined)
     const hint = new Compartment()
 
     const flush = () => {
@@ -138,6 +153,7 @@ const TranscriptPage: Component<TranscriptPageProps> = props => {
                         livePreview: settings.editor.livePreview,
                     }),
                     transcriptMarks,
+                    transcriptChecks((el, check, lineNo) => setOpen({ el, check, lineNo })),
                     EditorView.lineWrapping,
                     fieldTheme,
                     editable.of(lock(props.readOnly)),
@@ -158,6 +174,7 @@ const TranscriptPage: Component<TranscriptPageProps> = props => {
             }),
         })
         fieldKeymap.attach(view)
+        view.dispatch({ effects: setChecks.of(props.checks ?? []) })
         props.ref?.({
             selection,
             toggleMark: () => {
@@ -197,6 +214,13 @@ const TranscriptPage: Component<TranscriptPageProps> = props => {
         syncing = false
     })
     createEffect(() => {
+        const checks = props.checks ?? []
+        view?.dispatch({ effects: setChecks.of(checks) })
+        // a popup over a check that went away (approved, retyped, reloaded) closes with it
+        const cur = open()
+        if (cur && cur.lineNo > 0 && !checks.some(c => c.line === cur.check.line && c.level === cur.check.level)) setOpen(undefined)
+    })
+    createEffect(() => {
         const ro = props.readOnly
         const ph = props.placeholder ?? 'no text yet'
         view?.dispatch({ effects: [editable.reconfigure(lock(ro)), hint.reconfigure(placeholder(ph))] })
@@ -217,17 +241,50 @@ const TranscriptPage: Component<TranscriptPageProps> = props => {
                 '--transcript-scale': props.textScale !== undefined ? String(props.textScale) : undefined,
             } as JSX.CSSProperties}
         >
-            <Show when={props.label !== undefined}>
+            <Show when={props.label !== undefined || pageCheck()}>
                 <div class={styles.divider}>
-                    <Text as="span" size="ui" tone="muted">
-                        {props.label}
-                    </Text>
+                    <div class={styles.lead}>
+                        <Text as="span" size="ui" tone="muted">
+                            {props.label}
+                        </Text>
+                        <Show when={pageCheck()}>
+                            {check => (
+                                <div ref={el => (pageGlyph = el)} class={styles['page-check']} data-page-check={check().level}>
+                                    <IconButton
+                                        icon="TriangleAlert"
+                                        danger
+                                        label="no text was read from this page"
+                                        onClick={() => setOpen({ el: pageGlyph!, check: check(), lineNo: 0 })}
+                                    />
+                                </div>
+                            )}
+                        </Show>
+                    </div>
                     <div class={styles.status}>{props.status}</div>
                 </div>
             </Show>
             <Show when={!props.pending}>
                 <div ref={host} class={styles.field} />
             </Show>
+            <CheckPopover
+                open={!!open()}
+                anchor={() => open()?.el}
+                check={open()?.check}
+                crop={open() ? props.crop?.(open()!.check.line) : undefined}
+                onDismiss={() => setOpen(undefined)}
+                onApprove={() => {
+                    const cur = open()
+                    setOpen(undefined)
+                    if (cur) props.onApprove?.(cur.check.line)
+                }}
+                onRetype={() => {
+                    const cur = open()
+                    setOpen(undefined)
+                    if (!cur || !view) return
+                    if (cur.lineNo > 0) selectLine(view, cur.lineNo)
+                    else view.focus()
+                }}
+            />
         </div>
     )
 }

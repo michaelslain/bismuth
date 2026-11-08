@@ -3,10 +3,12 @@ import { companionPathFor } from '../fileKinds'
 import {
     transcriptLines,
     markTranscript,
+    approveTranscriptCheck,
     withCompanion,
     transcribe,
     checkPageFile,
     readStoredTranscript,
+    type ApproveCheckRequest,
     type MarkRequest,
     type TranscribeRequest,
 } from '../transcribe'
@@ -145,6 +147,21 @@ export function transcribeMutatingRoutes(ctx: RouteContext): Record<string, Hand
                     checkPageFile(body.file)
                     if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)
                     return ok(await markTranscript(ctx.cfg.vault, body, { mark: ctx.markSelfWritten }))
+                } catch (e) {
+                    if (e instanceof AppError) return error(e.message, e.statusCode)
+                    throw e
+                }
+            },
+            body => (typeof body?.file === 'string' ? companionPathFor(body.file) : undefined),
+        ),
+        // A reader approves a line flagged for review: the check goes, the text stays.
+        'POST /transcript/check': ctx.mutatingHandler(
+            async req => {
+                const body = (await req.json()) as ApproveCheckRequest
+                try {
+                    checkPageFile(body.file)
+                    if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)
+                    return ok(await approveTranscriptCheck(ctx.cfg.vault, body, { mark: ctx.markSelfWritten }))
                 } catch (e) {
                     if (e instanceof AppError) return error(e.message, e.statusCode)
                     throw e

@@ -2,14 +2,15 @@
 //
 //   bismuth-vision <file.png|jpg|heic|pdf> [--pages 1,3] [--lines] [--render <dir>]
 //
-// Prints one JSON array on stdout, `[{"page":1,"text":"...","confidence":0.92}]`, pages in ascending
+// Prints one JSON array on stdout, `[{"page":1,"text":"...","confidence":0.92,"lines":[...]}]`, pages in ascending
 // order. confidence is the mean over the page's lines of Vision's confidence (0..1) and is absent
 // when a page has no lines. With --render <dir> nothing is recognised: each wanted page is written
 // to <dir>/page-<n>.png (a PDF page at 2x) and the output is `[{"page":1,"path":"<dir>/page-1.png"}]`. An image
 // is page 1. A PDF is rendered page by page with PDFKit at 2x and each render is recognised with
 // VNRecognizeTextRequest (.accurate). Lines come out top to bottom, joined with newlines.
-// With --lines each entry also carries `lines: [{text,x,y,w,h}]`, boxes as fractions of the page
-// (0..1) with the origin at the top left. Errors go to stderr with exit 1.
+// Each entry also carries `lines: [{text,confidence,misspelled,x,y,w,h}]`, one per recognised line in the
+// same order as the text, boxes as fractions of the page (0..1) with the origin at the top left.
+// `--lines` is accepted and changes nothing. Errors go to stderr with exit 1.
 import AppKit
 import Foundation
 import PDFKit
@@ -20,7 +21,31 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
-func recognize(_ image: CGImage) throws -> (text: String, confidence: Double?) {
+/// The system spell checker's count of misspelled words in a line: a recognised line with a word no
+/// dictionary knows is likely misread (the rule in core/src/transcriptChecks.ts is fit on it).
+let speller: NSSpellChecker = {
+    let c = NSSpellChecker.shared
+    c.automaticallyIdentifiesLanguages = false
+    _ = c.setLanguage("en")
+    return c
+}()
+
+func misspelled(_ line: String) -> Int {
+    let length = (line as NSString).length
+    var count = 0
+    var start = 0
+    while start < length {
+        let r = speller.checkSpelling(of: line, startingAt: start)
+        if r.location == NSNotFound || r.location < start { break }
+        count += 1
+        start = r.location + r.length
+    }
+    return count
+}
+
+/// One recognition pass: the page text (lines top to bottom, joined with newlines), the mean line
+/// confidence, and each line with its own confidence, misspelled-word count and box (fractions, top-left origin).
+func recognize(_ image: CGImage) throws -> (text: String, confidence: Double?, lines: [[String: Any]]) {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     request.usesLanguageCorrection = true
@@ -30,35 +55,27 @@ func recognize(_ image: CGImage) throws -> (text: String, confidence: Double?) {
         // Vision's origin is bottom-left, so a larger maxY is higher on the page.
         $0.boundingBox.maxY > $1.boundingBox.maxY
     }
-    let candidates = observations.compactMap { $0.topCandidates(1).first }
-    let confidence = candidates.isEmpty
-        ? nil
-        : candidates.map { Double($0.confidence) }.reduce(0, +) / Double(candidates.count)
-    return (candidates.map { $0.string }.joined(separator: "\n"), confidence)
-}
-
-func recognizeLines(_ image: CGImage) throws -> [[String: Any]] {
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = true
-    request.automaticallyDetectsLanguage = true
-    try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
-    let observations = (request.results ?? []).sorted {
-        $0.boundingBox.maxY > $1.boundingBox.maxY
-    }
-    return observations.compactMap { o in
-        guard let text = o.topCandidates(1).first?.string else { return nil }
+    var texts: [String] = []
+    var confidences: [Double] = []
+    var lines: [[String: Any]] = []
+    for o in observations {
+        guard let top = o.topCandidates(1).first else { continue }
         let b = o.boundingBox
-        // Vision's origin is bottom-left; the output origin is top-left.
-        return ["text": text, "x": b.minX, "y": 1 - b.maxY, "w": b.width, "h": b.height]
+        texts.append(top.string)
+        confidences.append(Double(top.confidence))
+        lines.append([
+            "text": top.string, "confidence": Double(top.confidence), "misspelled": misspelled(top.string),
+            "x": b.minX, "y": 1 - b.maxY, "w": b.width, "h": b.height,
+        ])
     }
+    let confidence = confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count)
+    return (texts.joined(separator: "\n"), confidence, lines)
 }
 
 func entry(_ number: Int, _ image: CGImage) throws -> [String: Any] {
-    let (text, confidence) = try recognize(image)
-    var result: [String: Any] = ["page": number, "text": text]
+    let (text, confidence, lines) = try recognize(image)
+    var result: [String: Any] = ["page": number, "text": text, "lines": lines]
     if let confidence = confidence { result["confidence"] = confidence }
-    if withLines { result["lines"] = try recognizeLines(image) }
     return result
 }
 
@@ -98,7 +115,7 @@ func render(_ page: PDFPage) -> CGImage? {
 
 var path: String?
 var wanted: Set<Int>?
-var withLines = false
+var withLines = false  // accepted for older callers; lines are always included
 var renderDir: String?
 var args = Array(CommandLine.arguments.dropFirst())
 while !args.isEmpty {

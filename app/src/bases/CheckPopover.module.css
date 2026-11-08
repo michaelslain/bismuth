@@ -1,0 +1,21 @@
+/* CheckPopover.module.css — the popup a transcript check's glyph opens (CheckPopover.tsx ONLY). */
+.box {
+    padding: var(--sp-4);
+    max-width: min(392px, calc(100vw - 2 * var(--sp-4)));
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+}
+
+.read {
+    font-family: var(--prose-font);
+    overflow-wrap: anywhere;
+}
+
+.actions {
+    display: flex;
+    gap: var(--sp-4);
+}

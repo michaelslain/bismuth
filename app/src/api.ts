@@ -121,7 +121,7 @@ const OWNER_TOKEN = resolveOwnerToken(
         .__BISMUTH_OWNER_TOKEN__,
 )
 
-import type { PageText, TranscribeEngine, TranscriptEngine } from '../../core/src/transcript'
+import type { PageText, TranscribeEngine, TranscriptCheck, TranscriptEngine } from '../../core/src/transcript'
 import type { PageSource } from '../../core/src/pdfPages'
 import type { MarkerSetupState, MarkerStatus } from '../../core/src/markerSetup'
 import type { TextLine } from '../../core/src/visionOcr'
@@ -661,6 +661,9 @@ export const api = {
             '/transcript/mark',
             req,
         ),
+    /** Clear one review check on a page (the line's text, or '' for the whole page); answers the checks left. */
+    approveTranscriptCheck: (file: string, page: number, line: string) =>
+        postJson<{ ok: true; companion: string; checks: TranscriptCheck[] }>('/transcript/check', { file, page, line }),
     /** Replace (or add) one page's transcript text by hand; empty text removes the page's text. */
     setTranscriptPage: (file: string, page: number, text: string) =>
         postJson<{ ok: true }>('/transcript/page', { file, page, text }),

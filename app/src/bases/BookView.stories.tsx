@@ -1570,3 +1570,122 @@ export const HighlightColorsInPane: Story = {
         await waitFor(() => expect(rows()).toEqual([]))
     },
 }
+
+// ── review checks: lines a reader may have misread ──
+
+const UNSURE_LINE = 'and see if I could not learn what it had to teech'
+const GARBLED_LINE = 'to frnot only the esentail facts of lfie'
+const checkedText = (n: number) => `Page ${n}\n${LINE_TWO}\n${GARBLED_LINE}\n${UNSURE_LINE}`
+/** Three pages: page 1 has an unsure and a garbled line, page 2 came back empty from the reader,
+ *  page 3 reads clean. Line boxes put each flagged line on the page, so the popup shows its strip. */
+function withChecks() {
+    const restore = startFake({
+        count: 3,
+        lines: () => [
+            { text: 'Page 1', x: 0.1, y: 0.06, w: 0.2, h: 0.04 },
+            { text: LINE_TWO, x: 0.1, y: 0.12, w: 0.8, h: 0.04 },
+            { text: GARBLED_LINE, x: 0.1, y: 0.17, w: 0.8, h: 0.04 },
+            { text: UNSURE_LINE, x: 0.1, y: 0.22, w: 0.8, h: 0.04 },
+        ],
+    })
+    fk.texts.set(`${imagePath(1)}#1`, checkedText(1))
+    fk.checks.set(`${imagePath(1)}#1`, [
+        { line: GARBLED_LINE, level: 'garbled' },
+        { line: UNSURE_LINE, level: 'unsure' },
+    ])
+    fk.texts.set(`${imagePath(2)}#1`, '')
+    fk.checks.set(`${imagePath(2)}#1`, [{ line: '', level: 'garbled' }])
+    fk.texts.set(`${imagePath(3)}#1`, pageText(3))
+    return restore
+}
+const glyphs = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>('[data-transcript-check]'))
+const popover = () => document.querySelector<HTMLElement>('[data-check-popover]')
+const pressGlyph = (el: HTMLElement) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+
+/** Text mode with review checks: a yellow glyph after an unsure line, a red one after a garbled
+ *  line, a red one in the divider of a page read as nothing. Press a glyph: the popup shows the
+ *  strip of the page the line came from, `[ looks right ]` and `[ retype ]`. */
+export const ReviewChecks: Story = {
+    name: 'Review checks',
+    beforeEach: withChecks,
+    render: () => textBook(3, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 3)
+        await waitFor(() => expect(glyphs(canvasElement).map(g => g.dataset.transcriptCheck)).toEqual(['garbled', 'unsure']))
+        const [garbled, unsure] = glyphs(canvasElement)
+        await expect(getComputedStyle(garbled).color).not.toBe(getComputedStyle(unsure).color)
+        // the glyph sits after its line's text, on the same row
+        const line = garbled.closest('.cm-line')!
+        await expect(line.textContent).toContain(GARBLED_LINE)
+        // the empty page shows its red glyph and no `not transcribed`
+        const second = sections(canvasElement)[1]
+        await expect(second.querySelector('[data-page-check="garbled"]')).not.toBeNull()
+        await expect(statusOf(second)).not.toContain('not transcribed')
+    },
+}
+
+/** Press the unsure glyph, then `[ looks right ]`: the glyph goes and the approval is written. */
+export const ReviewCheckApprove: Story = {
+    name: 'Review check approve',
+    beforeEach: withChecks,
+    render: () => textBook(3, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 3)
+        await waitFor(() => expect(glyphs(canvasElement).length).toBe(2))
+        pressGlyph(glyphs(canvasElement)[1])
+        await waitFor(() => expect(popover()).not.toBeNull())
+        await expect(popover()!.textContent).toContain(UNSURE_LINE)
+        await expect(popover()!.textContent).toContain('not sure of this line')
+        await waitFor(() => expect(popover()!.querySelector('[data-check-crop]')?.getAttribute('data-check-crop')).toBe('ready'), { timeout: 8000 })
+        await userEvent.click(popover()!.querySelector<HTMLElement>('[data-check-approve]')!)
+        await waitFor(() => expect(glyphs(canvasElement).map(g => g.dataset.transcriptCheck)).toEqual(['garbled']))
+        await expect(fk.approvals).toEqual([`${imagePath(1)}#1:${UNSURE_LINE}`])
+        await expect(popover()).toBeNull()
+    },
+}
+
+/** Press the garbled glyph, then `[ retype ]`: the line is selected, and typing over it clears the
+ *  glyph with no approval at all. */
+export const ReviewCheckRetype: Story = {
+    name: 'Review check retype',
+    beforeEach: withChecks,
+    render: () => textBook(3, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 3)
+        await waitFor(() => expect(glyphs(canvasElement).length).toBe(2))
+        pressGlyph(glyphs(canvasElement)[0])
+        await waitFor(() => expect(popover()).not.toBeNull())
+        await expect(popover()!.textContent).toContain('this line read badly')
+        await userEvent.click(popover()!.querySelector<HTMLElement>('[data-check-retype]')!)
+        await waitFor(() => expect(window.getSelection()?.toString()).toBe(GARBLED_LINE))
+        await userEvent.keyboard('to front only the essential facts of life')
+        await waitFor(() => expect(glyphs(canvasElement).map(g => g.dataset.transcriptCheck)).toEqual(['unsure']))
+        await expect(fk.approvals).toEqual([])
+        await waitFor(() => expect(fk.saves.at(-1)?.text).toContain('to front only the essential facts of life'), { timeout: 3000 })
+    },
+}
+
+/** Side by side carries the same glyphs beside the page, and the popup opens over the text column. */
+export const ReviewChecksSideBySide: Story = {
+    name: 'Review checks side by side',
+    beforeEach: withChecks,
+    render: () => textBook(3, 'side', 1000),
+    play: async ({ canvasElement }) => {
+        await sideReady(canvasElement, 3)
+        await waitFor(() => expect(glyphs(canvasElement).length).toBe(2))
+        await expect(canvasElement.querySelector('[data-page-check="garbled"]')).not.toBeNull()
+    },
+}
+
+/** Rests with the garbled line's popup open over text mode, the scan strip drawn. */
+export const ReviewCheckOpen: Story = {
+    name: 'Review check open',
+    beforeEach: withChecks,
+    render: () => textBook(3, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 3)
+        await waitFor(() => expect(glyphs(canvasElement).length).toBe(2))
+        pressGlyph(glyphs(canvasElement)[0])
+        await waitFor(() => expect(popover()?.querySelector('[data-check-crop]')?.getAttribute('data-check-crop')).toBe('ready'), { timeout: 8000 })
+    },
+}

@@ -8,9 +8,12 @@ import { AppError } from './error'
 import { companionPathFor, isImagePath, isPdfPath } from './fileKinds'
 import { getFileAccess } from './fileAccess'
 import { parseFrontmatter } from './frontmatter'
+import { emptyPageChecks, onDeviceChecks, type ScoredLine } from './transcriptChecks'
 import {
     readTranscript,
+    writeApprovedCheck,
     writeTranscript,
+    type TranscriptCheck,
     type PageText,
     type TranscribeEngine,
     type TranscriptEngine,
@@ -81,7 +84,19 @@ export type TranscriptionSettings = {
     chatProvider?: unknown
 }
 
-export type RecognizedText = PageText & { confidence?: number }
+export type RecognizedText = PageText & { confidence?: number; lines?: ScoredLine[] }
+
+/** An on-device page as stored: its text, and a check for every line the fitted rule flags. */
+function onDevicePage(rec: RecognizedText): PageText {
+    const checks = onDeviceChecks(rec.lines)
+    return checks.length ? { page: rec.page, text: rec.text, checks } : { page: rec.page, text: rec.text }
+}
+
+/** A math reader page as stored: flagged whole when it came back empty for a page with writing. */
+function markerPage(page: number, text: string, onDeviceLines: number): PageText {
+    const checks = emptyPageChecks(text, onDeviceLines)
+    return checks.length ? { page, text, checks } : { page, text }
+}
 export type AiTarget = { provider: string; model?: string; chatProvider?: unknown }
 
 export type StoredTranscript = { engine?: TranscriptEngine; at?: string; pages: PageText[] }
@@ -274,7 +289,7 @@ export async function transcribe(
         throwIfCancelled(opts.signal)
     } else if (requested === 'on-device') {
         engine = 'on-device'
-        pages = (await engineFor('onDevice')(abs, kind, req.pages)).map(({ page, text }) => ({ page, text }))
+        pages = (await engineFor('onDevice')(abs, kind, req.pages)).map(onDevicePage)
     } else {
         const math: MathChoice = (req.math ?? settings.math) === 'fast' ? 'fast' : 'careful'
         auto = await transcribeAuto(abs, kind, req.pages, target, math, opts.signal)
@@ -347,13 +362,14 @@ async function transcribeAuto(
         .filter(p => !mathPages.includes(p.page))
         .filter(p => p.text.trim() === '' || (p.confidence !== undefined && p.confidence < AUTO_AI_BELOW))
         .map(p => p.page)
-    const redone = new Map<number, { text: string; by: 'marker' | 'ai' }>()
+    const redone = new Map<number, { page: PageText; by: 'marker' | 'ai' }>()
+    const linesOn = (n: number) => read.find(p => p.page === n)?.lines?.length ?? 0
     let markerSkipped: string | undefined
     let aiSkipped: string | undefined
     if (math === 'careful' && mathPages.length) {
         try {
             for (const p of await engineFor('marker')(abs, kind, mathPages, signal))
-                if (mathPages.includes(p.page)) redone.set(p.page, { text: p.text, by: 'marker' })
+                if (mathPages.includes(p.page)) redone.set(p.page, { page: markerPage(p.page, p.text, linesOn(p.page)), by: 'marker' })
         } catch (e) {
             throwIfCancelled(signal)
             markerSkipped = why(e)
@@ -363,14 +379,14 @@ async function transcribeAuto(
     if (hard.length) {
         try {
             for (const p of await engineFor('ai')(abs, kind, hard, target))
-                if (hard.includes(p.page)) redone.set(p.page, { text: p.text, by: 'ai' })
+                if (hard.includes(p.page)) redone.set(p.page, { page: p, by: 'ai' })
         } catch (e) {
             aiSkipped = why(e)
         }
     }
     const by = [...redone.values()].map(r => r.by)
     return {
-        pages: read.map(({ page, text }) => ({ page, text: redone.get(page)?.text ?? text })),
+        pages: read.map(r => redone.get(r.page)?.page ?? onDevicePage(r)),
         engine: by.includes('ai') ? 'ai' : by.includes('marker') ? 'marker' : 'on-device',
         escalated: read.map(p => p.page).filter(n => redone.has(n)),
         math: mathPages.filter(n => !redone.has(n)),
@@ -429,6 +445,28 @@ export async function markTranscript(
         }
         return { ok: true as const, companion, marks: marksOnPage(next, page) }
     })
+}
+
+export type ApproveCheckRequest = { file: string; page?: number; line?: string }
+
+/** Clear one review check on a page: the line whose text matches `line`, or the whole-page check when
+ *  `line` is empty. The text is left as it is. Answers the page's checks still standing. */
+export async function approveTranscriptCheck(
+    root: string,
+    req: ApproveCheckRequest,
+    opts: { mark?: (paths: string[]) => void } = {},
+): Promise<{ ok: true; companion: string; checks: TranscriptCheck[] }> {
+    const kind = checkPageFile(req.file)
+    const page = req.page ?? 1
+    if (!Number.isInteger(page) || page < 1) throw new AppError('EINVAL', 'page must be a positive integer', 400)
+    if (req.line !== undefined && typeof req.line !== 'string') throw new AppError('EINVAL', 'line must be a string', 400)
+    const files = await getFileAccess()
+    if (!(await files.statNote(root, req.file))) throw new AppError('ENOENT', `no such file: ${req.file}`, 404)
+    const companion = companionPathFor(req.file)
+    const checks = await withCompanion(companion, () =>
+        writeApprovedCheck(root, companion, page, req.line ?? '', kind, { mark: opts.mark }),
+    )
+    return { ok: true, companion, checks }
 }
 
 /** Recognise a page file again with line boxes. Nothing is stored. */
@@ -494,12 +532,13 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
     }
 
     /** Store one page's text now: read the stored transcript, replace the page, write it back. */
-    const save = async (page: number, text: string, engine: TranscriptEngine) => {
+    const save = async (got: PageText, engine: TranscriptEngine) => {
+        const { page, text } = got
         check()
         const files = await getFileAccess()
         await withCompanion(companion, async () => {
             const prev = readTranscript(await files.readNote(root, companion).catch(() => ''))
-            const merged = [...prev.filter(p => p.page !== page), { page, text }].sort((a, b) => a.page - b.page)
+            const merged = [...prev.filter(p => p.page !== page), got].sort((a, b) => a.page - b.page)
             await writeTranscript(root, companion, merged, engine, kind, { book: req.book, mark: opts.mark })
         })
         texts.set(page, text)
@@ -510,18 +549,21 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
         const r = await engineFor('onDevice')(abs, kind, kind === 'pdf' ? [n] : undefined)
         return r.find(p => p.page === n) ?? r[0] ?? { page: n, text: '' }
     }
-    const readAi = async (n: number): Promise<string> => {
+    const readAi = async (n: number): Promise<PageText> => {
         const r = await engineFor('ai')(abs, kind, kind === 'pdf' ? [n] : undefined, target)
-        return (r.find(p => p.page === n) ?? r[0])?.text ?? ''
+        const got = r.find(p => p.page === n) ?? r[0]
+        return got ? { ...got, page: n } : { page: n, text: '' }
     }
+    /** How many lines the on-device pass found on each page this run read, for the math reader's empty-page check. */
+    const onDeviceLines = new Map<number, number>()
 
     /** One page by ai: done on success; on failure the page keeps `fallback` text when it has some. */
     const aiPage = async (n: number, hadText: boolean): Promise<void> => {
         emit(n, { status: 'reading', engine: 'ai' })
         try {
-            const text = await readAi(n)
+            const got = await readAi(n)
             check()
-            await save(n, text, 'ai')
+            await save(got, 'ai')
             redoneBy.add('ai')
             escalated.add(n)
             emit(n, { status: 'done', engine: 'ai' })
@@ -553,7 +595,7 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
         }
         for (const n of pages) {
             if (!got.has(n)) continue
-            await save(n, got.get(n)!, 'marker')
+            await save(markerPage(n, got.get(n)!, onDeviceLines.get(n) ?? 0), 'marker')
             redoneBy.add('marker')
             escalated.add(n)
             emit(n, { status: 'done', engine: 'marker' })
@@ -581,13 +623,12 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
     })
 
     /** Every page one at a time with one engine; a page that fails is reported and the run goes on. */
-    const single = async (pages: number[], read: (n: number) => Promise<string>, engine: TranscriptEngine) => {
+    const single = async (pages: number[], read: (n: number) => Promise<PageText>, engine: TranscriptEngine) => {
         for (const n of pages) {
             check()
             emit(n, { status: 'reading', engine })
             try {
-                const text = await read(n)
-                await save(n, text, engine)
+                await save(await read(n), engine)
                 emit(n, { status: 'done', engine })
             } catch (e) {
                 check()
@@ -614,7 +655,7 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
         check()
         for (const p of got) {
             if (!pages.includes(p.page)) continue
-            await save(p.page, p.text, 'marker')
+            await save(markerPage(p.page, p.text, onDeviceLines.get(p.page) ?? 0), 'marker')
             emit(p.page, { status: 'done', engine: 'marker' })
         }
         for (const n of pages) if (!texts.has(n)) emit(n, { status: 'failed', error: 'no text came back' })
@@ -659,7 +700,8 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
             check()
             const math = looksLikeMath(rec.text)
             const hard = !math && (rec.text.trim() === '' || (rec.confidence !== undefined && rec.confidence < AUTO_AI_BELOW))
-            await save(n, rec.text, 'on-device')
+            onDeviceLines.set(n, rec.lines?.length ?? 0)
+            await save(onDevicePage({ ...rec, page: n }), 'on-device')
             if (hard) await aiPage(n, true)
             else if (!math) emit(n, { status: 'done', engine: 'on-device' })
             else if (asking && !opts.mathChoice?.()) {
@@ -685,15 +727,18 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
             for (const n of pages) emit(n, { status: 'queued' })
             if (ctx.requested === 'marker') await markerBatch(pages)
             else if (ctx.requested === 'ai') await single(pages, readAi, 'ai')
-            else if (ctx.requested === 'on-device') await single(pages, async n => (await readOnDevice(n)).text, 'on-device')
+            else if (ctx.requested === 'on-device') await single(pages, async n => onDevicePage({ ...(await readOnDevice(n)), page: n }), 'on-device')
             else await auto(pages)
             return finish(pages)
         },
         /** Re-read already stored pages with the math reader (a choice that came after the run). */
         async math(pages: number[]): Promise<TranscribeResult> {
             const files = await getFileAccess()
-            for (const p of readTranscript(await files.readNote(root, companion).catch(() => '')))
+            for (const p of readTranscript(await files.readNote(root, companion).catch(() => ''))) {
                 texts.set(p.page, p.text)
+                // the stored on-device text's lines stand for the lines that pass found
+                onDeviceLines.set(p.page, p.text.split('\n').filter(l => l.trim()).length)
+            }
             await rereadMath(pages)
             return finish(pages)
         },

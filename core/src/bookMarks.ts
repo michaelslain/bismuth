@@ -17,7 +17,10 @@ type Range = { from: number; to: number }
 function pageRange(md: string, page: number): Range | null {
     const s = md.indexOf(START)
     if (s < 0) return null
-    const from = s + START.length
+    let from = s + START.length
+    // The block's checks line (transcript.ts) is no page's text.
+    const checks = md.slice(from).match(/^\n<!-- bismuth:transcript:checks .*? -->[ \t]*/)
+    if (checks) from += checks[0].length
     const to = md.indexOf(END, from)
     if (to < 0) return null
     const inner = md.slice(from, to)
