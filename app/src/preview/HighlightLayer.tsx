@@ -15,6 +15,9 @@
 //     highlights a non-empty selection, or removes the highlight under a collapsed click; either
 //     edit calls `onHighlighted()` so PreviewView disarms. A pointerup that does neither (a stray
 //     click on bare paper) leaves it armed.
+// REMOVING without arming: while unarmed, the pointer over a highlight shows the delete cursor and
+// a plain click removes it with an undo toast; a drag or a double-click still selects
+// (highlightClick.ts).
 // Both listen on/read `contentEl` (the scroll content PdfPages hands back via its own `onLayout`'s
 // `scrollEl`), not on this layer's own host — the host stays `pointer-events: none` always, so
 // text selection and scrolling are never blocked by it.
@@ -40,9 +43,12 @@ import {
     mergeLineRects,
     removeHighlight,
     resolveHighlightColor,
+    restoreHighlight,
 } from '../../../core/src/drawing/pageHighlights'
 import { emptyDoc } from '../../../core/src/drawing/model'
+import { pushUndoToast } from '../undoToast'
 import { rectsToPages } from './selectionRects'
+import { isClick, setHighlightCursor, singleClick } from './highlightClick'
 import styles from './HighlightLayer.module.css'
 
 export type HighlightLayerProps = {
@@ -189,6 +195,77 @@ function HighlightLayer(props: HighlightLayerProps) {
         props.store.edit(d => removeHighlight(d, pageIndex, hit.id))
         return true
     }
+
+    // ── Removing without arming: hover shows the delete cursor, a click deletes ───────────────
+    const click = singleClick()
+    onCleanup(() => {
+        click.cancel()
+        setHighlightCursor(false)
+    })
+
+    /** The highlight under a client point, else null. */
+    const hitAt = (clientX: number, clientY: number) => {
+        if (!hostRef) return null
+        const o = hostRef.getBoundingClientRect()
+        const pt = { x: clientX - o.left, y: clientY - o.top }
+        const page = pageAt(pt)
+        if (page === -1) return null
+        const r = props.visibleRange?.()
+        if (r && (page < r[0] || page > r[1])) return null
+        const logical = screenToLogical(pt, props.pages()[page]!.rendered, boxFor(page, props.pages()[page]!))
+        const hit = highlightAt(props.store.doc(), page, logical)
+        return hit ? { page, id: hit.id } : null
+    }
+
+    const remove = (page: number, id: string) => {
+        const list = props.store.doc()?.pages[page]?.highlights ?? []
+        const index = list.findIndex(h => h.id === id)
+        const gone = list[index]
+        setHighlightCursor(false)
+        if (!gone) return
+        props.store.edit(d => removeHighlight(d, page, id))
+        pushUndoToast('highlight removed', () => props.store.edit(d => restoreHighlight(d, page, gone, index)))
+    }
+
+    createEffect(() => {
+        if (props.armed()) {
+            click.cancel()
+            setHighlightCursor(false)
+            return
+        }
+        const el = props.contentEl()
+        if (!el) return
+        let down: { x: number; y: number } | null = null
+        const onMove = (e: PointerEvent) => {
+            // a press in progress is a selection or a scroll, not a hover
+            setHighlightCursor(e.buttons === 0 && !!hitAt(e.clientX, e.clientY))
+        }
+        const onLeave = () => setHighlightCursor(false)
+        const onDown = (e: PointerEvent) => {
+            click.press()
+            down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null
+        }
+        const onUp = (e: PointerEvent) => {
+            const d = down
+            down = null
+            if (!d || !isClick(d, { x: e.clientX, y: e.clientY })) return
+            const sel = window.getSelection()
+            if (sel && !sel.isCollapsed) return
+            const hit = hitAt(e.clientX, e.clientY)
+            if (hit) click.schedule(() => remove(hit.page, hit.id))
+        }
+        el.addEventListener('pointermove', onMove)
+        el.addEventListener('pointerleave', onLeave)
+        el.addEventListener('pointerdown', onDown)
+        el.addEventListener('pointerup', onUp)
+        onCleanup(() => {
+            el.removeEventListener('pointermove', onMove)
+            el.removeEventListener('pointerleave', onLeave)
+            el.removeEventListener('pointerdown', onDown)
+            el.removeEventListener('pointerup', onUp)
+            setHighlightCursor(false)
+        })
+    })
 
     props.controller?.({
         highlightSelection: () => {

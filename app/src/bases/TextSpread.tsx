@@ -5,6 +5,7 @@ import { mathHtml } from './bookMath'
 import { texOf } from './bookTextRaster'
 import { BOOK_TEXT_INK, BOOK_TEXT_MUTED, PDF_PAGE_PAPER } from '../../../core/src/theme/tokens'
 import { markSpanAt, quotesFromSelection, type BookQuote, type SelectionLine } from './bookSelection'
+import { isClick, setHighlightCursor, singleClick } from '../preview/highlightClick'
 import styles from './TextSpread.module.css'
 
 /** Reads the quotes the current selection covers; empty when nothing inside the spread is selected. */
@@ -28,6 +29,9 @@ export type TextSpreadProps = {
     onSelectEnd?: () => void
     /** A click landed on a highlighted run; the whole highlight is passed. */
     onMarkClick?: (mark: BookQuote) => void
+    /** A plain click (not a double-click) landed on a highlighted run: remove it. The whole
+     *  highlight is passed. Present = the pointer over a highlight shows the delete cursor. */
+    onMarkRemove?: (mark: BookQuote) => void
     /** A right-click on a line of text, with the notebook page (leaf index) the line came from. */
     onLineContextMenu?: (e: MouseEvent, leaf: number) => void
     /** The type face; the pages were typeset in it. Defaults to the serif stack the stories use. */
@@ -128,10 +132,43 @@ const TextSpread: Component<TextSpreadProps> = props => {
         return markSpanAt(all.map(describe), all.indexOf(line), offset)
     }
 
+    // Removing a highlight: the pointer over a mark shows the delete cursor, and a plain click
+    // removes it once no second press follows (a double-click selects a word instead).
+    const removeClick = singleClick()
+    let pressAt: { x: number; y: number } | null = null
+    let overMark = false
+    const markCursor = (on: boolean) => {
+        if (on !== overMark) setHighlightCursor((overMark = on))
+    }
+    onCleanup(() => {
+        removeClick.cancel()
+        markCursor(false)
+    })
+    const onHoverMove = (e: PointerEvent) => {
+        const run = (e.target as HTMLElement | null)?.closest('[data-text-mark]')
+        markCursor(!!props.onMarkRemove && e.buttons === 0 && !!run)
+    }
+    createEffect(() => {
+        if (!props.onMarkRemove) {
+            removeClick.cancel()
+            markCursor(false)
+        }
+    })
+
     const click = (side: 'left' | 'right') => (e: MouseEvent) => {
         if (hasSelection()) return
         const mark = markAt(e.target)
         if (mark && props.onMarkClick) return props.onMarkClick(mark)
+        if (mark && props.onMarkRemove) {
+            // a press that travelled is a drag, not a click
+            if (pressAt && !isClick(pressAt, { x: e.clientX, y: e.clientY })) return
+            const remove = props.onMarkRemove
+            removeClick.schedule(() => {
+                markCursor(false)
+                remove(mark)
+            })
+            return
+        }
         const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
         const f = (e.clientX - box.left) / box.width
         if (props.layout === 'single') {
@@ -249,6 +286,12 @@ const TextSpread: Component<TextSpreadProps> = props => {
             class={[styles.spread, props.className].filter(Boolean).join(' ')}
             style={{ 'font-family': family(), 'font-size': `${fontPx()}px` }}
             data-text-spread
+            onPointerMove={onHoverMove}
+            onPointerDown={e => {
+                pressAt = { x: e.clientX, y: e.clientY }
+                removeClick.press()
+            }}
+            onPointerLeave={() => markCursor(false)}
         >
             <Text as="div" inherit class={styles.probe} ref={probe} aria-hidden="true">
                 x<Text as="span" inherit ref={strut} class={styles.strut} />

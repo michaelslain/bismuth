@@ -1157,6 +1157,11 @@ const BookView: Component<BookViewProps> = props => {
             for (const f of files) await loadTranscript(f)
         }
     }
+    /** The `[x]` on a text-mode highlight: unmark it now, with an undo that marks it again. */
+    const removeMark = (q: BookQuote) => {
+        void markQuotes([q], true)
+        pushUndoToast('highlight removed', () => markQuotes([q]))
+    }
     const highlightSelection = () => {
         const quotes = readSelection?.() ?? []
         if (quotes.length === 0) return false
@@ -1752,6 +1757,7 @@ const BookView: Component<BookViewProps> = props => {
                                                     fontFamily={family()}
                                                     colors={{ paper: paper(), ink: ink(), muted: muted() }}
                                                     onMarkClick={armed() ? q => void markQuotes([q], true) : undefined}
+                                                    onMarkRemove={armed() ? undefined : removeMark}
                                                 />
                                             </Show>
                                         }

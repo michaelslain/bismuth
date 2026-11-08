@@ -1124,6 +1124,14 @@ details.callout > summary::-webkit-details-marker {
 
 /* While any view drag is in progress: grabbing cursor + no accidental text selection. */
 html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-select: none !important; }
+
+/* The pointer is over a highlight (preview/highlightClick.ts sets the attribute on <html>): the
+   cursor is an X, since a click there deletes it. The element under the pointer is pdf.js's text
+   layer or a book page, never the highlight itself, so the rule reaches every element; a light
+   ring around the dark X keeps it visible on paper and on dark pages alike. */
+html[data-highlight-hover], html[data-highlight-hover] * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Cpath d='M5 5L15 15M15 5L5 15' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M5 5L15 15M15 5L5 15' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") 10 10, pointer !important;
+}
 /* …and let drops pass through the always-mounted terminal overlay + graph floater to the
    pane-leaf beneath them (each overlay's host placeholder lives inside the leaf). This rule used to
    be one 3-selector block here; it is now split, one `:global(html.view-dragging)` copy per module —

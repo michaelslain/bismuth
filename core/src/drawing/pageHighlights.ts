@@ -186,6 +186,24 @@ export function removeHighlight(
     return { ...doc, pages }
 }
 
+/** Put `h` back on `page` at `index` (clamped), the undo of `removeHighlight`. A no-op (returns
+ *  `doc` itself) when the page already holds a highlight with `h`'s id. */
+export function restoreHighlight(
+    doc: DrawingDoc,
+    page: number,
+    h: Highlight,
+    index: number,
+): DrawingDoc {
+    const current = doc.pages[page]?.highlights ?? []
+    if (current.some(x => x.id === h.id)) return doc
+    const padded = ensurePages(doc, page + 1)
+    const highlights = current.slice()
+    highlights.splice(Math.max(0, Math.min(index, highlights.length)), 0, h)
+    const pages = padded.pages.slice()
+    pages[page] = { ...pages[page], highlights }
+    return { ...padded, pages }
+}
+
 function rectContains(r: HighlightRect, pt: { x: number; y: number }): boolean {
     return pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h
 }

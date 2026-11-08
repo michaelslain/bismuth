@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Index, Show, type Component } from 'solid-js'
+import { createEffect, createMemo, createSignal, Index, onCleanup, Show, type Component } from 'solid-js'
 import type { AnnotationStore } from '../preview/annotationTypes'
 import { emptyDoc, type DrawingDoc } from '../../../core/src/drawing/model'
 import {
@@ -13,7 +13,10 @@ import {
     highlightAt,
     removeHighlight,
     resolveHighlightColor,
+    restoreHighlight,
 } from '../../../core/src/drawing/pageHighlights'
+import { pushUndoToast } from '../undoToast'
+import { isClick, setHighlightCursor, singleClick } from '../preview/highlightClick'
 import type { PageSlot } from './bookPageStores'
 import { regionInImage } from './bookRegion'
 import styles from './BookHighlightLayer.module.css'
@@ -42,8 +45,9 @@ const SLOP = 4
 type Painted = { key: string; left: number; top: number; w: number; h: number; color: string }
 type Draft = { slot: PageSlot; x0: number; y0: number; x1: number; y1: number; id: number }
 
-/** Highlight boxes over the pages of the still spread. Painting is unconditional; drawing and
- *  removing only happen while armed. A box lives in the 816x1056 logical page space of the page
+/** Highlight boxes over the pages of the still spread. Painting is unconditional; drawing only
+ *  happens while armed. A box is removed by a click, armed or not; unarmed, the pointer over a box shows
+ *  the delete cursor (highlightClick.ts). A box lives in the 816x1056 logical page space of the page
  *  file's sidecar, in the same box the PDF preview uses: a PDF's fit box, or the sidecar's own. */
 const BookHighlightLayer: Component<BookHighlightLayerProps> = props => {
     let host!: HTMLDivElement
@@ -145,6 +149,70 @@ const BookHighlightLayer: Component<BookHighlightLayerProps> = props => {
         })
         props.onHighlighted()
     }
+
+    // ── Removing without arming: hover shows the delete cursor, a click deletes ───────────────
+    // The layer takes no pointer events while unarmed (page turns pass through it), so the pointer
+    // is followed on the window and hit-tested against the boxes here.
+    const click = singleClick()
+    onCleanup(() => {
+        click.cancel()
+        setHighlightCursor(false)
+    })
+
+    const hitAt = (clientX: number, clientY: number) => {
+        const r = host.getBoundingClientRect()
+        const pt = { x: clientX - r.left, y: clientY - r.top }
+        const slot = slotAt(pt)
+        const store = slot && props.store(slot.file)
+        if (!slot || !store) return null
+        const hit = highlightAt(store.doc(), slot.docPage, screenToLogical(pt, slot.rendered, boxFor(slot, store)))
+        return hit ? { file: slot.file, docPage: slot.docPage, id: hit.id } : null
+    }
+
+    const remove = (file: string, docPage: number, id: string) => {
+        const list = props.store(file)?.doc()?.pages[docPage]?.highlights ?? []
+        const index = list.findIndex(h => h.id === id)
+        const gone = list[index]
+        setHighlightCursor(false)
+        if (!gone) return
+        props.edit(file, doc => removeHighlight(doc, docPage, id))
+        pushUndoToast('highlight removed', () => props.edit(file, doc => restoreHighlight(doc, docPage, gone, index)))
+    }
+
+    createEffect(() => {
+        if (props.armed) {
+            click.cancel()
+            setHighlightCursor(false)
+            return
+        }
+        let down: { x: number; y: number } | null = null
+        let over = false
+        const onMove = (e: PointerEvent) => {
+            // a press in progress is a page being dragged, not a hover
+            const now = e.buttons === 0 && !!hitAt(e.clientX, e.clientY)
+            if (now !== over) setHighlightCursor((over = now))
+        }
+        const onDown = (e: PointerEvent) => {
+            click.press()
+            down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null
+        }
+        const onUp = (e: PointerEvent) => {
+            const d = down
+            down = null
+            if (!d || !isClick(d, { x: e.clientX, y: e.clientY })) return
+            const hit = hitAt(e.clientX, e.clientY)
+            if (hit) click.schedule(() => remove(hit.file, hit.docPage, hit.id))
+        }
+        window.addEventListener('pointermove', onMove)
+        window.addEventListener('pointerdown', onDown)
+        window.addEventListener('pointerup', onUp)
+        onCleanup(() => {
+            window.removeEventListener('pointermove', onMove)
+            window.removeEventListener('pointerdown', onDown)
+            window.removeEventListener('pointerup', onUp)
+            if (over) setHighlightCursor(false)
+        })
+    })
 
     const draftStyle = () => {
         const d = draft()!

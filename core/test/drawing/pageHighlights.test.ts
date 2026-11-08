@@ -7,6 +7,7 @@ import {
     mergeLineRects,
     removeHighlight,
     resolveHighlightColor,
+    restoreHighlight,
 } from '../../src/drawing/pageHighlights'
 import { PDF_HIGHLIGHT_YELLOW } from '../../src/theme/tokens'
 import { emptyDoc, type DrawingDoc } from '../../src/drawing/model'
@@ -379,5 +380,38 @@ describe('listHighlights', () => {
 
     test('a doc with no highlights lists nothing', () => {
         expect(listHighlights(emptyDoc())).toEqual([])
+    })
+})
+
+describe('restoreHighlight', () => {
+    const three = () => {
+        let d = emptyDoc()
+        d = addHighlight(d, 0, [{ x: 0, y: 0, w: 10, h: 10 }], { c: 'hl', text: 'a' })
+        d = addHighlight(d, 0, [{ x: 0, y: 50, w: 10, h: 10 }], { c: 'hl', text: 'b' })
+        d = addHighlight(d, 0, [{ x: 0, y: 100, w: 10, h: 10 }], { c: 'hl', text: 'c' })
+        return d
+    }
+
+    test('undoes removeHighlight, back at its old position with the same id', () => {
+        const d = three()
+        const mid = d.pages[0]!.highlights![1]!
+        const removed = removeHighlight(d, 0, mid.id)
+        expect(removed.pages[0]!.highlights!.map(h => h.text)).toEqual(['a', 'c'])
+        const back = restoreHighlight(removed, 0, mid, 1)
+        expect(back.pages[0]!.highlights).toEqual(d.pages[0]!.highlights)
+    })
+
+    test('is a no-op when the id is already there', () => {
+        const d = three()
+        const h = d.pages[0]!.highlights![0]!
+        expect(restoreHighlight(d, 0, h, 0)).toBe(d)
+    })
+
+    test('pads a page the doc no longer has and clamps the index', () => {
+        const d = three()
+        const h = d.pages[0]!.highlights![0]!
+        const out = restoreHighlight(emptyDoc(), 2, h, 9)
+        expect(out.pages.length).toBe(3)
+        expect(out.pages[2]!.highlights).toEqual([h])
     })
 })

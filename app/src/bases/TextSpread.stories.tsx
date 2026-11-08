@@ -1,7 +1,10 @@
 // Visual spec for <TextSpread> — the transcriptions set as a book. Pages are typeset here with the
 // same pure typesetter BookView uses, so every story is deterministic.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fn, within } from 'storybook/test'
+import { expect, fn, waitFor, within } from 'storybook/test'
+import { createMemo, createSignal } from 'solid-js'
+import { pushUndoToast } from '../undoToast'
+import { ToastHost } from '../ui/ToastHost'
 import { TEXT_FONT_FAMILY, TEXT_STYLE, paginateText, type TextPage } from './bookText'
 import type { BookQuote } from './bookSelection'
 import Text from '../ui/Text'
@@ -27,12 +30,12 @@ const SECOND = `Still we live meanly, like ants; though the fable tells us that 
 Simplicity, simplicity, simplicity! I say, let your affairs be as two or three, and not a hundred or a thousand; instead of a million count half a dozen, and keep your accounts on your thumb-nail.`
 
 /** Two notebook pages' transcripts typeset into text pages. */
-function typeset(): TextPage[] {
+function typeset(first = FIRST): TextPage[] {
     const g = document.createElement('canvas').getContext('2d')!
     g.font = `${TEXT_STYLE(PAGE).fontPx}px ${TEXT_FONT_FAMILY}`
     return paginateText(
         [
-            { source: { file: 'pages/page-1.png', leaf: 0 }, text: FIRST },
+            { source: { file: 'pages/page-1.png', leaf: 0 }, text: first },
             { source: { file: 'pages/page-2.png', leaf: 1 }, text: SECOND },
         ],
         PAGE,
@@ -162,3 +165,74 @@ export const PlaceholderPage: Story = {
         await expect(getComputedStyle(held[0]).color).not.toBe(getComputedStyle(real).color)
     },
 }
+
+/** The pointer over a highlight turns into an X and a click unmarks the words (as BookView rewrites
+ *  the transcript); the toast's `undo` marks them again. A double-click still selects a word. Click
+ *  the tinted words to try it. */
+export const ClickRemoves: Story = {
+    name: 'Click removes',
+    render: () => {
+        const [text, setText] = createSignal(FIRST)
+        const pages = createMemo(() => typeset(text()))
+        const remove = (q: BookQuote) => {
+            setText(t => t.replace(`==${q.quote}==`, q.quote))
+            pushUndoToast('highlight removed', () => void setText(t => t.replace(q.quote, `==${q.quote}==`)))
+        }
+        return (
+            <>
+                <TextSpread
+                    layout="spread"
+                    pageSize={PAGE}
+                    markColor={MARK}
+                    pages={[pages()[0], pages()[1] ?? null]}
+                    onTurn={noop}
+                    onMarkRemove={remove}
+                />
+                <ToastHost />
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const marks = () => [...canvasElement.querySelectorAll<HTMLElement>('[data-text-mark]')]
+        hoverOn(marks()[0]!)
+        await waitFor(() => expect(cursorIsX()).toBe(true))
+        clickOn(marks()[0]!)
+        clickOn(marks()[0]!)
+        await new Promise(r => setTimeout(r, 450))
+        await expect(marks().length).toBeGreaterThan(0)
+        clickOn(marks()[0]!)
+        await waitFor(() => expect(marks()).toHaveLength(0))
+        ;(await undoButton()).click()
+        await waitFor(() => expect(marks().map(m => m.textContent).join(' ')).toBe('suck out all the marrow of life'))
+        canvasElement.querySelector('[data-text-spread]')!.dispatchEvent(new PointerEvent('pointerleave'))
+    },
+}
+
+/** A press and release at `el`'s centre, on the element under that point, as a real mouse sends
+ *  them: pointerdown, pointerup, click. */
+function clickOn(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    const at = { bubbles: true, clientX: x, clientY: y, button: 0 }
+    under.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', buttons: 1 }))
+    under.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse' }))
+    under.dispatchEvent(new MouseEvent('click', at))
+}
+/** The pointer resting on `el`'s centre, on the element under that point. */
+function hoverOn(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    under.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse', clientX: x, clientY: y }))
+}
+const cursorIsX = () => document.documentElement.hasAttribute('data-highlight-hover')
+/** The toast's `undo` button, once it shows. */
+const undoButton = () =>
+    waitFor(() => {
+        const b = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.includes('undo'))
+        expect(b).toBeTruthy()
+        return b!
+    })

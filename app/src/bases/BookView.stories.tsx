@@ -5,6 +5,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { ToastHost } from '../ui/ToastHost'
 import { api, setTransport, type Transport } from '../api'
 import { settings, setSettings } from '../settings'
 import { toasts } from '../ui/toastStore'
@@ -412,6 +413,63 @@ export const PdfHighlightWritesAndUndoes: Story = {
     },
 }
 
+
+/** A press and release at `el`'s centre, on the element under that point, as a real mouse sends
+ *  them: pointerdown, pointerup, click. */
+function clickOn(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    const at = { bubbles: true, clientX: x, clientY: y, button: 0 }
+    under.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', buttons: 1 }))
+    under.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse' }))
+    under.dispatchEvent(new MouseEvent('click', at))
+}
+/** The pointer resting on `el`'s centre, on the element under that point. */
+function hoverOver(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    under.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse', clientX: x, clientY: y }))
+}
+const cursorIsX = () => document.documentElement.hasAttribute('data-highlight-hover')
+/** The toast's `undo` button, once it shows. */
+const undoButton = () =>
+    waitFor(() => {
+        const b = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.includes('undo'))
+        expect(b).toBeTruthy()
+        return b!
+    })
+
+/** A box is removed without arming: the pointer over it turns into an X, a click takes the box out
+ *  of the PDF, and the toast's `undo` writes it back. Click a box on the PDF pages to try it. */
+export const PdfHighlightClickRemoves: Story = {
+    name: 'PDF highlight click removes',
+    beforeEach: withPdf(false),
+    render: () => (
+        <>
+            <Harness w={1100} h={720} rows={pdfBookRows()} />
+            <ToastHost />
+        </>
+    ),
+    play: async ({ canvasElement }) => {
+        const before = await pdfPageOne()
+        await dragOnPdfLeaf(canvasElement)
+        await waitFor(async () => expect(await pdfPageOne()).toBe(before + 1), { timeout: 8000 })
+        const boxes = () => [...canvasElement.querySelectorAll<HTMLElement>('[data-book-highlight-rect]')]
+        const made = boxes().length
+        hoverOver(boxes()[made - 1]!)
+        await waitFor(() => expect(cursorIsX()).toBe(true))
+        clickOn(boxes()[made - 1]!)
+        await waitFor(() => expect(boxes().length).toBe(made - 1))
+        await waitFor(async () => expect(await pdfPageOne()).toBe(before), { timeout: 8000 })
+        await userEvent.click(await undoButton())
+        await waitFor(async () => expect(await pdfPageOne()).toBe(before + 1), { timeout: 8000 })
+    },
+}
+
 /** A PDF the server cannot rewrite (409 PDF_NOT_WRITABLE) keeps the box in its `.draw` sidecar. */
 export const PdfHighlightUnwritableFallsBackToSidecar: Story = {
     name: 'PDF highlight unwritable falls back to sidecar',
@@ -706,6 +764,34 @@ export const HighlightSelection: Story = {
     },
 }
 
+/** Text mode: the pointer over a highlight turns into an X and a click unmarks the words in the
+ *  transcript; the toast's `undo` marks them again. Click the tinted words to try it. */
+export const TextHighlightClickRemoves: Story = {
+    name: 'Text highlight click removes',
+    beforeEach: () => withText(6),
+    render: () => (
+        <>
+            <Harness w={1100} h={720} rows={images(6)} view={bookView({ bookMode: 'text' })} />
+            <ToastHost />
+        </>
+    ),
+    play: async (ctx) => {
+        await HighlightSelection.play!(ctx)
+        const { canvasElement } = ctx
+        window.getSelection()?.removeAllRanges()
+        const mark = canvasElement.querySelector<HTMLElement>('[data-text-mark]')!
+        const quote = marked[0]!.add![0]!
+        hoverOver(mark)
+        await waitFor(() => expect(cursorIsX()).toBe(true))
+        clickOn(mark)
+        await waitFor(() => expect(marked.at(-1)).toMatchObject({ remove: [quote] }), { timeout: 8000 })
+        await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')).toBeNull(), { timeout: 8000 })
+        await userEvent.click(await undoButton())
+        await waitFor(() => expect(marked.at(-1)).toMatchObject({ add: [quote] }), { timeout: 8000 })
+        await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')).not.toBeNull(), { timeout: 8000 })
+    },
+}
+
 /** Nothing selected: `highlight` arms, the next selection is highlighted, a click on a highlight removes it. */
 export const HighlightArmed: Story = {
     name: 'Highlight armed',
@@ -726,15 +812,6 @@ export const HighlightArmed: Story = {
         sel.addRange(range)
         window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
         await waitFor(() => expect(marked.filter(m => m.add).length).toBe(1), { timeout: 8000 })
-        await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')).not.toBeNull(), { timeout: 8000 })
-        // unarmed, a click on the highlight in the page's outer third turns the page
-        const mark = canvasElement.querySelector<HTMLElement>('[data-text-mark]')!
-        const pageBox = canvasElement.querySelector<HTMLElement>('[data-text-page="right"]')!.getBoundingClientRect()
-        const readBefore = readout(canvasElement)
-        mark.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: pageBox.left + pageBox.width * 0.9, clientY: pageBox.top + 20 }))
-        await waitFor(() => expect(readout(canvasElement)).not.toBe(readBefore), { timeout: 8000 })
-        await userEvent.keyboard('{ArrowLeft}')
-        await waitFor(() => expect(readout(canvasElement)).toBe(readBefore), { timeout: 8000 })
         await waitFor(() => expect(canvasElement.querySelector('[data-text-mark]')).not.toBeNull(), { timeout: 8000 })
         // armed again, a click on the highlight removes it
         button.click()

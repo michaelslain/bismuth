@@ -24,6 +24,7 @@
 import { createSignal, For, onCleanup, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
+import { ToastHost } from './ui/ToastHost'
 import { jsPDF } from 'jspdf'
 import { PreviewView } from './PreviewView'
 import { api, setTransport, type Transport } from './api'
@@ -2185,6 +2186,58 @@ export const PdfHighlightTryExtending: Story = {
     play: async ({ canvasElement }) => {
         await highlightFirstHalf(canvasElement)
         window.getSelection()?.removeAllRanges()
+    },
+}
+
+
+/** A press and release at `el`'s centre, on the element under that point, as a real mouse sends
+ *  them: pointerdown, pointerup, click. */
+function clickOn(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    const at = { bubbles: true, clientX: x, clientY: y, button: 0 }
+    under.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', buttons: 1 }))
+    under.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse' }))
+    under.dispatchEvent(new MouseEvent('click', at))
+}
+/** The pointer resting on `el`'s centre, on the element under that point. */
+function hoverOver(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    under.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse', clientX: x, clientY: y }))
+}
+const cursorIsX = () => document.documentElement.hasAttribute('data-highlight-hover')
+/** The toast's `undo` button, once it shows. */
+const undoButton = () =>
+    waitFor(() => {
+        const b = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.includes('undo'))
+        expect(b).toBeTruthy()
+        return b!
+    })
+
+/** A highlight is removed without arming anything: the pointer over it turns into an X, a click
+ *  removes the highlight, and the toast's `undo` puts it back. Click the yellow half line to try it. */
+export const PdfHighlightClickRemoves: Story = {
+    name: 'PDF highlight click removes',
+    render: () => (
+        <>
+            {PdfHighlightOneShot.render!({} as never, {} as never)}
+            <ToastHost />
+        </>
+    ),
+    play: async ({ canvasElement }) => {
+        const { rects } = await highlightFirstHalf(canvasElement)
+        window.getSelection()?.removeAllRanges()
+        hoverOver(rects()[0]!)
+        await waitFor(() => expect(cursorIsX()).toBe(true))
+        clickOn(rects()[0]!)
+        await waitFor(() => expect(rects().length).toBe(0))
+        await userEvent.click(await undoButton())
+        await waitFor(() => expect(rects().length).toBe(1))
     },
 }
 

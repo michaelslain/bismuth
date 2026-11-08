@@ -9,6 +9,7 @@ import type { AnnotationStore } from '../preview/annotationTypes'
 import BookHighlightLayer from './BookHighlightLayer'
 import type { PageSlot } from './bookPageStores'
 import { bookPageUrl } from './_bookPages'
+import { ToastHost } from '../ui/ToastHost'
 
 const PAGE = { w: 300, h: 400 }
 
@@ -150,7 +151,65 @@ export const Unarmed: Story = {
     },
 }
 
+/** Unarmed, the pointer over a box turns into an X and a click removes the box; the toast's `undo`
+ *  puts it back. Click the yellow box to try it. */
+export const UnarmedClickRemoves: Story = {
+    name: 'Unarmed click removes',
+    render: () => {
+        const store = memoryStore(seeded())
+        ;(globalThis as { __store?: AnnotationStore }).__store = store
+        return (
+            <>
+                <Harness store={store} armed={false} />
+                <ToastHost />
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const layer = canvasElement.querySelector<HTMLElement>('[data-book-highlights]')!
+        const store = (globalThis as { __store?: AnnotationStore }).__store!
+        const box = () => layer.querySelector<HTMLElement>('[data-book-highlight-rect]')
+        hoverOn(box()!)
+        await waitFor(() => expect(cursorIsX()).toBe(true))
+        clickOn(box()!)
+        await waitFor(() => expect(box()).toBeNull())
+        await expect(store.doc()!.pages[0].highlights ?? []).toHaveLength(0)
+        ;(await undoButton()).click()
+        await waitFor(() => expect(store.doc()!.pages[0].highlights?.[0]?.id).toBe('h1'))
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0 }))
+    },
+}
+
 function hexToRgb(hex: string): string {
     const n = parseInt(hex.slice(1, 7), 16)
     return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
 }
+
+/** A press and release at `el`'s centre, on the element under that point, as a real mouse sends
+ *  them: pointerdown, pointerup, click. */
+function clickOn(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    const at = { bubbles: true, clientX: x, clientY: y, button: 0 }
+    under.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', buttons: 1 }))
+    under.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse' }))
+    under.dispatchEvent(new MouseEvent('click', at))
+}
+/** The pointer resting on `el`'s centre, on the element under that point. */
+function hoverOn(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    under.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse', clientX: x, clientY: y }))
+}
+const cursorIsX = () => document.documentElement.hasAttribute('data-highlight-hover')
+/** The toast's `undo` button, once it shows. */
+const undoButton = () =>
+    waitFor(() => {
+        const b = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.includes('undo'))
+        expect(b).toBeTruthy()
+        return b!
+    })

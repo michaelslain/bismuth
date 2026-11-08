@@ -23,7 +23,7 @@
 // that play() toggles the rect to `pointer-events: auto` for the one read, then restores it).
 import { createSignal, onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import HighlightLayer from './HighlightLayer'
 import PdfPages from './PdfPages'
@@ -33,6 +33,7 @@ import { pageBoxFor } from '../../../core/src/drawing/pageInk'
 import { addHighlight, mergeLineRects } from '../../../core/src/drawing/pageHighlights'
 import { rectsToPages } from './selectionRects'
 import type { AnnotationLoadState, AnnotationStore } from './annotationTypes'
+import { ToastHost } from '../ui/ToastHost'
 
 const meta = {
     title: 'Preview/HighlightLayer',
@@ -747,3 +748,118 @@ let scrollElForPlay: HTMLElement | undefined
 let armedForPlay: (() => boolean) | undefined
 let controllerForPlay: { highlightSelection: () => boolean } | undefined
 let highlightedCalls = 0
+
+/** Unarmed: the pointer over a highlight turns into an X, and a click removes the highlight; the
+ *  toast's `undo` brings it back. A double-click or a drag still selects text. Click the yellow
+ *  line to try it. */
+export const ClickRemoves: Story = {
+    name: 'Click removes',
+    render: () => {
+        const [pages, setPages] = createSignal<PageInkPage[]>([])
+        const [scrollEl, setScrollEl] = createSignal<HTMLElement>()
+        const store = makeStubStore(null)
+        storeForPlay = store
+        let seeded = false
+        let timer: ReturnType<typeof setInterval> | undefined
+        const trySeed = () => {
+            if (seeded) return
+            const pgs = pages()
+            const host = document.querySelector<HTMLElement>('[data-testid="highlight-layer"]')
+            const span = document.querySelector<HTMLElement>('[data-pdf-page="0"] span')
+            if (!host || pgs.length === 0 || !span || span.getBoundingClientRect().width === 0) return
+            seeded = true
+            clearInterval(timer)
+            const range = document.createRange()
+            range.selectNodeContents(span)
+            const byPage = rectsToPages(Array.from(range.getClientRects()), host.getBoundingClientRect(), pgs, i =>
+                pageBoxFor(emptyDoc(), i, pgs[i]!.nat.w, pgs[i]!.nat.h),
+            )
+            let doc = emptyDoc()
+            for (const [page, rects] of byPage)
+                doc = addHighlight(doc, page, mergeLineRects(rects), { id: 'line-one', text: span.textContent ?? '' })
+            store.edit(() => doc)
+        }
+        timer = setInterval(trySeed, 50)
+        onCleanup(() => clearInterval(timer))
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages
+                    load={load}
+                    zoom={1}
+                    onLayout={l => {
+                        setPages(
+                            l.boxes.map((b, i) => ({
+                                rendered: { left: b.left, top: b.top, w: b.w, h: b.h },
+                                nat: l.sizes[i] ?? { w: b.w, h: b.h },
+                            })),
+                        )
+                        setScrollEl(l.scrollEl)
+                        scrollElForPlay = l.scrollEl
+                        trySeed()
+                    }}
+                    overlay={
+                        <HighlightLayer
+                            store={store}
+                            pages={pages}
+                            armed={() => false}
+                            onHighlighted={() => {}}
+                            contentEl={scrollEl}
+                        />
+                    }
+                />
+                <ToastHost />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const rects = () => [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="highlight-rect"]')]
+        await waitFor(
+            () => {
+                expect(rects().length).toBe(1)
+                expect(rects()[0]!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        hoverOn(rects()[0]!)
+        await waitFor(() => expect(cursorIsX()).toBe(true))
+        // a double-click selects; it never deletes
+        clickOn(rects()[0]!)
+        clickOn(rects()[0]!)
+        await new Promise(r => setTimeout(r, 450))
+        await expect(rects().length).toBe(1)
+        clickOn(rects()[0]!)
+        await waitFor(() => expect(rects().length).toBe(0))
+        await userEvent.click(await undoButton())
+        await waitFor(() => expect(storeForPlay!.doc()!.pages[0]!.highlights?.[0]?.id).toBe('line-one'))
+        document.body.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 0, clientY: 0 }))
+    },
+}
+
+/** A press and release at `el`'s centre, on the element under that point, as a real mouse sends
+ *  them: pointerdown, pointerup, click. */
+function clickOn(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    const at = { bubbles: true, clientX: x, clientY: y, button: 0 }
+    under.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', buttons: 1 }))
+    under.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse' }))
+    under.dispatchEvent(new MouseEvent('click', at))
+}
+/** The pointer resting on `el`'s centre, on the element under that point. */
+function hoverOn(el: HTMLElement) {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? el
+    under.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse', clientX: x, clientY: y }))
+}
+const cursorIsX = () => document.documentElement.hasAttribute('data-highlight-hover')
+/** The toast's `undo` button, once it shows. */
+const undoButton = () =>
+    waitFor(() => {
+        const b = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.includes('undo'))
+        expect(b).toBeTruthy()
+        return b!
+    })
