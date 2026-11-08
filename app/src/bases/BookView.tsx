@@ -51,6 +51,7 @@ import type { TranscriptEngine } from '../../../core/src/transcript'
 import { looksLikeMath } from '../../../core/src/mathDetect'
 import { createFaceLoader, defaultFaceDeps, faceDeps, forgetPdf, type Face } from './bookFaces'
 import { darkenPixels, darkHex, tintOf } from './darkPage'
+import { drawPhotos, photosIn } from '../preview/pdfDarkImages'
 import BookPageEditor, { type EditTile } from './BookPageEditor'
 import TranscriptEditor from './TranscriptEditor'
 import { isFileDrag } from './cardImageDrop'
@@ -254,6 +255,7 @@ const BookView: Component<BookViewProps> = props => {
             const px = g.getImageData(0, 0, c.width, c.height)
             darkenPixels(px.data)
             g.putImageData(px, 0, 0)
+            drawPhotos(g, f.source, photosIn(f.source as object), c.width, c.height)
             darkCopies.set(f.source as object, c)
             darkMade.add(c)
         }

@@ -78,6 +78,7 @@ import {
     WITHIN_INK_GAP,
 } from './ui/_previewBarAssertions'
 import TextButton from './ui/TextButton'
+import { buildArticlePdf } from './preview/_articlePdf'
 import Text from './ui/Text'
 
 const meta = {
@@ -1688,6 +1689,70 @@ export const PdfHighlightMarginBookmarks: Story = {
     },
 }
 
+const ARTICLE_PDF_PATH = 'docs/article.pdf'
+
+/** PDF dark mode keeps photos as they are: the page turns dark through the canvas filter, and the
+ *  photo is repainted above it from the same raster, unfiltered, so its sky stays blue. The chart
+ *  on white is paper, so it turns dark with the page. The moon puts everything back. */
+export const PdfDarkModeKeepsPhotos: Story = {
+    render: () => {
+        setSettings('appearance', 'pdfDarkMode', false)
+        setTransport(
+            fakeTransport({
+                files: {
+                    [inkSidecarFor(ARTICLE_PDF_PATH)]: serializeDoc({ ...emptyDoc(), dark: true }),
+                },
+            }),
+        )
+        return (
+            <div style={{ height: '100vh', width: '1000px' }}>
+                <PreviewView
+                    path={ARTICLE_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={async () => buildArticlePdf()}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const layer = () =>
+            canvasElement.querySelector<HTMLCanvasElement>('[data-pdf-page="0"] [data-testid="pdf-photos"]')
+        // the photo layer's pixel at a point given as fractions of the page
+        const at = (fx: number, fy: number) => {
+            const l = layer()!
+            return Array.from(
+                l.getContext('2d')!.getImageData(Math.round(fx * l.width), Math.round(fy * l.height), 1, 1).data,
+            )
+        }
+        // letter page 612x792pt: photo at (72..372, 170..358), chart at (72..372, 400..563)
+        const photoSky = [222 / 612, 190 / 792] as const
+        const chartWhite = [300 / 612, 420 / 792] as const
+        await waitFor(() => expect(layer()?.width ?? 0).toBeGreaterThan(0), { timeout: 8000 })
+        await waitFor(() => {
+            const [r, g, b, a] = at(...photoSky)
+            expect(a).toBe(255)
+            expect(b).toBeGreaterThan(r) // the photo's own blue sky, not its inverse
+            void g
+        })
+        await expect(at(...chartWhite)[3]).toBe(0) // the chart stays under the dark filter
+    },
+}
+
+/** The moon turns dark mode off: the photo layer empties and the page shows as printed. */
+export const PdfDarkModePhotosOff: Story = {
+    render: PdfDarkModeKeepsPhotos.render,
+    play: async context => {
+        await PdfDarkModeKeepsPhotos.play!(context)
+        const { canvasElement } = context
+        await userEvent.click(within(canvasElement).getByLabelText('Dark mode'))
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector<HTMLCanvasElement>('[data-pdf-page="0"] [data-testid="pdf-photos"]')!.width,
+            ).toBe(0),
+        )
+    },
+}
+
 /** The SCRATCH toggle (the sidecar's `margin`) edits through the store: on writes the sidecar with `margin`, off writes it
  *  WITHOUT the key (setMarginRatio removes it rather than storing a zero), and the margin paper
  *  appears and goes with it. */
@@ -1708,7 +1773,7 @@ export const PdfDarkMode: Story = {
         const canvas = within(canvasElement)
         const pageCanvases = () =>
             canvasElement.querySelectorAll<HTMLCanvasElement>(
-                `.${styles['preview-body']} [data-pdf-page] > canvas`,
+                `.${styles['preview-body']} [data-pdf-page] > canvas:not([data-testid="pdf-photos"])`,
             )
         await waitFor(() => expect(pageCanvases().length).toBeGreaterThan(0), {
             timeout: 8000,

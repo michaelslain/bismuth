@@ -19,6 +19,7 @@
 // re-render runs `RESIZE_SETTLE_MS` after the size stops moving.
 import { createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js'
 import type { PageBox } from './pageLayout'
+import { paintPhotos } from './pdfDarkImages'
 import styles from './PdfPageCanvas.module.css'
 
 type PdfjsModule = typeof import('pdfjs-dist')
@@ -53,12 +54,14 @@ export type PdfPageCanvasProps = {
      *  so a scroll never pays for one. Absent = never scrolling. */
     scrolling?: () => boolean
     /** PDF dark mode: the raster is shown inverted and hue-rotated 180deg, a CSS filter on the
-     *  canvas alone, so the stashed raster and the text layer's selection colour are untouched. */
+     *  canvas alone, so the stashed raster and the text layer's selection colour are untouched.
+     *  The page's photos are repainted above it unfiltered (pdfDarkImages.ts). */
     dark?: () => boolean
 }
 
 function PdfPageCanvas(props: PdfPageCanvasProps) {
     let canvasRef: HTMLCanvasElement | undefined
+    let photosRef: HTMLCanvasElement | undefined
     let textRef: HTMLDivElement | undefined
     let disposed = false
     // Bumped per run: a run whose number is no longer current lost to a newer size and must not
@@ -186,6 +189,19 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         textLayerIdleKind = undefined
     }
 
+    /** Dark mode's photo layer: the raster's photos, unfiltered, over the darkened page. Empty
+     *  in light mode, or until pdf.js has reported where the page's images are. */
+    function repaintPhotos() {
+        if (!photosRef) return
+        const dark = props.dark?.() ?? false
+        if (!dark || !canvasRef || !lastPage || renderedW === 0) {
+            photosRef.width = 0
+            photosRef.height = 0
+            return
+        }
+        paintPhotos(photosRef, canvasRef, lastPage)
+    }
+
     async function run(w: number, h: number) {
         const mine = ++generation
         renderTask?.cancel()
@@ -219,6 +235,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
                 canvasRef.height = stashed.height
                 canvasRef.getContext('2d')?.drawImage(stashed, 0, 0)
                 renderedW = w
+                repaintPhotos()
                 scheduleTextLayer(mine, mod, page, w, h, cssScale)
                 return
             }
@@ -245,6 +262,9 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
             annotationMode: props.hideHighlights
                 ? mod.AnnotationMode.ENABLE_STORAGE
                 : mod.AnnotationMode.ENABLE,
+            // where each raster image lands, for dark mode's photo layer (`page.imageCoordinates`;
+            // pdf.js records it once per page, as fractions of the canvas, so any size reuses it)
+            recordImages: true,
         })
         renderTask = task
         try {
@@ -265,6 +285,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         canvasRef.height = offscreen.height
         canvasRef.getContext('2d')?.drawImage(offscreen, 0, 0)
         renderedW = w
+        repaintPhotos()
         scheduleTextLayer(mine, mod, page, w, h, cssScale)
     }
 
@@ -275,6 +296,8 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
     // value it returns actually changes. Memoized here so a `top`-only layout change is filtered
     // out by plain number equality before it ever reaches `on`, instead of cancelling an
     // in-flight render and rebuilding the text layer (wiping any live selection) for nothing.
+    createEffect(on(() => props.dark?.() ?? false, repaintPhotos, { defer: true }))
+
     const boxW = createMemo(() => props.box.w)
     const boxH = createMemo(() => props.box.h)
 
@@ -327,6 +350,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
                 classList={{ [styles['pdf-canvas-dark']]: props.dark?.() ?? false }}
                 ref={canvasRef}
             />
+            <canvas class={styles['pdf-photos']} data-testid="pdf-photos" ref={photosRef} />
             {/* data-testid, not a class: bench/invariants.ts's FOREIGN exemption list (the same
                 one that already skips CodeMirror/ProseMirror/xterm's own DOM) needs a selector
                 that survives CSS-module hashing to know this subtree is pdf.js's own text-layer

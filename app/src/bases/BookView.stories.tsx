@@ -16,6 +16,7 @@ import pdfFixtureUrl from '../../../core/test/drawing/fixtures/pdfkit-highlights
 import type { Row, ViewConfig } from '../../../core/src/bases/types'
 import BookView from './BookView'
 import { bookPageUrl } from './_bookPages'
+import { ARTICLE_CHART, ARTICLE_PHOTO, buildArticlePdf } from '../preview/_articlePdf'
 import { paneMenuItemsOf, withPaneItems } from '../paneMenuExtras'
 
 const meta = {
@@ -34,6 +35,7 @@ const pageImage = (n: number, landscape = false): string =>
 
 const IMAGES = new Map<string, string>()
 const PDF_PATH = 'scans/lecture.pdf'
+const ARTICLE_PATH = 'articles/rivers.pdf'
 const imagePath = (n: number) => `pages/page-${n}.png`
 
 /** Serves the fixture pages through the real `api.assetUrl` seam; any other path 404s. */
@@ -1062,6 +1064,37 @@ export const DarkPages: Story = {
         // a corner of the page is paper: dark once the page is turned dark
         const px = canvas.getContext('2d')!.getImageData(4, 4, 1, 1).data
         await expect((px[0] + px[1] + px[2]) / 3).toBeLessThan(60)
+    },
+}
+
+/** Dark pages keep photos as they are: an article's page turns near-black, its photo keeps its
+ *  own colours (a blue sky stays blue), and its chart on white turns dark with the paper. */
+export const DarkPagesKeepPhotos: Story = {
+    name: 'Dark pages keep photos',
+    beforeEach: () => {
+        const url = URL.createObjectURL(new Blob([buildArticlePdf()], { type: 'application/pdf' }))
+        const original = api.assetUrl
+        api.assetUrl = (target: string) => (target === ARTICLE_PATH ? url : original(target))
+        return () => {
+            api.assetUrl = original
+            URL.revokeObjectURL(url)
+        }
+    },
+    render: () => <Harness w={1100} h={720} rows={[row(ARTICLE_PATH)]} view={bookView({ bookDark: true })} />,
+    play: async ({ canvasElement }) => {
+        const canvas = () => canvasElement.querySelector<HTMLCanvasElement>('[data-book-page="right"] canvas')
+        await waitFor(() => expect(canvas()?.width ?? 0).toBeGreaterThan(10), { timeout: 8000 })
+        const at = (x: number, y: number) => {
+            const c = canvas()!
+            return Array.from(c.getContext('2d')!.getImageData(Math.round((x / 612) * c.width), Math.round((y / 792) * c.height), 1, 1).data)
+        }
+        await waitFor(() => {
+            const [r, , b] = at(ARTICLE_PHOTO.x + ARTICLE_PHOTO.w / 2, ARTICLE_PHOTO.y + 20) // the sky
+            expect(b).toBeGreaterThan(r)
+            expect(b).toBeLessThan(160) // as printed: a deep blue, not its light inverse
+        }, { timeout: 8000 })
+        const paper = at(ARTICLE_CHART.x + ARTICLE_CHART.w - 10, ARTICLE_CHART.y + 10) // the chart's white
+        await expect((paper[0] + paper[1] + paper[2]) / 3).toBeLessThan(60)
     },
 }
 

@@ -15,6 +15,16 @@
     filter: invert(1) hue-rotate(180deg);
 }
 
+/* Dark mode's photo layer (pdfDarkImages.ts): the page's photos, unfiltered, laid exactly over the
+   darkened raster. Sized like the raster so a zoom stretches both together; empty in light mode. */
+.pdf-photos {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
 /* pdf.js's own TextLayer paints transparent, precisely-positioned <span>s into this — invisible
    glyphs over the canvas raster that make the page's text selectable/copyable/searchable by the
    browser's native find. */

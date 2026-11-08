@@ -4,6 +4,7 @@
 // once (least recently used goes first), so a 200-page scan keeps memory flat. A leaf whose file
 // cannot be read resolves to a `missing` marker rather than throwing. The loader takes its three
 // readers as `FaceDeps`, so the cache logic runs under Bun; `defaultFaceDeps` is the browser one.
+import { findPhotos, markPhotos, type Quad } from '../preview/pdfDarkImages'
 import type { BookLeaf } from '../../../core/src/bases/bookPages'
 import { fileBasename } from '../../../core/src/pathUtils'
 import type { PdfPageGeom } from '../../../core/src/drawing/pdfHighlights'
@@ -234,17 +235,23 @@ export function faceDeps(boxW: number = FACE_W, boxH: number = FACE_H): FaceDeps
                 const g = page$.getContext('2d')!
                 g.fillStyle = '#fff'
                 g.fillRect(0, 0, page$.width, page$.height)
+                let photos: Quad[][] = []
                 try {
                     await p.render({
                         canvasContext: g,
                         viewport: vp,
                         canvas: page$,
                         annotationMode: pdfjs.AnnotationMode.ENABLE_STORAGE,
+                        // where each image lands, so dark pages keep the photos (pdfDarkImages.ts)
+                        recordImages: true,
                     }).promise
+                    if (p.imageCoordinates) photos = findPhotos(page$, p.imageCoordinates)
                 } finally {
                     p.cleanup()
                 }
-                return drawContained(page$, page$.width, page$.height, boxW, boxH)
+                const face = drawContained(page$, page$.width, page$.height, boxW, boxH)
+                markPhotos(face, photos)
+                return face
             }),
         pdfPageCount: file => withPdfDoc(file, async doc => doc.numPages),
         pdfPageGeom: (file, pageIndex) => pdfGeoms.get(file)?.get(pageIndex),
