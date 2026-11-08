@@ -56,6 +56,7 @@ The service definition itself lives outside this directory: see [the service fil
 | `memory/<name>.md`, `memory/<folder>/<name>.md` | markdown | The memory graph. See [memory](memory.md) |
 | `logs/activity-YYYY-MM-DD.jsonl` | JSON lines | The activity log, below |
 | `logs/<process>.{stdout,stderr}.log` | text | A background process's output, appended |
+| `logs/.errored-chats.jsonl` | JSON lines | Agent sessions that marked themselves as errored. See [errored sessions](#errored-sessions-logserrored-chatsjsonl) |
 | `logs/sessions/<session id>.jsonl`, `logs/sessions/<session id>/` | JSON lines | A Claude daemon session's full transcript and its subagents' transcripts, written only with `daemon.keepLogs`. See [keep every log](#keep-every-log-with-daemonkeeplogs) |
 | `session-id` | session id | The most recent daemon session. It changes with every new session |
 | `session-ids` | one id per line | Every session the daemon started, oldest first, capped at 2000 |
@@ -125,6 +126,31 @@ With it on, two things change:
 
 A session's id appears in `session-ids`, so a run in the activity log can be matched to its transcript by time. The Codex backend keeps its sessions under `.daemon/codex/`, which the daemon never prunes. Turning the setting off stops new copies and lets the next brain start prune activity older than 30 days; copies already in `logs/sessions/` stay until deleted by hand. Backups skip `logs/`, so transcripts never enter a vault snapshot.
 
+## Errored sessions (`logs/.errored-chats.jsonl`)
+
+An agent session that Bismuth starts, a daemon cron, inbox page or daemon chat, or a chat in the app, marks itself as errored when Bismuth goes wrong during it: a `bismuth` command fails or hangs, a step takes far longer than it should, output contradicts the docs, the session has to work around Bismuth, or you correct it about how Bismuth behaves. The mark is for debugging: a later review reads only the marked sessions instead of every transcript. Nothing in the app shows it.
+
+The session marks itself by running:
+
+```bash
+bismuth daemon errored --reason "bismuth search hung for 90s, retried twice"
+```
+
+Each mark appends one line:
+
+```json
+{"ts":"2026-11-08T00:47:47.311Z","sessionId":"144a37d9-51a6-4f74-b46b-c984c7c67d14","reason":"bismuth search hung for 90s, retried twice","channel":"chat"}
+```
+
+| Field | What it holds |
+|---|---|
+| `ts` | When the mark was made, ISO 8601 UTC |
+| `sessionId` | The marked session: `--session <id>`, else `CLAUDE_CODE_SESSION_ID` from the session's shell |
+| `reason` | The session's one-line account of what went wrong |
+| `channel` | `daemon` or `chat` for a session Bismuth started; absent for a terminal session |
+
+A session on the Codex backend has no session id in its environment, so `bismuth daemon errored` refuses without `--session <id>`. Read the marks with `bismuth daemon errored list --vault <vault>` (`--since <iso>` keeps later marks only). The file is never pruned. A session's transcript lives in the Claude session store under `~/.claude/projects`, or in `logs/sessions/` with [`daemon.keepLogs`](#keep-every-log-with-daemonkeeplogs).
+
 ## Which vaults the daemon serves
 
 The daemon serves the vaults listed in `vaults.json`. Bismuth adds a vault to the list when it opens the vault, and each vault still has to set `daemon.enabled: true`. The list is a plain array of path strings; the daemon ignores any element that is not one, so never edit it into another shape.
@@ -146,4 +172,4 @@ Bismuth's local git snapshots of a vault (`vault.backupOnSave`) track `identity.
 - Transcripts are found by id, not by path. `archiveSessionTranscript` in `daemon/src/lib/sessionArchive.ts` searches every directory under `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) for `<id>.jsonl`, so it never re-derives Claude Code's encoding of the vault path. `sendMessage` in `daemon/src/daemon/session.ts` calls it in the `finally` of each turn; the copy is overwritten each time, since a resumed transcript only grows. `retainActivityLogs` in `activityLog.ts` skips the prune when `keepLogs` is on.
 - Writes to state files are queued. Writes to `.last-fired.json`, `.running.json` and the activity log go through a per-file queue in `daemon/src/lib/writeQueue.ts`, so concurrent runs do not lose updates.
 
-Source: `daemon/src/lib/{config,device,owner,registry,activityLog,sessionArchive,writeQueue}.ts`, `daemon/src/daemon/{index,cron,process,seeds,sessionIds,pages,buttons}.ts`, `core/src/{daemon,daemonState,daemonGraph,daemonActivity,daemonPages,backup,chatDaemonLegacy}.ts`, `core/src/buttons/buttonState.ts`
+Source: `daemon/src/lib/{config,device,owner,registry,activityLog,sessionArchive,writeQueue}.ts`, `daemon/src/daemon/{index,cron,process,seeds,sessionIds,pages,buttons}.ts`, `core/src/{daemon,daemonState,daemonGraph,daemonActivity,daemonPages,backup,chatDaemonLegacy,erroredChats,agentCliNote}.ts`, `core/src/buttons/buttonState.ts`

@@ -1649,3 +1649,61 @@ test('`gcal status` fails cleanly (no crash) when no server is running', async (
     ])
     expect(code).toBe(1)
 })
+
+// --- `daemon errored` (daemon.ts) — a session marks itself for a later debugging review --------
+
+test('daemon errored marks the session from CLAUDE_CODE_SESSION_ID and list reads it back', async () => {
+    const vault = tempDir('bismuth-cli-errored-')
+    const { commands } = await import('../src/commands/daemon')
+    const printed: string[] = []
+    const spy = spyOn(console, 'log').mockImplementation(l => printed.push(String(l)))
+    const prev = {
+        sid: process.env.CLAUDE_CODE_SESSION_ID,
+        ch: process.env.BISMUTH_AGENT_CHANNEL,
+    }
+    process.env.CLAUDE_CODE_SESSION_ID = 'sess-env'
+    process.env.BISMUTH_AGENT_CHANNEL = 'daemon'
+    try {
+        await commands['daemon errored']!.run(['--vault', vault, '--reason', 'cron hung'])
+        await commands['daemon errored']!.run([
+            '--vault', vault, '--reason', 'tool failed', '--session', 'sess-flag',
+        ])
+        printed.length = 0
+        await commands['daemon errored list']!.run(['--vault', vault])
+    } finally {
+        spy.mockRestore()
+        for (const [k, v] of [
+            ['CLAUDE_CODE_SESSION_ID', prev.sid],
+            ['BISMUTH_AGENT_CHANNEL', prev.ch],
+        ] as const)
+            if (v === undefined) delete process.env[k]
+            else process.env[k] = v
+    }
+    const marks = JSON.parse(printed.join('\n'))
+    expect(marks.map((m: { sessionId: string }) => m.sessionId)).toEqual(['sess-env', 'sess-flag'])
+    expect(marks[0]).toMatchObject({ reason: 'cron hung', channel: 'daemon' })
+    expect(
+        readFileSync(join(vault, '.daemon', 'logs', '.errored-chats.jsonl'), 'utf8').trim().split('\n'),
+    ).toHaveLength(2)
+    rmSync(vault, { recursive: true, force: true })
+})
+
+test('daemon errored refuses without a reason', async () => {
+    const vault = tempDir('bismuth-cli-errored-noreason-')
+    const { commands } = await import('../src/commands/daemon')
+    const exit = spyOn(process, 'exit').mockImplementation((() => {
+        throw new Error('exit')
+    }) as never)
+    const err = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+        await expect(
+            Promise.resolve().then(() =>
+                commands['daemon errored']!.run(['--vault', vault, '--session', 's']),
+            ),
+        ).rejects.toThrow()
+    } finally {
+        exit.mockRestore()
+        err.mockRestore()
+    }
+    rmSync(vault, { recursive: true, force: true })
+})

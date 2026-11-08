@@ -323,6 +323,8 @@ Setup is in [daemon setup](../daemon/setup.md) and the file formats in [crons an
 | `daemon restart` | none | Restarts the service in place without rewriting its config. Exits `1` on failure. | no |
 | `daemon graph` | `--vault <dir>` | Prints the vault's daemon graph (daemon hub, crons, processes). | no |
 | `daemon logs` | `--vault <dir> [--limit n] [--kind cron\|process\|daemon\|session\|doctor] [--name <name>] [--since <iso>]` | Prints the activity log, newest first. | no |
+| `daemon errored` | `--reason "<what went wrong>" [--session <id>] [--vault <dir>]` | Marks an agent session as errored for a later debugging review. The session id defaults to `CLAUDE_CODE_SESSION_ID`. | no |
+| `daemon errored list` | `[--since <iso>] [--vault <dir>]` | Prints the vault's errored-session marks, oldest first. | no |
 | `daemon cron create` | `<name...> --vault <dir>` | Creates a cron from a template, disabled. | no |
 | `daemon cron delete` | `<name...> --vault <dir>` | Deletes a cron definition. | no |
 | `daemon cron toggle` | `<name> --vault <dir> [--off]` | Sets the cron's `enabled` frontmatter. | no |

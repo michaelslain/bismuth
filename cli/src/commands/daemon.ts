@@ -22,6 +22,7 @@ import {
 } from '../../../core/src/daemon'
 import { daemonGraph } from '../../../core/src/daemonGraph'
 import { readActivity } from '../../../core/src/daemonActivity'
+import { markErroredChat, readErroredChats } from '../../../core/src/erroredChats'
 import { installStatus, runSetup } from '../../../core/src/daemonInstall'
 // unloadDaemon/restartDaemon are the @bismuth/daemon workspace's own launchctl/systemd control
 // functions (daemon/src/lib/platform.ts) — complete implementations that, before this file, had
@@ -144,6 +145,55 @@ export const commands: CommandMap = {
                     limit: limit ? Number(limit) : undefined,
                     kind: flag(args, 'kind'),
                     name: flag(args, 'name'),
+                    since: flag(args, 'since'),
+                }),
+                args,
+            )
+        },
+    },
+    'daemon errored': {
+        summary:
+            'Mark this agent session as errored, for a later debugging review: run it when Bismuth itself failed, hung or misbehaved in this session',
+        usage: '--reason "<what went wrong>" [--session <id>] [--vault <dir>]',
+        args: {
+            flags: {
+                reason: 'value',
+                session: 'value',
+                vault: 'value',
+                pretty: 'bool',
+            },
+        },
+        run: args => {
+            const reason = flag(args, 'reason')?.trim()
+            if (!reason)
+                fail(
+                    'usage: bismuth daemon errored --reason "<what went wrong>" [--session <id>]',
+                )
+            const sessionId =
+                flag(args, 'session')?.trim() ||
+                process.env.CLAUDE_CODE_SESSION_ID?.trim()
+            if (!sessionId)
+                fail(
+                    'no session id: pass --session <id> (Claude sessions read it from CLAUDE_CODE_SESSION_ID)',
+                )
+            out(
+                markErroredChat(vaultDaemonDir(requireVault(args)), {
+                    sessionId,
+                    reason,
+                    channel: process.env.BISMUTH_AGENT_CHANNEL?.trim() || undefined,
+                }),
+                args,
+            )
+        },
+    },
+    'daemon errored list': {
+        summary:
+            "List this vault's sessions marked as errored, oldest first",
+        usage: '[--since <iso>] [--vault <dir>] [--pretty]',
+        args: { flags: { since: 'value', vault: 'value', pretty: 'bool' } },
+        run: args => {
+            out(
+                readErroredChats(vaultDaemonDir(requireVault(args)), {
                     since: flag(args, 'since'),
                 }),
                 args,
