@@ -87,10 +87,34 @@ const composerTheme = EditorView.theme({
         minHeight: '28px',
         caretColor: 'var(--accent)',
         maxWidth: 'none',
+        // Lets one-line ghost text sit inside a narrow pane instead of widening the content to its
+        // own length.
+        minWidth: '0',
     },
     '.cm-line': { padding: '0' },
-    '.cm-placeholder': { color: 'var(--text-muted)', fontStyle: 'normal' },
-    '.cm-arg-hint': { color: 'var(--text-muted)', pointerEvents: 'none' },
+    // Ghost text never adds a row: the box height follows what was typed, so the placeholder and the
+    // argument hint each hold one line and end in an ellipsis when the pane is too narrow for them.
+    '.cm-placeholder': {
+        color: 'var(--text-muted)',
+        fontStyle: 'normal',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+    },
+    // A flex line gives the hint exactly the width the typed command leaves (flex-basis 0, never
+    // shrinking the command itself). The row's own line-height keeps it on the typed text's baseline.
+    '.cm-line:has(.cm-arg-hint)': { display: 'flex' },
+    '.cm-arg-hint': {
+        color: 'var(--text-muted)',
+        pointerEvents: 'none',
+        flex: '1 1 0',
+        minWidth: '0',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        lineHeight: 'var(--prose-row)',
+    },
     '.cm-selectionBackground, .cm-content ::selection': {
         backgroundColor: 'var(--selection)',
     },

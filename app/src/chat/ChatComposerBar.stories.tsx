@@ -317,6 +317,85 @@ export const SlashArgumentHint: Story = (() => {
     }
 })()
 
+/** Ghost text is not the message, so it never adds a row. `/code-review ` carries a hint far wider
+ *  than this column: the box stays the height it had empty, the hint ends in an ellipsis, and only
+ *  real typed text wraps and grows the box. */
+export const ArgumentHintInANarrowPane: Story = (() => {
+    let session: StubChatSession
+    return {
+        render: () => {
+            session = makeStubChatSession(COMMANDS)
+            return (
+                <div style={{ width: '240px', 'padding-top': '300px' }}>
+                    <ChatComposerBar
+                        session={session}
+                        placeholder="Message Claude"
+                        noteNames={noNames}
+                        memoryNames={noNames}
+                        tagNames={noNames}
+                    />
+                </div>
+            )
+        },
+        play: async ({ canvasElement }) => {
+            const content = cmContent(canvasElement)
+            const box = content.closest<HTMLElement>(`.${styles.box}`)!
+            const height = () => box.getBoundingClientRect().height
+            const empty = height()
+            await userEvent.click(content)
+            await userEvent.keyboard('/code-review ')
+            await waitFor(() => expect(session.draft()).toBe('/code-review '))
+            const hint = await waitFor(() => {
+                const el =
+                    canvasElement.querySelector<HTMLElement>('[data-arg-hint]')
+                expect(el).not.toBeNull()
+                return el!
+            })
+            await expect(height()).toBe(empty)
+            await expect(hint.scrollWidth).toBeGreaterThan(hint.clientWidth)
+            const scroller =
+                canvasElement.querySelector<HTMLElement>('.cm-scroller')!
+            await expect(scroller.scrollWidth).toBe(scroller.clientWidth)
+            await userEvent.keyboard(
+                'a long argument that really does need a second row in this column',
+            )
+            await waitFor(() => expect(height()).toBeGreaterThan(empty))
+            session.setDraft('/code-review ')
+            await waitFor(() => expect(height()).toBe(empty))
+            content.blur()
+        },
+    }
+})()
+
+/** The placeholder holds one row in a pane too narrow for it, ending in an ellipsis. */
+export const PlaceholderInANarrowPane: Story = {
+    render: () => (
+        <div style={{ width: '120px' }}>
+            <ChatComposerBar
+                session={makeStubChatSession()}
+                placeholder="Message a very long persona name"
+                noteNames={noNames}
+                memoryNames={noNames}
+                tagNames={noNames}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const placeholder = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('.cm-placeholder')
+            expect(el).not.toBeNull()
+            return el!
+        })
+        const row = parseFloat(getComputedStyle(placeholder).lineHeight)
+        await expect(placeholder.getBoundingClientRect().height).toBe(row)
+        await expect(placeholder.scrollWidth).toBeGreaterThan(
+            placeholder.clientWidth,
+        )
+        const scroller = canvasElement.querySelector<HTMLElement>('.cm-scroller')!
+        await expect(scroller.scrollWidth).toBe(scroller.clientWidth)
+    },
+}
+
 export const Streaming: Story = {
     render: () => (
         <ChatComposerBar
