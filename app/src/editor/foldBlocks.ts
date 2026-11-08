@@ -39,8 +39,11 @@ import { isThematicBreak } from './thematicBreak'
 // dependency-free ./listLayout leaf) so the triangle lands just to the left of the
 // bullet glyph at every depth.
 import { LIST_STEP } from './listLayout'
+import { fencedLines } from './blockRegions'
 import FoldArrow from '../ui/FoldArrow'
 import { disposeSolid, mountSolid } from './solidWidget'
+
+type FencedLines = ReturnType<typeof fencedLines>
 
 export type FoldMode = 'markdown' | 'yaml'
 
@@ -83,17 +86,26 @@ function indentCols(s: string): number {
 const isBlank = (s: string): boolean => s.trim() === ''
 
 /** Collect the run of more-indented lines beneath line `i` (blank lines extend the
- *  region only when a deeper line follows). Returns the last region line, or `i`. */
+ *  region only when a deeper line follows). Returns the last region line, or `i`. A fenced block
+ *  whose opening fence is deeper belongs to the region whole, whatever its body's indent, so a
+ *  fold never ends partway through code. */
 function indentRegionEnd(
     doc: Text,
     i: number,
     indent: number,
+    fences?: FencedLines,
 ): { last: number; sawChild: boolean } {
     let last = i
     let sawChild = false
     for (let j = i + 1; j <= doc.lines; j++) {
         const jt = doc.line(j).text
         if (isBlank(jt)) continue
+        const fence = fences?.get(j)
+        if (fence && indentCols(jt) > indent) {
+            last = j = fence.close
+            sawChild = true
+            continue
+        }
         if (indentCols(jt) > indent) {
             last = j
             sawChild = true
@@ -122,10 +134,22 @@ function scanMarkdown(doc: Text): FoldBlock[] {
         return d
     }
 
+    // A fenced code block is code, not structure: a `# comment` or `- item` inside one is neither
+    // a fold anchor nor the end of a heading's region, which runs across the whole block.
+    const fences = fencedLines(doc)
+
     for (let i = 1; i <= doc.lines; i++) {
         const line = doc.line(i)
         const text = line.text
         if (isBlank(text)) continue // blank lines never break a list
+
+        const fence = fences.get(i)
+        if (fence) {
+            // As any other line at the left margin, an unindented fence ends the list.
+            if (indentCols(text) === 0) stack.length = 0
+            i = fence.close
+            continue
+        }
 
         const hm = text.match(HEADING_LINE_RE)
         if (hm) {
@@ -133,6 +157,10 @@ function scanMarkdown(doc: Text): FoldBlock[] {
             const level = hm[1].length
             let last = i
             for (let j = i + 1; j <= doc.lines; j++) {
+                if (fences.has(j)) {
+                    last = j = fences.get(j)!.close
+                    continue
+                }
                 const jm = doc.line(j).text.match(HEADING_PREFIX_RE)
                 if (jm && jm[1].length <= level) break // next sibling/parent heading ends the region
                 last = j
@@ -163,7 +191,12 @@ function scanMarkdown(doc: Text): FoldBlock[] {
             const depth = listDepth(indent)
             const bm = text.match(BULLET_ITEM_RE)
             if (bm) {
-                const { last, sawChild } = indentRegionEnd(doc, i, indent)
+                const { last, sawChild } = indentRegionEnd(
+                    doc,
+                    i,
+                    indent,
+                    fences,
+                )
                 if (sawChild) {
                     push(`l|${bm[3].trim()}`, {
                         kind: 'l',

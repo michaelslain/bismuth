@@ -74,7 +74,7 @@ With text selected, typing a character from `editor.wrapSelectionChars` wraps th
 
 ## Fold headings and list items
 
-Each foldable heading and list item has a small triangle in the left margin. Left-click it to fold or unfold for now, until the note is reloaded; right-click it to lock the fold so it survives closing the note. Locked folds are saved in the browser, per note. A chat message folds the same way, with the same triangle ([chat](../chat/overview.md#how-do-i-fold-a-message-a-heading-or-a-list)).
+Each foldable heading and list item has a small triangle in the left margin. Left-click it to fold or unfold for now, until the note is reloaded; right-click it to lock the fold so it survives closing the note. Locked folds are saved in the browser, per note. A line inside a fenced code block is code, not structure: a `# comment` or a `- ` line there has no triangle, and a heading's fold takes a code block under it whole. A chat message folds the same way, with the same triangle ([chat](../chat/overview.md#how-do-i-fold-a-message-a-heading-or-a-list)).
 
 ## Code blocks
 
@@ -129,7 +129,7 @@ Live preview is not a markdown-to-HTML pipeline. A CodeMirror `ViewPlugin` in `a
 
 Every block widget sets `estimatedHeight` from `blockHeights.ts`, a cache of measured heights keyed by the block's kind and source, so a block re-created off screen keeps its height in CodeMirror's height map. [Data flow](../overview/data-flow.md#how-it-works-open-editor-reconcile) owns how an external write uses it.
 
-`computeBlockRegions(doc)` in `blockRegions.ts` is a pure, CodeMirror-free scan, recomputed only when the document changes. It finds fenced code, frontmatter, tables, HTML blocks, callouts and draw fences. Lines in those regions are handled first and skipped, so the markdown pass never reads code, YAML, table pipes or raw HTML as headings, lists or inline tokens. `query` and `graph` fences are left to `queryBlock.ts` and `graphBlock.ts`.
+`computeBlockRegions(doc)` in `blockRegions.ts` is a pure, CodeMirror-free scan, recomputed only when the document changes. It finds fenced code, frontmatter, tables, HTML blocks, callouts and draw fences. Lines in those regions are handled first and skipped, so the markdown pass never reads code, YAML, table pipes or raw HTML as headings, lists or inline tokens. `query` and `graph` fences are left to `queryBlock.ts` and `graphBlock.ts`. The fold scan in `foldBlocks.ts` skips the same closed fences through `fencedLines(doc)`, so a fold region never starts or ends inside one.
 
 Reveal is decided by three predicates built from the selection ranges, and all of them are empty while the editor is unfocused:
 

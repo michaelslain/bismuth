@@ -146,3 +146,63 @@ describe('scanFoldables — yaml mode', () => {
         expect(scanFoldables(t, 'yaml')).toHaveLength(0) // '# A' is a comment line in yaml
     })
 })
+
+describe('scanFoldables — fenced code is code, not structure', () => {
+    test('a # comment inside a fence is not a heading', () => {
+        const t = doc(
+            ['```bash', '# install deps', 'bun install', '```', 'after'].join(
+                '\n',
+            ),
+        )
+        expect(scanFoldables(t)).toEqual([])
+    })
+
+    test('a - line inside a fence is not a bullet', () => {
+        const t = doc(['```yaml', '- name: a', '  run: b', '```'].join('\n'))
+        expect(scanFoldables(t)).toEqual([])
+    })
+
+    test("a heading's region runs across a fence holding a # line", () => {
+        const t = doc(
+            [
+                '## Setup',
+                '```sh',
+                '# one',
+                'make',
+                '```',
+                'text',
+                '## Next',
+                'x',
+            ].join('\n'),
+        )
+        const setup = scanFoldables(t).find(b => b.id === 'h|2|Setup|0')!
+        expect(endLine(t, setup.regionTo)).toBe(6) // through `text`, not cut at `# one`
+        expect(scanFoldables(t).map(b => b.id)).toEqual([
+            'h|2|Setup|0',
+            'h|2|Next|0',
+        ])
+    })
+
+    test('a region ending on a fence ends on its closing line', () => {
+        const t = doc(['# A', 'text', '```py', '# c', 'x = 1', '```'].join('\n'))
+        const a = scanFoldables(t)[0]
+        expect(a.id).toBe('h|1|A|0')
+        expect(endLine(t, a.regionTo)).toBe(6)
+    })
+
+    test('a fence nested under a bullet folds with it whole', () => {
+        const t = doc(
+            ['- step', '    ```sh', '# at the margin', '    ```', 'after'].join(
+                '\n',
+            ),
+        )
+        const step = scanFoldables(t)[0]
+        expect(step.id).toBe('l|step|0')
+        expect(endLine(t, step.regionTo)).toBe(4)
+    })
+
+    test('an unclosed fence stays ordinary lines', () => {
+        const t = doc(['```', '# A', 'body'].join('\n'))
+        expect(scanFoldables(t).map(b => b.id)).toEqual(['h|1|A|0'])
+    })
+})

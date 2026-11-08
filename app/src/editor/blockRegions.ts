@@ -76,6 +76,27 @@ export interface BlockRegions {
 export const FENCE_OPEN_RE = /^\s*```(.*)$/
 export const FENCE_RE = /^\s*```/
 
+/** Every line (1-based) of each CLOSED fenced block, both fences included, mapped to that block's
+ *  opening and closing line: the lines live preview draws as code (whatever the fence's language),
+ *  which are never markdown structure. An unclosed opener stays an ordinary line, as
+ *  computeBlockRegions() treats it. */
+export function fencedLines(
+    doc: Text,
+): Map<number, { open: number; close: number }> {
+    const lines = new Map<number, { open: number; close: number }>()
+    if (doc.toString().indexOf('```') === -1) return lines
+    for (let i = 1; i <= doc.lines; i++) {
+        if (!FENCE_OPEN_RE.test(doc.line(i).text)) continue
+        let j = i + 1
+        while (j <= doc.lines && !FENCE_RE.test(doc.line(j).text)) j++
+        if (j > doc.lines) continue
+        const block = { open: i, close: j }
+        for (let k = i; k <= j; k++) lines.set(k, block)
+        i = j
+    }
+    return lines
+}
+
 // A `Text` doc is immutable and shared across selection-only transactions, so this whole-document
 // callout scan is a pure function of `doc`. Memoize by doc identity: it runs once per document
 // VERSION instead of the 2-3 times a single keystroke or cursor move fans out to (computeBlockRegions

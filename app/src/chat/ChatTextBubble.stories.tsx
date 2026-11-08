@@ -652,3 +652,78 @@ export const FoldSurvivesStreaming: Story = {
         await expect(canvas.queryByText(/Install once/)).not.toBeInTheDocument()
     },
 }
+
+const commentedFenceText = [
+    '## Setup',
+    '',
+    'Run these once:',
+    '',
+    '```sh',
+    '# install the workspaces',
+    'bun install',
+    '# then the hooks',
+    'bun run hooks:install',
+    '```',
+    '',
+    'And the config, if you keep one:',
+    '',
+    '```yaml',
+    '# where the vault lives',
+    'vault: ~/notes',
+    '```',
+    '',
+    '## Next',
+    '',
+    'Start the dev server.',
+].join('\n')
+
+const SETUP_FENCED = 'h|2|Setup|0'
+const NEXT_FENCED = 'h|2|Next|0'
+
+/** Code with `#` comments — a shell or yaml fence, the usual reply. A `#` line inside a fence is
+ *  code, so it carries no fold triangle and a click on the block's line numbers leaves every line
+ *  in place; folding the heading above takes both fences whole and stops at the next heading. */
+export const CommentedFences: Story = {
+    render: () => (
+        <div style={{ width: '420px', 'padding-left': '40px' }}>
+            <ChatTextBubble text={commentedFenceText} role="assistant" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await noteProseReady(canvasElement)
+        const codeLines = () =>
+            [...canvasElement.querySelectorAll('.cm-codeblock')].map(
+                l => l.textContent,
+            )
+        const all = [
+            '# install the workspaces',
+            'bun install',
+            '# then the hooks',
+            'bun run hooks:install',
+            '# where the vault lives',
+            'vault: ~/notes',
+        ]
+        await expect(codeLines()).toEqual(all)
+        // Only the two real headings fold.
+        await expect([...foldArrows(canvasElement).keys()].sort()).toEqual(
+            [NEXT_FENCED, SETUP_FENCED].sort(),
+        )
+        // Press on the first comment line's number, where a triangle would hang: nothing folds.
+        const comment = [
+            ...canvasElement.querySelectorAll<HTMLElement>('.cm-codeblock'),
+        ][0]!
+        const r = comment.getBoundingClientRect()
+        const spot = document.elementFromPoint(r.left - 14, r.top + r.height / 2)
+        if (spot) await userEvent.click(spot)
+        await new Promise(res => setTimeout(res, 400))
+        await expect(codeLines()).toEqual(all)
+        await expect(canvas.getByText(/And the config/)).toBeInTheDocument()
+        // Folding "Setup" hides both fences whole and leaves "Next" open; unfolding brings them back.
+        await userEvent.click(foldArrows(canvasElement).get(SETUP_FENCED)!)
+        await waitFor(() => expect(codeLines()).toEqual([]))
+        await expect(canvas.getByText(/Start the dev server/)).toBeInTheDocument()
+        await userEvent.click(foldArrows(canvasElement).get(SETUP_FENCED)!)
+        await waitFor(() => expect(codeLines()).toEqual(all))
+    },
+}
