@@ -42,6 +42,8 @@ export type FakeTranscription = {
     checks: Map<string, TranscriptCheck[]>
     /** every `api.approveTranscriptCheck` call, as `file#page:line` */
     approvals: string[]
+    /** every `api.transcriptLines` read, as `file#page` */
+    lineReads: string[]
     /** every `api.setTranscriptPage` write */
     saves: { file: string; page: number; text: string }[]
     ctl?: TranscriptionController & { tick(): Promise<void> }
@@ -64,6 +66,7 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
     const saves: FakeTranscription['saves'] = []
     const checks = new Map<string, TranscriptCheck[]>()
     const approvals: string[] = []
+    const lineReads: string[] = []
     const count = (file: string) => opts.pageCount?.(file) ?? 1
     const textOf = (file: string, page: number) => opts.text?.(file, page) ?? `Page ${page}`
     const snapshot = (j: Job): TranscribeJobState => ({
@@ -154,6 +157,7 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
         texts,
         checks,
         approvals,
+        lineReads,
         saves,
         controller: () => {
             const ctl = createTranscription({
@@ -199,9 +203,10 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
                 checks.set(key, left)
                 return { ok: true, companion: `${file}.md`, checks: left }
             }) as typeof api.approveTranscriptCheck
-            api.transcriptLines = (async (file: string, pages?: number[]) => ({
-                pages: (pages ?? [1]).map(page => ({ page, lines: opts.lines?.(file, page) ?? [] })),
-            })) as typeof api.transcriptLines
+            api.transcriptLines = (async (file: string, pages?: number[]) => {
+                for (const page of pages ?? [1]) lineReads.push(`${file}#${page}`)
+                return { pages: (pages ?? [1]).map(page => ({ page, lines: opts.lines?.(file, page) ?? [] })) }
+            }) as typeof api.transcriptLines
             return () => {
                 api.storedTranscript = original.stored
                 api.setTranscriptPage = original.set

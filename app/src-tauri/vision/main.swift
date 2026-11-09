@@ -16,6 +16,10 @@ import Foundation
 import PDFKit
 import Vision
 
+// The helper sits in Bismuth.app/Contents/MacOS, so AppKit takes it for the app: without this, macOS
+// registers each run as a foreground Bismuth and it flashes on screen for the second it lives.
+NSApplication.shared.setActivationPolicy(.prohibited)
+
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(1)

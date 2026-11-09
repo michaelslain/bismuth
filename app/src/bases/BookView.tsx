@@ -82,6 +82,7 @@ import BookPageImage from './BookPageImage'
 import PageStatus from './PageStatus'
 import type { LocateBox } from './LocateLayer'
 import { boxesForQuote, lineAtPoint } from './transcriptLocate'
+import { onceByKey } from './onceByKey'
 import { createTranscription, progressReadout, type TranscriptionController } from './transcription'
 import type { TextLine } from '../../../core/src/visionOcr'
 import PageTurnLayer, { TURN_MS, type SpreadFaces } from './PageTurnLayer'
@@ -971,21 +972,14 @@ const BookView: Component<BookViewProps> = props => {
     const flipPages = createMemo(() => docPages().filter(p => p.key === curKey()))
 
     // ── locate: a selection in a section boxes its lines on the page image, and back ──
-    const lineCache = new Map<string, TextLine[]>()
-    const pageLines = async (l: { ref: { file: string }; pdfPage?: number }): Promise<TextLine[]> => {
-        const key = keyOfLeaf(l)
-        const hit = lineCache.get(key)
-        if (hit) return hit
+    // Dragging a selection asks for a page's lines on every update, and each read starts a helper.
+    const loadPageLines = onceByKey(keyOfLeaf, async (l: { ref: { file: string }; pdfPage?: number }): Promise<TextLine[]> => {
         const page = l.pdfPage ?? 1
-        try {
-            const res = await api.transcriptLines(l.ref.file, [page])
-            const lines = res.pages.find(p => p.page === page)?.lines ?? []
-            lineCache.set(key, lines)
-            return lines
-        } catch {
-            return []
-        }
-    }
+        const res = await api.transcriptLines(l.ref.file, [page])
+        return res.pages.find(p => p.page === page)?.lines ?? []
+    })
+    const pageLines = (l: { ref: { file: string }; pdfPage?: number }): Promise<TextLine[]> =>
+        loadPageLines(l).catch(() => [])
     const [located, setLocated] = createSignal<{ key: string; boxes: LocateBox[] }>()
     let locateToken = 0
     const onSideSelect = (leafIndex: number, selection: string) => {

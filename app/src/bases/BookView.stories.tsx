@@ -2,6 +2,7 @@
 // through a patched `api.assetUrl` as data URLs, so a story needs no files; the PDF is a repo
 // fixture. The bar slots the view pushes up are drawn in a ViewBar above the pane, as BaseView
 // does. `data-turn-state` on the view's root is the settled seam.
+import { EditorView } from '@codemirror/view'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, Show } from 'solid-js'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
@@ -942,6 +943,21 @@ export const LocateFromText: Story = {
         await waitFor(() => expect(row.querySelectorAll('[data-locate-box]').length).toBeGreaterThan(0), { timeout: 8000 })
         await userEvent.keyboard('{ArrowRight}')
         await waitFor(() => expect(row.querySelectorAll('[data-locate-box]').length).toBe(0), { timeout: 8000 })
+    },
+}
+
+/** Dragging a selection updates it many times before the page's line boxes arrive: one read, since each read starts a helper process. */
+export const LocateDragReadsOnce: Story = {
+    name: 'Locate drag reads once',
+    beforeEach: () => withText(2),
+    render: () => textBook(2, 'side', 1000),
+    play: async ({ canvasElement }) => {
+        await sideReady(canvasElement, 2)
+        const row = canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        const view = EditorView.findFromDOM(editorOf(row)!)!
+        for (let head = 2; head < 6; head++) view.dispatch({ selection: { anchor: 0, head } })
+        await waitFor(() => expect(row.querySelectorAll('[data-locate-box]').length).toBeGreaterThan(0), { timeout: 8000 })
+        await expect(fk.lineReads).toEqual([`${imagePath(1)}#1`])
     },
 }
 
