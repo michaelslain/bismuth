@@ -44,6 +44,7 @@ const TextPageTurn: Component<TextPageTurnProps> = props => {
                         to={to()}
                         direction={props.direction}
                         drag={null}
+                        keepTextClear
                         turnKey={props.turnKey}
                         onSettled={() => props.onSettled()}
                     />

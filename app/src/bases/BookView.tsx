@@ -21,7 +21,6 @@ import { FONT_STACKS, settings, setSettings } from '../settings'
 import { acquireAnnotationStore, flushAnnotationStore, retireAnnotationStore, storeEpoch, whenReady } from '../preview/sharedAnnotationStore'
 import HighlightColorMenu from '../preview/HighlightColorMenu'
 import { highlightColor, setHighlightColor } from '../preview/highlightColor'
-import BarLabel from '../ui/BarLabel'
 import BarSettings from '../ui/BarSettings'
 import IconButton from '../ui/IconButton'
 import Readout from '../ui/Readout'
@@ -63,7 +62,7 @@ import MathPrompt from './MathPrompt'
 import BookBookmarksPanel from './BookBookmarksPanel'
 import BookHighlightLayer from './BookHighlightLayer'
 import { createEditHistory, createPageStores, pageSlots, readSidecars } from './bookPageStores'
-import { clampAspect, fitBook, folioFor, PAGE_ASPECT, PAGE_MIN_W, pageReadout, readoutFor, retargetLeaf, stepFromKey, transcriptChanged } from './bookNav'
+import { clampAspect, fitBook, folioFor, PAGE_ASPECT, PAGE_MIN_W, pageCountsKnown, pageReadout, readoutFor, retargetLeaf, stepFromKey, transcriptChanged } from './bookNav'
 import BookSpread from './BookSpread'
 import BookScroll from './BookScroll'
 import TextPageTurn from './TextPageTurn'
@@ -79,11 +78,14 @@ import type { TranscriptPageHandle } from './TranscriptPage'
 import TranscriptSection from './TranscriptSection'
 import SideBySide, { type SideBySideRow } from './SideBySide'
 import BookPageImage from './BookPageImage'
+import PageReadout from '../preview/PageReadout'
 import PageStatus from './PageStatus'
+import TranscribeAll from './TranscribeAll'
+import TranscribeProgress from './TranscribeProgress'
 import type { LocateBox } from './LocateLayer'
 import { boxesForQuote, lineAtPoint } from './transcriptLocate'
 import { onceByKey } from './onceByKey'
-import { createTranscription, progressReadout, type TranscriptionController } from './transcription'
+import { createTranscription, type TranscriptionController } from './transcription'
 import type { TextLine } from '../../../core/src/visionOcr'
 import PageTurnLayer, { TURN_MS, type SpreadFaces } from './PageTurnLayer'
 import styles from './BookView.module.css'
@@ -218,6 +220,9 @@ const BookView: Component<BookViewProps> = props => {
         }
     })
     const leaves = createMemo(() => expandLeaves(refs(), counts()))
+    /** Until a PDF's page count arrives it holds one stand-in page, so the place cannot be told yet
+     *  and nothing may read `cur()` as where the reader is. */
+    const counted = createMemo(() => pageCountsKnown(refs(), counts()))
     const count = () => leaves().length
 
 
@@ -407,13 +412,13 @@ const BookView: Component<BookViewProps> = props => {
     const cur = () => Math.max(0, Math.min(leaf(), count() - 1))
     createEffect(() => {
         const key = memoryKey()
-        if (key) leafMemory.set(key, cur())
+        if (key && counted()) leafMemory.set(key, cur())
     })
 
     let prevLayout = layout()
     createComputed(() => {
         const l = layout()
-        if (!measured() || l === prevLayout) return
+        if (!measured() || !counted() || l === prevLayout) return
         setLeaf(retargetLeaf(untrack(cur), untrack(count), prevLayout, l))
         prevLayout = l
     })
@@ -500,6 +505,8 @@ const BookView: Component<BookViewProps> = props => {
     createComputed(
         on(readMode, (m, prev) => {
             if (m === prev) return
+            // opening before the pages are counted: the effect below places it once they are
+            if (prev === undefined && !untrack(counted)) return
             const was = prev === 'text' || prev === 'side'
             if (m === 'text' || m === 'side') {
                 if (jumpTo !== undefined) {
@@ -518,7 +525,7 @@ const BookView: Component<BookViewProps> = props => {
     )
     // pages that arrive after the switch (a PDF's page count) can leave the place unset or unknown
     createEffect(() => {
-        if (!texty() || leaves().length === 0) return
+        if (!texty() || !counted() || leaves().length === 0) return
         const at = untrack(docAt)
         if (!at || leafIndexOf(at.key) < 0) placeDoc(untrack(cur), at ? 0 : untrack(docFrac))
     })
@@ -564,6 +571,7 @@ const BookView: Component<BookViewProps> = props => {
         const n = count()
         const key = keyOf(s)
         if (n === 0) return setShown(undefined)
+        if (!counted()) return
         const token = ++loadToken
         // The spreads either side load once the browser is idle, so the turn that just ended and
         // the pages on screen never wait behind them (a text page is drawn on the main thread).
@@ -1227,9 +1235,16 @@ const BookView: Component<BookViewProps> = props => {
             return row
         }),
     )
+    /** Straight to a page (a bookmark, a typed number): any turn under way ends first. */
     const jump = (page: number) => {
-        setLeaf(page)
-        if (texty()) placeDoc(page)
+        waiting.length = 0
+        finishNow()
+        batch(() => {
+            docTurnId++
+            setTextTurn(null)
+            setLeaf(page)
+            if (texty()) placeDoc(page)
+        })
     }
 
     const firstLeaf = () => visibleLeaves()[0]
@@ -1421,7 +1436,7 @@ const BookView: Component<BookViewProps> = props => {
 
     // ── where the reader is, for the caller that opened it ──
     createEffect(() => {
-        if (!props.onPosition || leaves().length === 0) return
+        if (!props.onPosition || !counted() || leaves().length === 0) return
         if (scrolling()) return props.onPosition({ leaf: cur(), frac: 0 })
         if (texty()) return props.onPosition({ leaf: cur(), frac: docFrac() })
         const s = spread()
@@ -1470,11 +1485,6 @@ const BookView: Component<BookViewProps> = props => {
     })
 
     // ── bar ──
-    // `transcribing 2 of 6 // under a minute left`: the estimate leaves the bar first, then `transcribing` shortens
-    const readoutParts = () => {
-        const p = transcription.progress()
-        return p && p.total > 0 ? progressReadout(p).split(' // ') : ['transcribing']
-    }
     onMount(() => {
         props.onBarSlots({
             readouts: (
@@ -1482,28 +1492,17 @@ const BookView: Component<BookViewProps> = props => {
                     <Readout
                         parts={[
                             <>
-                                {scrolling() || texty()
-                                    ? pageReadout(cur() + 1, Math.max(leaves().length, transcription.progress()?.total ?? 0))
-                                    : readoutFor(spread(), count())}
-                                {transcription.progress() ? (
-                                    <>
-                                        {' // '}
-                                        <BarLabel long={readoutParts()[0]} short={readoutParts()[0].replace('transcribing ', '')} />
-                                        <Show when={readoutParts()[1]}>
-                                            <BarLabel long={` // ${readoutParts()[1]}`} drop="early" />
-                                        </Show>
-                                        {' '}
-                                    </>
-                                ) : transcription.installing() ? (
-                                    ' // setting up the math reader'
-                                ) : (
-                                    ''
-                                )}
-                                <Show when={transcription.progress()}>
-                                    <Text as="span" inherit data-bar-drop="1" data-bar-menu-label="cancel transcribing">
-                                        <TextButton onClick={() => transcription.cancel()}>cancel</TextButton>
-                                    </Text>
-                                </Show>
+                                <PageReadout
+                                    current={() => (scrolling() || texty() ? cur() : (spread().left ?? spread().right ?? 0))}
+                                    count={count}
+                                    onGo={jump}
+                                    label={() =>
+                                        scrolling() || texty()
+                                            ? pageReadout(cur() + 1, Math.max(leaves().length, transcription.progress()?.total ?? 0))
+                                            : readoutFor(spread(), count())
+                                    }
+                                />
+                                <TranscribeProgress transcription={transcription} />
                             </>,
                         ]}
                     />
@@ -1516,6 +1515,11 @@ const BookView: Component<BookViewProps> = props => {
                             <TextButton onClick={transcribeAll}>
                                 {`transcribe ${emptyLeaves().length} ${emptyLeaves().length === 1 ? 'page' : 'pages'}`}
                             </TextButton>
+                        </Text>
+                    </Show>
+                    <Show when={count() > 0}>
+                        <Text as="span" inherit data-bar-drop="3" data-bar-menu-label="transcribe all">
+                            <TranscribeAll files={[...new Set(refs().map(r => r.file))]} pages={count()} transcription={transcription} />
                         </Text>
                     </Show>
                     <IconButton
@@ -1769,6 +1773,7 @@ const BookView: Component<BookViewProps> = props => {
                             page={cur() + 1}
                             pages={count()}
                             onStep={stepDoc}
+                            onGo={jump}
                         />
                     </Show>
                     <Show when={scrolling() && !staged()}>

@@ -63,7 +63,10 @@ import HighlightLayer from './preview/HighlightLayer'
 import PreviewBar from './preview/PreviewBar'
 import BookView from './bases/BookView'
 import type { ReadFlow, ReadView } from './bases/ReadModeSwitch'
-import type { TranscriptionController } from './bases/transcription'
+import { createTranscription, type TranscriptionController } from './bases/transcription'
+import TranscribeAll from './bases/TranscribeAll'
+import TranscribeProgress from './bases/TranscribeProgress'
+import Readout from './ui/Readout'
 import ViewBar, { Crumb, type ViewBarSlots } from './ui/ViewBar'
 import ScratchTextLayer from './preview/ScratchTextLayer'
 import CodeFindBar from './preview/CodeFindBar'
@@ -228,6 +231,21 @@ export function PreviewView(props: {
         savePreviewView(path(), { bookLayout: l === 'single' ? 'single' : undefined })
     }
     const [bookSlots, setBookSlots] = createSignal<ViewBarSlots | undefined>()
+    // One controller for the file whichever way it is read, so a run started in the viewer keeps its
+    // progress and cancel in the reader and back. The server runs the job; leaving only stops the polling.
+    const given = props.transcription
+    const transcription =
+        given ??
+        createTranscription({
+            client: api,
+            math: () => settings.transcription.math as 'ask' | 'careful' | 'fast',
+            setMath: m => setSettings('transcription', 'math', m),
+            toast: pushToast,
+        })
+    if (!given) onCleanup(() => transcription.dispose())
+    createEffect(() => {
+        if (inkable() && !props.pdfLoad && !props.imageSrc) transcription.adopt(path())
+    })
     const reading = () => inkable() && !inViewer(readView(), readFlow())
     // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
     // through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/` encoding that lets
@@ -1036,6 +1054,16 @@ export function PreviewView(props: {
                 reading={inkable() ? () => ({ view: readView(), flow: readFlow() }) : undefined}
                 onReadView={pickReadView}
                 onReadFlow={pickReadFlow}
+                transcribeProgress={
+                    <Show when={inkable() && (transcription.progress() || transcription.installing())}>
+                        <Readout parts={[<TranscribeProgress transcription={transcription} lead={false} />]} />
+                    </Show>
+                }
+                transcribe={
+                    inkable() ? (
+                        <TranscribeAll files={[path()]} pages={kind() === 'image' ? 1 : pageCount()} transcription={transcription} />
+                    ) : undefined
+                }
             />
                 }
             >
@@ -1082,7 +1110,7 @@ export function PreviewView(props: {
                         onLayout={pickBookLayout}
                         dark={pdfDark}
                         onDark={on => store()?.edit(d => setDark(d, on))}
-                        transcription={props.transcription}
+                        transcription={transcription}
                         start={bookStart()}
                         onPosition={at => {
                             bookAt = at

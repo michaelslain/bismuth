@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { axisDistance, cubicBezier, curlAt, curlFromPointer, deform, settle, turnEase } from './pageCurl'
+import { axisDistance, backClipX, cubicBezier, curlAt, curlFromPointer, deform, settle, turnEase } from './pageCurl'
 
 const page = { w: 400, h: 600 }
 
@@ -95,5 +95,20 @@ describe('turnEase', () => {
     test('cubicBezier with the straight-line points is the identity', () => {
         const linear = cubicBezier(1 / 3, 1 / 3, 2 / 3, 2 / 3)
         for (const t of [0.1, 0.37, 0.5, 0.9]) expect(linear(t)).toBeCloseTo(t, 5)
+    })
+})
+
+describe('backClipX', () => {
+    test('a scan keeps its whole underside', () => {
+        expect(backClipX(false, 'spread', 'forward', 400)).toBe(Infinity)
+        expect(backClipX(false, 'single', 'back', 400)).toBe(Infinity)
+    })
+    test('a lone text page has no underside at all', () => {
+        expect(backClipX(true, 'single', 'forward', 400)).toBe(-1)
+        expect(backClipX(true, 'single', 'back', 400)).toBe(-1)
+    })
+    test('an open book keeps the underside off the text page on a forward turn only', () => {
+        expect(backClipX(true, 'spread', 'forward', 400)).toBe(400)
+        expect(backClipX(true, 'spread', 'back', 400)).toBe(Infinity)
     })
 })

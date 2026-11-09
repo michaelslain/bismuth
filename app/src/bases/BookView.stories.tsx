@@ -22,6 +22,7 @@ import { start as startServerVersion } from '../serverVersion'
 import type { TranscriptionController } from './transcription'
 import { fakeTranscribe, type FakeOptions, type FakeTranscription } from './_transcriptionFake'
 import { bookPage, bookPageUrl } from './_bookPages'
+import { jsPDF } from 'jspdf'
 import { darkRgb } from './darkPage'
 import { ARTICLE_CHART, ARTICLE_PHOTO, buildArticlePdf } from '../preview/_articlePdf'
 import { paneMenuItemsOf, withPaneItems } from '../paneMenuExtras'
@@ -83,7 +84,7 @@ const images = (n: number): Row[] => Array.from({ length: n }, (_, i) => row(ima
 const bookView = (over: Partial<ViewConfig> = {}): ViewConfig => ({ type: 'book', ...over }) as ViewConfig
 
 /** The bar and the pane, sized like an editor pane. */
-function Harness(props: { w: number; h?: number; basePath?: string; rows: Row[]; view?: ViewConfig; transcription?: TranscriptionController; onOuterMenu?: () => void }) {
+function Harness(props: { w: number; h?: number; basePath?: string; rows: Row[]; view?: ViewConfig; transcription?: TranscriptionController; onOuterMenu?: () => void; start?: { leaf: number; frac?: number }; onPosition?: (at: { leaf: number; frac: number }) => void }) {
     const [slots, setSlots] = createSignal<ViewBarSlots | undefined>()
     return (
         <div
@@ -107,6 +108,8 @@ function Harness(props: { w: number; h?: number; basePath?: string; rows: Row[];
                     onChange={() => {}}
                     onBarSlots={setSlots}
                     transcription={props.transcription}
+                    start={props.start}
+                    onPosition={props.onPosition}
                 />
             </div>
         </div>
@@ -121,7 +124,8 @@ const shown = (el: HTMLElement) => {
 }
 const readout = (root: HTMLElement) => {
     const n = within(root.querySelector<HTMLElement>('[data-testid="book-bar"]')!).queryByText(/^pp?\. \d/)
-    return n ? shown(n) : undefined
+    // the page number is its own button; the readout line around it also holds the transcription's progress
+    return n ? shown(n.closest<HTMLElement>('[data-testid="page-readout"]')?.parentElement ?? n) : undefined
 }
 
 const host = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-book]')!
@@ -1834,5 +1838,56 @@ export const ReviewCheckOpen: Story = {
         await waitFor(() => expect(glyphs(canvasElement).length).toBe(2))
         pressGlyph(glyphs(canvasElement)[0])
         await waitFor(() => expect(popover()?.querySelector('[data-check-crop]')?.getAttribute('data-check-crop')).toBe('ready'), { timeout: 8000 })
+    },
+}
+
+const LONG_PDF = 'scans/long.pdf'
+/** Twelve pages served as a real PDF, so the page count arrives after the first render as it does in the app. */
+const serveLongPdf = () => {
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    for (let n = 1; n <= 12; n++) {
+        if (n > 1) pdf.addPage()
+        pdf.setFontSize(40)
+        pdf.text(`page ${n}`, 72, 120)
+    }
+    const url = URL.createObjectURL(new Blob([pdf.output('arraybuffer')], { type: 'application/pdf' }))
+    const original = api.assetUrl
+    api.assetUrl = (target: string) => (target === LONG_PDF ? url : original(target))
+    return () => {
+        api.assetUrl = original
+        URL.revokeObjectURL(url)
+    }
+}
+
+const positions: number[] = []
+const reopenStory = (bookMode: ViewConfig['bookMode'], expected: string): Story => ({
+    beforeEach: () => {
+        positions.length = 0
+        return serveLongPdf()
+    },
+    render: () => <Harness w={1000} rows={[row(LONG_PDF)]} view={bookView({ bookMode })} start={{ leaf: 7 }} onPosition={at => positions.push(at.leaf)} />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(readout(canvasElement)).toBe(expected), { timeout: 8000 })
+        await expect(positions.filter(l => l === 0)).toEqual([])
+    },
+})
+
+/** Back to a tab on page 8 of a flipped PDF: page 8 again, and the place is never saved as page 1 on the way. */
+export const ReopensOnItsPageFlipped: Story = { ...reopenStory(undefined, 'pp. 8–9 / 12') }
+
+/** The same for text read as one column. */
+export const ReopensOnItsPageInText: Story = { ...reopenStory('text', 'p. 8 / 12') }
+
+/** The bar's page number takes a typed page: press it, type, Enter. */
+export const TypeAPageNumber: Story = {
+    beforeEach: () => serveFixtures(10),
+    render: () => <Harness w={900} rows={images(10)} />,
+    play: async ({ canvasElement }) => {
+        await ready(canvasElement, 'p. 1 / 10')
+        await userEvent.click(barText(canvasElement).getByRole('button', { name: /go to page/i }))
+        const input = barText(canvasElement).getByRole('textbox')
+        await userEvent.clear(input)
+        await userEvent.type(input, '7{Enter}')
+        await waitFor(() => expect(readout(canvasElement)).toBe('pp. 6–7 / 10'), { timeout: 8000 })
     },
 }

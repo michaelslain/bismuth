@@ -1,10 +1,9 @@
 // app/src/bases/FlipNav.tsx
 // Under text or side by side read a page at a time: the page before, where you are, the page after.
-// The page keys do the same; this is the way to flip without them.
+// The page keys do the same; this is the way to flip without them, and the number takes a typed page.
 import type { Component } from 'solid-js'
 import IconButton from '../ui/IconButton'
-import Label from '../ui/Label'
-import { pageReadout } from './bookNav'
+import PageReadout from '../preview/PageReadout'
 import styles from './FlipNav.module.css'
 
 export type FlipNavProps = {
@@ -12,13 +11,15 @@ export type FlipNavProps = {
     page: number
     pages: number
     onStep: (dir: 1 | -1) => void
+    /** Go to a page, from 0, typed into the page number. */
+    onGo: (index: number) => void
     class?: string
 }
 
 const FlipNav: Component<FlipNavProps> = props => (
     <div class={`${styles.nav} ${props.class ?? ''}`} data-flip-nav>
         <IconButton icon="ChevronLeft" label="previous page" disabled={props.page <= 1} onClick={() => props.onStep(-1)} />
-        <Label tone="muted" class={styles.where}>{pageReadout(props.page, props.pages)}</Label>
+        <PageReadout class={styles.where} current={() => props.page - 1} count={() => props.pages} onGo={props.onGo} />
         <IconButton icon="ChevronRight" label="next page" disabled={props.page >= props.pages} onClick={() => props.onStep(1)} />
     </div>
 )

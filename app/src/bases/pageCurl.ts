@@ -102,3 +102,12 @@ export function settle(progress: number): { commit: boolean; target: 0 | 1 } {
     const commit = progress >= 0.5
     return { commit, target: commit ? 1 : 0 }
 }
+
+/** Layer x past which a leaf's underside is not drawn. A text page's underside would lie over words
+ *  still being read: a lone page has none, and on an open book it stays off the text page (the right
+ *  one) while a forward turn folds over it. A backward turn lays the arriving text there, so it stays. */
+export function backClipX(keepTextClear: boolean, layout: 'spread' | 'single', direction: 'forward' | 'back', pageW: number): number {
+    if (!keepTextClear) return Infinity
+    if (layout === 'single') return -1
+    return direction === 'forward' ? pageW : Infinity
+}

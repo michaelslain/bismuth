@@ -163,3 +163,19 @@ export const Editing: Story = {
         await expect(input.getBoundingClientRect().width).toBeGreaterThan(openWidth + 1)
     },
 }
+
+/** A spread says both its pages at rest; the field still opens on one page number. */
+export const SpreadLabel: Story = {
+    render: () => (
+        <div style={{ width: '520px' }}>
+            <ViewBar
+                identity={<Crumb icon="BookOpen">notebook</Crumb>}
+                readouts={<PageReadout current={() => 1} count={() => 48} onGo={() => {}} label={() => 'pp. 2–3 / 48'} />}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await expect(c.getByText('pp. 2–3 / 48')).toBeInTheDocument()
+    },
+}

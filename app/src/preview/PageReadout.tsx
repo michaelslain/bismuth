@@ -30,6 +30,8 @@ export type PageReadoutProps = {
     count: () => number
     /** Go to a page, 0-based and already clamped into range. */
     onGo: (index: number) => void
+    /** What the readout says at rest, when that is not `p. N / M` (`pp. 2–3 / 48` on a spread). */
+    label?: () => string
     class?: string
 }
 
@@ -75,7 +77,7 @@ function PageReadout(props: PageReadoutProps) {
                         aria-label={`Page ${props.current() + 1} of ${props.count()}, go to page`}
                         onClick={() => setEditing(true)}
                     >
-                        {pageReadout(props.current() + 1, props.count())}
+                        {props.label?.() ?? pageReadout(props.current() + 1, props.count())}
                     </PlainButton>
                 }
             >

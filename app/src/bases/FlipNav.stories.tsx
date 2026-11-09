@@ -16,7 +16,7 @@ const Flipping = (props: { start: number; pages: number }) => {
     const [page, setPage] = createSignal(props.start)
     return (
         <div style={{ width: '480px', display: 'flex', 'flex-direction': 'column' }}>
-            <FlipNav page={page()} pages={props.pages} onStep={d => setPage(p => p + d)} />
+            <FlipNav page={page()} pages={props.pages} onStep={d => setPage(p => p + d)} onGo={i => setPage(i + 1)} />
         </div>
     )
 }
@@ -42,5 +42,18 @@ export const FirstPage: Story = {
         const c = within(canvasElement)
         await expect(c.getByRole('button', { name: 'previous page' })).toBeDisabled()
         await expect(c.getByRole('button', { name: 'next page' })).toBeEnabled()
+    },
+}
+
+/** The number takes a typed page; one past the end lands on the last page. */
+export const TypeAPage: Story = {
+    render: () => <Flipping start={3} pages={10} />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByRole('button', { name: /go to page/i }))
+        const input = c.getByRole('textbox')
+        await userEvent.clear(input)
+        await userEvent.type(input, '99{Enter}')
+        await expect(c.getByText('p. 10 / 10')).toBeInTheDocument()
     },
 }

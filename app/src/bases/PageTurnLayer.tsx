@@ -1,6 +1,6 @@
 import { createEffect, onCleanup, onMount, type Component } from 'solid-js'
 import styles from './PageTurnLayer.module.css'
-import { axisDistance, curlAt, curlFromPointer, deform, settle, type CurlState, turnEase } from './pageCurl'
+import { axisDistance, backClipX, curlAt, curlFromPointer, deform, settle, type CurlState, turnEase } from './pageCurl'
 
 export type PageFace = CanvasImageSource | null
 export type SpreadFaces = { left: PageFace; right: PageFace }
@@ -16,6 +16,8 @@ export type PageTurnLayerProps = {
     /** Pointer in layer px while dragging; null = the turn animates on its own. */
     drag: { x: number; y: number } | null
     durationMs?: number
+    /** Text is on the page: the underside of the leaf never lies over it, so no words go missing mid-turn. */
+    keepTextClear?: boolean
     /** A new value starts a new turn on the same layer: the faces upload again and the leaf lifts
      *  from flat, so a run of turns keeps one WebGL context instead of building one per turn. */
     turnKey?: number
@@ -79,8 +81,10 @@ in float a_z;
 uniform vec2 u_size;
 uniform float u_zscale;
 out vec3 v_uvd;
+out float v_x;
 void main() {
     v_uvd = a_uvd;
+    v_x = a_pos.x;
     vec2 c = a_pos / u_size * 2.0 - 1.0;
     gl_Position = vec4(c.x, -c.y, -clamp(a_z / u_zscale, 0.0, 1.0) * 0.9, 1.0);
 }`
@@ -88,16 +92,19 @@ void main() {
 const LEAF_FS = `#version 300 es
 precision highp float;
 in vec3 v_uvd;
+in float v_x;
 uniform sampler2D u_front;
 uniform sampler2D u_back;
 uniform float u_radius;
 uniform float u_mirror;   // 1 when the leaf runs right-to-left
+uniform float u_backClip; // layer px past which the underside is not drawn
 out vec4 o;
 void main() {
     float r = max(u_radius, 0.001);
     float d = v_uvd.z;
     float theta = clamp(d / r, 0.0, 3.14159265);
     bool back = d > r * 1.5707963;
+    if (back && v_x > u_backClip) discard;
     vec2 uv = vec2(u_mirror > 0.5 ? 1.0 - v_uvd.x : v_uvd.x, v_uvd.y);
     vec3 col;
     float shade;
@@ -391,6 +398,7 @@ const PageTurnLayer: Component<PageTurnLayerProps> = props => {
             gl.uniform1f(gl.getUniformLocation(leafPrg, 'u_zscale'), Math.max(curl.radius * 2, 1))
             gl.uniform1f(gl.getUniformLocation(leafPrg, 'u_radius'), curl.radius)
             gl.uniform1f(gl.getUniformLocation(leafPrg, 'u_mirror'), fwd() ? 0 : 1)
+            gl.uniform1f(gl.getUniformLocation(leafPrg, 'u_backClip'), backClipX(!!props.keepTextClear, props.layout, props.direction, pw))
             gl.disable(gl.CULL_FACE)
             gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_SHORT, 0)
         }

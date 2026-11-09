@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { createRoot } from 'solid-js'
-import { createTranscription, progressReadout, type TranscribeJobClient } from './transcription'
+import { createTranscription, progressReadout, replaceBody, replaceTitle, transcribeAllLabel, type TranscribeJobClient } from './transcription'
 import type { TranscribeJobRequest, TranscribeJobState } from '../../../core/src/transcribeJobTypes'
 
 /** A fake server: a job advances one page per `advance()`; math pages are announced when read. */
@@ -321,4 +321,13 @@ test('a fresh controller adopts a job already running: progress and cancel work'
     expect(toasts).toEqual(['stopped transcribing a.pdf'])
     expect(t.progress()).toBeUndefined()
     t.dispose()
+})
+
+test('the whole-document menu and its question name the pages', () => {
+    expect(transcribeAllLabel(59, 'with ai')).toBe('transcribe all 59 pages with ai')
+    expect(transcribeAllLabel(1, 'on-device')).toBe('transcribe on-device')
+    expect(replaceTitle(1)).toBe('replace the text of 1 page?')
+    expect(replaceTitle(59)).toBe('replace the text of 59 pages?')
+    expect(replaceBody(59, 'with ai', true)).toBe('all 59 pages are read again with ai, one turn a page. what they hold now goes, including anything you typed.')
+    expect(replaceBody(1, 'on-device', false)).toBe('the page is read again on-device. what it holds now goes, including anything you typed.')
 })

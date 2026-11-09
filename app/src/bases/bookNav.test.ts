@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+    pageCountsKnown,
     PAGE_MIN_W,
     TEXT_PAGE_ASPECT,
     readingAspect,
@@ -141,5 +142,17 @@ describe('readingAspect', () => {
         expect(readingAspect(0.77)).toBe(0.77)
         expect(readingAspect(1.6)).toBe(TEXT_PAGE_ASPECT)
         expect(readingAspect(0.5)).toBe(TEXT_PAGE_ASPECT)
+    })
+})
+
+describe('pageCountsKnown', () => {
+    const pdf = { file: 'a.pdf', kind: 'pdf' }
+    test('waits for every PDF', () => {
+        expect(pageCountsKnown([pdf], new Map())).toBe(false)
+        expect(pageCountsKnown([pdf], new Map([['a.pdf', 12]]))).toBe(true)
+    })
+    test('a failed count still answers, and images need none', () => {
+        expect(pageCountsKnown([pdf], new Map([['a.pdf', 0]]))).toBe(true)
+        expect(pageCountsKnown([{ file: 'a.png', kind: 'image' }], new Map())).toBe(true)
     })
 })

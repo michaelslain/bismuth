@@ -67,6 +67,17 @@ export function progressReadout(p: { done: number; total: number; etaMs?: number
     return `${head} // about ${Math.round(p.etaMs / 60_000)} min left`
 }
 
+/** A row of the bar's whole-document menu: `transcribe all 59 pages with ai`, `transcribe on-device` for one page. */
+export const transcribeAllLabel = (pages: number, reader: string): string =>
+    pages === 1 ? `transcribe ${reader}` : `transcribe all ${pages} pages ${reader}`
+
+/** The question before a whole-document run over pages that already hold text. */
+export const replaceTitle = (filled: number): string =>
+    filled === 1 ? 'replace the text of 1 page?' : `replace the text of ${filled} pages?`
+
+export const replaceBody = (pages: number, reader: string, turns: boolean): string =>
+    `${pages === 1 ? 'the page is' : `all ${pages} pages are`} read again ${reader}${turns ? ', one turn a page' : ''}. ${pages === 1 ? 'what it holds' : 'what they hold'} now goes, including anything you typed.`
+
 export function createTranscription(opts: TranscriptionOptions): TranscriptionController {
     const { client } = opts
     const [jobs, setJobs] = createSignal<ReadonlyMap<string, TranscribeJobState>>(new Map())

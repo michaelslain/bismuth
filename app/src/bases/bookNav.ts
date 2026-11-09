@@ -88,6 +88,10 @@ export function folioFor(spread: Spread, count: number): string {
     return `${(right ?? left ?? 0) + 1} of ${count}`
 }
 
+/** True once every PDF among `refs` has answered with its page count (a failed count answers 0). */
+export const pageCountsKnown = (refs: { file: string; kind: string }[], counts: ReadonlyMap<string, number>): boolean =>
+    refs.every(r => r.kind !== 'pdf' || counts.has(r.file))
+
 /** Whether a server change touched `file`'s text, which lives in its companion note. No paths says only that something changed. */
 export const transcriptChanged = (paths: string[], file: string): boolean => paths.length === 0 || paths.includes(`${file}.md`)
 

@@ -656,7 +656,7 @@ export const PdfReadAsBook: Story = {
         await pickRead(canvasElement, 'scroll or flip', 'flip')
         await waitFor(() => expect(canvasElement.querySelector('[data-preview-book] [data-book]')).not.toBeNull())
         await waitFor(() => expect(canvas.getByText(/^p\. 1 \/ \d+$/)).toBeInTheDocument(), { timeout: 8000 })
-        await expect(canvasElement.querySelector('[data-testid="page-readout"]')).toBeNull()
+        await expect(canvasElement.querySelector('[data-testid="page-readout"] button')).not.toBeNull()
         await expect(await readState(canvasElement, 'scroll or flip')).toBe('flip')
         await pickRead(canvasElement, 'scroll or flip', 'scroll')
         await waitFor(() => expect(canvasElement.querySelector('[data-preview-book]')).toBeNull())
@@ -3714,6 +3714,26 @@ const reader = (file: string) => (
     </div>
 )
 const readerSections = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>('[data-preview-book] [data-page-key]'))
+
+/** The scrolled viewer has the bar's whole-file transcribe too: pick a reader, the run shows its progress and cancel here. */
+export const PdfViewerTranscribeAll: Story = {
+    name: 'Pdf viewer transcribe all',
+    beforeEach: () => {
+        const restore = readerSetup(READER_PDF, 'text', [], false)
+        clearPreviewView(READER_PDF)
+        return restore
+    },
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // the button waits for the PDF's page count
+        await waitFor(() => expect(canvas.getByRole('button', { name: 'transcribe all' })).toBeEnabled(), { timeout: 8000 })
+        await userEvent.click(canvas.getByRole('button', { name: 'transcribe all' }))
+        await userEvent.click(await within(document.body).findByText('transcribe all 6 pages with ai'))
+        await waitFor(() => expect(fk.calls).toEqual([{ file: READER_PDF, engine: 'ai' }]))
+        await waitFor(() => expect(canvasElement.querySelector('[data-transcribe-progress]')?.textContent).toContain('cancel'))
+    },
+}
 
 /** A PDF in text mode: one editable column with a divider per page, the reader in each divider, no convert-to-markdown button. */
 export const PdfTextMode: Story = {

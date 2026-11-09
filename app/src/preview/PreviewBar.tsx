@@ -26,7 +26,7 @@
 // the bar only when the bar cannot hold it, then lives in the bar's `[≡]` menu (the `.settings`
 // default and the palette command still set DARK). FIT, the mode toggles and BOOKMARKS never drop —
 // they are the only way into what they open. There is no second row.
-import { createSignal, type JSX, Show } from 'solid-js'
+import { children, createSignal, type JSX, Show } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
 import ReadModeSwitch, { type ReadFlow, type ReadView } from '../bases/ReadModeSwitch'
 import FlowToggle from '../bases/FlowToggle'
@@ -78,6 +78,9 @@ export type PreviewBarProps = {
     reading?: () => { view: ReadView; flow: ReadFlow }
     onReadView?: (view: ReadView) => void
     onReadFlow?: (flow: ReadFlow) => void
+    /** image / pdf: transcription, its progress after the page readout and its button with the actions */
+    transcribeProgress?: JSX.Element
+    transcribe?: JSX.Element
     /** native file actions; false → group absent */
     nativeActions: () => boolean
     onOpenExternal: (reveal: boolean) => void
@@ -85,6 +88,8 @@ export type PreviewBarProps = {
 }
 
 export default function PreviewBar(props: PreviewBarProps): JSX.Element {
+    // resolved once: a prop holding JSX builds it anew on every read
+    const transcribe = children(() => props.transcribe)
     const pdf = () => props.kind() === 'pdf'
     const inkable = () => props.kind() === 'image' || pdf()
     /** The highlight button's right-click menu of colours, at the cursor; null = closed. */
@@ -140,6 +145,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             </div>
                         )}
                     </Show>
+                    {props.transcribeProgress}
                 </>
             }
             config={
@@ -262,6 +268,11 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
             }
             actions={
                 <>
+                    <Show when={transcribe()}>
+                        <div class={styles.tools} data-bar-drop="4" data-bar-menu-label="transcribe all">
+                            {transcribe()}
+                        </div>
+                    </Show>
                     <Show when={pdf()}>
                         {/* PanelRight's Phosphor glyph (sidebar-simple) draws its panel on the LEFT —
                             mirrored so it reads as the right-hand panel this control opens. `.mirror`
