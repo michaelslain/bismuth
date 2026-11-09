@@ -4,10 +4,19 @@
 import { For, Show, createEffect, createSignal, on, onCleanup, type Component, type JSX } from 'solid-js'
 import styles from './SideBySide.module.css'
 
-export type SideBySideRow = { key: string; image: () => JSX.Element; text: () => JSX.Element; aspect: number }
+export type SideBySideRow = {
+    key: string
+    image: () => JSX.Element
+    text: () => JSX.Element
+    aspect: number
+    /** built but not shown: a flipped page's neighbour, waiting for its turn */
+    hidden?: boolean
+}
 
 export type SideBySideProps = {
     rows: SideBySideRow[]
+    /** A page at a time: the picture fits the pane and stays, and only the text scrolls. */
+    flip?: boolean
     /** scroll to this row (and a fraction down it) when it changes */
     at?: { key: string; frac?: number }
     /** the row at the top of the scroller, and how far through it, as the user scrolls */
@@ -46,6 +55,18 @@ const SideBySide: Component<SideBySideProps> = props => {
                 if (key === undefined) return
                 const el = rowEls().find(e => e.dataset.rowKey === key)
                 if (!el) return
+                if (props.flip) {
+                    // flipped, the text column is what scrolls; once more after its editor has laid out
+                    const text = el.querySelector<HTMLElement>('[data-side-text]')!
+                    const place = () => (text.scrollTop = (frac ?? 0) * text.scrollHeight)
+                    programmatic = true
+                    place()
+                    requestAnimationFrame(() => {
+                        place()
+                        requestAnimationFrame(() => (programmatic = false))
+                    })
+                    return
+                }
                 const target = el.offsetTop + (frac ?? 0) * el.offsetHeight
                 programmatic = true
                 scroller.scrollTop = target
@@ -55,7 +76,7 @@ const SideBySide: Component<SideBySideProps> = props => {
     )
 
     return (
-        <div class={`${styles.scroller} ${props.className ?? ''}`} ref={scroller} onScroll={onScroll} data-side-by-side>
+        <div class={`${styles.scroller} ${props.flip ? styles.flip : ''} ${props.className ?? ''}`} ref={scroller} onScroll={onScroll} data-side-by-side>
             <For each={props.rows}>
                 {row => {
                     // the text (an editor) mounts when its row first nears the view; the image row holds the height until then
@@ -68,13 +89,28 @@ const SideBySide: Component<SideBySideProps> = props => {
                         io.observe(el)
                         onCleanup(() => io.disconnect())
                     }
+                    let textEl!: HTMLDivElement
+                    const onTextScroll = () => {
+                        if (!props.flip || row.hidden || programmatic) return
+                        const h = textEl.scrollHeight
+                        props.onAt?.({ key: row.key, frac: h > 0 ? Math.min(1, textEl.scrollTop / h) : 0 })
+                    }
+                    // a page turned back to starts at its top again
+                    createEffect(on(() => row.hidden, hidden => !hidden && (textEl.scrollTop = 0), { defer: true }))
                     return (
-                        <div ref={watch} class={styles.row} data-row-key={row.key}>
-                            <div class={styles.image} style={{ 'aspect-ratio': String(row.aspect) }}>
-                                {row.image()}
+                        <div
+                            ref={watch}
+                            class={styles.row}
+                            classList={{ [styles.hidden]: !!row.hidden }}
+                            data-row-key={row.hidden ? undefined : row.key}
+                        >
+                            <div class={styles.cell}>
+                                <div class={styles.image} style={{ '--aspect': String(row.aspect) } as JSX.CSSProperties}>
+                                    {row.image()}
+                                </div>
                             </div>
-                            <div class={styles.text}>
-                                <Show when={near()}>{row.text()}</Show>
+                            <div ref={textEl} class={styles.text} data-side-text onScroll={onTextScroll}>
+                                <Show when={near() || props.flip}>{row.text()}</Show>
                             </div>
                         </div>
                     )

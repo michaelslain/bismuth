@@ -23,7 +23,6 @@ export type TranscriptPageHandle = {
     toggleMark(): void
     /** puts the caret at the first occurrence of `text` (whole text when omitted) and scrolls it into view, tinted briefly */
     reveal(text?: string): void
-    focus(): void
 }
 
 export type TranscriptPageProps = {
@@ -194,7 +193,6 @@ const TranscriptPage: Component<TranscriptPageProps> = props => {
                 if (flashTimer) clearTimeout(flashTimer)
                 flashTimer = setTimeout(() => view?.dispatch({ effects: setFlash.of(null) }), FLASH_MS)
             },
-            focus: () => view?.focus(),
         })
     })
 
@@ -264,7 +262,7 @@ const TranscriptPage: Component<TranscriptPageProps> = props => {
                 </div>
             </Show>
             <Show when={!props.pending}>
-                <div ref={host} class={styles.field} />
+                <div ref={host} class={styles.field} data-transcript-text />
             </Show>
             <CheckPopover
                 open={!!open()}

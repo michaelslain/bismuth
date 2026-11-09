@@ -26,11 +26,11 @@ export const Default: Story = {
     render: () => <Flipping start={3} pages={10} />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await expect(c.getByText('page 3 // 10')).toBeInTheDocument()
+        await expect(c.getByText('p. 3 / 10')).toBeInTheDocument()
         await userEvent.click(c.getByRole('button', { name: 'next page' }))
-        await expect(c.getByText('page 4 // 10')).toBeInTheDocument()
+        await expect(c.getByText('p. 4 / 10')).toBeInTheDocument()
         await userEvent.click(c.getByRole('button', { name: 'previous page' }))
-        await expect(c.getByText('page 3 // 10')).toBeInTheDocument()
+        await expect(c.getByText('p. 3 / 10')).toBeInTheDocument()
     },
 }
 

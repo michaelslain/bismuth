@@ -1,5 +1,5 @@
 // app/src/bases/FlowToggle.tsx
-// The `Aa` panel's `move by` row: one long column (`scroll`) or a page at a time (`flip`).
+// The display panel's `move by` row: one long column (`scroll`) or a page at a time (`flip`).
 import type { Component } from 'solid-js'
 import SegmentedToggle from '../ui/SegmentedToggle'
 import type { ReadFlow } from './ReadModeSwitch'

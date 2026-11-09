@@ -66,7 +66,7 @@ export const Wide: Story = {
     },
 }
 
-/** 640px pane: below 720 the image sits above its text. */
+/** 640px pane: below 720 the picture stays beside its text, giving up width to it. */
 export const Narrow640: Story = {
     name: 'Narrow 640',
     args: { rows: [] },
@@ -78,7 +78,10 @@ export const Narrow640: Story = {
     play: async ({ canvasElement }) => {
         const row = canvasElement.querySelector('[data-row-key]') as HTMLElement
         const [img, txt] = [row.children[0] as HTMLElement, row.children[1] as HTMLElement]
-        await expect(txt.getBoundingClientRect().top).toBeGreaterThanOrEqual(img.getBoundingClientRect().bottom)
+        const [i, t] = [img.getBoundingClientRect(), txt.getBoundingClientRect()]
+        await expect(t.left).toBeGreaterThanOrEqual(i.right)
+        await expect(t.top).toBeLessThan(i.bottom)
+        await expect(i.width).toBeLessThan(t.width)
     },
 }
 

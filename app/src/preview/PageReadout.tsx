@@ -16,6 +16,7 @@
 // and the edit state's gap is one cell — the space the rest text has there. Before this the rest
 // button's own padding plus a 5ch input put the readout ~10px wider and the `p.` glyph ~16px left
 // the moment it was clicked.
+import { pageReadout } from '../bases/bookNav'
 import { createSignal, Show } from 'solid-js'
 import PlainButton from '../ui/PlainButton'
 import InlineTextInput from '../ui/InlineTextInput'
@@ -74,7 +75,7 @@ function PageReadout(props: PageReadoutProps) {
                         aria-label={`Page ${props.current() + 1} of ${props.count()}, go to page`}
                         onClick={() => setEditing(true)}
                     >
-                        {`p. ${props.current() + 1} / ${props.count()}`}
+                        {pageReadout(props.current() + 1, props.count())}
                     </PlainButton>
                 }
             >

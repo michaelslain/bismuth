@@ -10,7 +10,8 @@ import {
     Switch,
     Match,
 } from 'solid-js'
-import { api } from '../api'
+import { api, apiBase } from '../api'
+import { loadPreviewView, persistPreviewViewFor, savePreviewView } from '../preview/previewViewMemory'
 import { serverVersion, lastChange } from '../serverVersion'
 import { changeAffectsView, type ViewDeps } from './changeRelevance'
 import { reconcileViewResult } from './reconcileRows'
@@ -123,6 +124,13 @@ const rowCache = new RowCache<LoadedRows>()
 
 /** The four view kinds ChartConfigBar's pickers apply to. */
 const CHART_VIEW_TYPES = new Set(['bar', 'line', 'stat', 'heatmap'])
+
+/** The page a book base was left on, remembered across restarts with the other reading positions. */
+function bookStartOf(basePath: string | undefined) {
+    if (!basePath) return undefined
+    persistPreviewViewFor(apiBase())
+    return loadPreviewView(basePath)?.bookAt
+}
 
 /**
  * Unified view host. Renders any source (base / notes / tasks) as any view type.
@@ -925,6 +933,8 @@ export function BaseView(props: {
                                             ownsRows={ownsRows()}
                                             onChange={revalidateAll}
                                             onBarSlots={setBookSlots}
+                                            start={bookStartOf(data()!.basePath)}
+                                            onPosition={at => data()!.basePath && savePreviewView(data()!.basePath!, { bookAt: at })}
                                         />
                                     )}
                                 </Show>

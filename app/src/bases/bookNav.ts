@@ -79,7 +79,7 @@ export function stepFromKey<E>(
     return null
 }
 
-/** The bar readout for the spread on screen: `page 1 // 48`, or `pages 2–3 // 48` for two pages. */
+/** The bar readout for the spread on screen: `p. 1 / 48`, or `pp. 2–3 / 48` for two pages. */
 /** The page number under the book, the way a reading app prints it: `16–17 of 31` on a spread,
  *  `1 of 31` for a lone page. */
 export function folioFor(spread: Spread, count: number): string {
@@ -88,10 +88,16 @@ export function folioFor(spread: Spread, count: number): string {
     return `${(right ?? left ?? 0) + 1} of ${count}`
 }
 
+/** Whether a server change touched `file`'s text, which lives in its companion note. No paths says only that something changed. */
+export const transcriptChanged = (paths: string[], file: string): boolean => paths.length === 0 || paths.includes(`${file}.md`)
+
+/** Where you are in a document: page (from 1) of count, the one counter every reader shows. */
+export const pageReadout = (page: number, count: number): string => `p. ${page} / ${count}`
+
 export function readoutFor(spread: Spread, count: number): string {
     const { left, right } = spread
     if (left !== undefined && right !== undefined)
-        return `pages ${left + 1}–${right + 1} // ${count}`
+        return `pp. ${left + 1}–${right + 1} / ${count}`
     const only = right ?? left ?? 0
-    return `page ${only + 1} // ${count}`
+    return pageReadout(only + 1, count)
 }

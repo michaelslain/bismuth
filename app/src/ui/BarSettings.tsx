@@ -1,9 +1,7 @@
 // app/src/ui/BarSettings.tsx
 // A view bar's settings button and its panel: the home for the settings a person sets once and
-// rarely changes (a book's layout), so they do not each take a worded control on the bar. The
-// bar keeps the one switch for what the view shows plus its tools as icons; everything else is a
-// labelled row here. The trigger is an icon or a text glyph (`Aa` in the book), `selected` while
-// the panel is open.
+// rarely changes (a book's layout and what it shows), so they do not each take a worded control on
+// the bar. The bar keeps its tools as icons; everything else is a labelled row here. The trigger is the sliders icon, `selected` while the panel is open.
 import { createSignal, For, Show, type Component, type JSX } from 'solid-js'
 import AnchoredPopover from './AnchoredPopover'
 import IconButton from './IconButton'
@@ -21,10 +19,8 @@ export type BarSettingsRow = {
 export type BarSettingsProps = {
     /** The trigger's accessible name and tooltip (`display`). */
     label: string
-    /** Trigger icon name; give `icon` or `glyph`. Defaults to `Settings2` (sliders). */
+    /** Trigger icon name. Defaults to `Settings2` (sliders). */
     icon?: string
-    /** Trigger text glyph (`Aa`), drawn in the bar's text font. */
-    glyph?: string
     rows: BarSettingsRow[]
     /** Starts open, for stories. */
     defaultOpen?: boolean
@@ -38,11 +34,10 @@ const BarSettings: Component<BarSettingsProps> = props => {
         setOpen(false)
         anchor()?.focus()
     }
-    // One fixed face per branch (an icon or a text glyph, never both): the face says what the
-    // button is, and `selected` alone says the panel is open.
-    const trigger = (face: { icon: string } | { glyph: string }) => (
+    return (
+        <>
         <IconButton
-            {...face}
+            icon={props.icon ?? 'Settings2'}
             label={props.label}
             variant={open() ? 'selected' : 'unselected'}
             aria-haspopup="true"
@@ -55,12 +50,6 @@ const BarSettings: Component<BarSettingsProps> = props => {
                 setOpen(!open())
             }}
         />
-    )
-    return (
-        <>
-            <Show when={props.glyph} fallback={trigger({ icon: props.icon ?? 'Settings2' })}>
-                {glyph => trigger({ glyph: glyph() })}
-            </Show>
             <AnchoredPopover
                 open={open()}
                 anchor={anchor}

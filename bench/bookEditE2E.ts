@@ -78,8 +78,18 @@ async function main() {
         }
         return v
     }
-    const clickButton = (name: string) =>
+    const pressButton = (name: string) =>
         ev(`(() => { const b = [...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') ?? b.textContent.trim()) === ${JSON.stringify(name)} || b.textContent.trim() === ${JSON.stringify(name)}); if (!b) return false; b.click(); return true })()`)
+    /** A button on the bar, or a row of the display panel, which is opened for it and closed after. */
+    const clickButton = async (name: string) => {
+        if (await pressButton(name)) return true
+        if (!(await pressButton('display'))) return false
+        await sleep(300)
+        const pressed = await pressButton(name)
+        await sleep(300)
+        await pressButton('display')
+        return pressed
+    }
     const rightClick = async (sel: string) => {
         const p = await ev(`(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 3 } : null })()`)
         if (!p) return false
@@ -103,17 +113,17 @@ async function main() {
     // switching lands where the reader was: book on page 3 → the viewer shows page 3; the viewer on
     // page 1 → the book opens on page 1, not the spread it was last on
     const viewerPage = () => ev(`(() => { const m = document.body.innerText.match(/p\\. (\\d+) \\/ \\d+/); return m ? Number(m[1]) : null })()`)
-    const bookReadout = () => ev(`(() => { const m = document.body.innerText.match(/pages? \\d+(–\\d+)? \\/\\/ \\d+/); return m ? m[0] : null })()`)
+    const bookReadout = () => ev(`(() => { const m = document.body.innerText.match(/pp?\\. \\d+(–\\d+)? \\/ \\d+/); return m ? m[0] : null })()`)
     await cdp('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 })
     await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 })
-    await waitFor(async () => ((await bookReadout()) ?? '').startsWith('pages 2–3'))
+    await waitFor(async () => ((await bookReadout()) ?? '').startsWith('pp. 2–3'))
     await clickButton('scroll')
     const vp = await waitFor(async () => ((await viewerPage()) === 2 ? 2 : null), 8000)
     step('2b pages 2–3 → scroll lands on page 2', vp === 2, String(await viewerPage()))
     await ev(`(() => { const all = [...document.querySelectorAll('*')].filter(e => e.scrollHeight > e.clientHeight + 50 && getComputedStyle(e).overflowY !== 'visible'); const el = all.sort((a, b) => b.scrollHeight - a.scrollHeight)[0]; el.scrollTop = 0 })()`)
     await waitFor(async () => (await viewerPage()) === 1, 8000)
     await clickButton('pages')
-    const br = await waitFor(async () => ((await bookReadout()) ?? '').startsWith('page 1 //') && (await bookReadout()), 8000)
+    const br = await waitFor(async () => ((await bookReadout()) ?? '').startsWith('p. 1 /') && (await bookReadout()), 8000)
     step('2c scroll back on page 1 → pages opens page 1, not the 2–3 it left', !!br, String(await bookReadout()))
     await clickButton('pages')
     await sleep(800)
@@ -124,7 +134,7 @@ async function main() {
         const r = await menuRows()
         return r?.length ? r : null
     }, 5000)) as string[] | null
-    step('3 right-click menu has page rows and pane rows', !!rows && rows.includes('edit text') && rows.includes('transcribe again with ai') && rows.some(r => /split right/i.test(r)), JSON.stringify(rows))
+    step('3 right-click menu has page rows and pane rows', !!rows && rows.includes('read again with ai') && rows.some(r => /split right/i.test(r)), JSON.stringify(rows))
     await shot('3-menu')
     await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
     await sleep(300)
@@ -158,19 +168,15 @@ async function main() {
 
     // text mode: fix the page's text by hand
     await clickButton('text')
-    await waitFor(() => ev(`document.querySelectorAll('[data-text-line]').length > 0`))
+    await waitFor(() => ev(`document.querySelectorAll('[data-page-key]').length > 0`))
     await sleep(800)
     await shot('6-text-dark')
-    await rightClick('[data-text-line]')
-    await waitFor(async () => ((await menuRows()) ?? []).includes('edit text'), 5000)
-    await ev(`[...document.querySelectorAll('[data-popover-row]')].find(e => e.textContent.trim() === 'edit text').click()`)
-    const editor = await waitFor(() => ev(`!!document.querySelector('[data-transcript-editor] .cm-content')`))
-    step('6a edit text opens the editor', !!editor)
-    await ev(`(() => { const cm = document.querySelector('[data-transcript-editor] .cm-content'); cm.focus(); const s = getSelection(); s.selectAllChildren(cm); s.collapseToEnd() })()`)
+    const editor = await waitFor(() => ev(`!!document.querySelector('[data-page-key] .cm-content')`))
+    step('6a text mode shows the editable section', !!editor)
+    await ev(`(() => { const cm = document.querySelector('[data-page-key] .cm-content'); cm.focus(); const s = getSelection(); s.selectAllChildren(cm); s.collapseToEnd() })()`)
     await cdp('Input.insertText', { text: ' Fixed by hand.' })
     await sleep(300)
     await shot('6-editor')
-    await clickButton('save')
     const companion = join(VAULT, 'scans', 'lecture.pdf.md')
     const saved = await waitFor(async () => (existsSync(companion) && readFileSync(companion, 'utf8').includes('Fixed by hand.') ? true : null))
     step('6b companion note holds the fixed text', !!saved)

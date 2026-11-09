@@ -140,8 +140,8 @@ async function main() {
         t.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }))
         t.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }))
     })()`)
-    const r1 = await waitFor(async () => (((await readout()) ?? '').startsWith('page 1 // 5') ? await readout() : null), 40_000)
-    step('2 drop → readout page 1 // 5', !!r1, String(r1))
+    const r1 = await waitFor(async () => (((await readout()) ?? '').startsWith('p. 1 / 5') ? await readout() : null), 40_000)
+    step('2 drop → readout p. 1 / 5', !!r1, String(r1))
     await sleep(1500)
     await shot('2-cover')
     // auto is off: the bar offers the button and nothing has been transcribed yet
@@ -151,8 +151,8 @@ async function main() {
 
     await cdp('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 })
     await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 })
-    const r2 = await waitFor(async () => ((await readout()) ?? '').startsWith('pages 2–3 // 5') && (await readout()))
-    step('3a ArrowRight → pages 2–3 // 5', !!r2, String(r2))
+    const r2 = await waitFor(async () => ((await readout()) ?? '').startsWith('pp. 2–3 / 5') && (await readout()))
+    step('3a ArrowRight → pp. 2–3 / 5', !!r2, String(r2))
     await sleep(800)
     await shot('3-spread-2-3')
 
@@ -168,8 +168,8 @@ async function main() {
     }
     await shot('3-mid-curl')
     await mouse('mouseReleased', mid - 60, box.y - 36)
-    const r3 = await waitFor(async () => ((await readout()) ?? '').startsWith('pages 4–5 // 5') && (await readout()))
-    step('3b drag-turn → pages 4–5 // 5', !!r3, String(r3))
+    const r3 = await waitFor(async () => ((await readout()) ?? '').startsWith('pp. 4–5 / 5') && (await readout()))
+    step('3b drag-turn → pp. 4–5 / 5', !!r3, String(r3))
     await sleep(1000)
     await shot('3-spread-4-5')
 

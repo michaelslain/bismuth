@@ -1,0 +1,15 @@
+/* TextPageTurn.module.css — the curl over a text page (TextPageTurn.tsx ONLY). Clicks go through to
+   the text under it. */
+.turn {
+    position: absolute;
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.hold,
+.hold canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}

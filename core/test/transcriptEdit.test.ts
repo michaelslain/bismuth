@@ -96,3 +96,27 @@ describe('remapTranscriptPages', () => {
         expect(remapTranscriptPages('just a note\n', [0])).toBe('just a note\n')
     })
 })
+
+describe('a page line that reads like a page heading', () => {
+    const book = setTranscriptPage(setTranscriptPage('', 1, 'one', 'pdf'), 2, 'two', 'pdf')
+
+    test('stays on its page, and no page number is made', () => {
+        const text = 'one\n\n### Page 2\n\nstill one'
+        const pages = readTranscript(setTranscriptPage(book, 1, text, 'pdf'))
+        expect(pages.map(p => p.page)).toEqual([1, 2])
+        expect(pages[0].text).toBe(text)
+        expect(pages[1].text).toBe('two')
+    })
+
+    test('comes back exactly over repeated saves, a backslash of its own included', () => {
+        const text = '\\### Page 9\n### Page 7\nafter'
+        let md = setTranscriptPage(book, 1, text, 'pdf')
+        md = setTranscriptPage(md, 2, 'two again', 'pdf')
+        expect(readTranscript(md)[0].text).toBe(text)
+    })
+
+    test('a lone image keeps it as its one page', () => {
+        const text = 'before\n### Page 3\nafter'
+        expect(readTranscript(setTranscriptPage('', 1, text, 'image'))).toEqual([{ page: 1, text }])
+    })
+})

@@ -34,6 +34,10 @@ export const stripTranscriptMarkers = (s: string): string =>
     s.replace(CHECKS_LINE, '').replaceAll(TRANSCRIPT_START, '').replaceAll(TRANSCRIPT_END, '')
 
 const HEADING = /^### Page (\d+)[ \t]*$/m
+/** A page's own line that reads like a page heading is stored with a `\\` in front, so it stays on
+ *  its page. Any `\\` already there gets one more, so the text comes back exactly. */
+const guardHeadings = (t: string): string => t.replace(/^(\\*### Page \d+[ \t]*)$/gm, '\\$1')
+const unguardHeadings = (t: string): string => t.replace(/^\\(\\*### Page \d+[ \t]*)$/gm, '$1')
 /** The block's first line when any page has checks: `{"<page>":[["<line>","unsure"|"garbled"]]}`. */
 const CHECKS_PREFIX = '<!-- bismuth:transcript:checks '
 const CHECKS_LINE = /^<!-- bismuth:transcript:checks (.*?) -->[ \t]*\n?/m
@@ -75,7 +79,7 @@ function checksLine(pages: PageText[]): string {
 export function renderTranscript(pages: PageText[], kind: PageFileKind): string {
     const sorted = [...pages].sort((a, b) => a.page - b.page)
     // The end marker inside page text would cut the block short on the next read.
-    const clean = (t: string) => t.replaceAll(TRANSCRIPT_END, '').trim()
+    const clean = (t: string) => guardHeadings(t.replaceAll(TRANSCRIPT_END, '').trim())
     if (kind === 'image' && sorted.length === 1) return clean(sorted[0].text)
     return sorted.map(p => `### Page ${p.page}\n\n${clean(p.text)}`).join('\n\n')
 }
@@ -152,7 +156,8 @@ export function readTranscript(companion: string): PageText[] {
     if (end < 0) return []
     const split = splitChecks(companion.slice(from, end).replace(/^\n/, ''))
     const inner = split.inner.trim()
-    const withChecks = (page: number, text: string): PageText => {
+    const withChecks = (page: number, stored: string): PageText => {
+        const text = unguardHeadings(stored)
         const checks = liveChecks(text, split.byPage.get(page))
         return checks.length ? { page, text, checks } : { page, text }
     }

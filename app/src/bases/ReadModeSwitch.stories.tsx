@@ -1,7 +1,8 @@
-// Visual spec for <ReadModeSwitch>: the reader's three view icons, pages, text and side by side.
+// Visual spec for <ReadModeSwitch>: the `show` row of the reader's display panel: pages, text and side by side.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import BarSettings from '../ui/BarSettings'
 import ViewBar, { Crumb } from '../ui/ViewBar'
 import ReadModeSwitch, { type ReadView } from './ReadModeSwitch'
 
@@ -18,7 +19,7 @@ const Live = (props: { view?: ReadView; textUnavailable?: string }) => {
     return <ReadModeSwitch view={view()} onView={setView} textUnavailable={props.textUnavailable} />
 }
 
-/** Three icons; the one in use is lit, and a click picks another. */
+/** Three words; the one in use is bracketed, and a click picks another. */
 export const Default: Story = {
     render: () => <Live />,
     play: async ({ canvasElement }) => {
@@ -30,16 +31,21 @@ export const Default: Story = {
     },
 }
 
-/** The icons in a view bar. */
-export const InBar: Story = {
-    name: 'In bar',
+/** As the display panel's first row. */
+export const InPanel: Story = {
+    name: 'In panel',
     render: () => (
         <div style={{ width: '480px', 'max-width': 'none' }}>
-            <ViewBar identity={<Crumb icon="File">lecture.pdf</Crumb>} config={<Live view="text" />} />
+            <ViewBar identity={<Crumb icon="File">lecture.pdf</Crumb>} config={<BarSettings label="display" defaultOpen rows={[{ label: 'show', control: <Live view="text" /> }]} />} />
         </div>
     ),
-    play: async ({ canvasElement }) => {
-        await expect(within(canvasElement).getByRole('button', { name: 'text' })).toHaveAttribute('aria-pressed', 'true')
+    play: async () => {
+        const panel = await waitFor(() => {
+            const p = document.querySelector<HTMLElement>('[data-bar-settings-panel]')
+            expect(p).not.toBeNull()
+            return p!
+        })
+        await expect(within(panel).getByRole('button', { name: 'text' })).toHaveAttribute('aria-pressed', 'true')
     },
 }
 
@@ -51,7 +57,7 @@ export const TextUnavailable: Story = {
         for (const name of ['text', 'side by side']) {
             const b = within(canvasElement).getByRole('button', { name })
             await expect(b).toBeDisabled()
-            await expect(b).toHaveAttribute('data-tooltip', 'no page is transcribed yet')
+            await expect(b).toHaveAttribute('title', 'no page is transcribed yet')
         }
     },
 }

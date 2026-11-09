@@ -1,4 +1,4 @@
-// Visual spec for <FlowToggle>: the `Aa` panel's `move by` row, scroll or flip.
+// Visual spec for <FlowToggle>: the display panel's `move by` row, scroll or flip.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, userEvent, within } from 'storybook/test'

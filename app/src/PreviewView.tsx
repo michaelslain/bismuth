@@ -195,7 +195,8 @@ export function PreviewView(props: {
             setReadView(saved?.readMode ?? 'pages')
             setReadFlow(saved?.flow ?? (saved?.readMode === 'pages' ? 'flip' : 'scroll'))
             bookAt = undefined
-            setBookStart(undefined)
+            const key = untrack(pdfMemoryKey)
+            setBookStart(key ? loadPreviewView(key)?.bookAt : undefined)
             setBookLayout(saved?.bookLayout ?? 'spread')
         }),
     )
@@ -845,17 +846,17 @@ export function PreviewView(props: {
         if (e.repeat) return
         // GATED, not stopPropagation-from-the-strip: this listener is registered CAPTURE-phase
         // below (`addEventListener('keydown', onKey, true)`), which fires top-down — by the time
-        // a keystroke reaches CompanionFrontmatter's CodeMirror field or a scratch-note block's
-        // (both descendants of rootRef), THIS handler has already run. A `stopPropagation()`
+        // a keystroke reaches CompanionFrontmatter's CodeMirror field, a scratch-note block's or a
+        // reader's transcript section (all descendants of rootRef), THIS handler has already run. A `stopPropagation()`
         // inside either could only stop the event from continuing further down/back up; it cannot
         // undo a check that already happened at this ancestor. So both are exempted here instead,
         // by `data-*` hooks (never a class — the hashing trap under CLAUDE.md's Styling section)
         // on their wrappers: typing (including the toggle-draw-mode / find / undo combos, e.g. a
-        // tag or a note literally containing them) inside either field must always just edit
+        // tag or a note literally containing them) inside any of them must always just edit
         // text, never toggle draw mode, open Find, or undo an ink stroke.
         if (
             (e.target as HTMLElement | null)?.closest?.(
-                '[data-companion-frontmatter], [data-scratch-text]',
+                '[data-companion-frontmatter], [data-scratch-text], [data-transcript-text]',
             )
         )
             return
@@ -1083,7 +1084,11 @@ export function PreviewView(props: {
                         onDark={on => store()?.edit(d => setDark(d, on))}
                         transcription={props.transcription}
                         start={bookStart()}
-                        onPosition={at => (bookAt = at)}
+                        onPosition={at => {
+                            bookAt = at
+                            const key = pdfMemoryKey()
+                            if (key) savePreviewView(key, { bookAt: at })
+                        }}
                     />
                 </div>
             </Show>

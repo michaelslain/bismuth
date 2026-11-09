@@ -1,19 +1,10 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Component, type JSX } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Component } from 'solid-js'
 import TranscriptPage, { type TranscriptPageHandle } from './TranscriptPage'
-import type { TranscriptCheck } from '../../../core/src/transcript'
+import TranscriptSection, { type TranscriptSectionPage } from './TranscriptSection'
 import { estimateHeight, indexAt, offsetOf, planWindow } from './transcriptDocWindow'
 import styles from './TranscriptDoc.module.css'
 
-export type TranscriptDocPage = {
-    key: string
-    label?: string
-    text: string
-    status?: JSX.Element
-    /** the page's review checks, their approve and their scan strip (TranscriptPage's props) */
-    checks?: TranscriptCheck[]
-    onApprove?: (line: string) => void
-    crop?: (line: string) => JSX.Element | undefined
-}
+export type TranscriptDocPage = TranscriptSectionPage
 export type TranscriptDocProps = {
     pages: TranscriptDocPage[]
     onSave: (key: string, text: string) => void
@@ -181,6 +172,7 @@ const TranscriptDoc: Component<TranscriptDocProps> = props => {
             ref={scroller}
             class={`${styles.doc} ${props.className ?? ''}`.trim()}
             onScroll={onScroll}
+            data-transcript-doc
         >
             <div ref={column} class={styles.column}>
                 <For each={props.pages}>
@@ -207,21 +199,13 @@ const TranscriptDoc: Component<TranscriptDocProps> = props => {
                                     </div>
                                 }
                             >
-                                <TranscriptPage
-                                    label={page.label}
-                                    text={page.text}
-                                    status={page.status}
-                                    checks={page.checks}
-                                    onApprove={page.onApprove}
-                                    crop={page.crop}
-                                    onSave={text => props.onSave(page.key, text)}
-                                    ref={handle => {
-                                        props.pageRef?.(page.key, handle)
-                                        onCleanup(() => props.pageRef?.(page.key, undefined))
-                                    }}
+                                <TranscriptSection
+                                    page={page}
+                                    onSave={props.onSave}
+                                    pageRef={props.pageRef}
                                     fontFamily={props.fontFamily}
                                     textScale={props.textScale}
-                                    onContextMenu={(e, selection) => props.onContextMenu?.(e, page.key, selection)}
+                                    onContextMenu={props.onContextMenu}
                                 />
                             </Show>
                         </section>

@@ -6,6 +6,7 @@ import {
     clampAspect,
     fitBook,
     readoutFor,
+    transcriptChanged,
     folioFor,
     retargetLeaf,
     stepFromKey,
@@ -82,18 +83,29 @@ describe('stepFromKey', () => {
     })
 })
 
+describe('transcriptChanged', () => {
+    test('the companion note is the file with .md after it', () => {
+        expect(transcriptChanged(['a/b.pdf.md'], 'a/b.pdf')).toBe(true)
+        expect(transcriptChanged(['a/b.pdf'], 'a/b.pdf')).toBe(false)
+        expect(transcriptChanged(['a/c.pdf.md'], 'a/b.pdf')).toBe(false)
+    })
+    test('no paths means anything could have changed', () => {
+        expect(transcriptChanged([], 'a/b.pdf')).toBe(true)
+    })
+})
+
 describe('readoutFor', () => {
     test('the cover and single layout read page N', () => {
-        expect(readoutFor({ right: 0 }, 48)).toBe('page 1 // 48')
-        expect(readoutFor({ right: 4 }, 48)).toBe('page 5 // 48')
+        expect(readoutFor({ right: 0 }, 48)).toBe('p. 1 / 48')
+        expect(readoutFor({ right: 4 }, 48)).toBe('p. 5 / 48')
     })
 
     test('a two-page spread reads pages A–B with an en dash', () => {
-        expect(readoutFor({ left: 1, right: 2 }, 48)).toBe('pages 2–3 // 48')
+        expect(readoutFor({ left: 1, right: 2 }, 48)).toBe('pp. 2–3 / 48')
     })
 
     test('a lone last page on the left reads page N', () => {
-        expect(readoutFor({ left: 5 }, 6)).toBe('page 6 // 6')
+        expect(readoutFor({ left: 5 }, 6)).toBe('p. 6 / 6')
     })
 })
 

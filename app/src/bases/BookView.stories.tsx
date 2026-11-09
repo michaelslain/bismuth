@@ -17,6 +17,7 @@ import ViewBar, { Crumb, type ViewBarSlots } from '../ui/ViewBar'
 import pdfFixtureUrl from '../../../core/test/drawing/fixtures/pdfkit-highlights.pdf?url'
 import type { Row, ViewConfig } from '../../../core/src/bases/types'
 import BookView from './BookView'
+import { start as startServerVersion } from '../serverVersion'
 import type { TranscriptionController } from './transcription'
 import { fakeTranscribe, type FakeOptions, type FakeTranscription } from './_transcriptionFake'
 import { bookPage, bookPageUrl } from './_bookPages'
@@ -118,7 +119,7 @@ const shown = (el: HTMLElement) => {
     return c.textContent ?? ''
 }
 const readout = (root: HTMLElement) => {
-    const n = within(root.querySelector<HTMLElement>('[data-testid="book-bar"]')!).queryByText(/^pages? \d/)
+    const n = within(root.querySelector<HTMLElement>('[data-testid="book-bar"]')!).queryByText(/^pp?\. \d/)
     return n ? shown(n) : undefined
 }
 
@@ -149,15 +150,15 @@ export const Empty: Story = {
 export const Cover: Story = {
     beforeEach: () => serveFixtures(6),
     render: () => <Harness w={900} rows={images(6)} />,
-    play: async ({ canvasElement }) => ready(canvasElement, 'page 1 // 6'),
+    play: async ({ canvasElement }) => ready(canvasElement, 'p. 1 / 6'),
 }
 
 export const Spread: Story = {
     beforeEach: () => serveFixtures(8),
     render: () => <Harness w={900} rows={images(8)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 8')
-        await pressNext(canvasElement, 1, 'pages 2–3 // 8')
+        await ready(canvasElement, 'p. 1 / 8')
+        await pressNext(canvasElement, 1, 'pp. 2–3 / 8')
     },
 }
 
@@ -169,15 +170,15 @@ export const ScrollMode: Story = {
     render: () => <Harness w={900} h={700} rows={images(6)} view={bookView({ bookMode: 'scroll' })} />,
     play: async ({ canvasElement }) => {
         await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-scroll-page]')).toHaveLength(6), { timeout: 8000 })
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 6'), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toBe('p. 1 / 6'), { timeout: 8000 })
         const col = canvasElement.querySelector<HTMLElement>('[data-book-scroll]')!
         const third = canvasElement.querySelector<HTMLElement>('[data-book-scroll-page="2"]')!
         col.scrollTop = third.offsetTop - col.offsetTop + 4
         col.dispatchEvent(new Event('scroll'))
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 3 // 6'), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toBe('p. 3 / 6'), { timeout: 8000 })
         await expect(await readState(canvasElement, 'scroll or flip')).toBe('scroll')
         await pickRead(canvasElement, 'scroll or flip', 'flip')
-        await waitFor(() => expect(readout(canvasElement)).toBe('pages 2–3 // 6'), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toBe('pp. 2–3 / 6'), { timeout: 8000 })
         await expect(canvasElement.querySelector('[data-book-scroll]')).toBeNull()
     },
 }
@@ -188,8 +189,8 @@ export const LandscapePages: Story = {
     beforeEach: () => serveFixtures(8, true),
     render: () => <Harness w={1100} rows={images(8)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 8')
-        await pressNext(canvasElement, 1, 'pages 2–3 // 8')
+        await ready(canvasElement, 'p. 1 / 8')
+        await pressNext(canvasElement, 1, 'pp. 2–3 / 8')
         const r = canvasElement.querySelector('[data-book-page="right"]')!.getBoundingClientRect()
         await expect(r.width / r.height).toBeCloseTo(4 / 3, 1)
     },
@@ -198,14 +199,14 @@ export const LandscapePages: Story = {
 export const Single: Story = {
     beforeEach: () => serveFixtures(8),
     render: () => <Harness w={900} rows={images(8)} view={bookView({ bookLayout: 'single' })} />,
-    play: async ({ canvasElement }) => ready(canvasElement, 'page 1 // 8'),
+    play: async ({ canvasElement }) => ready(canvasElement, 'p. 1 / 8'),
 }
 
 export const NarrowPane: Story = {
     beforeEach: () => serveFixtures(8),
     render: () => <Harness w={480} rows={images(8)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 8')
+        await ready(canvasElement, 'p. 1 / 8')
         expect(canvasElement.querySelector('[data-book-page="left"]')).toBeNull()
         // the bar drops its controls into [≡] before it squeezes the crumb to `n…`
         const title = canvasElement.querySelector<HTMLElement>('[data-bar-title]')!
@@ -213,7 +214,7 @@ export const NarrowPane: Story = {
     },
 }
 
-/** The bar holds the `pages | text` switch and icons; the layout is a row of the `Aa` display
+/** The bar holds icons; the layout is a row of the display
  *  panel. Choosing `single` there turns a wide pane's spreads into one page at a time. */
 export const DisplayPanel: Story = {
     name: 'Display panel',
@@ -221,7 +222,7 @@ export const DisplayPanel: Story = {
     render: () => <Harness w={900} rows={images(8)} />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await ready(canvasElement, 'page 1 // 8')
+        await ready(canvasElement, 'p. 1 / 8')
         for (const name of ['highlight', 'bookmarks', 'add pages', 'display'])
             await expect(c.getByRole('button', { name })).toBeInTheDocument()
         await expect(c.queryByRole('button', { name: 'transcript' })).toBeNull()
@@ -236,7 +237,7 @@ export const DisplayPanel: Story = {
         await userEvent.click(within(panel).getByText('single'))
         await waitFor(() => expect(canvasElement.querySelector('[data-book-page="left"]')).toBeNull(), { timeout: 8000 })
         await userEvent.keyboard('{Escape}')
-        await pressNext(canvasElement, 1, 'page 2 // 8')
+        await pressNext(canvasElement, 1, 'p. 2 / 8')
     },
 }
 
@@ -244,8 +245,8 @@ export const OddCountEnd: Story = {
     beforeEach: () => serveFixtures(5),
     render: () => <Harness w={900} rows={images(5)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 5')
-        await pressNext(canvasElement, 2, 'pages 4–5 // 5')
+        await ready(canvasElement, 'p. 1 / 5')
+        await pressNext(canvasElement, 2, 'pp. 4–5 / 5')
     },
 }
 
@@ -253,8 +254,8 @@ export const EvenCountEnd: Story = {
     beforeEach: () => serveFixtures(6),
     render: () => <Harness w={900} rows={images(6)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
-        await pressNext(canvasElement, 3, 'page 6 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
+        await pressNext(canvasElement, 3, 'p. 6 / 6')
     },
 }
 
@@ -263,7 +264,7 @@ export const MissingPage: Story = {
     beforeEach: () => serveFixtures(4),
     render: () => <Harness w={900} rows={[row('pages/lost scan.png'), ...images(4)]} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 5')
+        await ready(canvasElement, 'p. 1 / 5')
         await expect(within(canvasElement).getByText('missing: lost scan.png')).toBeInTheDocument()
     },
 }
@@ -273,8 +274,8 @@ export const MissingPageStillTurns: Story = {
     beforeEach: () => serveFixtures(4),
     render: () => <Harness w={900} rows={[row('pages/lost scan.png'), ...images(4)]} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 5')
-        await pressNext(canvasElement, 1, 'pages 2–3 // 5')
+        await ready(canvasElement, 'p. 1 / 5')
+        await pressNext(canvasElement, 1, 'pp. 2–3 / 5')
     },
 }
 
@@ -282,8 +283,8 @@ export const TurnForwardByKey: Story = {
     beforeEach: () => serveFixtures(6),
     render: () => <Harness w={900} rows={images(6)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
-        await pressNext(canvasElement, 1, 'pages 2–3 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
+        await pressNext(canvasElement, 1, 'pp. 2–3 / 6')
     },
 }
 
@@ -318,9 +319,9 @@ export const DragTurn: Story = {
     beforeEach: () => serveFixtures(6),
     render: () => <Harness w={900} rows={images(6)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
         await dragFromRightEdge(canvasElement, [0.9, 0.8, 0.65, 0.5, 0.42])
-        await waitFor(() => expect(readout(canvasElement)).toBe('pages 2–3 // 6'), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toBe('pp. 2–3 / 6'), { timeout: 8000 })
     },
 }
 
@@ -328,10 +329,10 @@ export const DragFallBack: Story = {
     beforeEach: () => serveFixtures(6),
     render: () => <Harness w={900} rows={images(6)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
         await dragFromRightEdge(canvasElement, [0.9, 0.8, 0.7, 0.66])
         await waitFor(() => expect(host(canvasElement).dataset.turnState).toBe('settled'), { timeout: 8000 })
-        await expect(readout(canvasElement)).toBe('page 1 // 6')
+        await expect(readout(canvasElement)).toBe('p. 1 / 6')
     },
 }
 
@@ -341,7 +342,7 @@ export const MixedImagesAndPdf: Story = {
     play: async ({ canvasElement }) => {
         await waitFor(
             () => {
-                const m = readout(canvasElement)?.match(/^page 1 \/\/ (\d+)$/)
+                const m = readout(canvasElement)?.match(/^p\. 1 \/ (\d+)$/)
                 expect(m && Number(m[1])).toBeGreaterThanOrEqual(4)
             },
             { timeout: 8000 },
@@ -355,8 +356,8 @@ export const FullBook: Story = {
     render: () => <Harness w={1100} h={720} rows={images(6)} />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await ready(canvasElement, 'page 1 // 6')
-        await pressNext(canvasElement, 2, 'pages 4–5 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
+        await pressNext(canvasElement, 2, 'pp. 4–5 / 6')
         // every page has text: no transcript icon, no panel, no transcribe button
         await expect(c.queryByRole('button', { name: 'transcript' })).toBeNull()
         await expect(c.queryByText(/^text \/\//)).toBeNull()
@@ -391,9 +392,9 @@ const pdfPageOne = async () => (await api.pdfHighlights(PDF_PATH)).pages[0]?.len
 
 /** Turns to the first PDF leaf (left page of the second spread), arms `highlight` and drags on it. */
 async function dragOnPdfLeaf(root: HTMLElement) {
-    await waitFor(() => expect(readout(root)).toMatch(/^page 1 \/\/ \d+$/), { timeout: 8000 })
+    await waitFor(() => expect(readout(root)).toMatch(/^p\. 1 \/ \d+$/), { timeout: 8000 })
     await waitFor(() => expect(host(root).hasAttribute('data-book-prefetched')).toBe(true), { timeout: 8000 })
-    await pressNext(root, 1, readout(root)!.replace(/^page 1/, 'pages 2–3'))
+    await pressNext(root, 1, readout(root)!.replace(/^p\. 1/, 'pp. 2–3'))
     await annotationsReady(root)
     await userEvent.click(within(root).getByRole('button', { name: 'highlight' }))
     const layer = root.querySelector<HTMLElement>('[data-book-highlights]')!
@@ -517,15 +518,15 @@ export const BookmarksPanelOpen: Story = {
     render: () => <Harness w={1100} h={720} rows={images(6)} />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await ready(canvasElement, 'page 1 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
         await userEvent.click(c.getByRole('button', { name: 'bookmarks' }))
         await waitFor(() => expect(canvasElement.querySelector('[data-book-bookmarks]')).not.toBeNull())
         await annotationsReady(canvasElement)
         await userEvent.click(c.getByRole('button', { name: 'Bookmark this page' }))
         await waitFor(() => expect(c.getByText('Page 1')).toBeInTheDocument())
-        await pressNext(canvasElement, 2, 'pages 4–5 // 6')
+        await pressNext(canvasElement, 2, 'pp. 4–5 / 6')
         await userEvent.click(c.getByText('Page 1'))
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 6'), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toBe('p. 1 / 6'), { timeout: 8000 })
     },
 }
 
@@ -535,7 +536,7 @@ export const RegionHighlight: Story = {
     render: () => <Harness w={1100} h={720} rows={images(6)} />,
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await ready(canvasElement, 'page 1 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
         await annotationsReady(canvasElement)
         await userEvent.click(c.getByRole('button', { name: 'highlight' }))
         const layer = canvasElement.querySelector<HTMLElement>('[data-book-highlights]')!
@@ -642,29 +643,24 @@ export const TextMode: Story = {
         // stored pages with no job record in this run show no reader
         await expect(statusOf(first)).toBe('')
         await expect(canvasElement.querySelector('[data-text-spread]')).toBeNull()
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 3'))
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('p. 1 / 3'))
         // one column: every section starts at the same left edge
         await expect(new Set(sections(canvasElement).map(s => Math.round(s.getBoundingClientRect().left))).size).toBe(1)
     },
 }
 
-/** Right-click a page: `edit text` opens text mode at that page with the caret in its section, then
- *  the three `read again` rows. There is no `transcribe again with ai`. The pages flip, so the text
- *  does too: that one page's text. */
-export const EditText: Story = {
-    name: 'Edit text',
+/** Right-click a page: the three `read again` rows, and no `edit text` or `transcribe again with ai`. */
+export const PageMenu: Story = {
+    name: 'Page menu',
     beforeEach: () => withText(3),
     render: () => textBook(3, 'pages'),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 3')
+        await ready(canvasElement, 'p. 1 / 3')
         rightClick(canvasElement.querySelector<HTMLElement>('[data-book-page="right"]')!)
-        for (const label of ['edit text', 'read again on-device', 'read again with the math reader', 'read again with ai'])
+        for (const label of ['read again on-device', 'read again with the math reader', 'read again with ai'])
             await bodyText().findByText(label)
+        await expect(bodyText().queryByText('edit text')).toBeNull()
         await expect(bodyText().queryByText('transcribe again with ai')).toBeNull()
-        await userEvent.click(bodyText().getByText('edit text'))
-        await textReady(canvasElement, 1)
-        await waitFor(() => expect(sections(canvasElement)[0].contains(document.activeElement)).toBe(true))
-        await expect(await readState(canvasElement, 'scroll or flip')).toBe('flip')
     },
 }
 
@@ -674,7 +670,7 @@ export const ReadAgainWithEngine: Story = {
     beforeEach: () => withText(3),
     render: () => textBook(3, 'pages'),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 3')
+        await ready(canvasElement, 'p. 1 / 3')
         rightClick(canvasElement.querySelector<HTMLElement>('[data-book-page="right"]')!)
         await userEvent.click(await bodyText().findByText('read again with ai'))
         await waitFor(() => expect(fk.calls.at(-1)).toMatchObject({ file: imagePath(1), pages: [1], engine: 'ai' }))
@@ -693,7 +689,7 @@ export const Transcribing: Story = {
     beforeEach: () => startFake({ count: 6, auto: true }),
     render: () => textBook(6, 'text'),
     play: async ({ canvasElement }) => {
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 6 // transcribing 1 of 6'), { timeout: 8000 })
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('p. 1 / 6 // transcribing 1 of 6'), { timeout: 8000 })
         await waitFor(() => expect(sections(canvasElement).length).toBe(6))
         await expect(statusOf(sections(canvasElement)[3])).toBe('queued')
         await expect(sections(canvasElement)[3].querySelector('.cm-placeholder')?.textContent).toBe('no text yet')
@@ -780,7 +776,7 @@ export const SideBySide: Story = {
         await expect(Math.abs(image.top - text.top)).toBeLessThan(2)
         await expect(image.width / row.getBoundingClientRect().width).toBeGreaterThan(0.4)
         await expect(image.width / row.getBoundingClientRect().width).toBeLessThan(0.55)
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 3'))
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('p. 1 / 3'))
         await waitFor(() => expect(row.querySelector('canvas')!.width).toBeGreaterThan(0))
     },
 }
@@ -802,6 +798,80 @@ export const SideBySideNarrow: Story = {
     },
 }
 
+/** Side by side: right-clicking the picture offers the page's rows, and clicking the text just edits it. */
+export const SideBySidePageMenu: Story = {
+    name: 'Side by side page menu',
+    beforeEach: () => withText(3),
+    render: () => textBook(3, 'side', 1000),
+    play: async ({ canvasElement }) => {
+        await sideReady(canvasElement, 3)
+        const row = canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        await userEvent.click(row.querySelector<HTMLElement>('.cm-line')!)
+        await expect(editorOf(row)?.contains(document.activeElement)).toBe(true)
+        ;(document.activeElement as HTMLElement).blur()
+        rightClick(row.querySelector<HTMLElement>('[data-page-image]')!)
+        for (const label of ['read again on-device', 'read again with the math reader', 'read again with ai'])
+            await bodyText().findByText(label)
+        await expect(bodyText().queryByText('edit text')).toBeNull()
+        await userEvent.keyboard('{Escape}')
+    },
+}
+
+/** Records what a page turn did under `el`, which is over too fast to poll for: whether the picture
+ *  curled and whether the text did. */
+function watchTurn(el: HTMLElement) {
+    const seen = { picture: false, text: false }
+    new MutationObserver(() => {
+        seen.picture ||= !!el.querySelector('[data-page-image] [data-turn-state]')
+        seen.text ||= !!el.querySelector('[data-text-turn] [data-turn-state]')
+    }).observe(el, { subtree: true, childList: true })
+    return seen
+}
+
+/** A page at a time: a turn swaps pages built ahead (the same picture comes back), the picture fits the pane, the text scrolls alone. */
+export const SideBySideFlipTurn: Story = {
+    name: 'Side by side flip turn',
+    beforeEach: () => {
+        const undo = withText(3)
+        fk.texts.set(`${imagePath(1)}#1`, Array.from({ length: 60 }, (_, n) => `Line ${n} of a long page`).join('\n\n'))
+        return undo
+    },
+    render: () => <Harness w={1000} rows={images(3)} view={bookView({ bookMode: 'side', bookFlow: 'flip' })} transcription={fk.controller()} />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const scroller = () => canvasElement.querySelector<HTMLElement>('[data-side-by-side]')!
+        const shown = () => canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        await waitFor(() => expect(shown()?.querySelector('canvas')!.width).toBeGreaterThan(0), { timeout: 8000 })
+        const first = shown()
+        await expect(canvasElement.querySelectorAll('[data-row-key]').length).toBe(1)
+        await expect(scroller().scrollHeight).toBeLessThanOrEqual(scroller().clientHeight)
+        const pic = first.querySelector<HTMLElement>('[data-page-image]')!.getBoundingClientRect()
+        await expect(pic.bottom).toBeLessThanOrEqual(scroller().getBoundingClientRect().bottom + 1)
+        const text = first.children[1] as HTMLElement
+        await waitFor(() => expect(text.scrollHeight).toBeGreaterThan(text.clientHeight))
+        text.scrollTop = 300
+        await expect(first.querySelector<HTMLElement>('[data-page-image]')!.getBoundingClientRect().top).toBe(pic.top)
+
+        // the open spread turns one leaf and settles; the curl draws
+        // the next page's face, so it waits for that page, built ahead while hidden, to be painted
+        await waitFor(() => {
+            for (const cv of canvasElement.querySelectorAll('canvas')) expect(cv.width).not.toBe(300)
+        }, { timeout: 8000 })
+        const seen = watchTurn(canvasElement)
+        await userEvent.click(c.getByRole('button', { name: 'next page' }))
+        await waitFor(() => expect(shown()).not.toBe(first))
+        // one leaf over the spine, not a curl per column
+        await waitFor(() => expect(seen).toEqual({ picture: false, text: true }))
+        await waitFor(() => expect(shown().querySelector('[data-turn-state]')).toBeNull(), { timeout: 4000 })
+        await waitFor(() => expect(canvasElement.querySelector('[data-text-turn]')).toBeNull(), { timeout: 4000 })
+        await expect(shown().querySelector('canvas')!.width).toBeGreaterThan(0)
+        await expect(editorOf(shown())).not.toBeNull()
+        await userEvent.click(c.getByRole('button', { name: 'previous page' }))
+        await waitFor(() => expect(shown()).toBe(first))
+        await expect(text.scrollTop).toBe(0)
+    },
+}
+
 /** The page keys move side by side a page at a time, scrolling the column to the next page. */
 export const SideBySideKeys: Story = {
     name: 'Side by side keys',
@@ -809,14 +879,14 @@ export const SideBySideKeys: Story = {
     render: () => textBook(3, 'side', 1000),
     play: async ({ canvasElement }) => {
         await sideReady(canvasElement, 3)
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 3'))
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('p. 1 / 3'))
         await userEvent.keyboard('{ArrowRight}')
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 2 // 3'))
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('p. 2 / 3'))
         const scroller = canvasElement.querySelector<HTMLElement>('[data-side-by-side]')!
         const second = canvasElement.querySelectorAll<HTMLElement>('[data-row-key]')[1]
         await waitFor(() => expect(Math.abs(second.getBoundingClientRect().top - scroller.getBoundingClientRect().top)).toBeLessThan(40))
         await userEvent.keyboard('{ArrowLeft}')
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 1 // 3'))
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('p. 1 / 3'))
     },
 }
 
@@ -831,13 +901,15 @@ export const TextFlip: Story = {
         await waitFor(() => expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('Page 1'), { timeout: 8000 })
         await expect(await readState(canvasElement, 'scroll or flip')).toBe('flip')
         await expect(c.getByRole('button', { name: 'previous page' })).toBeDisabled()
+        const seen = watchTurn(canvasElement)
         await userEvent.click(c.getByRole('button', { name: 'next page' }))
         await waitFor(() => expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('Page 2'), { timeout: 8000 })
+        await waitFor(() => expect(seen.text).toBe(true))
         await userEvent.keyboard('{ArrowRight}')
         await waitFor(() => expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('Page 3'), { timeout: 8000 })
         await expect(sections(canvasElement).length).toBe(1)
         await expect(c.getByRole('button', { name: 'next page' })).toBeDisabled()
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 3 // 3'))
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('p. 3 / 3'))
     },
 }
 
@@ -853,7 +925,7 @@ export const SideBySideFlip: Story = {
         await waitFor(() => expect(editorOf(canvasElement.querySelector<HTMLElement>('[data-row-key]')!)?.textContent).toContain('Page 2'), { timeout: 8000 })
         await pickRead(canvasElement, 'scroll or flip', 'scroll')
         await sideReady(canvasElement, 3)
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('page 2 // 3'))
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain('p. 2 / 3'))
         await expect(c.queryByRole('button', { name: 'next page' })).toBeNull()
     },
 }
@@ -897,7 +969,7 @@ export const ShowOnPage: Story = {
         await selectFirstLine(sections(canvasElement)[0])
         rightClick(editorOf(sections(canvasElement)[0])!)
         const show = await bodyText().findByText('show on page')
-        await expect(show.compareDocumentPosition(await bodyText().findByText('edit text')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        await expect(show.compareDocumentPosition(await bodyText().findByText('read again on-device')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         await userEvent.click(show)
         await sideReady(canvasElement, 3)
         await waitFor(() => expect(canvasElement.querySelectorAll('[data-locate-box]').length).toBeGreaterThan(0), { timeout: 8000 })
@@ -919,6 +991,63 @@ export const HighlightSelection: Story = {
     },
 }
 
+/** Flipped, the highlight button marks the page in view, not a hidden neighbour still holding a selection. */
+export const SideBySideFlipHighlight: Story = {
+    name: 'Side by side flip highlight',
+    beforeEach: () => withText(3),
+    render: () => <Harness w={1000} rows={images(3)} view={bookView({ bookMode: 'side', bookFlow: 'flip' })} transcription={fk.controller()} />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        const shownRow = () => canvasElement.querySelector<HTMLElement>('[data-row-key]')!
+        await waitFor(() => expect(editorOf(shownRow())?.textContent).toContain('Page 1'), { timeout: 8000 })
+        await selectFirstLine(shownRow())
+        await userEvent.click(c.getByRole('button', { name: 'next page' }))
+        await waitFor(() => expect(editorOf(shownRow())?.textContent).toContain('Page 2'), { timeout: 8000 })
+        await selectFirstLine(shownRow())
+        await userEvent.click(barText(canvasElement).getByRole('button', { name: 'highlight' }))
+        await waitFor(() => expect(fk.saves.at(-1)?.text).toContain('==Page 2=='), { timeout: 8000 })
+        await expect(fk.saves.some(s => s.text.includes('==Page 1=='))).toBe(false)
+    },
+}
+
+class FakeEventSource {
+    onopen: (() => void) | null = null
+    onmessage: ((e: { data: string }) => void) | null = null
+    onerror: ((e: unknown) => void) | null = null
+    close() {}
+    emit(payload: unknown) {
+        this.onmessage?.({ data: JSON.stringify(payload) })
+    }
+}
+
+/** Text changed from outside reaches the open page; a page with typing not yet saved keeps the typing. */
+export const OutsideChange: Story = {
+    name: 'Outside change',
+    beforeEach: () => withText(2),
+    render: () => textBook(2, 'text'),
+    play: async ({ canvasElement }) => {
+        await textReady(canvasElement, 2)
+        let source: FakeEventSource | undefined
+        startServerVersion({
+            eventSourceFactory: () => (source = new FakeEventSource()) as unknown as EventSource,
+            fetchVersion: async () => ({ version: 0 }),
+            setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+            clearIntervalFn: () => {},
+        })
+        await expect(source).toBeDefined()
+        const changed = (version: number) => source!.emit({ version, paths: [`${imagePath(1)}.md`], dirty: { graph: false, tree: false } })
+        fk.texts.set(`${imagePath(1)}#1`, 'Rewritten by an agent')
+        changed(2)
+        await waitFor(() => expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('Rewritten by an agent'), { timeout: 4000 })
+        await userEvent.click(sections(canvasElement)[0].querySelector<HTMLElement>('.cm-line')!)
+        await userEvent.keyboard('{End}TYPED')
+        fk.texts.set(`${imagePath(1)}#1`, 'Rewritten again')
+        changed(3)
+        await new Promise(r => setTimeout(r, 200))
+        await expect(editorOf(sections(canvasElement)[0])?.textContent).toContain('TYPED')
+    },
+}
+
 /** text -> pages -> side by side -> text keeps the page. */
 export const SwitchKeepsPlace: Story = {
     name: 'Switch keeps place',
@@ -931,21 +1060,21 @@ export const SwitchKeepsPlace: Story = {
         let at = 0
         await waitFor(() => {
             scrollToSection(canvasElement, 3, 60)
-            at = Number(/page (\d+) \/\/ 6/.exec(barNode(canvasElement).textContent ?? '')?.[1])
+            at = Number(/p\. (\d+) \/ 6/.exec(barNode(canvasElement).textContent ?? '')?.[1])
             expect(at).toBeGreaterThan(2)
         })
         await pickRead(canvasElement, 'read as', 'pages')
         await waitFor(() => {
-            const m = /pages? (\d+)(?:–(\d+))? \/\/ 6/.exec(barNode(canvasElement).textContent ?? '')
+            const m = /pp?\. (\d+)(?:–(\d+))? \/ 6/.exec(barNode(canvasElement).textContent ?? '')
             expect(Number(m?.[1])).toBeLessThanOrEqual(at)
             expect(Number(m?.[2] ?? m?.[1])).toBeGreaterThanOrEqual(at)
         }, { timeout: 8000 })
         await pickRead(canvasElement, 'read as', 'side by side')
         await sideReady(canvasElement, 6)
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain(`page ${at} // 6`), { timeout: 8000 })
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain(`p. ${at} / 6`), { timeout: 8000 })
         await pickRead(canvasElement, 'read as', 'text')
         await textReady(canvasElement, 6)
-        await waitFor(() => expect(shown(barNode(canvasElement))).toContain(`page ${at} // 6`), { timeout: 8000 })
+        await waitFor(() => expect(shown(barNode(canvasElement))).toContain(`p. ${at} / 6`), { timeout: 8000 })
     },
 }
 
@@ -955,7 +1084,7 @@ export const TextDisabledWithoutTranscripts: Story = {
     beforeEach: () => startFake({ count: 3 }),
     render: () => textBook(3, 'pages'),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 3')
+        await ready(canvasElement, 'p. 1 / 3')
         for (const name of ['text', 'side by side']) {
             const row = await readRow(canvasElement, name)
             await expect(row.disabled).toBe(true)
@@ -1000,7 +1129,7 @@ export const DarkPages: Story = {
     beforeEach: () => serveFixtures(0),
     render: () => <Harness w={1100} h={720} rows={[row(PDF_PATH)]} view={bookView({ bookDark: true })} />,
     play: async ({ canvasElement }) => {
-        await waitFor(() => expect(readout(canvasElement)).toMatch(/^page 1 \/\/ \d+$/), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toMatch(/^p\. 1 \/ \d+$/), { timeout: 8000 })
         await waitFor(() => expect(host(canvasElement).hasAttribute('data-book-prefetched')).toBe(true), { timeout: 8000 })
         const canvas = canvasElement.querySelector<HTMLCanvasElement>('[data-book-page="right"] canvas')!
         await waitFor(() => expect(canvas.width).toBeGreaterThan(10), { timeout: 8000 })
@@ -1041,7 +1170,7 @@ export const DarkPagesKeepPhotos: Story = {
     },
 }
 
-/** The `Aa` panel still sets text mode's size: a larger step grows the section's type. */
+/** The display panel still sets text mode's size: a larger step grows the section's type. */
 export const ProseFace: Story = {
     name: 'Prose face',
     beforeEach: () => withText(2),
@@ -1098,12 +1227,12 @@ export const PageRowsJoinPaneMenu: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 4')
+        await ready(canvasElement, 'p. 1 / 4')
         delete document.body.dataset.paneMenu
         rightClick(canvasElement.querySelector<HTMLElement>('[data-book-page="right"]')!)
         await waitFor(() =>
             expect(document.body.dataset.paneMenu).toBe(
-                'edit text|read again on-device|read again with the math reader|read again with ai|Split right|Close pane',
+                'read again on-device|read again with the math reader|read again with ai|Split right|Close pane',
             ),
         )
         await expect(within(document.body).queryByRole('menu')).toBeNull()
@@ -1136,8 +1265,10 @@ export const EditPages: Story = {
         <Harness w={1100} h={720} basePath="notebook.base.jsonl" rows={images(5).map((r, i) => ({ ...r, index: i }))} />
     ),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 5')
+        await ready(canvasElement, 'p. 1 / 5')
         await userEvent.click(within(canvasElement).getByRole('button', { name: 'edit pages' }))
+        // the settings for reading are away while the sorter is up: no mode reads as chosen behind it
+        await waitFor(() => expect(within(canvasElement).queryByRole('button', { name: 'display' })).toBeNull())
         const tiles = () => canvasElement.querySelectorAll('[data-book-edit-tile]')
         await waitFor(() => expect(tiles().length).toBe(5))
         await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile] canvas').length).toBe(5), { timeout: 8000 })
@@ -1192,8 +1323,8 @@ export const PdfEditPages: Story = {
     },
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        await waitFor(() => expect(readout(canvasElement)).toMatch(/^page 1 \/\/ \d+$/), { timeout: 8000 })
-        const pages = Number(readout(canvasElement)!.match(/\/\/ (\d+)$/)![1])
+        await waitFor(() => expect(readout(canvasElement)).toMatch(/^p\. 1 \/ \d+$/), { timeout: 8000 })
+        const pages = Number(readout(canvasElement)!.match(/\/ (\d+)$/)![1])
         await userEvent.click(c.getByRole('button', { name: 'edit pages' }))
         await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile]').length).toBe(pages))
         await userEvent.click(c.getByRole('button', { name: '+ blank page' }))
@@ -1211,7 +1342,7 @@ export const BurstTurns: Story = {
     beforeEach: () => serveFixtures(12),
     render: () => <Harness w={1100} h={720} rows={images(12)} />,
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 12')
+        await ready(canvasElement, 'p. 1 / 12')
         const layers = new Set<Element>()
         const watch = new MutationObserver(() => {
             const l = canvasElement.querySelector('[data-book] [data-turn-state] canvas')
@@ -1222,7 +1353,7 @@ export const BurstTurns: Story = {
             await userEvent.keyboard('{ArrowRight}')
             await new Promise(r => setTimeout(r, 40))
         }
-        await waitFor(() => expect(readout(canvasElement)).toBe('pages 8–9 // 12'), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toBe('pp. 8–9 / 12'), { timeout: 8000 })
         await waitFor(() => expect(host(canvasElement).dataset.turnState).toBe('settled'), { timeout: 8000 })
         watch.disconnect()
         await expect(layers.size).toBe(1)
@@ -1242,7 +1373,7 @@ export const TranscribeButton: Story = {
     beforeEach: () => startFake({ count: 6, have: [1, 2, 3] }),
     render: () => pagesBook(6),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
         const button = await transcribeBtn(canvasElement, 'transcribe 3 pages')
         await expect(fk.calls.length).toBe(0)
         await userEvent.click(button)
@@ -1252,7 +1383,7 @@ export const TranscribeButton: Story = {
         await waitFor(() => expect(fk.calls.map(c => c.file).sort()).toEqual([imagePath(4), imagePath(5), imagePath(6)]))
         await expect(fk.calls.every(c => !c.engine)).toBe(true)
         await fk.tick(8)
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 6'), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toBe('p. 1 / 6'), { timeout: 8000 })
         await expect(barText(canvasElement).queryByRole('button', { name: transcribeRe })).toBeNull()
     },
 }
@@ -1263,7 +1394,7 @@ export const TranscribeOnePage: Story = {
     beforeEach: () => startFake({ count: 4, have: [1, 2, 3] }),
     render: () => pagesBook(4, 900),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 4')
+        await ready(canvasElement, 'p. 1 / 4')
         await transcribeBtn(canvasElement, 'transcribe 1 page')
     },
 }
@@ -1279,7 +1410,7 @@ export const AutoTranscribes: Story = {
         await expect(fk.calls.length).toBe(3)
         await expect(fk.calls.every(c => !c.engine)).toBe(true)
         await fk.tick(8)
-        await waitFor(() => expect(readout(canvasElement)).toBe('page 1 // 4'), { timeout: 8000 })
+        await waitFor(() => expect(readout(canvasElement)).toBe('p. 1 / 4'), { timeout: 8000 })
     },
 }
 
@@ -1289,7 +1420,7 @@ export const AutoOff: Story = {
     beforeEach: () => startFake({ count: 4 }),
     render: () => pagesBook(4, 900),
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 4')
+        await ready(canvasElement, 'p. 1 / 4')
         const button = await transcribeBtn(canvasElement, 'transcribe 4 pages')
         await expect(fk.calls.length).toBe(0)
         await expect((await readRow(canvasElement, 'text')).disabled).toBe(true)
@@ -1469,7 +1600,7 @@ export const RemountMidRun: Story = {
         return <Show when={remountOn()}><Mount /></Show>
     },
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 6')
+        await ready(canvasElement, 'p. 1 / 6')
         await userEvent.click(await transcribeBtn(canvasElement, 'transcribe 6 pages'))
         await waitFor(() => expect(readout(canvasElement)).toContain('transcribing 1 of 6'), { timeout: 8000 })
         await fk.tick(4)
@@ -1548,7 +1679,7 @@ export const HighlightColorsInPane: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        await ready(canvasElement, 'page 1 // 8')
+        await ready(canvasElement, 'p. 1 / 8')
         const btn = within(canvasElement).getByRole('button', { name: 'highlight' })
         const rows = () =>
             Array.from(document.querySelectorAll<HTMLElement>('[data-popover-row]')).map(r => r.textContent ?? '')
@@ -1673,7 +1804,7 @@ export const ReviewChecksSideBySide: Story = {
     play: async ({ canvasElement }) => {
         await sideReady(canvasElement, 3)
         await waitFor(() => expect(glyphs(canvasElement).length).toBe(2))
-        await expect(canvasElement.querySelector('[data-page-check="garbled"]')).not.toBeNull()
+        await waitFor(() => expect(canvasElement.querySelector('[data-page-check="garbled"]')).not.toBeNull())
     },
 }
 

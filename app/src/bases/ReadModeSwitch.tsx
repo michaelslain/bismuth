@@ -1,7 +1,7 @@
 // app/src/bases/ReadModeSwitch.tsx
-// What the reader shows, as three icons in the PDF and image bar and in a book's bar alike: the page,
-// its text, or the page beside its text. How it moves (scroll down one column, or flip a page at a
-// time) is a row of the `Aa` panel, set once like a reading app's layout.
+// What the reader shows, in words, as the `show` row of the display panel in the PDF and image bar
+// and in a book's bar alike: the page, its text, or the page beside its text. How it moves (scroll
+// down one column, or flip a page at a time) is the panel's `move by` row.
 import type { Component } from 'solid-js'
 import SegmentedToggle from '../ui/SegmentedToggle'
 
@@ -18,24 +18,11 @@ export type ReadModeSwitchProps = {
 
 const ReadModeSwitch: Component<ReadModeSwitchProps> = props => (
     <SegmentedToggle<ReadView>
-        look="icon"
         class={props.class}
         options={[
-            { id: 'pages', icon: 'File', ariaLabel: 'pages', title: 'pages' },
-            {
-                id: 'text',
-                icon: 'FileText',
-                ariaLabel: 'text',
-                disabled: props.textUnavailable !== undefined,
-                title: props.textUnavailable ?? 'text',
-            },
-            {
-                id: 'side',
-                icon: 'Columns2',
-                ariaLabel: 'side by side',
-                disabled: props.textUnavailable !== undefined,
-                title: props.textUnavailable ?? 'side by side',
-            },
+            { id: 'pages', label: 'pages' },
+            { id: 'text', label: 'text', disabled: props.textUnavailable !== undefined, title: props.textUnavailable },
+            { id: 'side', label: 'side by side', disabled: props.textUnavailable !== undefined, title: props.textUnavailable },
         ]}
         value={props.view}
         onChange={props.onView}

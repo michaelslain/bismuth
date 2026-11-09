@@ -1,5 +1,5 @@
 // Visual spec for <BarSettings> — a view bar's settings button and its panel of labelled rows,
-// where a view keeps the settings a person sets once (the book's layout lives here, behind `Aa`).
+// where a view keeps the settings a person sets once (the book's layout lives here).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { createSignal } from 'solid-js'
@@ -15,13 +15,12 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-function Posed(props: { glyph?: string; defaultOpen?: boolean }) {
+function Posed(props: { defaultOpen?: boolean }) {
     const [layout, setLayout] = createSignal<'auto' | 'single'>('auto')
     const [size, setSize] = createSignal<'s' | 'm' | 'l'>('m')
     return (
         <div style={{ display: 'flex', 'justify-content': 'flex-end', width: '360px' }}>
             <BarSettings
-                glyph={props.glyph}
                 label="display"
                 defaultOpen={props.defaultOpen}
                 rows={[
@@ -58,10 +57,9 @@ function Posed(props: { glyph?: string; defaultOpen?: boolean }) {
     )
 }
 
-/** The book's trigger: the `Aa` glyph, closed. */
-export const GlyphClosed: Story = {
-    name: 'Glyph closed',
-    render: () => <Posed glyph="Aa" />,
+/** The trigger, closed: the sliders icon every bar's settings share. */
+export const Closed: Story = {
+    render: () => <Posed />,
     play: async ({ canvasElement }) => {
         const b = within(canvasElement).getByRole('button', { name: 'display' })
         await expect(b).toHaveAttribute('aria-expanded', 'false')
@@ -70,7 +68,7 @@ export const GlyphClosed: Story = {
 
 /** Open: one grid, every control starting at the same x; a click on a row's option takes. */
 export const Open: Story = {
-    render: () => <Posed glyph="Aa" />,
+    render: () => <Posed />,
     play: async ({ canvasElement }) => {
         await userEvent.click(within(canvasElement).getByRole('button', { name: 'display' }))
         const panel = await waitFor(() => {
@@ -88,7 +86,7 @@ export const Open: Story = {
     },
 }
 
-/** A view with no glyph of its own: the sliders icon. */
+/** Starts open, for a look at the panel. */
 export const IconTrigger: Story = {
     name: 'Icon trigger',
     render: () => <Posed defaultOpen />,

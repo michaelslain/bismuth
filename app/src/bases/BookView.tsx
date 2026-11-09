@@ -63,16 +63,20 @@ import MathPrompt from './MathPrompt'
 import BookBookmarksPanel from './BookBookmarksPanel'
 import BookHighlightLayer from './BookHighlightLayer'
 import { createEditHistory, createPageStores, pageSlots, readSidecars } from './bookPageStores'
-import { clampAspect, fitBook, folioFor, PAGE_ASPECT, PAGE_MIN_W, readoutFor, retargetLeaf, stepFromKey } from './bookNav'
+import { clampAspect, fitBook, folioFor, PAGE_ASPECT, PAGE_MIN_W, pageReadout, readoutFor, retargetLeaf, stepFromKey, transcriptChanged } from './bookNav'
 import BookSpread from './BookSpread'
 import BookScroll from './BookScroll'
+import TextPageTurn from './TextPageTurn'
+import { drawSpreadFace, drawTextFace } from './textFace'
+import { lastChange } from '../serverVersion'
 import ReadModeSwitch, { type ReadFlow, type ReadView } from './ReadModeSwitch'
 import FlipNav from './FlipNav'
 import FlowToggle from './FlowToggle'
 import { TEXT_FONT_FAMILY, TEXT_SCALES } from './bookText'
 import TranscriptDoc from './TranscriptDoc'
 import CheckCrop from './CheckCrop'
-import TranscriptPage, { type TranscriptPageHandle } from './TranscriptPage'
+import type { TranscriptPageHandle } from './TranscriptPage'
+import TranscriptSection from './TranscriptSection'
 import SideBySide, { type SideBySideRow } from './SideBySide'
 import BookPageImage from './BookPageImage'
 import PageStatus from './PageStatus'
@@ -151,6 +155,8 @@ const PAD = 32
 const MAX_WAITING = 4
 /** A turn's length with `waiting` more behind it: the full turn alone, down to under half in a burst. */
 const turnMsFor = (waiting: number) => Math.round(TURN_MS / (1 + 0.5 * Math.min(waiting + 1, 3)))
+/** Pages built ahead of a side by side flip, each way: two, so a quick second turn finds its picture drawn. */
+const FLIP_AHEAD = 2
 /** Pointer travel before a press on a page becomes a drag instead of a click. */
 const DRAG_SLOP = 6
 
@@ -169,7 +175,7 @@ function typingTarget(el: EventTarget | null): boolean {
 }
 /** An open book: two pages meeting at a spine (one page when the pane is narrow), turned by
  *  dragging a page toward the spine, clicking its outer third, or the page-turn keys. The bar
- *  contribution (readout, the `pages | text` switch, the tool icons and the `Aa` display panel) goes up through `onBarSlots`. */
+ *  contribution (readout, the tool icons and the display panel) goes up through `onBarSlots`. */
 const BookView: Component<BookViewProps> = props => {
     const loader = createFaceLoader(defaultFaceDeps)
     let host!: HTMLDivElement
@@ -418,7 +424,7 @@ const BookView: Component<BookViewProps> = props => {
     const [docAt, setDocAt] = createSignal<{ key: string; frac?: number }>()
     const [docFrac, setDocFrac] = createSignal(props.start?.frac ?? 0)
     let docKey: string | undefined
-    /** A notebook page the next switch into text or side by side lands on (edit text, show on page). */
+    /** A notebook page the next switch into text or side by side lands on (show on page). */
     let jumpTo: number | undefined
     const placeDoc = (index: number, frac = 0) => {
         const l = untrack(leaves)[index]
@@ -434,11 +440,54 @@ const BookView: Component<BookViewProps> = props => {
         if (i >= 0) setLeaf(i)
     }
     /** Text and side by side: on to the page before or after the one in view. */
-    const stepDoc = (dir: 1 | -1) => {
+    const stepDoc = (dir: 1 | -1, animate = true) => {
         const next = Math.max(0, Math.min(count() - 1, cur() + dir))
         if (next === cur()) return
-        setLeaf(next)
-        placeDoc(next)
+        batch(() => {
+            if (flipping()) {
+                docTurnId++
+                if (animate) startTextTurn(docTurnId, dir === 1 ? 'forward' : 'back')
+                else setTextTurn(null)
+            }
+            setLeaf(next)
+            placeDoc(next)
+        })
+    }
+    // ── a page turn in text and side by side: text alone curls as one page, side by side as an open book ──
+    const [textTurn, setTextTurn] = createSignal<{
+        id: number
+        box: { left: number; top: number; w: number; h: number }
+        from: HTMLCanvasElement
+        to?: HTMLCanvasElement
+        direction: 'forward' | 'back'
+    } | null>(null)
+    let docTurnId = 0
+    let mainEl: HTMLDivElement | undefined
+    /** What turns: the whole text pane, or side by side's row (its picture and text, an open book). */
+    const textTurnEl = () => host.querySelector<HTMLElement>(mode() === 'side' ? '[data-side-by-side] [data-row-key]' : '[data-transcript-doc]')
+    const pictureReady = (el: HTMLElement) => !el.querySelector('[data-page-image]:not([data-face-ready])')
+    const turnFace = (el: HTMLElement) => {
+        const text = el.querySelector<HTMLElement>('[data-side-text]')
+        return text ? drawSpreadFace(el, text) : drawTextFace(el)
+    }
+    /** Up over the page now going, then the page arriving is drawn once it has laid out (an editor fills in a frame late). */
+    const startTextTurn = (id: number, direction: 'forward' | 'back') => {
+        setTextTurn(null)
+        const el = textTurnEl()
+        if (!el || !mainEl || !pictureReady(el)) return
+        const [r, m] = [el.getBoundingClientRect(), mainEl.getBoundingClientRect()]
+        if (r.width === 0 || r.height === 0) return
+        setTextTurn({ id, box: { left: r.left - m.left, top: r.top - m.top, w: r.width, h: r.height }, from: turnFace(el), direction })
+        requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+                if (textTurn()?.id !== id) return
+                const arriving = textTurnEl()
+                // a page whose picture is still loading just appears, rather than curling in blank
+                if (!arriving || !pictureReady(arriving)) return void setTextTurn(null)
+                const to = turnFace(arriving)
+                setTextTurn(t => (t?.id === id ? { ...t, to } : t))
+            }),
+        )
     }
     /** The page in view, which flipping shows on its own. */
     const curKey = createMemo(() => {
@@ -686,7 +735,8 @@ const BookView: Component<BookViewProps> = props => {
             if (!dir || drag()) return
             e.preventDefault()
             // text and side by side move a page through the column (or flip to it); the curl is the pages'
-            if (texty()) return stepDoc(dir)
+            // a held key runs through the pages: drawing and curling each one would only stutter
+            if (texty()) return stepDoc(dir, !e.repeat)
             turnBy(dir)
         }
         window.addEventListener('keydown', onKey)
@@ -741,13 +791,38 @@ const BookView: Component<BookViewProps> = props => {
 
 
     // ── transcription: the text of each page, and what runs to fill it ──
-    const loadTranscript = (file: string) =>
-        api.storedTranscript(file).then(
-            t => setTranscripts(m => new Map(m).set(file, t)),
+    // A read that crosses a save could bring back the text from before it, so reads wait for the
+    // file's saves and one overtaken by a save is made again.
+    const savesInFlight = new Map<string, number>()
+    const readAfterSaves = new Set<string>()
+    let saveCount = 0
+    const loadTranscript = (file: string): Promise<void> => {
+        if (savesInFlight.get(file)) {
+            readAfterSaves.add(file)
+            return Promise.resolve()
+        }
+        const startedAt = saveCount
+        return api.storedTranscript(file).then(
+            t => {
+                if (startedAt !== saveCount) return loadTranscript(file)
+                setTranscripts(m => new Map(m).set(file, t))
+            },
             () => undefined,
         )
+    }
     onCleanup(transcription.onWrote(file => void loadTranscript(file)))
     const loaded = new Set<string>()
+    // Its text changed from outside (an agent, another window): every page shows it, and a page with
+    // typing not yet saved keeps that typing (TranscriptPage). Our own saves make no event.
+    createEffect(
+        on(
+            lastChange,
+            change => {
+                for (const file of loaded) if (transcriptChanged(change.paths, file)) void loadTranscript(file)
+            },
+            { defer: true },
+        ),
+    )
     createEffect(() => {
         for (const r of refs()) {
             if (loaded.has(r.file)) continue
@@ -795,14 +870,9 @@ const BookView: Component<BookViewProps> = props => {
 
     // ── text mode and side by side: one editable section per page ──
     const handles = new Map<string, TranscriptPageHandle>()
-    let pendingFocus: string | undefined
     const pageRef = (key: string, h: TranscriptPageHandle | undefined) => {
         if (!h) return void handles.delete(key)
         handles.set(key, h)
-        if (pendingFocus === key) {
-            pendingFocus = undefined
-            h.focus()
-        }
     }
     const saveText = (key: string, text: string) => {
         const l = leaves()[leafIndexOf(key)]
@@ -815,7 +885,17 @@ const BookView: Component<BookViewProps> = props => {
                 : [...t.pages, { page, text }]
             return new Map(m).set(l.ref.file, { ...t, pages })
         })
-        api.setTranscriptPage(l.ref.file, page, text).catch(e => pushToast(`couldn't save the text: ${(e as Error).message}`))
+        const file = l.ref.file
+        saveCount++
+        savesInFlight.set(file, (savesInFlight.get(file) ?? 0) + 1)
+        api.setTranscriptPage(file, page, text)
+            .catch(e => pushToast(`couldn't save the text: ${(e as Error).message}`))
+            .finally(() => {
+                const left = (savesInFlight.get(file) ?? 1) - 1
+                if (left > 0) return void savesInFlight.set(file, left)
+                savesInFlight.delete(file)
+                if (readAfterSaves.delete(file)) void loadTranscript(file)
+            })
     }
     /** `[ looks right ]` on a check: it goes from the page at once, then from the companion. */
     const approveCheck = (key: string, line: string) => {
@@ -933,28 +1013,12 @@ const BookView: Component<BookViewProps> = props => {
         jumpTo = leafIndex
         chooseView('side')
     }
-    /** `edit text`: text mode at that page, the caret in its section. */
-    const editText = (leafIndex: number) => {
-        const l = leaves()[leafIndex]
-        if (!l) return
-        setStaged(null)
-        const key = keyOfLeaf(l)
-        if (readMode() === 'text') {
-            placeDoc(leafIndex)
-            const h = handles.get(key)
-            if (h) return h.focus()
-        }
-        pendingFocus = key
-        jumpTo = leafIndex
-        chooseView('text')
-    }
 
     // ── a page's right-click menu ──
     const [pageMenu, setPageMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null)
-    /** A page's own rows: fix its text, or read it again with a chosen reader. */
+    /** A page's own rows: read it again with a chosen reader. */
     const pageMenuItems = (leafIndex: number, extra: MenuItem[] = []): MenuItem[] => [
         ...extra,
-        { label: 'edit text', icon: 'Pencil', onSelect: () => editText(leafIndex) },
         { label: 'read again on-device', icon: 'RefreshCw', onSelect: () => readAgain(leafIndex, 'on-device') },
         { label: 'read again with the math reader', icon: 'Sigma', onSelect: () => readAgain(leafIndex, 'marker') },
         { label: 'read again with ai', icon: 'Sparkles', onSelect: () => readAgain(leafIndex, 'ai') },
@@ -1108,7 +1172,9 @@ const BookView: Component<BookViewProps> = props => {
     // text highlights: a selection inside a section becomes `==mark==`, or unwraps when it is inside one
     const onHighlightClick = () => {
         if (texty()) {
-            for (const h of handles.values()) if (h.selection()) return h.toggleMark()
+            // a flipped page's neighbours keep their editors, and any selection, while hidden
+            const shown = flipping() ? [handles.get(curKey() ?? '')] : [...handles.values()]
+            for (const h of shown) if (h?.selection()) return h.toggleMark()
             return
         }
         setArmed(v => !v)
@@ -1423,7 +1489,7 @@ const BookView: Component<BookViewProps> = props => {
                         parts={[
                             <>
                                 {scrolling() || texty()
-                                    ? `page ${cur() + 1} // ${Math.max(leaves().length, transcription.progress()?.total ?? 0)}`
+                                    ? pageReadout(cur() + 1, Math.max(leaves().length, transcription.progress()?.total ?? 0))
                                     : readoutFor(spread(), count())}
                                 {transcription.progress() ? (
                                     <>
@@ -1446,15 +1512,6 @@ const BookView: Component<BookViewProps> = props => {
                                 </Show>
                             </>,
                         ]}
-                    />
-                </Show>
-            ),
-            config: (
-                <Show when={leaves().length > 0}>
-                    <ReadModeSwitch
-                        view={mode()}
-                        onView={chooseView}
-                        textUnavailable={textAllowed() ? undefined : 'no page is transcribed yet'}
                     />
                 </Show>
             ),
@@ -1534,11 +1591,20 @@ const BookView: Component<BookViewProps> = props => {
                             <IconButton icon="Plus" label="add pages" onClick={addPages} />
                         </Text>
                     </Show>
-                    <Show when={leaves().length > 0}>
+                    <Show when={leaves().length > 0 && !staged()}>
                         <BarSettings
-                            glyph="Aa"
                             label="display"
                             rows={[
+                                {
+                                    label: 'show',
+                                    control: (
+                                        <ReadModeSwitch
+                                            view={mode()}
+                                            onView={chooseView}
+                                            textUnavailable={textAllowed() ? undefined : 'no page is transcribed yet'}
+                                        />
+                                    ),
+                                },
                                 {
                                     label: 'move by',
                                     control: <FlowToggle flow={flow()} onFlow={chooseFlow} />,
@@ -1593,6 +1659,9 @@ const BookView: Component<BookViewProps> = props => {
                 get aspect() {
                     return shapes().get(shapeKey(l())) ?? pageAspect()
                 },
+                get hidden() {
+                    return flipping() && p.key !== curKey()
+                },
                 image: () => (
                     <BookPageImage
                         face={() => loader.face(l()).then(f => (noteShape(l(), f), shade(f)!))}
@@ -1600,32 +1669,30 @@ const BookView: Component<BookViewProps> = props => {
                         label={`page ${i() + 1}`}
                         boxes={located()?.key === p.key ? located()!.boxes : []}
                         onPoint={(x, y) => onPagePoint(i(), x, y)}
+                        onContextMenu={e => openPageMenu(e, pageMenuItems(i()))}
+                        eager={flipping()}
                     />
                 ),
-                text: () => {
-                    onCleanup(() => pageRef(p.key, undefined))
-                    return (
-                        <TranscriptPage
-                            label={p.label}
-                            text={p.text}
-                            status={p.status}
-                            checks={p.checks}
-                            onApprove={p.onApprove}
-                            crop={p.crop}
-                            onSave={text => saveText(p.key, text)}
-                            ref={h => pageRef(p.key, h)}
-                            fontFamily={family()}
-                            textScale={textScale()}
-                            onSelect={sel => onSideSelect(i(), sel)}
-                            onContextMenu={(e, sel) => onSectionMenu(e, p.key, sel)}
-                        />
-                    )
-                },
+                text: () => (
+                    <TranscriptSection
+                        page={p}
+                        onSave={saveText}
+                        pageRef={pageRef}
+                        fontFamily={family()}
+                        textScale={textScale()}
+                        onSelect={sel => onSideSelect(i(), sel)}
+                        onContextMenu={onSectionMenu}
+                    />
+                ),
             } satisfies SideBySideRow
         })
         return createMemo(() => mapped())
     })()
-    const flipRows = createMemo(() => sideRows().filter(r => r.key === curKey()))
+    /** Flipped: the page in view and those either side, built ahead so a turn only swaps which shows. */
+    const flipRows = createMemo(() => {
+        const c = cur()
+        return sideRows().filter((_, n) => Math.abs(n - c) <= FLIP_AHEAD)
+    })
 
     const boxSize = () => ({
         w: layout() === 'spread' ? fit().pageSize.w * 2 : fit().pageSize.w,
@@ -1649,7 +1716,7 @@ const BookView: Component<BookViewProps> = props => {
                 multiple
                 onPick={files => void takePages({ files: Array.from(files) })}
             />
-            <div class={styles.main}>
+            <div class={styles.main} ref={mainEl}>
                 <Show
                     when={leaves().length > 0}
                     fallback={
@@ -1688,7 +1755,20 @@ const BookView: Component<BookViewProps> = props => {
                         />
                     </Show>
                     <Show when={!staged() && mode() === 'side'}>
-                        <SideBySide className={styles.reader} rows={flipping() ? flipRows() : sideRows()} at={docAt()} onAt={onDocAt} />
+                        <SideBySide className={styles.reader} rows={flipping() ? flipRows() : sideRows()} flip={flipping()} at={docAt()} onAt={onDocAt} />
+                    </Show>
+                    <Show when={textTurn()}>
+                        {t => (
+                            <TextPageTurn
+                                box={t().box}
+                                from={t().from}
+                                to={t().to}
+                                direction={t().direction}
+                                spread={mode() === 'side'}
+                                turnKey={t().id}
+                                onSettled={() => setTextTurn(c => (c?.id === t().id ? null : c))}
+                            />
+                        )}
                     </Show>
                     <Show when={!staged() && flipping()}>
                         <FlipNav

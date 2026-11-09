@@ -144,13 +144,6 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
             }
             config={
                 <Show when={inkable()}>
-                    <Show when={props.reading}>
-                        {reading => (
-                            <div class={styles.readMode} data-bar-drop="3" data-bar-menu-label="read as">
-                                <ReadModeSwitch view={reading()().view} onView={v => props.onReadView?.(v)} />
-                            </div>
-                        )}
-                    </Show>
                     <PdfZoom
                         wide
                         class={styles.afterText}
@@ -242,15 +235,18 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             />
                         </div>
                     </Show>
-                    {/* scroll or flip, set once like a reading app's layout: the same `move by` row
-                        the book's `Aa` panel has, behind the bar's settings icon (the viewer has no
-                        text size, so no `Aa`) */}
+                    {/* what the page shows and how it moves, set once like a reading app's layout:
+                        the same `show` and `move by` rows the book's display panel has */}
                     <Show when={props.reading}>
                         {reading => (
                             <div class={styles.tools} data-bar-drop="4" data-bar-menu-label="display">
                                 <BarSettings
                                     label="display"
                                     rows={[
+                                        {
+                                            label: 'show',
+                                            control: <ReadModeSwitch view={reading()().view} onView={v => props.onReadView?.(v)} />,
+                                        },
                                         {
                                             label: 'move by',
                                             control: (

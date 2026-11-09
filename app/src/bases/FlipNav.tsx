@@ -4,6 +4,7 @@
 import type { Component } from 'solid-js'
 import IconButton from '../ui/IconButton'
 import Label from '../ui/Label'
+import { pageReadout } from './bookNav'
 import styles from './FlipNav.module.css'
 
 export type FlipNavProps = {
@@ -17,7 +18,7 @@ export type FlipNavProps = {
 const FlipNav: Component<FlipNavProps> = props => (
     <div class={`${styles.nav} ${props.class ?? ''}`} data-flip-nav>
         <IconButton icon="ChevronLeft" label="previous page" disabled={props.page <= 1} onClick={() => props.onStep(-1)} />
-        <Label tone="muted" class={styles.where}>{`page ${props.page} // ${props.pages}`}</Label>
+        <Label tone="muted" class={styles.where}>{pageReadout(props.page, props.pages)}</Label>
         <IconButton icon="ChevronRight" label="next page" disabled={props.page >= props.pages} onClick={() => props.onStep(1)} />
     </div>
 )

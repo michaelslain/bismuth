@@ -16,6 +16,9 @@ export type BookPageImageProps = {
     boxes: LocateBox[]
     /** A click on the page, in page fractions. */
     onPoint?: (x: number, y: number) => void
+    onContextMenu?: (e: MouseEvent) => void
+    /** Load and keep the face whether or not the page is near the view (a page built ahead of a flip). */
+    eager?: boolean
     className?: string
 }
 
@@ -25,10 +28,13 @@ const AHEAD = 1200
 const BookPageImage: Component<BookPageImageProps> = props => {
     let host!: HTMLDivElement
     let canvas: HTMLCanvasElement | undefined
-    const [near, setNear] = createSignal(false)
+    const [seen, setSeen] = createSignal(false)
+    const near = () => props.eager || seen()
     const [face, setFace] = createSignal<Face>()
     onMount(() => {
-        const io = new IntersectionObserver(es => es.length > 0 && setNear(es[es.length - 1].isIntersecting), { rootMargin: `${AHEAD}px 0px` })
+        // the margin only reaches past the root, so the root is the scroller the page moves in
+        const root = host.closest<HTMLElement>('[data-side-by-side]')
+        const io = new IntersectionObserver(es => es.length > 0 && setSeen(es[es.length - 1].isIntersecting), { root, rootMargin: `${AHEAD}px 0px` })
         io.observe(host)
         onCleanup(() => io.disconnect())
     })
@@ -55,7 +61,7 @@ const BookPageImage: Component<BookPageImageProps> = props => {
         canvas.getContext('2d')?.drawImage(src, 0, 0)
     })
     return (
-        <div ref={host} class={[styles.page, props.className].filter(Boolean).join(' ')} data-page-image>
+        <div ref={host} class={[styles.page, props.className].filter(Boolean).join(' ')} data-page-image data-face-ready={face() ? '' : undefined} onContextMenu={e => props.onContextMenu?.(e)}>
             <Show
                 when={face()?.kind !== 'missing'}
                 fallback={

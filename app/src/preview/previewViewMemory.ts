@@ -34,6 +34,8 @@ export type PreviewViewState = {
     flow?: 'scroll' | 'flip'
     /** The book reader's layout when it is `single`; absent is two pages when they fit. */
     bookLayout?: 'single'
+    /** Where the book reader was: the page (from 0) and how far into its text. */
+    bookAt?: { leaf: number; frac: number }
 }
 
 /** Where the memory is persisted: `read` returns what `write` last stored (or nothing). */
@@ -76,6 +78,7 @@ function parseEntry(raw: unknown): [string, PreviewViewState] | undefined {
     if (s.readMode === 'pages' || s.readMode === 'text' || s.readMode === 'side') state.readMode = s.readMode
     if (s.flow === 'scroll' || s.flow === 'flip') state.flow = s.flow
     if (s.bookLayout === 'single') state.bookLayout = 'single'
+    if (s.bookAt && isNum(s.bookAt.leaf) && isNum(s.bookAt.frac)) state.bookAt = { leaf: s.bookAt.leaf, frac: s.bookAt.frac }
     return [raw[0], state]
 }
 

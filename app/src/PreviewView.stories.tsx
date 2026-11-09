@@ -655,7 +655,7 @@ export const PdfReadAsBook: Story = {
         await expect(await readState(canvasElement, 'scroll or flip')).toBe('scroll')
         await pickRead(canvasElement, 'scroll or flip', 'flip')
         await waitFor(() => expect(canvasElement.querySelector('[data-preview-book] [data-book]')).not.toBeNull())
-        await waitFor(() => expect(canvas.getByText(/^page 1 \/\/ \d+$/)).toBeInTheDocument(), { timeout: 8000 })
+        await waitFor(() => expect(canvas.getByText(/^p\. 1 \/ \d+$/)).toBeInTheDocument(), { timeout: 8000 })
         await expect(canvasElement.querySelector('[data-testid="page-readout"]')).toBeNull()
         await expect(await readState(canvasElement, 'scroll or flip')).toBe('flip')
         await pickRead(canvasElement, 'scroll or flip', 'scroll')
@@ -3739,7 +3739,26 @@ export const PdfSideBySide: Story = {
     play: async ({ canvasElement }) => {
         await waitFor(() => expect(canvasElement.querySelectorAll('[data-side-by-side] [data-row-key]').length).toBe(6), { timeout: 8000 })
         await waitFor(() => expect(canvasElement.querySelector<HTMLCanvasElement>('[data-row-key] canvas')!.width).toBeGreaterThan(0), { timeout: 8000 })
-        await waitFor(() => expect(canvasElement.textContent).toContain('page 1 // 6'))
+        await waitFor(() => expect(canvasElement.textContent).toContain('p. 1 / 6'))
+    },
+}
+
+/** A PDF side by side: undo in a section undoes the typing, not an annotation of the PDF. */
+export const PdfSideBySideUndo: Story = {
+    name: 'Pdf side by side undo',
+    beforeEach: () => readerSetup(READER_PDF, 'side', [1, 2, 3, 4, 5, 6], false),
+    render: () => reader(READER_PDF),
+    play: async ({ canvasElement }) => {
+        const field = () => canvasElement.querySelector<HTMLElement>('[data-row-key] .cm-content')!
+        await waitFor(() => expect(field().textContent).toContain('Page 1'), { timeout: 8000 })
+        await userEvent.click(canvasElement.querySelector<HTMLElement>('[data-row-key] .cm-line')!)
+        await userEvent.keyboard('{End}')
+        document.execCommand('insertText', false, 'QQ')
+        await waitFor(() => expect(field().textContent).toContain('QQ'))
+        const mod = /Mac/.test(navigator.platform) ? 'Meta' : 'Control'
+        await userEvent.keyboard(`{${mod}>}z{/${mod}}`)
+        await waitFor(() => expect(field().textContent).not.toContain('QQ'))
+        ;(document.activeElement as HTMLElement).blur()
     },
 }
 
@@ -3750,7 +3769,7 @@ export const PdfTranscribing: Story = {
     render: () => reader(READER_PDF),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await waitFor(() => expect(shown(canvasElement)).toContain('page 1 // 6 // transcribing 1 of 6'), { timeout: 8000 })
+        await waitFor(() => expect(shown(canvasElement)).toContain('p. 1 / 6 // transcribing 1 of 6'), { timeout: 8000 })
         await fk.tick(2)
         await waitFor(() => expect(shown(canvasElement)).toContain('transcribing 2 of 6 // about 5 min left'))
         await userEvent.click(canvas.getByRole('button', { name: 'cancel' }))
@@ -3878,7 +3897,7 @@ export const PdfLocate: Story = {
     },
 }
 
-/** Right-click a section in text mode: `edit text`, then the three read-again rows, no `transcribe again with ai`; a read-again row runs just that page. */
+/** Right-click a section in text mode: the three read-again rows, no `edit text` or `transcribe again with ai`; a read-again row runs just that page. */
 export const PdfPageMenu: Story = {
     name: 'Pdf page menu',
     beforeEach: () => readerSetup(READER_PDF, 'text', [1, 2, 3, 4, 5, 6], false),
@@ -3888,11 +3907,12 @@ export const PdfPageMenu: Story = {
         await waitFor(() => expect(readerSections(canvasElement)[1].textContent).toContain('page 2'))
         ctxMenu(readerSections(canvasElement)[1].querySelector<HTMLElement>('.cm-content')!)
         const body = within(document.body)
-        const items = ['edit text', 'read again on-device', 'read again with the math reader', 'read again with ai']
+        const items = ['read again on-device', 'read again with the math reader', 'read again with ai']
         const nodes = await Promise.all(items.map(t => body.findByText(t)))
         for (let i = 1; i < nodes.length; i++) await expect(nodes[i - 1].compareDocumentPosition(nodes[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        await expect(body.queryByText('edit text')).toBeNull()
         await expect(body.queryByText('transcribe again with ai')).toBeNull()
-        await userEvent.click(nodes[3])
+        await userEvent.click(nodes[2])
         await waitFor(() => expect(fk.calls.at(-1)).toMatchObject({ file: READER_PDF, pages: [2], engine: 'ai' }))
         await readerBar(canvasElement)
     },

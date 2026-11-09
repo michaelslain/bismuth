@@ -23,11 +23,46 @@
 .image {
     position: relative;
     width: 100%;
+    aspect-ratio: var(--aspect);
     overflow: hidden;
 }
 
 .text {
     min-width: 0;
+}
+
+.hidden {
+    display: none;
+}
+
+/* A page at a time: the row is the pane, the picture fits inside it whatever its shape, and only
+   the text scrolls. The cell is the size container the picture measures against. */
+.flip {
+    overflow: hidden;
+}
+
+.flip .row {
+    box-sizing: border-box;
+    height: 100%;
+    margin-top: 0;
+    padding: var(--sp-6) 0;
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.flip .cell {
+    container-type: size;
+    height: 100%;
+}
+
+/* against the spine, as an open book holds a page: the middle of the row, where a turn folds */
+.flip .image {
+    width: min(100cqw, calc(100cqh * var(--aspect)));
+    margin: 0 0 0 auto;
+}
+
+.flip .text {
+    height: 100%;
+    overflow-y: auto;
 }
 
 /* A narrow pane keeps the two columns, the page giving up width to its text: stacked, each page's
@@ -39,5 +74,8 @@
     .row {
         grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
         column-gap: var(--sp-5);
+    }
+    .flip .row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
 }
