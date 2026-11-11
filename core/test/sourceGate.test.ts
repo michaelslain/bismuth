@@ -55,7 +55,12 @@ describe('the committed model file', () => {
     })
     test('the bundled file parses, or is the closed gate', () => {
         const m = loadGateModel()
+        expect(m).not.toBe(CLOSED_GATE)
         expect(Number.isFinite(m.threshold)).toBe(true)
+        expect(Object.keys(m.weights).length).toBeGreaterThan(0)
+        for (const w of Object.values(m.weights)) expect(Number.isFinite(w)).toBe(true)
+        expect(Number.isFinite(m.bias)).toBe(true)
+        expect(loadFusionModel()).not.toBeNull()
     })
     test('the fusion block needs positive finite numbers and a rerank flag', () => {
         const ok = { fusion: { version: 1, weights: { meaning: 1, keyword: 0.2 }, k: 30, rerank: false, fitOn: { cases: 3, objective: 'x', at: '' } } }

@@ -4,7 +4,7 @@
 import * as mem from '@bismuth/memory'
 import type { MemoryNote } from '@bismuth/memory'
 import { sourceKey } from './semanticSources'
-import { gateAccepts, gateProbability } from './sourceGate'
+import { backgroundOf, gateAccepts, gateProbability } from './sourceGate'
 import type { GateFeatures, GateModel, GateTraceRow } from './sourceGate'
 import type { SourceHit, SourceQuery } from './semanticSources'
 
@@ -14,8 +14,6 @@ export const DIGEST_BUDGET_CHARS = 2500
 /** Dated chats the gate scores: the best by cosine among those inside the range. Bounds cost only; the
  *  gate decides which are injected. */
 export const DATED_CHAT_CANDIDATES = 5
-/** The k of the chat source's k-th best cosine, the gate's `background` (ranked over every session). */
-const BACKGROUND_K = 10
 /** Chats asked of the chat source before the date filter. */
 const DATED_CHAT_K = 100_000 // every session: the date filter runs after ranking, so a smaller k drops in-range chats
 
@@ -154,7 +152,7 @@ export async function timeRecall(a: TimeRecallArgs, deps: TimeRecallDeps): Promi
     // and no background margin of its own; the visibility gate (inside `chatHits`) still applies.
     // The time path does not rerank, so `rerank` is null.
     const ranked = (await hitsP).filter(h => h.kind === 'chat').sort((x, y) => y.score - x.score)
-    const background = ranked.length ? ranked[Math.min(ranked.length, BACKGROUND_K) - 1]!.score : 0
+    const background = backgroundOf(ranked)
     const dated = ranked.filter(h => inAny(h.date, ranges)).slice(0, DATED_CHAT_CANDIDATES)
     const rows: GateTraceRow[] = dated.map((h, rank) => {
         const features: GateFeatures = { cosine: h.score, background, rank, rerank: null, kind: 'chat', inRange: true, promptChars: a.prompt.length }

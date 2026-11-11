@@ -2,6 +2,7 @@
 // pack caps, per-session tallies, the lambda-weighted objective and its bootstrap interval. Pure; the
 // fit (bench/fitSourceGate.ts) and the A/B both build on it.
 import type { GateFeatures } from '../core/src/sourceGate'
+import { SOURCE_LIMITS } from '../core/src/sourcePack'
 
 // ---- the split ---------------------------------------------------------------------------------
 
@@ -23,6 +24,8 @@ export type EvalRow = {
     /** Replay case number. */
     id: number
     set: 'labelled' | 'past' | 'time' | 'quiet'
+    /** Which scoring path produced the candidate (`CandRow.path`); independent of the case's set. */
+    path: 'ordinary' | 'time'
     session: string
     key: string
     kind: GateFeatures['kind']
@@ -39,10 +42,15 @@ export type CaseInfo = { id: number; set: EvalRow['set']; session: string }
 /** Items per source a packed block holds (core/src/sourcePack.ts `SOURCE_LIMITS.prompt`). */
 export const PACK_CAP = 2
 
-const sectionOfKind = (k: GateFeatures['kind']) => (k === 'chat' ? 'chats' : k === 'docs' ? 'docs' : 'files')
+const sectionOfKind = (k: GateFeatures['kind']): keyof PackCaps => (k === 'chat' ? 'chats' : k === 'docs' ? 'docs' : 'files')
 
-/** The candidates a pack would keep: per case and source, the `cap` accepted with the best cosine. */
-export function packCapped(accepted: EvalRow[], cap = PACK_CAP): EvalRow[] {
+/** Items per source a pack keeps, by source (`SOURCE_LIMITS` in core/src/sourcePack.ts). */
+export type PackCaps = { files: number; chats: number; docs: number }
+
+/** The candidates a pack would keep: per case and source, the `cap` accepted with the best cosine. A chat
+ *  scored by both the ordinary and the time path takes one slot (per case, duplicates by `key` keep the
+ *  ordinary row), and ordinary rows (`set` not 'time') sort before time rows, as recall packs them. */
+export function packCapped(accepted: EvalRow[], cap: number | PackCaps = PACK_CAP): EvalRow[] {
     const groups = new Map<string, EvalRow[]>()
     for (const r of accepted) {
         const g = `${r.id}|${sectionOfKind(r.kind)}`
@@ -50,7 +58,17 @@ export function packCapped(accepted: EvalRow[], cap = PACK_CAP): EvalRow[] {
         if (list) list.push(r)
         else groups.set(g, [r])
     }
-    return [...groups.values()].flatMap(list => list.sort((a, b) => b.cosine - a.cosine).slice(0, cap))
+    const isTime = (r: EvalRow) => r.path === 'time'
+    return [...groups.values()].flatMap(list => {
+        const byKey = new Map<string, EvalRow>()
+        for (const r of list) {
+            const have = byKey.get(r.key)
+            if (!have || (isTime(have) && !isTime(r))) byKey.set(r.key, r)
+        }
+        const section = sectionOfKind(list[0]!.kind)
+        const n = typeof cap === 'number' ? cap : cap[section]
+        return [...byKey.values()].sort((a, b) => Number(isTime(a)) - Number(isTime(b)) || b.cosine - a.cosine).slice(0, n)
+    })
 }
 
 export type Tally = {
@@ -132,6 +150,18 @@ export const sumTallies = (m: Iterable<Tally>): Tally => [...m].reduce(addTally,
 
 /** The accepted, pack-capped candidates among `rows` for an acceptance rule. */
 export const injectedBy = (rows: EvalRow[], accepts: (r: EvalRow) => boolean): EvalRow[] => packCapped(rows.filter(accepts))
+
+/** Label of the `subagent` report row. The saved candidates carry no field saying a case is a subagent
+ *  brief, so the row re-packs the same candidates under the subagent caps. */
+export const SUBAGENT_ROW_LABEL = 'subagent caps (prompt-trained)'
+
+/** The report's `subagent` row: the same candidates and gate as the prompt row, packed with
+ *  `SOURCE_LIMITS.subagent` (core/src/sourcePack.ts) instead of the prompt caps. */
+export function subagentRow(cases: CaseInfo[], rows: EvalRow[], accepts: (r: EvalRow) => boolean, sessions: Set<string>): { label: string; caps: PackCaps; tally: Tally } {
+    const caps = SOURCE_LIMITS.subagent
+    const injected = packCapped(rows.filter(accepts), caps)
+    return { label: SUBAGENT_ROW_LABEL, caps, tally: sumTallies(tallyBySession(cases, injected, sessions).values()) }
+}
 
 // ---- the operating point -----------------------------------------------------------------------
 

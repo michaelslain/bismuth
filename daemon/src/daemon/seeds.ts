@@ -106,6 +106,7 @@ export const PRIOR_SEED_HASHES: Record<string, string[]> = {
         '34e7549d6f78c472f72a328f1d63388d797049ebf3f57b4a01348d4aee3c7a63', // v13 — the last dream with no `enabled:` line, gated by daemon.dream in .settings
         '042ad8d4e511754a666aaf03b97baf92168a6ff20b4ef6cdd4314bc844412548', // v14 — the dream before day notes, roll-ups and `now` (same body as v13 plus the `enabled:` line)
         'f0c29b018e57bafd47098a25e480163afd49ae30d53bd6480573d805a4c49cfa', // v15 — the dream with day notes, roll-ups and `now`, before digest notes were kept out of clusters
+        '991f94e5bac7ead44d2a4eec9f3ef31d1ba1886ca67651ac6b1a0b7a79b25d47', // v16 — the dream before digest notes were condensed in place, not split
     ],
     'vault-review': [
         '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39', // v1 — 2026-06-28 (unchanged through f48076b)

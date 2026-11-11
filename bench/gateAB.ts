@@ -26,6 +26,7 @@ import {
     wave1Accepted,
     type CaseInfo,
     type EvalRow,
+    subagentRow,
     type Split,
     type Tally,
 } from './gateEval'
@@ -115,7 +116,7 @@ if (import.meta.main) {
     const split: Split = splitSessions(starts)
     const splitOf = (s: string) => (split.train.has(s) ? 'train' : split.validation.has(s) ? 'validation' : 'test')
 
-    const rows: EvalRow[] = newCands.map(c => ({ id: c.id, set: c.set, session: c.session, key: c.key, kind: c.features.kind, cosine: c.features.cosine, features: c.features, matched: c.matched, y: labelOfJudged(c) }))
+    const rows: EvalRow[] = newCands.map(c => ({ id: c.id, set: c.set, path: c.path, session: c.session, key: c.key, kind: c.features.kind, cosine: c.features.cosine, features: c.features, matched: c.matched, y: labelOfJudged(c) }))
     const testRows = rows.filter(r => split.test.has(r.session))
     const testSessions = [...split.test].sort()
     const trainValue = (c: { session: string }) => !split.test.has(c.session)
@@ -182,6 +183,14 @@ if (import.meta.main) {
             return [k, { sessions: ss.size, cases: cs.length, candidates: rs.length, positives: rs.filter(r => r.y === 1).length, fetchedMatches: rs.filter(r => r.matched).length, labelledCases: cs.filter(c => c.set === 'labelled').length, from: new Date(Math.min(...t)).toISOString().slice(0, 10), to: new Date(Math.max(...t)).toISOString().slice(0, 10) }]
         }),
     )
+    // The variant is chosen on the validation sessions, at the measured exchange rate; the test sessions only report.
+    const valRows = rows.filter(r => split.validation.has(r.session))
+    const valObjective = (n: string) => objectiveOf(sumTallies(tallyBySession(cases, injectedBy(valRows, r => gateAccepts(r.features, models[n]!)), split.validation).values()), lambda)
+    const shippable = results.filter(r => r.variant !== 'wave1')
+    // only variants fit without the validation sessions compete: `prev` and `labels` train on train + validation, so their
+    // validation objective is in-sample and would win on that alone
+    const winner = pickShipped(shippable.filter(r => TRAINED_WITHOUT_VALIDATION.includes(r.variant)), valObjective)
+    const subagent = subagentRow(cases, testRows, r => gateAccepts(r.features, models[winner.variant]!), split.test)
     const report = {
         judgePrompt,
         measuredExchangeRate: lambda,
@@ -197,6 +206,7 @@ if (import.meta.main) {
         testCases: sumTallies(tallies.wave1!.values()).cases,
         results,
         steps,
+        subagent: { variant: winner.variant, label: subagent.label, caps: subagent.caps, tally: subagent.tally },
     }
     console.log(JSON.stringify(report, null, 2))
     const out = flag('--out')
@@ -204,13 +214,6 @@ if (import.meta.main) {
 
     const write = flag('--write')
     if (write) {
-        // The variant is chosen on the validation sessions, at the measured exchange rate; the test sessions only report.
-        const valRows = rows.filter(r => split.validation.has(r.session))
-        const valObjective = (n: string) => objectiveOf(sumTallies(tallyBySession(cases, injectedBy(valRows, r => gateAccepts(r.features, models[n]!)), split.validation).values()), lambda)
-        const shippable = results.filter(r => r.variant !== 'wave1')
-        // only variants fit without the validation sessions compete: `prev` and `labels` train on train + validation, so their
-        // validation objective is in-sample and would win on that alone
-        const winner = pickShipped(shippable.filter(r => TRAINED_WITHOUT_VALIDATION.includes(r.variant)), valObjective)
         const m = models[winner.variant]!
         const shut = winner.injected === 0
         const target = resolve(write)

@@ -5,7 +5,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { packSources } from '../core/src/sourcePack'
 import type { SourceHit } from '../core/src/semanticSources'
-import { bootstrapInterval, intervalOf } from './gateEval'
+import { bootstrapDraws, bootstrapInterval, intervalOf } from './gateEval'
 
 // ---- which prompts qualify ---------------------------------------------------------------------
 
@@ -126,7 +126,7 @@ export function sourcesBlock(items: { cand: Cand; date?: string }[], vaultCopy: 
 
 // ---- what the replayed agent may call ----------------------------------------------------------
 
-const SHELL_META = /[;&|<>`$()\\\n\r{}]/
+const SHELL_META = /[;&|<>`$()\\\n\r{}*?[]/
 /** What the shell would still act on in a quoted string: expansion (`$`, backtick, backslash) and line breaks. A pipe, `&` or
  *  parenthesis inside quotes is plain text, which a regex search needs (`"a|b"`). */
 const QUOTED_ACTIVE = /[`$\\\n\r]/
@@ -137,16 +137,33 @@ const withoutQuotes = (c: string): string | null => {
     return c.replace(/'[^']*'|"[^"]*"/g, '""')
 }
 
+/** The words the shell would pass to the program: whitespace splits, quotes group and vanish, so `--vau""lt=/x` reads as `--vault=/x`.
+ *  Null on an unterminated quote. */
+const shellWords = (c: string): string[] | null => {
+    const out: string[] = []
+    let cur = '', started = false, q: string | null = null
+    for (const ch of c) {
+        if (q) { if (ch === q) q = null; else cur += ch }
+        else if (ch === '"' || ch === "'") { q = ch; started = true }
+        else if (/\s/.test(ch)) { if (started) out.push(cur); cur = ''; started = false }
+        else { cur += ch; started = true }
+    }
+    if (q) return null
+    if (started) out.push(cur)
+    return out
+}
+
 /** Whether a Bash command is one read-only `bismuth` call. No chaining, redirects or substitution, no `--vault`
  *  (it would point the call at another vault), and no argument that names a path outside the working directory. */
 export function bismuthAllowed(command: string): { ok: true } | { ok: false; why: string } {
     const c = command.trim()
     const bare = withoutQuotes(c)
     if (bare === null || SHELL_META.test(bare)) return { ok: false, why: 'shell metacharacters are not allowed' }
-    const words = c.split(/\s+/)
+    const words = shellWords(c)
+    if (!words) return { ok: false, why: 'unterminated quote' }
     if (words[0] !== 'bismuth') return { ok: false, why: 'only `bismuth` commands run' }
-    if (words.some(w => w === '--vault' || w.startsWith('--vault='))) return { ok: false, why: '--vault is not allowed' }
-    if (words.slice(1).some(w => /^["']?(\/|~)/.test(w) || /(^|\/)\.\.(\/|["']?$)/.test(w))) return { ok: false, why: 'paths outside the vault are not allowed' }
+    if (words.some(w => /^--(vault|api)(=|$)/.test(w))) return { ok: false, why: '--vault and --api are not allowed' }
+    if (words.slice(1).some(w => /^(\/|~|\$)/.test(w) || /(^|\/)\.\.(\/|$)/.test(w))) return { ok: false, why: 'paths outside the vault are not allowed' }
     const [a, b] = [words[1] ?? '', words[2] ?? '']
     if (['read', 'map', 'brain', 'highlights'].includes(a)) return { ok: true }
     if (a === 'docs' && ['list', 'read', 'search'].includes(b)) return { ok: true }
@@ -155,7 +172,7 @@ export function bismuthAllowed(command: string): { ok: true } | { ok: false; why
     if (a === 'base' && ['read', 'render'].includes(b)) return { ok: true }
     if (a === 'calendar' && ['day', 'range', 'list', 'search', 'get', 'overlaps', 'bases', 'categories'].includes(b)) return { ok: true }
     if (a === 'card' && ['decks', 'all', 'note', 'due'].includes(b)) return { ok: true }
-    if (a === 'search') return words.includes('--regex') ? { ok: true } : { ok: false, why: '`bismuth search` needs --regex (keyword only; the meaning index is not built here)' }
+    if (a === 'search') return { ok: true }
     return { ok: false, why: `\`bismuth ${a}${b ? ` ${b}` : ''}\` is not a read command in this run` }
 }
 
@@ -173,6 +190,7 @@ const realish = (p: string): string => {
 /** Whether a path the agent names lies inside `root` (relative paths resolve against it). Symlinks are resolved
  *  on both sides, so a link inside the clone that leads out of it does not pass. */
 export function insideRoot(root: string, p: string): boolean {
+    if (/^["']?[~$]/.test(p)) return false
     const r = realish(root)
     const abs = realish(isAbsolute(p) ? p : resolve(root, p))
     const rel = relative(r, abs)
@@ -381,4 +399,101 @@ export function keepModel<R extends { current: R['shippedRow']; ship: boolean; s
     if (refit) return refit
     const base = atOldRate()
     return { ...base, ship: false, shipped: model, shippedRow: base.current }
+}
+
+// ---- the real-prompt eval: selection, merged verdicts, intervals, arm rendering -----------------
+
+export type RealArm = 'none' | 'references' | 'excerpts' | 'junk' | 'search'
+export const SEARCH_FIRST = 'Before answering about the vault, run `bismuth search <words>` and `bismuth history <words>`, then open what they name.'
+
+export type EvalCase = { id: number; session: string; set: 'labelled' | 'past' | 'time'; heldOut: boolean }
+
+/** `n` cases, one per session before any second one: sessions in a hashed order, each session's cases in a hashed order,
+ *  round by round. Deterministic; fewer than `n` cases = all of them. */
+export function pickRoundRobin(cases: EvalCase[], n: number): EvalCase[] {
+    const by = new Map<string, EvalCase[]>()
+    for (const c of cases) by.set(c.session, [...(by.get(c.session) ?? []), c])
+    const sessions = [...by.keys()].sort((a, b) => hashOf(`session|${a}`).localeCompare(hashOf(`session|${b}`)))
+    const queues = sessions.map(s => {
+        const list = by.get(s)!
+        const order = hashOrder(list.map(c => c.id))
+        return order.map(id => list.find(c => c.id === id)!)
+    })
+    const out: EvalCase[] = []
+    for (let round = 0; out.length < n; round++) {
+        let any = false
+        for (const q of queues) {
+            const c = q[round]
+            if (!c) continue
+            any = true
+            out.push(c)
+            if (out.length >= n) break
+        }
+        if (!any) break
+    }
+    return out
+}
+
+export type Verdict = 'A' | 'B' | 'tie'
+
+/** One sample pair judged in both orders. `first`: the verdict with the arm shown as A; `second`: with the arm shown as B.
+ *  A win or a loss needs both orders to name the same answer; anything else is a tie. */
+export function mergeOrders(first: Verdict, second: Verdict): Outcome {
+    if (first === 'A' && second === 'B') return 'win'
+    if (first === 'B' && second === 'A') return 'loss'
+    return 'tie'
+}
+
+export type PromptNet = { caseId: number; session: string; net: number }
+export type NetIntervals = { n: number; sessions: number; net: number; overPrompts: { lo: number; hi: number }; overSessions: { lo: number; hi: number } }
+
+/** The mean net (wins minus losses per prompt) with two 95% intervals: resampling prompts, which treats them as independent,
+ *  and resampling sessions, which keeps a session's prompts together. */
+export function netIntervals(rows: PromptNet[], draws: number): NetIntervals {
+    const mean = (xs: PromptNet[]) => (xs.length ? xs.reduce((a, r) => a + r.net, 0) / xs.length : 0)
+    const bySession = new Map<string, { n: number; sum: number }>()
+    for (const r of rows) {
+        const u = bySession.get(r.session) ?? { n: 0, sum: 0 }
+        u.n++
+        u.sum += r.net
+        bySession.set(r.session, u)
+    }
+    const units = [...bySession.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(e => e[1])
+    const ends = (i: { lo: number; hi: number }) => ({ lo: i.lo, hi: i.hi })
+    return {
+        n: rows.length,
+        sessions: units.length,
+        net: mean(rows),
+        overPrompts: ends(bootstrapInterval(rows, mean, bootstrapDraws(rows.length, draws, 7))),
+        overSessions: ends(bootstrapInterval(units, s => { const n = s.reduce((a, u) => a + u.n, 0); return n ? s.reduce((a, u) => a + u.sum, 0) / n : 0 }, bootstrapDraws(units.length, draws, 7))),
+    }
+}
+
+/** The references block with each item's full candidate text under its reference line, for the `excerpts` arm. */
+export function excerptsBlock(items: { cand: Cand; date?: string }[], vaultCopy: string): string | null {
+    const refs = sourcesBlock(items, vaultCopy)
+    if (refs === null) return null
+    const bodies = items.map(({ cand }) => `## ${cand.key}\n${cand.text}`).join('\n\n')
+    return `${refs}\n\n# Excerpts\n\n${bodies}`
+}
+
+/** The keys of `keys` the run opened: a Read or Bash call whose argument names the item as `packSources` told the agent to open it. */
+export function openedReferences(keys: string[], tools: { name: string; arg: string }[], vaultCopy: string): string[] {
+    const root = vaultCopy.replace(/\/+$/, '')
+    return keys.filter(key => {
+        const i = key.indexOf(':')
+        const prefix = key.slice(0, i)
+        const id = key.slice(i + 1)
+        return tools.some(t => {
+            if (prefix === 'chat') return t.arg.includes(`history show ${id}`)
+            if (prefix === 'docs') return t.arg.includes(`docs read ${id}`)
+            return t.arg.includes(`${root}/${id}`) || new RegExp(`\\bbismuth read ["']?${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(t.arg)
+        })
+    })
+}
+
+/** The sessions `bismuth history` may show for a prompt at `promptAt`: those that started strictly before it, sorted. The
+ *  prompt's own session and every later one are absent. */
+export function historyVisible(sessionStarts: Map<string, number>, promptAt: number): string[] {
+    return [...sessionStarts.entries()].filter(([, t]) => t < promptAt).map(e => e[0]).sort()
 }

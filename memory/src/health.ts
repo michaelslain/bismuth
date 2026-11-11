@@ -246,7 +246,7 @@ export function brainHealth(allNotes: MemoryNote[], opts?: { vaultNames?: Set<st
 
     // links
     const { out, inbound, unresolved } = memoryLinkIndex(notes)
-    const orphans = byName.filter(n => out.get(n.name)!.size === 0 && inbound.get(n.name)!.size === 0)
+    const orphans = byName.filter(n => !isDigestNote(n) && !isNowNote(n) && out.get(n.name)!.size === 0 && inbound.get(n.name)!.size === 0)
     if (orphans.length)
         add({ kind: 'orphan', notes: cap(orphans.map(n => n.name)), detail: 'no wikilink in or out; link each to the notes it relates to' }, orphans.length)
 

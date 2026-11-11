@@ -63,6 +63,20 @@ test('nothing covering: no digest block, but dated chats in range still come thr
     expect(r!.injected).toEqual([])
 })
 
+test('time path gate features: chat, in range, no rerank, ranked by cosine, background over every session', async () => {
+    const out = Array.from({ length: 12 }, (_, i) => chat(`out${i}`, '2026-10-01', 0.9 - i * 0.01)) // 12 chats outside the range
+    const chats = [chat('b', '2026-11-05', 0.7), chat('a', '2026-11-05', 0.95), ...out]
+    let rows: import('../src/sourceGate').GateTraceRow[] = []
+    await timeRecall(args('what did we do yesterday'), { ...deps([], chats), trace: r => (rows = r) })
+    expect(rows.map(r => r.key)).toEqual(['chat:a', 'chat:b'])
+    expect(rows.map(r => r.features.rank)).toEqual([0, 1])
+    expect(rows.every(r => r.path === 'time' && r.features.kind === 'chat' && r.features.inRange && r.features.rerank === null)).toBe(true)
+    expect(rows.every(r => r.features.promptChars === 'what did we do yesterday'.length)).toBe(true)
+    // the 10th best cosine of all 14 chats: 0.95, 0.9, 0.89, ... -> 0.9 - 8 * 0.01
+    expect(rows[0]!.features.background).toBeCloseTo(0.82, 9)
+    expect(rows[0]!.features.cosine).toBe(0.95)
+})
+
 test('the chat lookup asks for every session, since the date filter runs after ranking', async () => {
     let seenK = 0
     const chats = [chat('in', '2026-11-05', 0.7)]
@@ -143,7 +157,7 @@ test('service: time block sits before # Vault files and the ledger stops a resen
 })
 
 test('service: a prompt with no time words is byte-identical to the pre-change output', async () => {
-    // recorded from the code before time routing existed, on this same fixture
+    // the expected output with no time words; time routing must not change it
     const expected =
         '{"context":"<bismuth-memory>\\nB\\n\\n# Memories\\n\\nmem\\n\\nPossibly related, unverified. Open one only if it helps; ignore the rest.\\n\\n# Vault files\\n\\n- a.md (note) — an excerpt (open: `/v/a.md`)\\n\\n</bismuth-memory>","injected":["m"],"sources":["note:a.md"]}'
     const svc = mk([note('day-2026-11-05', 'did the thing')])

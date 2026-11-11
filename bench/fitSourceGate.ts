@@ -455,8 +455,8 @@ export const FUSION_KS = [1, 3, 10, 30, 60, 100, 200]
 /** Head the cross-encoder reorders, as in `core/src/hybridSearch.ts`. */
 const RERANK_HEAD = 20
 
-/** What a search with this blend would list for a pooled case, scoring keys in order (chats dropped, as
- *  the bench scores files only). */
+/** What a search with this blend would list for a pooled case: the top `limit` of the fused list with chats
+ *  in it, as runtime slices, then only the file keys (the bench scores files only). */
 export function rankPool(c: PoolRow, cfg: FusionConfig, limit = 10): string[] {
     const score = new Map<string, number>()
     const scoreKey = new Map<string, string | null>()
@@ -477,10 +477,10 @@ export function rankPool(c: PoolRow, cfg: FusionConfig, limit = 10): string[] {
         order = [...re, ...order.slice(RERANK_HEAD)]
     }
     return order
+        .slice(0, limit)
         .filter(id => !id.startsWith('chat:'))
         .map(id => scoreKey.get(id) ?? null)
         .filter((k): k is string => !!k)
-        .slice(0, limit)
 }
 
 const scoreCases = (cs: PoolRow[], cfg: FusionConfig) =>

@@ -8,6 +8,8 @@ import {
     objectiveOf,
     packCapped,
     splitSessions,
+    subagentRow,
+    SUBAGENT_ROW_LABEL,
     sumTallies,
     tallyBySession,
     type CaseInfo,
@@ -15,9 +17,10 @@ import {
 } from './gateEval'
 
 const feat = (cosine: number, kind: GateFeatures['kind'] = 'file'): GateFeatures => ({ cosine, background: 0.5, rank: 0, rerank: 0, kind, inRange: false, promptChars: 50 })
-const row = (id: number, set: EvalRow['set'], session: string, cosine: number, y: 0 | 1, matched = false, kind: GateFeatures['kind'] = 'file'): EvalRow => ({
+const row = (id: number, set: EvalRow['set'], session: string, cosine: number, y: 0 | 1, matched = false, kind: GateFeatures['kind'] = 'file', path: EvalRow['path'] = 'ordinary'): EvalRow => ({
     id,
     set,
+    path,
     session,
     key: `k${id}-${cosine}`,
     kind,
@@ -63,6 +66,35 @@ describe('packCapped', () => {
         const kept = packCapped(rs)
         expect(kept.filter(r => r.id === 1 && r.kind === 'file').map(r => r.cosine).sort()).toEqual([0.7, 0.9])
         expect(kept.length).toBe(4)
+    })
+})
+
+describe('packCapped across the ordinary and time paths', () => {
+    const keyed = (r: EvalRow, key: string): EvalRow => ({ ...r, key })
+    test('a chat scored by both paths takes one slot and keeps the ordinary row', () => {
+        const ordinary = keyed(row(1, 'past', 'a', 0.6, 1, false, 'chat', 'ordinary'), 'chat:x')
+        const timed = keyed(row(1, 'past', 'a', 0.9, 1, false, 'chat', 'time'), 'chat:x')
+        const other = keyed(row(1, 'past', 'a', 0.5, 0, false, 'chat'), 'chat:y')
+        const kept = packCapped([timed, ordinary, other])
+        expect(kept.length).toBe(2)
+        expect(kept.filter(r => r.key === 'chat:x').map(r => r.path)).toEqual(['ordinary'])
+    })
+    test('ordinary rows sort before time rows when the cap bites', () => {
+        const t = keyed(row(1, 'past', 'a', 0.95, 1, false, 'chat', 'time'), 'chat:t')
+        const o1 = keyed(row(1, 'past', 'a', 0.5, 1, false, 'chat'), 'chat:o1')
+        const o2 = keyed(row(1, 'past', 'a', 0.4, 0, false, 'chat'), 'chat:o2')
+        expect(packCapped([t, o1, o2]).map(r => r.key).sort()).toEqual(['chat:o1', 'chat:o2'])
+    })
+})
+
+describe('subagentRow', () => {
+    test('packs the same candidates under the subagent caps: one chat, two files', () => {
+        const cases: CaseInfo[] = [{ id: 1, set: 'labelled', session: 'a' }]
+        const rs = [row(1, 'labelled', 'a', 0.9, 1, true, 'chat'), row(1, 'labelled', 'a', 0.8, 0, false, 'chat'), row(1, 'labelled', 'a', 0.7, 0), row(1, 'labelled', 'a', 0.6, 0), row(1, 'labelled', 'a', 0.5, 0)]
+        const r = subagentRow(cases, rs, () => true, new Set(['a']))
+        expect(r.label).toBe(SUBAGENT_ROW_LABEL)
+        expect(r.tally.injected).toBe(3)
+        expect(sumTallies([tallyBySession(cases, packCapped(rs), new Set(['a'])).get('a')!]).injected).toBe(4)
     })
 })
 

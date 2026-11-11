@@ -144,6 +144,13 @@ describe('fitFusion', () => {
         const c = pool('s', 'note:t.md', ['t.md', ...filler(30, 'm')], filler(30, 'k'))
         expect(rankPool(c, { keyword: 0, k: 1, rerank: false })[0]).toBe('note:t.md')
     })
+    test('chats take slots in the top 10, as at runtime: a file behind ten chats is not listed', () => {
+        const chats: [string, string | null][] = Array.from({ length: 10 }, (_, i) => [`chat:c${i}`, null])
+        const c: PoolRow = { session: 's', labels: ['note:t.md'], meaning: [...chats, ['note:t.md', 'note:t.md']], keyword: [], logit: {} }
+        expect(rankPool(c, { keyword: 0, k: 1, rerank: false })).toEqual([])
+        const near: PoolRow = { ...c, meaning: [...chats.slice(0, 9), ['note:t.md', 'note:t.md']] }
+        expect(rankPool(near, { keyword: 0, k: 1, rerank: false })).toEqual(['note:t.md'])
+    })
     test('a noisy keyword list gets no weight and the fit says meaning leads', () => {
         const cases = Array.from({ length: 60 }, (_, i) => pool(`s${i % 12}`, `note:t${i}.md`, [`t${i}.md`, ...filler(30, `m${i}-`)], [...filler(30, `k${i}-`)]))
         const { model, report } = fitFusion(cases, 4)

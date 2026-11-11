@@ -27,6 +27,15 @@ const personBody = () => {
 }
 
 describe('brainHealth', () => {
+    test('digest and now notes are never orphans', () => {
+        const day = note('day-2026-10-07', 'one day', 'daily')
+        const now = note('now', 'right now', 'now')
+        const lone = note('lonely-fact', 'nothing links here')
+        const items = kinds([day, now, lone])
+        const orphan = items.find(i => i.kind === 'orphan')
+        expect(orphan?.notes).toEqual(['lonely-fact'])
+    })
+
     test('a long hub is not oversized', () => {
         const hub = note('michael', `# Michael\n${'- [[x]] one line per member\n'.repeat(120)}`, 'hub')
         expect(hub.content.length).toBeGreaterThan(3000)

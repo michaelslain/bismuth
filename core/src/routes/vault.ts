@@ -546,12 +546,6 @@ export default function vaultRoutes(
             }
         },
 
-        // Semantic (embedding) search over vault files (notes, PDFs by page, described images) and past
-        // chats, or the neighbours of one file (`around`, files only). Read-only despite POST.
-        // Answers 200 with `{ hits }` or `{ unavailable, message }`; denied files are dropped before
-        // `k` is applied. Chats join only for the owner or an agent in a vault that restricts nothing;
-        // the owner's token may narrow its chat view to `daemon` with `channel` (the CLI does so for
-        // an agent hand), and `chats: false` leaves chats out for any caller. A chat source that is unavailable while files answered leaves files alone.
         // Keyword + meaning search for `bismuth search` (core/src/hybridSearch.ts). Read-only despite POST.
         'POST /search/hybrid': async (req, __) =>
             hybridSearchRoute(req, {
@@ -563,6 +557,12 @@ export default function vaultRoutes(
         // Keyword + meaning search over Bismuth's own docs for `bismuth docs search` (core/src/docsHybrid.ts).
         'POST /docs/search': async (req, __) => docsSearchRoute(req, { vault: cfg.vault }),
 
+        // Semantic (embedding) search over vault files (notes, PDFs by page, described images) and past
+        // chats, or the neighbours of one file (`around`, files only). Read-only despite POST.
+        // Answers 200 with `{ hits }` or `{ unavailable, message }`; denied files are dropped before
+        // `k` is applied. Chats join only for the owner or an agent in a vault that restricts nothing;
+        // the owner's token may narrow its chat view to `daemon` with `channel` (the CLI does so for
+        // an agent hand), and `chats: false` leaves chats out for any caller. A chat source that is unavailable while files answered leaves files alone.
         'POST /search/semantic': async (req, __) => {
             const { query, around, k, channel, chats: withChats } = (await req.json()) as {
                 query?: string

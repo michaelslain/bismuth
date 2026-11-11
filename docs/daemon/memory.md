@@ -52,7 +52,7 @@ The memory health report lists structural problems in the graph, worst first, as
 | `no-hub` | Four or more notes share a tag or a name stem and no hub links at least half of them |
 | `dated-name` | A name carries a date, a month or a status word such as `-final` or `-update` |
 | `no-source` | A note links to no vault note and carries no `(session YYYY-MM-DD)` marker; profile and hub notes are exempt |
-| `orphan` | A note has no wikilink in or out |
+| `orphan` | A note other than a digest or `now` note has no wikilink in or out |
 | `no-description` | A note other than the profile has no `description` |
 | `rollup` | Day notes more than 30 days old, or week notes more than 182 days old, that fold into a week or month note |
 

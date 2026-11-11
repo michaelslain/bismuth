@@ -62,7 +62,7 @@ test('outside a daemon-enabled vault the server lists only bismuth_cli', async (
     }
 })
 
-test('remember type description lists profile and hub', () => {
+test('remember type description lists profile, hub and now', () => {
     const handlers = (server as unknown as {
         _requestHandlers: Map<string, (r: unknown, e: unknown) => Promise<{ tools: { name: string; inputSchema: { properties: { type?: { description: string } } } }[] }>>
     })._requestHandlers
@@ -72,7 +72,7 @@ test('remember type description lists profile and hub', () => {
         if (saved === undefined) delete process.env.BISMUTH_MEMORY_DIR
         else process.env.BISMUTH_MEMORY_DIR = saved
         const desc = tools.find(t => t.name === 'remember')!.inputSchema.properties.type!.description
-        expect(desc).toBe('person | project | workflow | fact | preference | daily | auto | profile | hub')
+        expect(desc).toBe('person | project | workflow | fact | preference | daily | auto | profile | hub | now')
     })
 })
 

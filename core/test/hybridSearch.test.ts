@@ -25,7 +25,9 @@ afterEach(() => {
 })
 
 // Fake model: "stripes" (the query) and "gamma" (note text) share one direction; the rest another.
-const vecOf = (t: string) => (t.includes('stripes') || t.includes('gamma') ? [0, 1, 0] : [1, 0, 0])
+// meaning.md is closer to the query than both.md (both.md is only partly about gamma), so the meaning list
+// ranks meaning.md first and only the fusion with the keyword list can put both.md on top.
+const vecOf = (t: string) => (t.includes('stripes') || t.includes('gamma gamma') ? [0, 1, 0] : t.includes('gamma') ? [0, 0.8, 0.6] : [1, 0, 0])
 const entry = (rel: string): DenyEntry => ({ rel, abs: `/vault/${rel}` })
 
 function fixture(opts: { enabled?: boolean } = {}) {

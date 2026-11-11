@@ -1,4 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { registry } from '../src/registry'
 import { hybridQuery, semanticQuery } from '../src/semantic'
 import { semanticLabel } from '../src/commands/search'
 import { tryCall } from '../src/http'
@@ -186,6 +190,69 @@ describe('hybridQuery over a running core', () => {
             if (saved === undefined) delete process.env.BISMUTH_AGENT_CHANNEL
             else process.env.BISMUTH_AGENT_CHANNEL = saved
             stub.stop(true)
+        }
+    }, T)
+})
+
+describe('hybridQuery with a core that is too slow', () => {
+    test('a core that does not answer in time yields the keyword list with reason warming', async () => {
+        const vault = mkdtempSync(join(tmpdir(), 'slow-core-'))
+        writeFileSync(join(vault, 'zebra.md'), 'zebra stripes\n')
+        const stub = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch: async () => {
+                await Bun.sleep(2000)
+                return Response.json({ hits: [], mode: 'hybrid' })
+            },
+        })
+        try {
+            const r = await hybridQuery(['--api', `http://127.0.0.1:${stub.port}`], vault, 'zebra', [], 5, 150)
+            expect(r.mode).toBe('keyword')
+            expect(r.reason).toBe('warming')
+            expect(r.hits.map(h => h.path)).toContain('zebra.md')
+        } finally {
+            stub.stop(true)
+            rmSync(vault, { recursive: true, force: true })
+        }
+    }, T)
+})
+
+describe('docs search over a running core', () => {
+    test('a keyword answer from the core is replaced by a search of this checkout docs root', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'docs-root-'))
+        const vault = join(root, 'vault')
+        const docs = join(root, 'docs')
+        mkdirSync(vault)
+        mkdirSync(docs)
+        writeFileSync(join(docs, 'alpha.md'), '# Alpha\n\nzebra stripes are unique\n')
+        const stub = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch: async () =>
+                Response.json({
+                    hits: [{ path: 'installed-copy.md', heading: 'Old', snippet: 'old', score: 1 }],
+                    mode: 'keyword',
+                    reason: 'off',
+                }),
+        })
+        const saved = process.env.BISMUTH_DOCS_DIR
+        process.env.BISMUTH_DOCS_DIR = docs
+        const lines: string[] = []
+        const log = spyOn(console, 'log').mockImplementation((...a: unknown[]) => void lines.push(a.join(' ')))
+        const err = spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            await registry['docs search'].run(['zebra', '--vault', vault, '--api', `http://127.0.0.1:${stub.port}`])
+            const hits = JSON.parse(lines.join('\n')) as Array<{ path: string }>
+            expect(hits.map(h => h.path)).toContain('alpha.md')
+            expect(hits.map(h => h.path)).not.toContain('installed-copy.md')
+        } finally {
+            log.mockRestore()
+            err.mockRestore()
+            if (saved === undefined) delete process.env.BISMUTH_DOCS_DIR
+            else process.env.BISMUTH_DOCS_DIR = saved
+            stub.stop(true)
+            rmSync(root, { recursive: true, force: true })
         }
     }, T)
 })

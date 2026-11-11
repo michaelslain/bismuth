@@ -120,7 +120,7 @@ Each item has a kind, the notes it concerns, and a detail line. The header's \`i
 
 What to do per kind:
 
-- \`oversized\` — over 100 KB: Step 2. Otherwise split it into atomic notes under rule 1 (read it with \`head -c\`/\`tail -c\` if over 50 KB).
+- \`oversized\` — over 100 KB: Step 2. Otherwise split it into atomic notes under rule 1 (read it with \`head -c\`/\`tail -c\` if over 50 KB). A digest note over 2,000 characters is condensed in place with \`remember\`, never split.
 - \`dated-name\` and \`cluster\` — Step 3: collapse into ONE canonical note.
 - \`duplicate\` — read both notes. If they cover the same thing, merge into the better-named note via \`remember\`, then \`forget\` the other. If they cover different things, do not merge: sharpen both descriptions (rule 9) so each says when it matters and how it differs from the other.
 - \`orphan\` — nothing links to it. Link it from the note or hub it belongs with; forget it only under rule 3.

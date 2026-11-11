@@ -120,3 +120,23 @@ test('today and the 7-day horizon follow the local calendar', async () => {
     expect(out).toContain('today is 2026-11-06')
     expect(out).toContain('due before 2026-11-13')
 })
+
+test('the Due list is cut at a line boundary, never mid-line', async () => {
+    const lines = Array.from({ length: 60 }, (_, i) => `- [ ] task number ${i} with some words [due 2026-11-08]`)
+    put('big.md', lines.join('\n'))
+    const out = await nowFacts(root, memory, NOW)
+    const due = out.split('### Vault folders')[0]!.split('\n').filter(l => l.startsWith('- '))
+    expect(due.length).toBeGreaterThan(5)
+    expect(due.length).toBeLessThan(60)
+    for (const l of due) expect(l).toMatch(/\[due 2026-11-08\] — \[\[big\]\]$/)
+})
+
+test('tasks due today or later come before overdue ones', async () => {
+    put(
+        'a.md',
+        ['- [ ] overdue chore [due 2026-11-01]', '- [ ] today chore [due 2026-11-06]', '- [ ] soon chore [due 2026-11-09]'].join('\n'),
+    )
+    const out = await nowFacts(root, memory, NOW)
+    expect(out.indexOf('today chore')).toBeLessThan(out.indexOf('soon chore'))
+    expect(out.indexOf('soon chore')).toBeLessThan(out.indexOf('overdue chore'))
+})

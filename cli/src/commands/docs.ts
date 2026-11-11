@@ -1,6 +1,7 @@
 // The `docs` command group: the CLI twin of the MCP's bismuth_docs_{list,search,read} tools. Both
 // surfaces call the same pure listDocs/searchDocs/readDoc (mcp/src/docs.ts), so a page found one
-// way reads identically the other. Headless — no vault, no server.
+// way reads identically the other. List and read are headless; search asks a running core for the
+// meaning side and keeps keyword results on this process's own docs root.
 import { existsSync } from 'node:fs'
 import { bismuthHome } from '../../../core/src/bismuthHome'
 import { resolve } from 'node:path'
@@ -37,7 +38,12 @@ async function docsQuery(args: string[], query: string, limit: number): Promise<
         const r = await tryCall(base, 'POST', '/docs/search', { query, limit }, DOCS_WAIT_MS + 5000)
         if ('timeout' in r) return docsHybridSearch(query, { ...opts, keywordOnly: 'warming' })
         if ('error' in r) return fail(`POST /docs/search → ${r.error}: ${r.message || 'the running server failed the request'}`)
-        if ('value' in r && isDocsHybrid(r.value)) return r.value
+        if ('value' in r && isDocsHybrid(r.value)) {
+            // The core answers from its own docs root (the installed copy when it runs from a build), so a
+            // keyword answer is redone over this process's root; a blended one already ran on the core's index.
+            if (r.value.mode === 'keyword') return docsHybridSearch(query, { ...opts, keywordOnly: r.value.reason ?? 'off' })
+            return r.value
+        }
     }
     return docsHybridSearch(query, { ...opts, build: true, waitMs: DOCS_WAIT_MS })
 }

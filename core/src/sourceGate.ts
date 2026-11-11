@@ -5,6 +5,13 @@
 // the search blend (`FusionModel`), so one refit command writes both.
 import bundled from './sourceGateModel.json'
 
+/** Hits asked of the sources: enough to find a source's tenth-best cosine (the gate's `background`). */
+export const SOURCE_K = 10
+
+/** The source's k-th best cosine, or its last hit when it returned fewer than k. */
+export const backgroundOf = (sortedDesc: { score: number }[]): number =>
+    sortedDesc.length ? sortedDesc[Math.min(sortedDesc.length, SOURCE_K) - 1]!.score : 0
+
 export type GateFeatures = {
     /** Cosine of the candidate's best chunk against the query. */
     cosine: number

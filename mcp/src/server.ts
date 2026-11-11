@@ -73,7 +73,7 @@ const memoryTools = [
                 type: {
                     type: 'string',
                     description:
-                        'person | project | workflow | fact | preference | daily | auto | profile | hub',
+                        'person | project | workflow | fact | preference | daily | auto | profile | hub | now',
                 },
                 tags: {
                     type: 'array',

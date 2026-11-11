@@ -22,7 +22,7 @@ import type { RecallSourceSwitches } from './embeddingsSetting'
 import { sourceKey } from './semanticSources'
 import type { SourceHit, SourceQuery } from './semanticSources'
 import { packSources, sourceSection } from './sourcePack'
-import { gateAccepts, gateProbability, loadGateModel } from './sourceGate'
+import { SOURCE_K, backgroundOf, gateAccepts, gateProbability, loadGateModel } from './sourceGate'
 import type { GateFeatures, GateModel, GateTraceRow } from './sourceGate'
 import { hasTimeRefs, timeRecall } from './timeRecall'
 import type { TimeApi, TimeRecallResult } from './timeRecall'
@@ -396,8 +396,6 @@ function preferNeighbourPointers(
     return `${head}${POINTER_TITLE}\n${lines.join('\n')}\n\n${close}`
 }
 
-/** Hits asked of the sources: enough to find a source's tenth-best cosine (the gate's `background`). */
-const SOURCE_K = 10
 /** Candidates per source the cross-encoder reads and the gate scores. Bounds cost only: 15 passages
  *  rerank in about 130 ms; what is injected among them is the gate's decision. */
 export const SOURCE_CANDIDATES = 5
@@ -419,10 +417,6 @@ const withTimeout = async <T>(p: Promise<T>, ms: number): Promise<T | undefined>
 export function sourcePassage(h: SourceHit): string {
     return h.title ? `${h.title}\n${h.excerpt}` : h.excerpt
 }
-
-/** The source's k-th best cosine, or its last hit when it returned fewer than k. */
-export const backgroundOf = (sortedDesc: SourceHit[]): number =>
-    sortedDesc.length ? sortedDesc[Math.min(sortedDesc.length, SOURCE_K) - 1]!.score : 0
 
 const kindOfHit = (h: SourceHit): GateFeatures['kind'] => ({ files: 'file', chats: 'chat', docs: 'docs' } as const)[sourceSection(h)]
 
