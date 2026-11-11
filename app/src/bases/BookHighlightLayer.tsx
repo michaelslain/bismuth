@@ -42,7 +42,7 @@ export type BookHighlightLayerProps = {
 /** Pointer travel under which a press is a click, not a box. */
 const SLOP = 4
 
-type Painted = { key: string; left: number; top: number; w: number; h: number; color: string }
+type Painted = { key: string; id: string; left: number; top: number; w: number; h: number; color: string }
 type Draft = { slot: PageSlot; x0: number; y0: number; x1: number; y1: number; id: number }
 
 /** Highlight boxes over the pages of the still spread. Painting is unconditional; drawing only
@@ -52,6 +52,8 @@ type Draft = { slot: PageSlot; x0: number; y0: number; x1: number; y1: number; i
 const BookHighlightLayer: Component<BookHighlightLayerProps> = props => {
     let host!: HTMLDivElement
     const [draft, setDraft] = createSignal<Draft | null>(null)
+    /** `file#id` of the highlight under the pointer (unarmed, no press): its boxes deepen. */
+    const [hovered, setHovered] = createSignal<string | null>(null)
 
     const boxFor = (slot: PageSlot, store: AnnotationStore) =>
         store.highlightStore() === 'pdf'
@@ -70,7 +72,7 @@ const BookHighlightLayer: Component<BookHighlightLayerProps> = props => {
                 const color = resolveHighlightColor(h.c)
                 h.rects.forEach((r, i) => {
                     const p = logicalToScreen({ x: r.x, y: r.y }, slot.rendered, box)
-                    out.push({ key: `${h.id}-${i}`, left: p.x, top: p.y, w: r.w * k, h: r.h * k, color })
+                    out.push({ key: `${h.id}-${i}`, id: `${slot.file}#${h.id}`, left: p.x, top: p.y, w: r.w * k, h: r.h * k, color })
                 })
             }
         }
@@ -174,6 +176,7 @@ const BookHighlightLayer: Component<BookHighlightLayerProps> = props => {
         const index = list.findIndex(h => h.id === id)
         const gone = list[index]
         setHighlightCursor(false)
+        setHovered(null)
         if (!gone) return
         props.edit(file, doc => removeHighlight(doc, docPage, id))
         pushUndoToast('highlight removed', () => props.edit(file, doc => restoreHighlight(doc, docPage, gone, index)))
@@ -189,7 +192,9 @@ const BookHighlightLayer: Component<BookHighlightLayerProps> = props => {
         let over = false
         const onMove = (e: PointerEvent) => {
             // a press in progress is a page being dragged, not a hover
-            const now = e.buttons === 0 && !!hitAt(e.clientX, e.clientY)
+            const hit = e.buttons === 0 ? hitAt(e.clientX, e.clientY) : null
+            const now = !!hit
+            setHovered(hit ? `${hit.file}#${hit.id}` : null)
             if (now !== over) setHighlightCursor((over = now))
         }
         const onDown = (e: PointerEvent) => {
@@ -211,6 +216,7 @@ const BookHighlightLayer: Component<BookHighlightLayerProps> = props => {
             window.removeEventListener('pointerdown', onDown)
             window.removeEventListener('pointerup', onUp)
             if (over) setHighlightCursor(false)
+            setHovered(null)
         })
     })
 
@@ -240,6 +246,7 @@ const BookHighlightLayer: Component<BookHighlightLayerProps> = props => {
                 {p => (
                     <div
                         class={styles.rect}
+                        classList={{ [styles.hover]: hovered() === p().id }}
                         data-book-highlight-rect
                         style={{
                             left: `${p().left}px`,

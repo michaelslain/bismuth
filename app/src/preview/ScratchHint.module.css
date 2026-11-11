@@ -11,8 +11,10 @@
 }
 
 /* --prose-font (not the UI mono Text normally inherits) so the hint reads as a note-surface
-   affordance, like a penciled reminder on the page rather than interface chrome. */
+   affordance, like a penciled reminder on the page rather than interface chrome, at the size the
+   note written there will have. */
 .label {
     font-family: var(--prose-font);
+    font-size: var(--prose-font-size);
     font-style: italic;
 }

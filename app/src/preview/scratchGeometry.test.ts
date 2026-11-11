@@ -11,14 +11,13 @@ import type { LogicalBox } from '../../../core/src/drawing/pageInk'
 import {
     SCRATCH_MIN_W,
     SCRATCH_PAD,
-    SCRATCH_REF_SCALE,
     type ScratchBlock,
 } from '../../../core/src/scratchTypes'
 
 // A US-Letter page (612x792pt) fits the 816x1056 logical page exactly: box = {0, 0, 816, 1056}.
 const LETTER: LogicalBox = { x: 0, y: 0, w: 816, h: 1056 }
 
-/** Page `i` of a one-column stack: rendered 612 wide at 1x (k = 0.75 = SCRATCH_REF_SCALE), with a
+/** Page `i` of a one-column stack: rendered 612 wide at 1x (k = 0.75), with a
  *  0.4 strip, 16px gap between pages, 20px left gutter. */
 const pageAt = (i: number, zoom = 1): PageInkPage => {
     const w = 612 * zoom
@@ -62,19 +61,16 @@ describe('stripRangeLogical', () => {
 })
 
 describe('blockScreenRect', () => {
-    test('at 1x maps logical -> host px and scale is 1 at the reference scale', () => {
+    test('at 1x maps logical -> host px', () => {
         const r = blockScreenRect(block(), pageAt(0), LETTER)
         expect(r.left).toBeCloseTo(20 + 900 * 0.75, 6)
         expect(r.top).toBeCloseTo(10 + 400 * 0.75, 6)
         expect(r.w).toBeCloseTo(150, 6)
-        expect(r.scale).toBeCloseTo(0.75 / SCRATCH_REF_SCALE, 6)
-        expect(r.scale).toBeCloseTo(1, 6)
     })
 
-    test('at 2x doubles size + scale and keeps the same logical point', () => {
+    test('at 2x doubles the width and keeps the same logical point', () => {
         const one = blockScreenRect(block({ page: 1 }), pageAt(1, 1), LETTER)
         const two = blockScreenRect(block({ page: 1 }), pageAt(1, 2), LETTER)
-        expect(two.scale).toBeCloseTo(one.scale * 2, 6)
         expect(two.w).toBeCloseTo(one.w * 2, 6)
         const p2 = pageAt(1, 2).rendered
         expect(two.left).toBeCloseTo(p2.left + 900 * 1.5, 6)
@@ -87,7 +83,6 @@ describe('blockScreenRect', () => {
         const r = blockScreenRect(block({ x: 800, y: 150 }), pageAt(0), legacy)
         expect(r.left).toBeCloseTo(20 + 700, 6)
         expect(r.top).toBeCloseTo(10 + 100, 6)
-        expect(r.scale).toBeCloseTo(1 / SCRATCH_REF_SCALE, 6)
     })
 })
 

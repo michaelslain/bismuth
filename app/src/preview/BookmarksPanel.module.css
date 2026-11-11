@@ -1,5 +1,6 @@
 /* app/src/preview/BookmarksPanel.module.css — the PDF preview's bookmarks + outline column
-   (BookmarksPanel.tsx ONLY). */
+   (BookmarksPanel.tsx ONLY). It sits on --bg, the pane's darkest ground, so it reads as its own
+   column beside the scratch strip (--surface-1) rather than as more of it. */
 .bookmarks-panel {
     display: flex;
     flex-direction: column;
@@ -8,7 +9,7 @@
     min-height: 0;
     overflow: auto;
     padding-block: var(--sp-3);
-    background: var(--surface-1);
+    background: var(--bg);
     border-left: var(--rule-soft);
 }
 

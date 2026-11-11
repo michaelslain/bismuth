@@ -22,7 +22,6 @@ import type { PageInkPage } from './PageInk'
 import {
     SCRATCH_MIN_W,
     SCRATCH_PAD,
-    SCRATCH_REF_SCALE,
     type ScratchBlock,
 } from '../../../core/src/scratchTypes'
 
@@ -35,18 +34,17 @@ export function stripRangeLogical(
     return { x0, x1: x0 + ((page.marginW ?? 0) * box.w) / page.rendered.w }
 }
 
-/** Host-px rect + font scale for a block on its page. scale = (rendered.w / box.w) / SCRATCH_REF_SCALE. */
+/** Host-px rect for a block on its page (its text size does not follow the page: ScratchBlock.tsx). */
 export function blockScreenRect(
     b: ScratchBlock,
     page: PageInkPage,
     box: LogicalBox,
-): { left: number; top: number; w: number; scale: number } {
+): { left: number; top: number; w: number } {
     const k = page.rendered.w / box.w
     return {
         left: page.rendered.left + (b.x - box.x) * k,
         top: page.rendered.top + (b.y - box.y) * k,
         w: b.w * k,
-        scale: k / SCRATCH_REF_SCALE,
     }
 }
 

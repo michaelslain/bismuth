@@ -2,9 +2,8 @@
    ScratchBlock.tsx ONLY (one-module-one-importer).
 
    The block is positioned by its layer (inline left/top/width in host px) and inherits the strip's
-   ground: no background of its own, so it reads as text written on the note surface. Its text size
-   follows the page's zoom through `--scratch-scale` (set inline), rescaling the same
-   `--prose-font-size` a note body uses — MarkdownField's theme reads that variable.
+   ground: no background of its own, so it reads as text written on the note surface. Its text is the
+   `--prose-font-size` a note body uses (MarkdownField's theme reads that variable), at every zoom.
 
    Chrome (the move handle + delete X) renders in `.chrome`, a row ABOVE the block's own box and
    AFTER <MarkdownField> in DOM order — never behind CodeMirror's positioned `.cm-editor`, which is
@@ -13,14 +12,6 @@
     position: absolute;
     pointer-events: none;
     border-radius: var(--r-0);
-    /* A note beside the page reads AT the page's own text size, not the note-editor's prose size:
-       --fs-body at the reference scale (SCRATCH_REF_SCALE = 0.75, a Letter page fit to a ~900px
-       pane), where the PDF's own body text measures ~12.5px. Floored at --fs-ui so a page fit into
-       a narrow pane never shrinks a note below readable chrome text. */
-    --prose-font-size: max(
-        var(--fs-ui),
-        calc(var(--fs-body) * var(--scratch-scale, 1))
-    );
 }
 
 .block.interactive {

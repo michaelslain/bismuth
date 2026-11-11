@@ -54,6 +54,13 @@
        mark is a rendered physical object, not UI chrome, and the softened corner is part of
        how it reads. Named + tokenized (not a literal) per the token-literals sweep, task 1. */
     border-radius: var(--r-mark);
+    transition: opacity var(--dur) var(--ease);
+}
+
+/* The highlight under the pointer, the one a click removes: every line of it deepens together, with
+   the same short fade the rest of the UI uses for hover. */
+.hover {
+    opacity: 0.8;
 }
 
 /* PDF dark mode (PdfPageCanvas's `.pdf-canvas-dark`): the page raster is shown inverted, so
@@ -66,4 +73,8 @@
 .rect-dark {
     mix-blend-mode: screen;
     opacity: 0.4;
+}
+
+.rect-dark.hover {
+    opacity: 0.65;
 }

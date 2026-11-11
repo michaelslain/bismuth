@@ -180,6 +180,26 @@ export const UnarmedClickRemoves: Story = {
     },
 }
 
+/** Unarmed, the box under the pointer deepens with a short fade (the one a click would remove) and
+ *  fades back once the pointer leaves it. Ends hovered. Point at the yellow box to try it. */
+export const UnarmedHoverDeepens: Story = {
+    name: 'Unarmed hover deepens',
+    render: () => <Harness store={memoryStore(seeded())} armed={false} />,
+    play: async ({ canvasElement }) => {
+        const layer = canvasElement.querySelector<HTMLElement>('[data-book-highlights]')!
+        const box = () => layer.querySelector<HTMLElement>('[data-book-highlight-rect]')!
+        const opacity = () => parseFloat(getComputedStyle(box()).opacity)
+        await expect(opacity()).toBeCloseTo(0.5, 2)
+        await expect(getComputedStyle(box()).transitionProperty).toContain('opacity')
+        hoverOn(box())
+        await waitFor(() => expect(opacity()).toBeCloseTo(0.8, 2))
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0 }))
+        await waitFor(() => expect(opacity()).toBeCloseTo(0.5, 2))
+        hoverOn(box())
+        await waitFor(() => expect(opacity()).toBeCloseTo(0.8, 2))
+    },
+}
+
 function hexToRgb(hex: string): string {
     const n = parseInt(hex.slice(1, 7), 16)
     return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`

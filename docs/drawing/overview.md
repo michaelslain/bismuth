@@ -66,7 +66,7 @@ A PDF's preview toolbar adds three more tools. Highlights are saved inside the P
 
 | Control | What it does |
 |---|---|
-| **Highlight text** | With text selected, highlights it at once and stays off. With nothing selected it arms: your next text selection is highlighted, or a click on an existing highlight removes it. Over any highlight the pointer turns into an X: click to remove that highlight, and press `undo` on the toast to bring it back. A double-click or a drag over a highlight still selects its text. Right-click it for its colours: yellow, green, blue, pink and orange, the current one marked. Picking a colour with text selected highlights it in that colour at once; with nothing selected it arms highlight in that colour. The colour holds for every PDF until you pick another, and a new window starts on yellow |
+| **Highlight text** | With text selected, highlights it at once and stays off. With nothing selected it arms: your next text selection is highlighted, or a click on an existing highlight removes it. Over any highlight the pointer turns into an X and the highlight deepens with a short fade: click to remove that highlight, and press `undo` on the toast to bring it back. A double-click or a drag over a highlight still selects its text. Right-click it for its colours: yellow, green, blue, pink and orange, the current one marked. Picking a colour with text selected highlights it in that colour at once; with nothing selected it arms highlight in that colour. The button's icon is drawn in the current colour. The colour holds for every PDF and book until you pick another, and the app starts on the last colour picked (yellow the first time) |
 | **Draw** | Turns draw mode on and off, the same as Mod+Shift+I |
 | **Scratch paper** | Adds a drawable strip to the right of every page, or removes it |
 | **Bookmarks** | Opens a right-hand panel with your bookmarks (add the current page, jump, rename, delete) above the PDF's own outline |
@@ -122,7 +122,7 @@ On an image, the scratch strip appears only when its sidecar already carries a `
 
 ## Scratch notes
 
-The scratch strip also takes typed notes. Click any empty spot on the strip and a small note block starts there, pinned to that page and position. A page can hold any number of blocks, and each scales with zoom so it stays beside the passage it annotates.
+The scratch strip also takes typed notes. Click any empty spot on the strip and a small note block starts there, pinned to that page and position. A page can hold any number of blocks, and each moves and widens with zoom so it stays beside the passage it annotates, while its text stays at the size of a note's body text.
 
 - **Look.** The strip is a note surface, not the page's own paper. It uses the editor's ground and the prose font, and ink drawn on it takes the note-ink colours. A stroke that crosses from the page onto the strip changes colour at the page edge.
 - **Where blocks live.** Typed blocks are saved in the body of the file's companion note (`x.png` has `x.png.md`), below its frontmatter, not in the `.draw` sidecar. That makes their text searchable and lets their `[[wikilinks]]` and `#tags` reach the vault graph like any other note. The block grammar is in [companion notes](../vault/frontmatter.md).

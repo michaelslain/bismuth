@@ -36,6 +36,7 @@ import Label from '../ui/Label'
 import PageReadout from './PageReadout'
 import PdfZoom from './PdfZoom'
 import HighlightColorMenu from './HighlightColorMenu'
+import { highlightTint } from './highlightColor'
 import { PDF_HIGHLIGHT_COLORS } from '../../../core/src/theme/tokens'
 import styles from './PreviewBar.module.css'
 
@@ -165,6 +166,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             <IconButton
                                 icon="Highlighter"
                                 label="Highlight text"
+                                tint={highlightTint(props.highlightColor?.() ?? 'hl')}
                                 title={
                                     props.highlightArmed?.()
                                         ? `Select text to highlight it ${colorName()} (click to cancel, right-click for colours)`

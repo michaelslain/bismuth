@@ -175,7 +175,7 @@ Bookmarks are stored where the PDF preview keeps them, in the page file's `<file
 
 ## Highlight a region
 
-In `pages` mode, the `highlight` button in the view bar arms the highlighter. While it is armed, dragging over a page draws a translucent box in the current colour and releasing saves it, and clicking a box removes it. The button disarms after each box. Without arming, the pointer turns into an X over a box: click to remove it, and press `undo` on the toast to put it back. A drag that starts on a box still turns the page. Right-click it for the colour menu, the same colours and the same current colour as the PDF preview.
+In `pages` mode, the `highlight` button in the view bar arms the highlighter. While it is armed, dragging over a page draws a translucent box in the current colour and releasing saves it, and clicking a box removes it. The button disarms after each box. Without arming, the pointer turns into an X over a box and the box deepens with a short fade: click to remove it, and press `undo` on the toast to put it back. A drag that starts on a box still turns the page. Right-click it for the colour menu, the same colours and the same current colour as the PDF preview; the button's icon is drawn in that colour.
 
 A box is stored where the PDF preview stores highlights for that file: inside a PDF as a standard highlight annotation, in the sidecar for an image or for a PDF that cannot be rewritten. Boxes made in the preview show in the book. On a Mac the transcript lines under a new box also gain `==marks==` in the page's companion note; elsewhere only the box saves.
 

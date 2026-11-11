@@ -186,6 +186,14 @@ export const PdfHighlightColorMenu: Story = {
         expectCalm(bar, 2)
         const hl = within(bar).getByLabelText('Highlight text')
         await expect(hl.getAttribute('data-tooltip')).toContain('yellow')
+        // the glyph is drawn in the current colour: yellow now (red and green high, blue low)
+        // a color-mix() computes to `color(srgb r g b)` in 0..1, so scale that form to 0..255
+        const ink = () => {
+            const c = getComputedStyle(hl.querySelector('svg')!).color
+            const n = c.match(/[\d.]+/g)!.map(Number)
+            return c.startsWith('color(') ? n.map(v => v * 255) : n
+        }
+        await expect(ink()[2]!).toBeLessThan(ink()[0]! - 40)
         const r = hl.getBoundingClientRect()
         await fireEvent.contextMenu(hl, { clientX: r.left + 4, clientY: r.bottom })
         const menu = await waitFor(() => {
@@ -204,6 +212,8 @@ export const PdfHighlightColorMenu: Story = {
         await waitFor(() => expect(menuOf()).toBeNull())
         await expect(hl.getAttribute('aria-pressed')).toBe('true')
         await expect(hl.getAttribute('data-tooltip')).toContain('blue')
+        // ...and blue once blue is picked
+        await waitFor(() => expect(ink()[2]!).toBeGreaterThan(ink()[0]! + 40))
     },
 }
 

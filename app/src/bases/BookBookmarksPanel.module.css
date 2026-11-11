@@ -1,5 +1,6 @@
 /* BookBookmarksPanel.module.css — the bookmarks column beside an open book
-   (BookBookmarksPanel.tsx ONLY): the column around the reader's BookmarkList. */
+   (BookBookmarksPanel.tsx ONLY): the column around the reader's BookmarkList, on --bg like the PDF
+   preview's bookmarks column. */
 .panel {
     display: flex;
     flex: none;
@@ -8,6 +9,6 @@
     min-height: 0;
     overflow: auto;
     padding-block: var(--sp-3);
-    background: var(--surface-1);
+    background: var(--bg);
     border-left: var(--rule-soft);
 }

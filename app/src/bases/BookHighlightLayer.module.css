@@ -21,6 +21,13 @@
     mix-blend-mode: multiply;
     opacity: 0.5;
     border-radius: var(--r-mark);
+    transition: opacity var(--dur) var(--ease);
+}
+
+/* The box under the pointer, the one a click removes, deepens with the UI's hover fade (the PDF
+   preview's text highlights do the same). */
+.hover {
+    opacity: 0.8;
 }
 
 /* The box being dragged: the same tint with an outline, so it reads as unsaved. */

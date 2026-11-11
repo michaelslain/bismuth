@@ -22,7 +22,3 @@ export const SCRATCH_MIN_W = 120
 
 /** Logical units kept clear between a block and the strip's edges. */
 export const SCRATCH_PAD = 16
-
-/** The logical->CSS scale (rendered page px / logical page units) at which a block's text renders at
- *  exactly --prose-font-size: a letter page at fit width with the default 0.4 strip in a ~900px pane. */
-export const SCRATCH_REF_SCALE = 0.75

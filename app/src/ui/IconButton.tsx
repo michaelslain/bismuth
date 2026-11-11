@@ -40,6 +40,9 @@ export type IconButtonProps = {
     iconSize?: number
     /** The catalog keybinding that does what this button does; TooltipHost shows its live combo. */
     keybinding?: KeybindingId
+    /** A CSS colour for the glyph alone (the highlighter drawn in its current colour); the brackets
+     *  keep their state's ink, and a disabled button drops the tint for the one disabled ink. */
+    tint?: string
 } & Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'>
 
 /**
@@ -58,6 +61,7 @@ function IconButton(props: IconButtonProps) {
         'iconSize',
         'title',
         'keybinding',
+        'tint',
     ])
     if (import.meta.env?.DEV && local.icon !== undefined && !isIconName(local.icon)) {
         warnBadIcon('IconButton', local.icon ?? '')
@@ -84,7 +88,15 @@ function IconButton(props: IconButtonProps) {
         >
             <Show
                 when={local.glyph}
-                fallback={<Icon value={local.icon ?? ''} size={iconSize()} />}
+                fallback={
+                    <Icon
+                        value={local.icon ?? ''}
+                        size={iconSize()}
+                        style={
+                            local.tint && !rest.disabled ? { color: local.tint } : undefined
+                        }
+                    />
+                }
             >
                 <Text as="span" inherit>
                     {local.glyph}

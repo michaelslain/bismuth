@@ -835,6 +835,41 @@ export const ClickRemoves: Story = {
     },
 }
 
+/** The pointer over a highlight deepens it with a short fade, the cue for which highlight a click
+ *  would remove; moving off it fades it back. Ends hovered, so the audit's shot shows the lifted mark. */
+export const HoverDeepens: Story = {
+    name: 'Hover deepens',
+    render: ClickRemoves.render,
+    play: async ({ canvasElement }) => {
+        const rects = () => [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="highlight-rect"]')]
+        const opacity = () => parseFloat(getComputedStyle(rects()[0]!).opacity)
+        await waitFor(
+            () => {
+                expect(rects().length).toBe(1)
+                expect(rects()[0]!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        await expect(opacity()).toBeCloseTo(0.5, 2)
+        // the fade is a transition, not a jump
+        await expect(getComputedStyle(rects()[0]!).transitionProperty).toContain('opacity')
+        hoverOn(rects()[0]!)
+        await waitFor(() => expect(rects()[0]!.hasAttribute('data-hovered')).toBe(true))
+        await waitFor(() => expect(opacity()).toBeCloseTo(0.8, 2))
+        // off the mark, onto bare paper below it
+        const r = rects()[0]!.getBoundingClientRect()
+        const x = r.left + r.width / 2
+        const y = r.bottom + 80
+        document.elementFromPoint(x, y)?.dispatchEvent(
+            new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse', clientX: x, clientY: y }),
+        )
+        await waitFor(() => expect(rects()[0]!.hasAttribute('data-hovered')).toBe(false))
+        await waitFor(() => expect(opacity()).toBeCloseTo(0.5, 2))
+        hoverOn(rects()[0]!)
+        await waitFor(() => expect(opacity()).toBeCloseTo(0.8, 2))
+    },
+}
+
 /** A press and release at `el`'s centre, on the element under that point, as a real mouse sends
  *  them: pointerdown, pointerup, click. */
 function clickOn(el: HTMLElement) {

@@ -41,7 +41,7 @@ function Patch(props: { autofocus: boolean }) {
         >
             <ScratchBlock
                 block={BLOCK}
-                rect={{ left: 20, top: 36, w: 210, scale: 1 }}
+                rect={{ left: 20, top: 36, w: 210 }}
                 autofocus={props.autofocus}
                 interactive
                 onText={noop}
@@ -140,18 +140,17 @@ export const Focused: Story = {
     },
 }
 
-/** Size follows `rect.scale`: at the reference scale (1) the block's text sits at --fs-body (the
- *  page's own body-text size), scaling proportionally above it and floored at --fs-ui below it —
- *  never at the note-editor's larger prose size. */
-function SizePatch(props: { scale: number; testid: string }) {
+/** A note beside the page is written at a note body's size, `--prose-font-size`, whatever the
+ *  block's width (which follows the page's zoom): a narrow block and a wide one read the same size. */
+function SizePatch(props: { w: number; testid: string }) {
     return (
         <div
             data-testid={props.testid}
-            style={{ position: 'relative', width: '260px', height: '60px' }}
+            style={{ position: 'relative', width: '420px', height: '80px' }}
         >
             <ScratchBlock
                 block={{ ...BLOCK, id: props.testid }}
-                rect={{ left: 8, top: 8, w: 210, scale: props.scale }}
+                rect={{ left: 8, top: 24, w: props.w }}
                 autofocus={false}
                 interactive
                 onText={noop}
@@ -164,49 +163,26 @@ function SizePatch(props: { scale: number; testid: string }) {
     )
 }
 
-export const SizeAtReferenceScale: Story = {
-    // Explicit top offsets, not a flex column: the 2x sample's text runs visibly taller than any
-    // fixture's fixed 60px box, and a flex column only reserves that 60px — the overflowing text
-    // painted straight over the 0.5x sample below it. Offsets are spaced to clear that overflow so
-    // the three samples read as three distinct blocks, not "check eq (3)" doubled over one spot.
+export const SizeIsProse: Story = {
     render: () => (
-        <div style={{ position: 'relative', width: '260px', height: '520px' }}>
-            <div style={{ position: 'absolute', top: '0px', left: '0px', right: '0px' }}>
-                <SizePatch scale={1} testid="scale-1" />
-            </div>
-            <div style={{ position: 'absolute', top: '140px', left: '0px', right: '0px' }}>
-                <SizePatch scale={2} testid="scale-2" />
-            </div>
-            <div style={{ position: 'absolute', top: '380px', left: '0px', right: '0px' }}>
-                <SizePatch scale={0.5} testid="scale-0.5" />
-            </div>
+        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '24px' }}>
+            <SizePatch w={140} testid="narrow" />
+            <SizePatch w={400} testid="wide" />
         </div>
     ),
     play: async ({ canvasElement }) => {
         const scrollerFor = (testid: string) =>
-            canvasElement.querySelector<HTMLElement>(
-                `[data-testid="${testid}"] .cm-scroller`,
-            )
-        await waitFor(() => expect(scrollerFor('scale-1')).not.toBeNull())
-        await waitFor(() => expect(scrollerFor('scale-2')).not.toBeNull())
-        await waitFor(() => expect(scrollerFor('scale-0.5')).not.toBeNull())
-
-        const size1 = parseFloat(
-            getComputedStyle(scrollerFor('scale-1')!).fontSize,
-        )
-        const size2 = parseFloat(
-            getComputedStyle(scrollerFor('scale-2')!).fontSize,
-        )
-        const size05 = parseFloat(
-            getComputedStyle(scrollerFor('scale-0.5')!).fontSize,
-        )
-
-        // Reference scale (1): the page's own body-text size, --fs-body (13px).
-        await expect(Math.abs(size1 - 13)).toBeLessThanOrEqual(0.5)
-        // 2x: proportional, not floored.
-        await expect(Math.abs(size2 - 26)).toBeLessThanOrEqual(0.5)
-        // 0.5x would be 6.5px — floored at --fs-ui (11.5px) so it never falls below readable
-        // chrome text.
-        await expect(Math.abs(size05 - 11.5)).toBeLessThanOrEqual(0.5)
+            canvasElement.querySelector<HTMLElement>(`[data-testid="${testid}"] .cm-scroller`)
+        await waitFor(() => expect(scrollerFor('narrow')).not.toBeNull())
+        await waitFor(() => expect(scrollerFor('wide')).not.toBeNull())
+        const probe = document.createElement('span')
+        probe.style.fontSize = 'var(--prose-font-size)'
+        canvasElement.appendChild(probe)
+        const prose = parseFloat(getComputedStyle(probe).fontSize)
+        probe.remove()
+        for (const id of ['narrow', 'wide']) {
+            const size = parseFloat(getComputedStyle(scrollerFor(id)!).fontSize)
+            await expect(Math.abs(size - prose)).toBeLessThanOrEqual(0.5)
+        }
     },
 }

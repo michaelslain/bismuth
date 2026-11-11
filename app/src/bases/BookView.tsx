@@ -20,7 +20,7 @@ import { pointInDropRect, type NativeDragDetail } from '../nativeDrop'
 import { FONT_STACKS, settings, setSettings } from '../settings'
 import { acquireAnnotationStore, flushAnnotationStore, retireAnnotationStore, storeEpoch, whenReady } from '../preview/sharedAnnotationStore'
 import HighlightColorMenu from '../preview/HighlightColorMenu'
-import { highlightColor, setHighlightColor } from '../preview/highlightColor'
+import { highlightColor, highlightTint, setHighlightColor } from '../preview/highlightColor'
 import BarSettings from '../ui/BarSettings'
 import IconButton from '../ui/IconButton'
 import Readout from '../ui/Readout'
@@ -1525,6 +1525,7 @@ const BookView: Component<BookViewProps> = props => {
                     <IconButton
                         icon="Highlighter"
                         label="highlight"
+                        tint={highlightTint(highlightColor())}
                         title={
                             texty()
                                 ? 'highlight the selected words, or take the highlight off a selection inside one'

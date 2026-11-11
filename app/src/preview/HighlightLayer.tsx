@@ -27,7 +27,7 @@
 // occupies inside it, the same box a PDF's quad points convert through; `logicalToScreen`/`screenToLogical` convert through a page's `rendered`
 // rect (host px). `selectionRects.ts`'s `rectsToPages` is the same conversion run the other way,
 // for a browser selection's client rects.
-import { createEffect, createMemo, Index, onCleanup } from 'solid-js'
+import { createEffect, createMemo, createSignal, Index, onCleanup } from 'solid-js'
 import type { AnnotationStore } from './annotationTypes'
 import type { PageInkPage } from './PageInk'
 import {
@@ -77,6 +77,8 @@ export type HighlightLayerProps = {
 
 type PaintedRect = {
     key: string
+    /** The highlight this rect belongs to: every line of the one under the pointer lifts together. */
+    id: string
     left: number
     top: number
     w: number
@@ -86,6 +88,8 @@ type PaintedRect = {
 
 function HighlightLayer(props: HighlightLayerProps) {
     let hostRef: HTMLDivElement | undefined
+    /** The highlight under the pointer (unarmed, no press): its rects deepen, the one a click removes. */
+    const [hovered, setHovered] = createSignal<string | null>(null)
 
     const docOrEmpty = () => props.store.doc() ?? emptyDoc()
 
@@ -120,6 +124,7 @@ function HighlightLayer(props: HighlightLayerProps) {
                     const k = logicalToScreenScale(page.rendered, box)
                     out.push({
                         key: `${h.id}-${ri}`,
+                        id: h.id,
                         left: topLeft.x,
                         top: topLeft.y,
                         w: r.w * k,
@@ -222,6 +227,7 @@ function HighlightLayer(props: HighlightLayerProps) {
         const index = list.findIndex(h => h.id === id)
         const gone = list[index]
         setHighlightCursor(false)
+        setHovered(null)
         if (!gone) return
         props.store.edit(d => removeHighlight(d, page, id))
         pushUndoToast('highlight removed', () => props.store.edit(d => restoreHighlight(d, page, gone, index)))
@@ -238,9 +244,14 @@ function HighlightLayer(props: HighlightLayerProps) {
         let down: { x: number; y: number } | null = null
         const onMove = (e: PointerEvent) => {
             // a press in progress is a selection or a scroll, not a hover
-            setHighlightCursor(e.buttons === 0 && !!hitAt(e.clientX, e.clientY))
+            const hit = e.buttons === 0 ? hitAt(e.clientX, e.clientY) : null
+            setHighlightCursor(!!hit)
+            setHovered(hit?.id ?? null)
         }
-        const onLeave = () => setHighlightCursor(false)
+        const onLeave = () => {
+            setHighlightCursor(false)
+            setHovered(null)
+        }
         const onDown = (e: PointerEvent) => {
             click.press()
             down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null
@@ -264,6 +275,7 @@ function HighlightLayer(props: HighlightLayerProps) {
             el.removeEventListener('pointerdown', onDown)
             el.removeEventListener('pointerup', onUp)
             setHighlightCursor(false)
+            setHovered(null)
         })
     })
 
@@ -307,8 +319,12 @@ function HighlightLayer(props: HighlightLayerProps) {
                 {p => (
                     <div
                         class={styles.rect}
-                        classList={{ [styles['rect-dark']]: props.dark?.() ?? false }}
+                        classList={{
+                            [styles['rect-dark']]: props.dark?.() ?? false,
+                            [styles.hover]: hovered() === p().id,
+                        }}
                         data-testid="highlight-rect"
+                        data-hovered={hovered() === p().id ? '' : undefined}
                         style={{
                             left: `${p().left}px`,
                             top: `${p().top}px`,

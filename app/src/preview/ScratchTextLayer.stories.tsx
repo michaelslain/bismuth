@@ -4,8 +4,7 @@
 //
 // NO PDF.JS, NO REAL STORE. The layer only needs measured page rects, so the stage below lays out
 // plain page divs (the PDF page's paper colour) with a note-surface strip beside each, the same
-// geometry PdfPages hands PageInk: a US-Letter page rendered 612px wide at 1x — exactly the
-// SCRATCH_REF_SCALE, so text renders at the note's own --prose-font-size — with a 0.4 strip.
+// geometry PdfPages hands PageInk: a US-Letter page rendered 612px wide at 1x, with a 0.4 strip.
 // The CompanionStore is a small in-story signals object (createCompanionStore is being written in a
 // parallel task and is deliberately not imported); it implements add/update/remove exactly as the
 // type documents, and `revision` never bumps (nothing here reloads from disk).
@@ -634,17 +633,10 @@ export const DragToAnotherPage: Story = {
     },
 }
 
-/** Re-laying the pages scales the note's text with zoom and keeps it on the same point of the page —
- *  down to a floor: a long textbook fit to a narrow pane can shrink `--scratch-scale` well under a
- *  size anyone could read, so the size never drops below `--fs-ui`. Three zooms, ending on the
- *  LARGEST (the shot the audit takes): a small one where the floor holds, the reference scale where
- *  the note reads at the page's own body-text size, and a larger one proving scaling continues above the
- *  floor — visibly bigger than WithBlocks' reference-scale shot, not pixel-identical to it. Stays
- *  under the audit's 1280px viewport throughout (a straight 1x -> 2x range does not: the floor and
- *  the viewport cap are too close together to demonstrate a literal doubling between two points that
- *  are both clear of the floor AND clear of the viewport edge — the exact doubling math is proven
- *  zoom-independently in scratchGeometry.test.ts instead). */
-export const ZoomScalesText: Story = {
+/** Re-laying the pages moves the note with its passage but never resizes its text: at a small zoom,
+ *  at 1x and at a large one, the note reads at a note body's size (`--prose-font-size`). Ends on the
+ *  LARGEST zoom, the shot the audit takes. */
+export const ZoomKeepsProseSize: Story = {
     render: () => <Stage blocks={[SEEDED[0]!]} zoom={0.3} />,
     play: async ({ canvasElement }) => {
         await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
@@ -652,41 +644,20 @@ export const ZoomScalesText: Story = {
         const scroller = () => block.querySelector<HTMLElement>('.cm-scroller')!
         const s = () => stageOf(canvasElement).getBoundingClientRect()
         const sizeNow = () => parseFloat(getComputedStyle(scroller()).fontSize)
+        const prosePx = parseFloat(
+            resolveVar(canvasElement, 'font-size', 'var(--prose-font-size)'),
+        )
         const topOk = async () => {
             const want = hostOf(0, 846, 120)
             const r = block.getBoundingClientRect()
-            await expect(
-                Math.abs(r.top - s().top - want.top),
-            ).toBeLessThanOrEqual(2)
-            await expect(
-                Math.abs(r.left - s().left - want.left),
-            ).toBeLessThanOrEqual(2)
+            await expect(Math.abs(r.top - s().top - want.top)).toBeLessThanOrEqual(2)
+            await expect(Math.abs(r.left - s().left - want.left)).toBeLessThanOrEqual(2)
         }
-
-        // 1. Small scale: the floor holds rather than shrinking past readable.
-        await topOk()
-        const floorPx = parseFloat(
-            resolveVar(canvasElement, 'font-size', 'var(--fs-ui)'),
-        )
-        await expect(Math.abs(sizeNow() - floorPx)).toBeLessThanOrEqual(1)
-
-        // 2. Reference scale: the note's text is the page's own body-text size.
-        live.setZoom(1)
-        const bodyPx = parseFloat(
-            resolveVar(canvasElement, 'font-size', 'var(--fs-body)'),
-        )
-        await waitFor(() =>
-            expect(Math.abs(sizeNow() - bodyPx)).toBeLessThanOrEqual(1),
-        )
-        await topOk()
-
-        // 3. Above the reference scale: still proportional (not re-floored, not capped) — and this
-        //    is the shot, so it must be visibly larger than the 1x block in WithBlocks.
-        live.setZoom(1.4)
-        await waitFor(() =>
-            expect(Math.abs(sizeNow() - bodyPx * 1.4)).toBeLessThanOrEqual(1),
-        )
-        await topOk()
+        for (const zoom of [0.3, 1, 1.4]) {
+            live.setZoom(zoom)
+            await waitFor(() => expect(Math.abs(sizeNow() - prosePx)).toBeLessThanOrEqual(0.5))
+            await topOk()
+        }
     },
 }
 

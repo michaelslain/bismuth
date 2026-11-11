@@ -7,8 +7,8 @@
 // mount; the layer keys its blocks on the store's `revision`, so a reload from disk remounts and
 // re-seeds rather than fighting the caret.
 //
-// Font scale: the root sets `--scratch-scale` inline and its module rescales `--prose-font-size` by
-// it, so MarkdownField's own theme (which reads `var(--prose-font-size)`) renders at the page's zoom.
+// Font size: MarkdownField's own theme reads `var(--prose-font-size)`, so a note beside the page is
+// written at a note body's size at every zoom; only its position and width follow the page.
 //
 // Chrome — a move handle and a delete X, together in a row ABOVE the block's first text line (never
 // on top of the text: CodeMirror's positioned `.cm-editor` paints over anything underneath it, which
@@ -24,7 +24,7 @@ import CloseButton from '../ui/CloseButton'
 
 export type ScratchBlockProps = {
     block: ScratchBlockData
-    rect: { left: number; top: number; w: number; scale: number }
+    rect: { left: number; top: number; w: number }
     autofocus: boolean
     interactive: boolean
     onText: (text: string) => void
@@ -89,7 +89,6 @@ function ScratchBlock(props: ScratchBlockProps) {
                 left: `${props.rect.left}px`,
                 top: `${props.rect.top}px`,
                 width: `${props.rect.w}px`,
-                '--scratch-scale': String(props.rect.scale),
             }}
             onFocusOut={e => {
                 const to = e.relatedTarget
