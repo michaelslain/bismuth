@@ -215,7 +215,7 @@ schema: { title: text, date: date }
 
 A GFM pipe table body (a header row followed by a `| --- | --- |` line) is read too, with numeric cells read as numbers. Row writes serialize the body as the YAML list.
 
-A row's `file.name` is empty in both formats because stored rows are not separate notes. Row commands such as `bismuth row update` address a row by its zero-based position; see [the CLI reference](../cli/reference.md).
+A row's `file.name` is empty in both formats because stored rows are not separate notes. Row commands such as `bismuth row update` address a row by its zero-based position, and `bismuth row set --match <field>=<value>` addresses it by a field's value; see [the CLI reference](../cli/reference.md).
 
 ## How do I convert a markdown base to `.base.jsonl`?
 

@@ -40,7 +40,7 @@ The visibility gate for agents checks the same root when no `--vault`, `--dir` o
 | `--pretty` | every command that prints JSON | Indents JSON with two spaces. |
 | `--api <url>` | server commands | Base URL of a running server. See [Which commands need a running server](#which-commands-need-a-running-server). |
 | `--json` | `backends`, `backends setup-free`, `doctor` | Prints JSON instead of a readable report. |
-| `--json '<body>'` | `api`, `row add`, `row update`, `calendar` writes | A JSON object value for the command's body. A different flag from the one above. |
+| `--json '<body>'` | `api`, `row add`, `row update`, `row set`, `calendar` writes | A JSON object value for the command's body. A different flag from the one above. |
 | `BISMUTH_DAEMON_DIR` | `daemon` | Machine-level daemon directory. Default `~/.bismuth/daemon`. Per-vault crons and processes live under `<vault>/.daemon` and are addressed with `--vault`. |
 | `BISMUTH_EMAIL_CONFIG` | `daemon email` | The email bridge's mail-account file. Default `~/.bismuth/email.json`. |
 | `BISMUTH_MEMORY_DIR` | `memory` | Memory directory when `--memory` is absent. The app's terminal tabs set it. |
@@ -190,6 +190,7 @@ Reads, validates and edits Bases, and resolves a source to rows. A base is a `<n
 | `rows` | `[--of '[[Base]]' \| --where EXPR \| --tasks EXPR]` | Resolves one source to rows. Without a selector it returns every note. | no |
 | `row add` | `<basePath> --json '{...}'` | Appends a row to a collection. | no |
 | `row update` | `<basePath> <index> --json '{...}'` | Replaces the row at a 0-based index. | no |
+| `row set` | `<basePath> --match <field>=<value> --json '{...}'` | Merges the fields into the one row of a collection whose `<field>` equals `<value>` and keeps the fields it does not name. A `null` value removes that field. Exits `1` when no row or several rows match, or when the base is a view. | no |
 | `row delete` | `<basePath> <index>` | Removes the row at an index. | no |
 | `row reorder` | `<basePath> <from> <to>` | Moves a row between indices. | no |
 

@@ -43,6 +43,7 @@ import {
 } from '../../../core/src/bases/taskDsl'
 import {
     upsertRow,
+    patchRowWhere,
     deleteRow,
     reorderRow,
 } from '../../../core/src/bases/rowOps'
@@ -863,6 +864,32 @@ export const commands: CommandMap = {
             const note = requireJson(args)
             const { text, name } = await readBase(vault, basePath)
             const next = upsertRow(text, { name, path: basePath }, index, note)
+            await writeNote(vault, basePath, next)
+            out({ ok: true }, args)
+        },
+    },
+
+    'row set': {
+        summary:
+            'Merge fields into the one row of a collection whose <field> equals <value>, keeping the fields not named; null in --json removes a field. Fails when no row or several rows match',
+        usage: "<basePath> --match <field>=<value> --json '{...}'",
+        run: async args => {
+            const vault = requireVault(args)
+            const [givenPath] = positionals(args)
+            if (!givenPath) fail('<basePath> required')
+            const match = flag(args, 'match')
+            const eq = match?.indexOf('=') ?? -1
+            if (!match || eq < 1) fail('--match <field>=<value> required')
+            const basePath = resolveBasePath(vault, givenPath)
+            const patch = requireJson(args)
+            const { text, name } = await readBase(vault, basePath)
+            const next = patchRowWhere(
+                text,
+                { name, path: basePath },
+                match.slice(0, eq),
+                match.slice(eq + 1),
+                patch,
+            )
             await writeNote(vault, basePath, next)
             out({ ok: true }, args)
         },

@@ -319,6 +319,84 @@ test('4: row update on row 7 changes exactly one line', async () => {
     expect(after[0]).toBe(before[0])
 })
 
+test('4b: row set merges into the matched row, changes one line, refuses a missing match', async () => {
+    const { vault } = await migrated()
+    const file = 'Deck.base.jsonl'
+    const before = read(vault, file).split('\n')
+    ok(
+        await cli(
+            vault,
+            'row',
+            'set',
+            'Deck',
+            '--match',
+            'front=question 9',
+            '--json',
+            '{"back":"set answer"}',
+        ),
+    )
+    const after = read(vault, file).split('\n')
+    expect(after).toHaveLength(before.length)
+    const changed = after.filter((l, i) => l !== before[i])
+    expect(changed).toHaveLength(1)
+    expect(JSON.parse(changed[0])).toMatchObject({
+        front: 'question 9',
+        back: 'set answer',
+    })
+    const missing = await cli(
+        vault,
+        'row',
+        'set',
+        'Deck',
+        '--match',
+        'front=no such question',
+        '--json',
+        '{"back":"x"}',
+    )
+    expect(missing.code).toBe(1)
+    expect(read(vault, file).split('\n')).toEqual(after)
+})
+
+test('4c: row set refuses an ambiguous or malformed match and leaves the file as it was', async () => {
+    const { vault } = await migrated()
+    const file = 'Deck.base.jsonl'
+    const set = (match: string, json: string) =>
+        cli(vault, 'row', 'set', 'Deck', '--match', match, '--json', json)
+    // two rows sharing `back` make a match on it ambiguous
+    ok(
+        await cli(
+            vault,
+            'row',
+            'add',
+            'Deck',
+            '--json',
+            '{"front":"d1","back":"same","x":0}',
+        ),
+    )
+    ok(
+        await cli(
+            vault,
+            'row',
+            'add',
+            'Deck',
+            '--json',
+            '{"front":"d2","back":"same"}',
+        ),
+    )
+    const before = read(vault, file)
+    for (const match of ['back=same', 'front', '=d1']) {
+        expect((await set(match, '{"x":1}')).code).toBe(1)
+        expect(read(vault, file)).toBe(before)
+    }
+    ok(await set('front=d1', '{"x":null}'))
+    const row = read(vault, file)
+        .split('\n')
+        .filter(Boolean)
+        .map(l => JSON.parse(l))
+        .find(r => r.front === 'd1')
+    expect(row).toEqual({ front: 'd1', back: 'same' })
+})
+
 test('5: calendar add then a gcal-style reassemble stays valid JSONL with both events', async () => {
     const { vault } = await migrated()
     ok(

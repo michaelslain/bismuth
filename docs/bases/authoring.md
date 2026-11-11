@@ -16,7 +16,7 @@ bismuth prop set Books.base.jsonl groupBy status
 bismuth row add Library --json '{"title":"Capital","rating":4}'
 ```
 
-`base create <name>` writes `<name>.base.jsonl`; give an explicit `.md` path to get a markdown base. `prop set` and `prop delete` change only line 1 and leave every row byte-identical, and `row add`, `row update`, `row delete` and `row reorder` change only the row lines they touch. The `base` and `row` subcommands accept a base name without an extension and use `<name>.base.jsonl` when it exists, otherwise `<name>.md`.
+`base create <name>` writes `<name>.base.jsonl`; give an explicit `.md` path to get a markdown base. `prop set` and `prop delete` change only line 1 and leave every row byte-identical, and on a JSONL base `row add`, `row update`, `row set`, `row delete` and `row reorder` change only the row lines they touch; on a markdown base every row write reserializes the whole body as a YAML list. The `base` and `row` subcommands accept a base name without an extension and use `<name>.base.jsonl` when it exists, otherwise `<name>.md`.
 
 If you write the file yourself, keep to these rules:
 
@@ -119,7 +119,7 @@ A `views:` list in an existing file is read through its first entry only and is 
 ## Edit an existing base
 
 1. Read it first: open the file, or run `bismuth base read <path>` for the parsed config and rows. Do not rewrite the config from memory.
-2. Change only the keys you mean to, with `bismuth prop set <path> <key> <value>` (the value is parsed as JSON, else read as a string) or `bismuth prop delete <path> <key>`; on a JSONL base they rewrite line 1 only. Edit rows with `bismuth row add`, `bismuth row update`, `bismuth row delete` and `bismuth row reorder`. The app writes some keys back into the base, and a rewrite that drops them throws away the user's arrangement:
+2. Change only the keys you mean to, with `bismuth prop set <path> <key> <value>` (the value is parsed as JSON, else read as a string) or `bismuth prop delete <path> <key>`; on a JSONL base they rewrite line 1 only. Edit rows with `bismuth row add`, `bismuth row update`, `bismuth row set`, `bismuth row delete` and `bismuth row reorder`; `row set --match <field>=<value>` changes the named fields of the one row with that value, so a row added or moved since you read the base does not shift its target. The merge is shallow: an object or array in `--json` replaces that field whole. Each row command reads the file, edits it and writes it back, so two writers that run at the same moment can lose one edit; writers that may overlap take turns under a lock of their own. The app writes some keys back into the base, and a rewrite that drops them throws away the user's arrangement:
 
    | layout | keys the app writes into the base |
    |---|---|

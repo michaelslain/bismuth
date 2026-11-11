@@ -1,6 +1,10 @@
 import { parseBaseFile, FRONTMATTER_RE } from './parse'
 import { serializeRows } from './rows'
-import { baseFormatOf, reassembleBaseJsonl } from './baseFile'
+import {
+    baseFormatOf,
+    readBaseConfigRaw,
+    reassembleBaseJsonl,
+} from './baseFile'
 import { placeholderFile } from './types'
 import type { Row } from './types'
 import type { BaseConfig } from './types'
@@ -120,6 +124,65 @@ export function upsertRows(
         if (u.index === null) rows.push(row)
         else rows[u.index] = row
     }
+    return reassemble(text, rows, config)
+}
+
+/**
+ * Merge `patch` into the ONE row whose `field` equals `value`, addressed by content instead of
+ * position. A position goes stale the moment another writer adds, deletes or reorders a row, and
+ * `upsertRow` then replaces the wrong row whole; a key match cannot hit the wrong row, and a merge
+ * keeps every field the caller did not name. A `null` in `patch` removes that field.
+ *
+ * The match compares as strings, so `--match order=3` finds a numeric 3. No match → ENOENT;
+ * several → EINVAL with the count, since editing an arbitrary one of them is the bug this exists
+ * to prevent.
+ */
+export function patchRowWhere(
+    text: string,
+    meta: Meta,
+    field: string,
+    value: string,
+    patch: Record<string, unknown>,
+): string {
+    if (!meta.name || !meta.path)
+        throw createError('EINVAL', 'meta.name and meta.path are required')
+    const raw = readBaseConfigRaw(text)
+    if (raw?.type !== 'base')
+        throw createError('EINVAL', `${meta.path} is not a base`)
+    if (raw.source)
+        throw createError(
+            'EINVAL',
+            `${meta.path} is a view: its rows are notes, so set the field on the note with bismuth prop set`,
+        )
+    const { rows, config } = parseBaseFile(text, meta)
+    const hits = rows.filter(r => {
+        const v = r.note[field]
+        const scalar =
+            typeof v === 'string' ||
+            typeof v === 'number' ||
+            typeof v === 'boolean'
+        return scalar && String(v) === value
+    })
+    if (hits.length === 0)
+        throw createError('ENOENT', `no row has ${field} = ${value}`)
+    if (hits.length > 1)
+        throw createError(
+            'EINVAL',
+            `${hits.length} rows have ${field} = ${value}; match a field that is unique`,
+        )
+    const note: Record<string, unknown> = { ...hits[0].note }
+    for (const [k, v] of Object.entries(patch)) {
+        if (v === null) delete note[k]
+        // defineProperty, so a `__proto__` key becomes a field instead of the prototype
+        else
+            Object.defineProperty(note, k, {
+                value: v,
+                enumerable: true,
+                writable: true,
+                configurable: true,
+            })
+    }
+    rows[rows.indexOf(hits[0])] = { ...hits[0], note }
     return reassemble(text, rows, config)
 }
 

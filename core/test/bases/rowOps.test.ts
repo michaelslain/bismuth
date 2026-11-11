@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { upsertRow, upsertRows, deleteRow, reorderRow } from '../../src/bases/rowOps'
+import { upsertRow, upsertRows, deleteRow, reorderRow, patchRowWhere } from '../../src/bases/rowOps'
 import { parseBaseFile } from '../../src/bases/parse'
 import { AppError } from '../../src/error'
 
@@ -302,4 +302,99 @@ test('reassemble writes back in the format of the input text', () => {
         '{"type":"base","view":"table"}\n{"id":1,"title":"A"}\n{"id":2,"title":"B"}\n',
     )
     expect(rows(out).map(r => r.note.title)).toEqual(['A', 'B'])
+})
+
+const BOARD = [
+    '---',
+    'type: base',
+    'view: kanban',
+    '---',
+    '',
+    '- ticket: T1',
+    '  status: queued',
+    '  order: 1',
+    '  session: old',
+    '- ticket: T2',
+    '  status: queued',
+    '  order: 2',
+].join('\n')
+
+test('patchRowWhere merges fields into the one matching row and keeps the rest', () => {
+    const out = patchRowWhere(BOARD, META, 'ticket', 'T2', { status: 'in progress', branch: 'b' })
+    const rs = rows(out)
+    expect(rs[1].note).toEqual({ ticket: 'T2', status: 'in progress', order: 2, branch: 'b' })
+    expect(rs[0].note).toEqual({ ticket: 'T1', status: 'queued', order: 1, session: 'old' })
+})
+
+test('patchRowWhere removes a field given null', () => {
+    const out = patchRowWhere(BOARD, META, 'ticket', 'T1', { session: null })
+    expect(rows(out)[0].note).toEqual({ ticket: 'T1', status: 'queued', order: 1 })
+})
+
+test('patchRowWhere matches a number by its string form', () => {
+    const out = patchRowWhere(BOARD, META, 'order', '2', { status: 'landed' })
+    expect(rows(out)[1].note.status).toBe('landed')
+})
+
+test('patchRowWhere throws ENOENT when no row matches', () => {
+    try {
+        patchRowWhere(BOARD, META, 'ticket', 'T9', { status: 'x' })
+        throw new Error('expected a throw')
+    } catch (e) {
+        expect(e).toBeInstanceOf(AppError)
+        expect((e as AppError).code).toBe('ENOENT')
+    }
+})
+
+test('patchRowWhere throws EINVAL when several rows match', () => {
+    try {
+        patchRowWhere(BOARD, META, 'status', 'queued', { status: 'x' })
+        throw new Error('expected a throw')
+    } catch (e) {
+        expect(e).toBeInstanceOf(AppError)
+        expect((e as AppError).code).toBe('EINVAL')
+        expect((e as AppError).message).toContain('2 rows')
+    }
+})
+
+const JSONL_BOARD = [
+    '{"type":"base","view":"kanban","groupBy":"status"}',
+    '{"ticket":"T1","status":"queued","tags":["a","b"],"meta":{"k":1},"done":true}',
+    '{"ticket":"T2","status":"queued"}',
+    '',
+].join('\n')
+const JSONL_META = { name: 'R', path: 'R.base.jsonl' }
+
+test('patchRowWhere on a JSONL base changes only the matched line', () => {
+    const out = patchRowWhere(JSONL_BOARD, JSONL_META, 'ticket', 'T2', { status: 'landed' })
+    const [cfg, r1, r2, end] = out.split('\n')
+    const [cfg0, r10] = JSONL_BOARD.split('\n')
+    expect(cfg).toBe(cfg0)
+    expect(r1).toBe(r10)
+    expect(JSON.parse(r2)).toEqual({ ticket: 'T2', status: 'landed' })
+    expect(end).toBe('')
+})
+
+test('patchRowWhere matches a boolean by its string form but never an array or object', () => {
+    expect(patchRowWhere(JSONL_BOARD, JSONL_META, 'done', 'true', { x: 1 })).toContain('"x":1')
+    for (const [field, value] of [
+        ['tags', 'a,b'],
+        ['meta', '[object Object]'],
+    ]) {
+        expect(() => patchRowWhere(JSONL_BOARD, JSONL_META, field, value, { x: 1 })).toThrow(
+            /no row has/,
+        )
+    }
+})
+
+test('patchRowWhere refuses a view base and a file that is not a base', () => {
+    const view = '{"type":"base","view":"table","source":"notes"}\n{"ticket":"T1"}\n'
+    expect(() => patchRowWhere(view, JSONL_META, 'ticket', 'T1', { x: 1 })).toThrow(/is a view/)
+    const note = '---\ntitle: Plan\n---\n\n- ticket: T1\n'
+    expect(() => patchRowWhere(note, META, 'ticket', 'T1', { x: 1 })).toThrow(/is not a base/)
+})
+
+test('patchRowWhere stores a __proto__ key as a field', () => {
+    const out = patchRowWhere(JSONL_BOARD, JSONL_META, 'ticket', 'T2', JSON.parse('{"__proto__":{"p":1}}'))
+    expect(JSON.parse(out.split('\n')[2])).toEqual(JSON.parse('{"ticket":"T2","status":"queued","__proto__":{"p":1}}'))
 })
