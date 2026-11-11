@@ -580,13 +580,14 @@ A path that is not a PDF is refused with a message pointing at [`transcribe`](#t
 
 ## pdf
 
-Rewrites a PDF's pages. Headless. `pdf pages` is in [Rewrite a PDF's pages](../vault/pdf-pages.md).
+Rewrites a PDF's pages. Headless. `pdf pages` is in [Rewrite a PDF's pages](../vault/pdf-pages.md), `pdf merge` in [Merge a newer version of a PDF](../vault/pdf-merge.md).
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
 | `pdf pages` | `<file.pdf> [--order <spec>] [--vault <dir>]` | Rewrites the PDF to hold the pages `--order` lists, such as `1,3,2,blank,@scans/a.png`; highlights, ink, bookmarks and transcript follow their page. Without `--order` prints `{pages}` and changes nothing. Prints `{pages}`, the page count. | no |
+| `pdf merge` | `<file.pdf> <newer.pdf> [--write] [--vault <dir>]` | Plans merging the newer version in: every page takes the newer picture, pages you had keep their highlights and ink (and their text unless written on since), new pages are added, pages only `<file.pdf>` has are kept. Prints the plan; `--write` also writes it. See [Merge a newer version of a PDF](../vault/pdf-merge.md). | no |
 
-Through the MCP tool `bismuth_cli` this command may run 30 minutes; every other command it runs is stopped after 2 minutes. `pdf pages` is path-scoped; for an agent, a hidden PDF, companion, sidecar or `@` file reads as missing.
+Through the MCP tool `bismuth_cli`, `pdf pages` and `pdf merge` may run 30 minutes; every other command it runs is stopped after 2 minutes. `pdf pages` and `pdf merge` are path-scoped; for an agent, a hidden PDF, companion, sidecar or `@` file reads as missing.
 
 ## page
 

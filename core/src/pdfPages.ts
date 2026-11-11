@@ -10,7 +10,8 @@ import { AppError } from './error'
 import { getFileAccess, type FileAccess } from './fileAccess'
 import { companionPathFor, inkSidecarFor, isImagePath, isPdfPath } from './fileKinds'
 import { parseDoc, serializeDoc, type DrawingDoc } from './drawing/model'
-import { readPdfHighlights } from './drawing/pdfHighlights'
+import { applyPdfHighlightEdits, readPdfHighlights } from './drawing/pdfHighlights'
+import type { Highlight } from './drawing/model'
 import { readTranscript, remapTranscriptPages } from './transcript'
 
 /** One page of the rewritten PDF, in order. */
@@ -19,6 +20,10 @@ export type PageSource =
     | { file: string; page?: number } // a vault-relative image or pdf; a pdf with no page = all its pages
     | { data: string; name: string } // base64 bytes of an image or pdf the user dropped (name gives the kind by extension); pdf = all pages
     | { blank: true } // an empty page the size of the page before it (or the first page)
+    | { with: number; marksOf?: number; textOf?: number } // 1-based page of the `with` pdf; `marksOf` = this pdf's page whose ink, bookmarks and highlights it takes; `textOf` = this pdf's page whose transcript it keeps (without it, its text is read again)
+
+/** The other pdf a merge takes pages from: a vault file, or the bytes of one the user picked. */
+export type WithPdf = { file: string } | { data: string; name: string }
 
 /** New page i holds old page `sources[i]` (0-based), or null for a page that is new. */
 export type PageMap = (number | null)[]
@@ -52,11 +57,12 @@ export function remapDrawingDoc(doc: DrawingDoc, sources: PageMap): DrawingDoc {
 // Resolving the order
 
 type Source =
-    | { kind: 'copy'; key: string; index: number } // page `index` (0-based) of the loaded pdf `key`
+    | { kind: 'copy'; key: string; index: number; marksOf?: number; textOf?: number } // page `index` (0-based) of the loaded pdf `key`; `marksOf` / `textOf` = this pdf's 0-based page whose marks / text it takes
     | { kind: 'image'; bytes: Uint8Array; format: 'jpeg' | 'png' }
     | { kind: 'blank' }
 
 const THIS = ''
+const WITH = 'with'
 
 const bad = (message: string, status = 400, code = 'EINVAL') => new AppError(code, message, status)
 
@@ -113,8 +119,27 @@ async function resolveOrder(
     rel: string,
     self: PDFDocument,
     order: PageSource[],
+    withPdf?: WithPdf,
 ): Promise<Resolver> {
     const docs = new Map<string, PDFDocument>([[THIS, self]])
+    const withDoc = async (): Promise<PDFDocument> => {
+        const have = docs.get(WITH)
+        if (have) return have
+        if (!withPdf || typeof withPdf !== 'object') throw bad('a with page needs the with pdf')
+        let doc: PDFDocument
+        if ('data' in withPdf) {
+            if (typeof withPdf.name !== 'string' || !isPdfPath(withPdf.name)) throw bad('the with file must be a pdf')
+            doc = await loadPdf(decode(withPdf.data), withPdf.name)
+        } else {
+            const file = checkRel(withPdf.file)
+            if (!isPdfPath(file)) throw bad('the with file must be a pdf')
+            const bytes = await fa.readBinary(root, file).catch(() => null)
+            if (!bytes) throw bad(`no such file: ${file}`, 404, 'ENOENT')
+            doc = await loadPdf(bytes, file)
+        }
+        docs.set(WITH, doc)
+        return doc
+    }
     const sources: Source[] = []
     const selfCount = self.getPageCount()
 
@@ -138,7 +163,26 @@ async function resolveOrder(
     for (const entry of order) {
         const e = entry as Record<string, unknown> | null
         if (!e || typeof e !== 'object') throw bad('each order entry must be an object')
-        if ('blank' in e) {
+        if ('with' in e) {
+            const doc = await withDoc()
+            const n = doc.getPageCount()
+            const page = e.with
+            if (typeof page !== 'number' || !Number.isInteger(page) || page < 1 || page > n)
+                throw bad(`the with pdf has no page ${String(page)} (it has ${n})`)
+            const marks = e.marksOf
+            if (marks !== undefined && (typeof marks !== 'number' || !Number.isInteger(marks) || marks < 1 || marks > selfCount))
+                throw bad(`marksOf ${String(marks)} is out of range (the pdf has ${selfCount})`)
+            const text = e.textOf
+            if (text !== undefined && (typeof text !== 'number' || !Number.isInteger(text) || text < 1 || text > selfCount))
+                throw bad(`textOf ${String(text)} is out of range (the pdf has ${selfCount})`)
+            sources.push({
+                kind: 'copy',
+                key: WITH,
+                index: page - 1,
+                ...(marks !== undefined ? { marksOf: marks - 1 } : {}),
+                ...(text !== undefined ? { textOf: text - 1 } : {}),
+            })
+        } else if ('blank' in e) {
             if (e.blank !== true) throw bad('blank must be true')
             sources.push({ kind: 'blank' })
         } else if ('data' in e) {
@@ -291,7 +335,7 @@ export async function rewritePdfPages(
     root: string,
     rel: string,
     order: PageSource[],
-    opts: { mark?: (paths: string[]) => void } = {},
+    opts: { mark?: (paths: string[]) => void; with?: WithPdf } = {},
 ): Promise<{ pages: number }> {
     checkRel(rel)
     if (!isPdfPath(rel)) throw bad(`not a pdf: ${rel}`)
@@ -303,12 +347,26 @@ export async function rewritePdfPages(
     const state = await readPdfHighlights(bytes)
     if (!state.writable) throw notRewritable(state.reason)
     const self = await loadPdf(bytes, rel)
-    const resolved = await resolveOrder(fa, root, rel, self, order)
+    const resolved = await resolveOrder(fa, root, rel, self, order, opts.with)
     if (resolved.sources.length === 0) throw bad('a pdf needs at least one page')
 
-    const sources: PageMap = resolved.sources.map(s => (s.kind === 'copy' && s.key === THIS ? s.index : null))
+    // `sources` says whose text a page has, `marks` whose ink, bookmarks and highlights: the same old
+    // page for a kept page; for a page replaced by a newer version of it, `marks` always and the text
+    // only when the newer page has nothing new written on it (`textOf`).
+    const sources: PageMap = resolved.sources.map(s =>
+        s.kind === 'copy' && s.key === THIS ? s.index : s.kind === 'copy' && s.textOf !== undefined ? s.textOf : null,
+    )
+    const marks: PageMap = resolved.sources.map((s, i) => (s.kind === 'copy' && s.marksOf !== undefined ? s.marksOf : sources[i]!))
     const selfCount = self.getPageCount()
-    if (sources.length === selfCount && sources.every((s, i) => s === i)) return { pages: selfCount }
+    const untouched = resolved.sources.every((s, i) => s.kind === 'copy' && s.key === THIS && s.index === i)
+    if (sources.length === selfCount && untouched) return { pages: selfCount }
+    // A replaced page's highlights are drawn onto the new page after the build, in page space, so
+    // they keep their place on a page of another size.
+    const carried = resolved.sources.flatMap((s, i) =>
+        s.kind === 'copy' && s.marksOf !== undefined
+            ? (state.pages[s.marksOf] ?? []).map((highlight: Highlight) => ({ page: i, highlight }))
+            : [],
+    )
 
     // Read and remap the sidecars before anything is written, so one that cannot be read stops the
     // rewrite instead of leaving a pdf whose ink points at other pages.
@@ -322,7 +380,7 @@ export async function rewritePdfPages(
         } catch {
             throw new AppError('DRAW_UNREADABLE', `cannot read ${sidecarPath}, so ${rel} was not changed`, 409)
         }
-        sidecar = serializeDoc(remapDrawingDoc(doc, sources))
+        sidecar = serializeDoc(remapDrawingDoc(doc, marks))
     }
     const companionPath = companionPathFor(rel)
     const companionText = await readOrNull(fa, root, companionPath)
@@ -333,7 +391,8 @@ export async function rewritePdfPages(
     }
 
     const out = await build(self, resolved)
-    const written = await out.save()
+    let written = await out.save()
+    if (carried.length) written = await applyPdfHighlightEdits(written, { add: carried, remove: [] })
 
     opts.mark?.([rel, ...(sidecar !== null ? [sidecarPath] : []), ...(companion !== null ? [companionPath] : [])])
     await fa.writeBinary(root, rel, written)

@@ -80,6 +80,7 @@ The page sorter adds, moves and removes pages. Open it with the grid icon (`edit
 - Hover a page and press its `[x]` to remove it. The `undo` on the toast that follows puts it back.
 - The `[+]` tile after the last page picks images and PDFs to add at the end; dropping files between two pages adds them there.
 - `+ blank page` adds an empty page, on a PDF read on its own.
+- `merge a new version`, on a PDF read on its own, picks a newer copy of the PDF: every page takes the newer picture and keeps your marks, pages written on since are tagged `updated` and new ones `new`. [Merge a newer version of a PDF](../../vault/pdf-merge.md) describes the merge.
 
 Nothing is written until `save`; `cancel` leaves the book as it was. In a book base, `save` edits the base's rows: a removed page's row is deleted, an added file is copied into the attachment folder and gets a row, and the rows are put in the sorter's order. One tile stands for one row, so a PDF row moves and goes as a whole and its tile reads `lecture.pdf // 12 pages`. A book with a `source:` has no sorter.
 

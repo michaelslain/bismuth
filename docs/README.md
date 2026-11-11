@@ -50,6 +50,7 @@ bun run build:app
 - [Semantic search](vault/semantic-search.md) — find notes by meaning and by words in one `bismuth search`, the `embeddings.enabled` switch and what it costs
 - [Frontmatter and properties](vault/frontmatter.md) — YAML properties, their types, and companion notes for images and PDFs
 - [Rewrite a PDF's pages](vault/pdf-pages.md) — reorder, delete and add pages (images, other PDFs, blanks) with highlights, ink and transcript following each page, with `bismuth pdf pages`
+- [Merge a newer version of a PDF](vault/pdf-merge.md) — take a newer scan of a PDF page by page, adding its new pages and keeping highlights, ink and text on the pages you had, with `bismuth pdf merge`
 - [OCR for PDFs](vault/ocr.md) — make a scanned PDF's text selectable, with `bismuth ocr`
 - [Transcribe pages and handwritten scans](vault/transcription.md) — turn a book's page images, handwritten scans and scanned PDFs into text in their companion notes, with math as LaTeX, with `bismuth transcribe`
 - [Wikilinks and tags](vault/wikilinks-tags.md) — `[[links]]` matched by file name, `#tags`, and how each resolves

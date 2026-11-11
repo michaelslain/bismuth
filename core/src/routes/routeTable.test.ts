@@ -105,6 +105,7 @@ const EXPECTED = [
     'POST /opencode/oauth/callback',
     'POST /pdf/highlights',
     'POST /pdf/highlights/migrate',
+    'POST /pdf/merge/plan',
     'POST /pdf/pages',
     'POST /relay/session',
     'POST /relay/session/end',

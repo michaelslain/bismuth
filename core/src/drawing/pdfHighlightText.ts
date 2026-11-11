@@ -156,7 +156,7 @@ async function preparePdfjsGlobals(): Promise<void> {
 
 /** pdf.js, loaded with its one load-time warning muted: the failed `@napi-rs/canvas` require that
  *  `preparePdfjsGlobals` has already made harmless. */
-async function loadPdfjs() {
+export async function loadPdfjs() {
     await preparePdfjsGlobals()
     const warn = console.warn
     console.warn = (...args: unknown[]) => {

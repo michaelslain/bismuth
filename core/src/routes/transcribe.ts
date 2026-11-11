@@ -14,7 +14,7 @@ import {
 } from '../transcribe'
 import { isDeniedPath } from '../visibility'
 import { writeTranscriptPage } from '../transcript'
-import { rewritePdfPages, type PageSource } from '../pdfPages'
+import { rewritePdfPages, type PageSource, type WithPdf } from '../pdfPages'
 import { inkSidecarFor, isPdfPath } from '../fileKinds'
 import { markerStatus, startMarkerSetup } from '../markerSetup'
 import {
@@ -67,6 +67,22 @@ export default function transcribeRoutes(ctx: RouteContext): Record<string, Hand
                 checkPageFile(body.file)
                 if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)
                 return ok(await transcriptLines(ctx.cfg.vault, body))
+            } catch (e) {
+                if (e instanceof AppError) return error(e.message, e.statusCode)
+                throw e
+            }
+        },
+        // Which pages a newer version of a pdf keeps, updates and adds. Writes nothing: the app shows
+        // the plan in the page sorter and saves it through POST /pdf/pages.
+        'POST /pdf/merge/plan': async req => {
+            const body = (await req.json()) as { file: string; with: WithPdf }
+            try {
+                if (typeof body.file !== 'string' || !isPdfPath(body.file)) return error('file must be a pdf', 400)
+                if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)
+                const other = (body.with as { file?: unknown } | undefined)?.file
+                if (typeof other === 'string' && !(await visible(ctx, req, other))) return error('forbidden', 403)
+                const { planPdfMerge } = await import('../pdfMerge')
+                return ok(await planPdfMerge(ctx.cfg.vault, body.file, body.with))
             } catch (e) {
                 if (e instanceof AppError) return error(e.message, e.statusCode)
                 throw e
@@ -197,17 +213,19 @@ export function transcribeMutatingRoutes(ctx: RouteContext): Record<string, Hand
         // and transcript follow their page. Every file the order pulls pages from must be visible too.
         'POST /pdf/pages': ctx.mutatingHandler(
             async req => {
-                const body = (await req.json()) as { file: string; order: PageSource[] }
+                const body = (await req.json()) as { file: string; order: PageSource[]; with?: WithPdf }
                 try {
                     if (typeof body.file !== 'string' || !isPdfPath(body.file)) return error('file must be a pdf', 400)
                     if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)
                     if (!Array.isArray(body.order)) return error('order must be a list', 400)
                     const denied = await ctx.denyEntriesForRequest(req)
-                    for (const e of body.order) {
+                    for (const e of [...body.order, body.with]) {
                         const from = (e as { file?: unknown })?.file
                         if (typeof from === 'string' && isDeniedPath(denied, from)) return error('forbidden', 403)
                     }
-                    return ok(await rewritePdfPages(ctx.cfg.vault, body.file, body.order, { mark: ctx.markSelfWritten }))
+                    return ok(
+                        await rewritePdfPages(ctx.cfg.vault, body.file, body.order, { mark: ctx.markSelfWritten, with: body.with }),
+                    )
                 } catch (e) {
                     if (e instanceof AppError) return error(e.message, e.statusCode)
                     throw e

@@ -541,10 +541,13 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 // pdf-lib is pure JS, so the rewrite runs here as it does on the desktop; only a HEIC
                 // image needs the desktop converter and answers 415.
                 const { rewritePdfPages } = await import('./pdfPages')
-                const r = await rewritePdfPages(vault, b.file, b.order)
+                const r = await rewritePdfPages(vault, b.file, b.order, { with: b.with })
                 emit([b.file, inkSidecarFor(b.file), companionPathFor(b.file)])
                 return r
             }
+            case 'POST /pdf/merge/plan':
+                // the pages are drawn with pdf.js and a native canvas, which the iPad's core has not
+                throw new AppError('MERGE_UNAVAILABLE', 'merging a newer version needs the desktop app', 503)
             case 'GET /transcribe/job':
                 return null
             case 'POST /transcribe/job':

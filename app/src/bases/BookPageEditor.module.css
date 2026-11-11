@@ -40,6 +40,7 @@
     align-items: center;
     gap: var(--sp-2);
     cursor: grab;
+    user-select: none;
 }
 
 .tile[data-dragging] {

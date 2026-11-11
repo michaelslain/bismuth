@@ -40,7 +40,7 @@ function Live(props: { n: number; pending?: boolean }) {
     ])
     const [dirty, setDirty] = createSignal(!!props.pending)
     return (
-        <div style={{ width: '1000px', height: '640px', display: 'flex' }}>
+        <div style={{ width: '100%', 'max-width': '1000px', height: '640px', display: 'flex' }}>
             <BookPageEditor
                 tiles={list()}
                 canBlank
@@ -106,5 +106,105 @@ export const AddAndRemove: Story = {
         const grid = canvasElement.querySelector('[data-book-edit-add]')!.parentElement!
         await expect(grid.lastElementChild!.hasAttribute('data-book-edit-add')).toBe(true)
         await expect(c.getByRole('button', { name: 'add pages' })).toHaveTextContent('+')
+    },
+}
+
+/** A newer version merged in: pages 1–4 unchanged, page 5 replaced by its newer copy, two new pages.
+ *  `undo merge` puts the five pages back as they were before the merge. The sorter alone cannot read
+ *  a pdf, so a merge picked here lays out these same drawn pages under the picked file's name; the
+ *  `PDF merge a new version` story of BookView draws the picked file's own pages. */
+function Merged() {
+    const merged = (): EditTile[] => [
+        ...tiles(5).slice(0, 4),
+        { key: 'w4', label: '5 // updated', face: async () => pageFace(5) },
+        { key: 'w5', label: '6 // new', face: async () => pageFace(6) },
+        { key: 'w6', label: '7 // new', face: async () => pageFace(7) },
+    ]
+    const [list, setList] = createSignal<EditTile[]>(merged())
+    const [isMerged, setMerged] = createSignal(true)
+    const [name, setName] = createSignal('notebook v2.pdf')
+    const relabel = (l: EditTile[]) =>
+        l.map((t, i) => ({ ...t, label: t.key.startsWith('w') ? `${i + 1} // ${t.key === 'w4' ? 'updated' : 'new'}` : `${i + 1}` }))
+    const note = () => {
+        if (!isMerged()) return undefined
+        const u = list().filter(t => t.key === 'w4').length
+        const a = list().filter(t => t.key.startsWith('w') && t.key !== 'w4').length
+        return `merging ${name()} // ${u} updated // ${a} new`
+    }
+    return (
+        <div style={{ width: '100%', 'max-width': '1000px', height: '640px', display: 'flex' }}>
+            <BookPageEditor
+                tiles={list()}
+                canBlank
+                canMerge
+                note={note()}
+                dirty={isMerged()}
+                onMove={(from, to) => {
+                    const next = [...list()]
+                    const [m] = next.splice(from, 1)
+                    next.splice(to, 0, m)
+                    setList(relabel(next))
+                }}
+                onRemove={i => setList(relabel(list().filter((_, k) => k !== i)))}
+                onAddFiles={() => {}}
+                onMerge={f => {
+                    setName(f.name)
+                    setList(merged())
+                    setMerged(true)
+                }}
+                onUndoMerge={
+                    isMerged()
+                        ? () => {
+                              setList(tiles(5))
+                              setMerged(false)
+                          }
+                        : undefined
+                }
+                onSave={() => {}}
+                onCancel={() => {}}
+            />
+        </div>
+    )
+}
+
+export const MergedVersion: Story = {
+    name: 'Merged version',
+    render: () => <Merged />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await expect(c.getByText('merging notebook v2.pdf // 1 updated // 2 new')).toBeTruthy()
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile] canvas').length).toBe(7))
+        await expect(c.getByText('5 // updated')).toBeTruthy()
+        // while a merge is laid out, the head offers to undo it in place of a second merge
+        await expect(c.getByRole('button', { name: 'undo merge' })).toBeEnabled()
+        await expect(c.queryByRole('button', { name: 'merge a new version' })).toBeNull()
+    },
+}
+
+/** `undo merge`: the pages before the merge come back, and the head offers the merge again. */
+export const MergedUndo: Story = {
+    name: 'Merged version, undo',
+    render: () => <Merged />,
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await userEvent.click(c.getByRole('button', { name: 'undo merge' }))
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile]').length).toBe(5))
+        await expect(c.getByText('drag a page to move it')).toBeTruthy()
+        await expect(c.queryByText('5 // updated')).toBeNull()
+        await expect(c.getByRole('button', { name: 'merge a new version' })).toBeEnabled()
+        await expect(c.getByRole('button', { name: 'save' })).toBeDisabled()
+    },
+}
+
+/** At rest the head offers the merge beside the other actions. */
+export const MergeOffered: Story = {
+    name: 'Merge offered',
+    render: () => (
+        <div style={{ width: '1000px', height: '400px', display: 'flex' }}>
+            <BookPageEditor tiles={tiles(3)} canBlank canMerge dirty={false} onMove={() => {}} onRemove={() => {}} onAddFiles={() => {}} onSave={() => {}} onCancel={() => {}} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await expect(within(canvasElement).getByRole('button', { name: 'merge a new version' })).toBeEnabled()
     },
 }

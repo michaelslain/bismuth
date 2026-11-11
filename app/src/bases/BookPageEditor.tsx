@@ -23,15 +23,26 @@ export type BookPageEditorProps = {
     shade?: (f: Face | undefined) => Face | undefined
     /** Offer `+ blank page` (a PDF can hold one; a book base cannot). */
     canBlank?: boolean
+    /** Offer `merge a new version` (a PDF read on its own). */
+    canMerge?: boolean
+    /** The head's line, in place of `drag a page to move it` (a merge's summary). */
+    note?: string
     /** Something changed since the sorter opened. */
     dirty: boolean
     /** A save is running: the controls wait. */
     busy?: boolean
+    /** Something else is running (a merge being compared): the controls wait, the save keeps its label. */
+    waiting?: boolean
     onMove: (from: number, to: number) => void
     onRemove: (index: number) => void
     /** Files dropped before tile `at` (`at` = tiles.length appends). */
     onAddFiles: (at: number, files: File[]) => void
     onAddBlank?: (at: number) => void
+    /** A newer version of the PDF was picked to merge in. */
+    onMerge?: (file: File) => void
+    /** A merge is laid out: `undo merge` takes the place of `merge a new version` and puts the pages
+     *  back as they were before it. */
+    onUndoMerge?: () => void
     onSave: () => void
     onCancel: () => void
     className?: string
@@ -73,6 +84,8 @@ const Thumb: Component<{ tile: EditTile; shade?: BookPageEditorProps['shade'] }>
  *  and nothing is written until `save`. */
 const BookPageEditor: Component<BookPageEditorProps> = props => {
     let picker: HTMLInputElement | undefined
+    let mergePicker: HTMLInputElement | undefined
+    const held = () => !!(props.busy || props.waiting)
     const [dragging, setDragging] = createSignal<number | null>(null)
     // Where a drop lands: before tile `at` (tiles.length = after the last).
     const [dropAt, setDropAt] = createSignal<number | null>(null)
@@ -125,17 +138,31 @@ const BookPageEditor: Component<BookPageEditorProps> = props => {
     return (
         <div class={`${styles.editor} ${props.className ?? ''}`} data-book-page-editor>
             <div class={styles.head}>
-                <Text tone="muted">drag a page to move it</Text>
+                <Text tone="muted">{props.note ?? 'drag a page to move it'}</Text>
                 <div class={styles.actions}>
+                    <Show when={props.onUndoMerge}>
+                        <TextButton disabled={held()} title="put the pages back as they were before the merge" onClick={() => props.onUndoMerge?.()}>
+                            undo merge
+                        </TextButton>
+                    </Show>
+                    <Show when={props.canMerge && !props.onUndoMerge}>
+                        <TextButton
+                            disabled={held() || props.dirty}
+                            title={props.dirty ? 'save or cancel these changes first' : 'add new pages and replace changed ones from a newer copy of this pdf'}
+                            onClick={() => mergePicker?.click()}
+                        >
+                            merge a new version
+                        </TextButton>
+                    </Show>
                     <Show when={props.canBlank}>
-                        <TextButton disabled={props.busy} onClick={() => props.onAddBlank?.(props.tiles.length)}>
+                        <TextButton disabled={held()} onClick={() => props.onAddBlank?.(props.tiles.length)}>
                             + blank page
                         </TextButton>
                     </Show>
-                    <TextButton disabled={props.busy} onClick={() => props.onCancel()}>
+                    <TextButton disabled={held()} onClick={() => props.onCancel()}>
                         cancel
                     </TextButton>
-                    <TextButton primary disabled={props.busy || !props.dirty} onClick={() => props.onSave()}>
+                    <TextButton primary disabled={held() || !props.dirty} onClick={() => props.onSave()}>
                         {props.busy ? 'saving' : 'save'}
                     </TextButton>
                 </div>
@@ -146,6 +173,14 @@ const BookPageEditor: Component<BookPageEditorProps> = props => {
                 multiple
                 onPick={files => props.onAddFiles(props.tiles.length, Array.from(files))}
             />
+            <FilePicker
+                ref={el => (mergePicker = el)}
+                accept="application/pdf,.pdf"
+                onPick={files => {
+                    const f = files[0]
+                    if (f) props.onMerge?.(f)
+                }}
+            />
             <div class={styles.grid} onDragOver={onGridOver} onDrop={onGridDrop}>
                 <For each={props.tiles}>
                     {(tile, i) => (
@@ -154,7 +189,7 @@ const BookPageEditor: Component<BookPageEditorProps> = props => {
                             data-book-edit-tile={i()}
                             data-dragging={dragging() === i() ? '' : undefined}
                             data-drop={dropAt() === i() ? 'before' : dropAt() === i() + 1 && i() === props.tiles.length - 1 ? 'after' : undefined}
-                            draggable={!props.busy}
+                            draggable={!held()}
                             onDragStart={e => {
                                 setDragging(i())
                                 e.dataTransfer?.setData('text/plain', tile.key)
@@ -172,7 +207,7 @@ const BookPageEditor: Component<BookPageEditorProps> = props => {
                                 <RowActions class={styles.remove}>
                                     <RemoveRowButton
                                         label="remove page"
-                                        disabled={props.busy}
+                                        disabled={held()}
                                         onClick={() => props.onRemove(i())}
                                     />
                                 </RowActions>
@@ -190,7 +225,7 @@ const BookPageEditor: Component<BookPageEditorProps> = props => {
                     data-drop={dropAt() === props.tiles.length && props.tiles.length === 0 ? 'before' : undefined}
                 >
                     <div class={`${styles.sheet} ${styles.add}`}>
-                        <TextButton disabled={props.busy} aria-label="add pages" title="add images or PDFs" onClick={() => picker?.click()}>
+                        <TextButton disabled={held()} aria-label="add pages" title="add images or PDFs" onClick={() => picker?.click()}>
                             +
                         </TextButton>
                     </div>

@@ -1,6 +1,6 @@
 # Rewrite a PDF's pages
 
-A PDF's pages can be kept, moved, deleted and added to: the file is rewritten to hold exactly the pages you list, in that order, and what hangs on a page (its highlights, ink, bookmarks and transcript) moves with it. Use it to reorder a scan, drop a bad page, or append photographed pages to a PDF that sits in a [book view](../bases/views/book.md).
+A PDF's pages can be kept, moved, deleted and added to: the file is rewritten to hold exactly the pages you list, in that order, and what hangs on a page (its highlights, ink, bookmarks and transcript) moves with it. Use it to reorder a scan, drop a bad page, or append photographed pages to a PDF that sits in a [book view](../bases/views/book.md). To bring in a newer copy of the same PDF, [merge it](pdf-merge.md) instead.
 
 ```bash
 bismuth pdf pages scans/notes.pdf --order 1,3,2,blank,@scans/page4.png --vault ~/vault

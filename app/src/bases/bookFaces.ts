@@ -165,6 +165,20 @@ async function withPdfDoc<T>(file: string, use: (doc: PdfDoc) => Promise<T>): Pr
     }
 }
 
+/** PDFs read from bytes rather than the vault (a newer version picked to merge in), by key. */
+const heldBytes = new Map<string, Uint8Array>()
+
+/** Read the PDF `key` from `bytes` until it is released: its faces and page count come from them. */
+export function holdPdfBytes(key: string, bytes: Uint8Array): void {
+    forgetPdf(key)
+    heldBytes.set(key, bytes)
+}
+
+export function releasePdfBytes(key: string): void {
+    heldBytes.delete(key)
+    forgetPdf(key)
+}
+
 async function pdfDoc(file: string): Promise<PdfDoc> {
     const hit = pdfDocs.get(file)
     if (hit) {
@@ -174,8 +188,10 @@ async function pdfDoc(file: string): Promise<PdfDoc> {
     }
     const p = (async () => {
         const [{ api }, setup] = await Promise.all([import('../api'), import('../preview/pdfjsSetup')])
+        const held = heldBytes.get(file)
+        // pdf.js takes the buffer it is given, so a held file hands over a copy
         const task = setup.pdfjs.getDocument({
-            url: api.assetUrl(file),
+            ...(held ? { data: held.slice() } : { url: api.assetUrl(file) }),
             worker: setup.sharedWorker(),
             disableStream: true,
             disableAutoFetch: true,

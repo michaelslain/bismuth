@@ -122,7 +122,8 @@ const OWNER_TOKEN = resolveOwnerToken(
 )
 
 import type { PageText, TranscribeEngine, TranscriptCheck, TranscriptEngine } from '../../core/src/transcript'
-import type { PageSource } from '../../core/src/pdfPages'
+import type { PageSource, WithPdf } from '../../core/src/pdfPages'
+import type { MergeStep } from '../../core/src/pdfMergePlan'
 import type { MarkerSetupState, MarkerStatus } from '../../core/src/markerSetup'
 import type { TextLine } from '../../core/src/visionOcr'
 import type { GraphData, TreeEntry, ViewLayout } from '../../core/src/graph'
@@ -687,8 +688,14 @@ export const api = {
     decideTranscribeMath: (file: string, choice: 'careful' | 'fast') =>
         postJson<TranscribeJobState>('/transcribe/job/math', { file, choice }),
     /** Rewrite a pdf's pages to exactly `order`; ink, highlights and transcript follow their page. */
-    pdfPages: (file: string, order: PageSource[]) =>
-        postJson<{ pages: number }>('/pdf/pages', { file, order }),
+    pdfPages: (file: string, order: PageSource[], withPdf?: WithPdf) =>
+        postJson<{ pages: number }>('/pdf/pages', { file, order, ...(withPdf ? { with: withPdf } : {}) }),
+    /** Which pages a newer version of the pdf keeps, updates and adds; writes nothing. */
+    pdfMergePlan: (file: string, withPdf: WithPdf) =>
+        postJson<{ steps: MergeStep[]; pages: number; kept: number; updated: number; added: number; only: number }>(
+            '/pdf/merge/plan',
+            { file, with: withPdf },
+        ),
     /** The page's text lines with boxes as page fractions, recognised on demand. */
     transcriptLines: (file: string, pages?: number[]) =>
         postJson<{ pages: { page: number; lines: TextLine[] }[] }>(

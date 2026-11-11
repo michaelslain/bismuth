@@ -49,7 +49,7 @@ import type { Bookmark, DrawingDoc } from '../../../core/src/drawing/model'
 import { addBookmark, removeBookmark, renameBookmark } from '../../../core/src/drawing/pageBookmarks'
 import type { PageText, TranscribeEngine, TranscriptEngine } from '../../../core/src/transcript'
 import { looksLikeMath } from '../../../core/src/mathDetect'
-import { createFaceLoader, defaultFaceDeps, faceDeps, forgetPdf, type Face } from './bookFaces'
+import { createFaceLoader, defaultFaceDeps, faceDeps, forgetPdf, holdPdfBytes, releasePdfBytes, type Face } from './bookFaces'
 import { darkenPixels } from './darkPage'
 import { drawPhotos, photosIn } from '../preview/pdfDarkImages'
 import BookPageEditor, { type EditTile } from './BookPageEditor'
@@ -1282,7 +1282,13 @@ const BookView: Component<BookViewProps> = props => {
     // ── edit pages: a sorter over the pages, saved at once on `save` ──
     // A PDF opened on its own edits the PDF itself, one page per tile; a book base edits its rows,
     // one tile per row (a PDF row is all of its pages), and never the files.
-    type Staged = { key: string; kind: 'page'; at: number } | { key: string; kind: 'file'; file: File } | { key: string; kind: 'blank' }
+    type Staged =
+        | { key: string; kind: 'page'; at: number }
+        | { key: string; kind: 'file'; file: File }
+        | { key: string; kind: 'blank' }
+        // page `from` (0-based) of the newer version being merged in; `marksOf` = the page it replaces,
+        // `textOf` = the same page, whose text it keeps (nothing new was written on it)
+        | { key: string; kind: 'with'; from: number; marksOf?: number; textOf?: number }
     const [staged, setStaged] = createSignal<Staged[] | null>(null)
     const [stagedDirty, setStagedDirty] = createSignal(false)
     const [savingPages, setSavingPages] = createSignal(false)
@@ -1297,9 +1303,22 @@ const BookView: Component<BookViewProps> = props => {
     }
     // a remove's undo only means something while the sorter is open
     let undoToasts: number[] = []
+    // ── merge a newer version: its pages are read from the picked bytes until save or cancel ──
+    // `kept` 0: no page matched, so every page was paired by order
+    type Merging = { key: string; name: string; data: string; kept: number }
+    const [merging, setMerging] = createSignal<Merging | null>(null)
+    let mergeSeq = 0
+    // the name of the pdf being compared with this one, while its plan is worked out
+    const [comparing, setComparing] = createSignal<string | null>(null)
+    const endMerge = () => {
+        const m = merging()
+        if (m) releasePdfBytes(m.key)
+        setMerging(null)
+    }
     const closePageEditor = () => {
         for (const id of undoToasts) dismissToast(id)
         undoToasts = []
+        endMerge()
         setStaged(null)
     }
     const stage = (next: Staged[]) => {
@@ -1310,6 +1329,15 @@ const BookView: Component<BookViewProps> = props => {
         (staged() ?? []).map((st, i) => {
             if (st.kind === 'file') return { key: st.key, label: st.file.name, pending: true }
             if (st.kind === 'blank') return { key: st.key, label: 'blank page', pending: true }
+            if (st.kind === 'with') {
+                const m = merging()
+                const leaf = m ? { ref: { file: m.key, kind: 'pdf' as const, rowIndex: -1 }, pdfPage: st.from + 1 } : undefined
+                return {
+                    key: st.key,
+                    label: st.textOf !== undefined ? `${i + 1}` : `${i + 1} // ${st.marksOf !== undefined ? 'updated' : 'new'}`,
+                    face: leaf ? () => thumbs.face(leaf) : undefined,
+                }
+            }
             if (pdfFile()) {
                 const l = leaves()[st.at]
                 return { key: st.key, label: `${i + 1}`, face: l ? () => thumbs.face(l) : undefined }
@@ -1343,6 +1371,53 @@ const BookView: Component<BookViewProps> = props => {
         const next = [...(staged() ?? [])]
         next.splice(at, 0, ...ok.map(file => ({ key: `f${++stagedSeq}`, kind: 'file' as const, file })))
         if (ok.length) stage(next)
+    }
+    /** The sorter as it was before the merge: `undo merge` puts it back. */
+    let beforeMerge: Staged[] = []
+    const mergeNote = createMemo(() => {
+        const c = comparing()
+        if (c) return `comparing pages with ${c}`
+        const m = merging()
+        if (!m) return undefined
+        const list = staged() ?? []
+        const updated = list.filter(st => st.kind === 'with' && st.marksOf !== undefined && st.textOf === undefined).length
+        const added = list.filter(st => st.kind === 'with' && st.marksOf === undefined).length
+        return `merging ${m.name}${m.kept ? '' : ' // no page matched, paired by order'} // ${updated} updated // ${added} new`
+    })
+    /** Plan the merge of `f` into the open PDF and lay the result out in the sorter, unsaved. */
+    const mergeIn = async (f: File) => {
+        const file = pdfFile()
+        if (!file || savingPages() || comparing()) return
+        if (!/\.pdf$/i.test(f.name)) return pushToast('only a pdf can be merged in')
+        setComparing(f.name)
+        try {
+            const data = await base64Of(f)
+            const plan = await api.pdfMergePlan(file, { data, name: f.name })
+            beforeMerge = staged() ?? []
+            endMerge()
+            const key = `::merge/${++mergeSeq}/${f.name}`
+            holdPdfBytes(key, new Uint8Array(await f.arrayBuffer()))
+            setMerging({ key, name: f.name, data, kept: plan.kept })
+            stage(
+                plan.steps.map(s =>
+                    s.kind === 'only'
+                        ? { key: `p${s.page}`, kind: 'page' as const, at: s.page }
+                        : s.kind === 'add'
+                          ? { key: `w${s.from}`, kind: 'with' as const, from: s.from }
+                          : // a kept page is the same page with nothing new on it: it keeps its text too
+                            { key: `w${s.from}`, kind: 'with' as const, from: s.from, marksOf: s.page, ...(s.kind === 'keep' ? { textOf: s.page } : {}) },
+                ),
+            )
+        } catch (e) {
+            pushToast((e as Error).message)
+        } finally {
+            setComparing(null)
+        }
+    }
+    const undoMerge = () => {
+        setStaged(beforeMerge)
+        setStagedDirty(false)
+        endMerge()
     }
     const addBlank = (at: number) => {
         const next = [...(staged() ?? [])]
@@ -1414,12 +1489,19 @@ const BookView: Component<BookViewProps> = props => {
                             ? { page: st.at + 1 }
                             : st.kind === 'blank'
                               ? { blank: true as const }
-                              : { data: await base64Of(st.file), name: st.file.name },
+                              : st.kind === 'with'
+                                ? {
+                                      with: st.from + 1,
+                                      ...(st.marksOf !== undefined ? { marksOf: st.marksOf + 1 } : {}),
+                                      ...(st.textOf !== undefined ? { textOf: st.textOf + 1 } : {}),
+                                  }
+                                : { data: await base64Of(st.file), name: st.file.name },
                     ),
                 )
+                const m = merging()
                 // unsaved ink or boxes go first, so nothing writes the old page order after
                 await flushAnnotationStore(file)
-                await api.pdfPages(file, order)
+                await api.pdfPages(file, order, m && list.some(st => st.kind === 'with') ? { data: m.data, name: m.name } : undefined)
                 afterRewrite(file)
             } else {
                 await saveRows(list)
@@ -1730,8 +1812,13 @@ const BookView: Component<BookViewProps> = props => {
                             tiles={editTiles()}
                             shade={shade}
                             canBlank={!!pdfFile()}
+                            canMerge={!!pdfFile()}
+                            note={mergeNote()}
+                            onMerge={f => void mergeIn(f)}
+                            onUndoMerge={merging() ? undoMerge : undefined}
                             dirty={stagedDirty()}
                             busy={savingPages()}
+                            waiting={!!comparing()}
                             onMove={moveStaged}
                             onRemove={removeStaged}
                             onAddFiles={addStaged}

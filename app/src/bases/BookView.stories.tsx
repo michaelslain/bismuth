@@ -1355,6 +1355,96 @@ export const PdfEditPages: Story = {
     },
 }
 
+let mergeCalls: { order: unknown[]; with: unknown }[] = []
+let mergePages = 0
+/** A PDF read on its own merges a newer copy of itself: the sorter lays out the plan with the newer
+ *  pages drawn from the picked file, `undo merge` puts the pages back, and save sends the order
+ *  with the picked bytes. */
+export const PdfMergeVersion: Story = {
+    name: 'PDF merge a new version',
+    beforeEach: () => {
+        const restore = serveFixtures(0)
+        mergeCalls = []
+        const original = { pages: api.pdfPages, plan: api.pdfMergePlan }
+        api.pdfMergePlan = async () => {
+            const n = mergePages
+            return {
+                steps: [
+                    ...Array.from({ length: n - 1 }, (_, i) => ({ kind: 'keep' as const, page: i, from: i })),
+                    { kind: 'update' as const, page: n - 1, from: n - 1 },
+                    { kind: 'add' as const, from: n },
+                    { kind: 'add' as const, from: n + 1 },
+                ],
+                pages: n + 2, kept: n - 1, updated: 1, added: 2, only: 0,
+            }
+        }
+        api.pdfPages = async (_file: string, order: unknown[], w?: unknown) => {
+            mergeCalls.push({ order, with: w })
+            return { pages: order.length }
+        }
+        return () => {
+            restore()
+            api.pdfPages = original.pages
+            api.pdfMergePlan = original.plan
+        }
+    },
+    render: () => {
+        const [slots, setSlots] = createSignal<ViewBarSlots | undefined>()
+        return (
+            <div style={{ width: '1100px', height: '720px', display: 'flex', 'flex-direction': 'column' }}>
+                <div data-testid="book-bar">
+                    <ViewBar identity={<Crumb icon="FileText">lecture.pdf</Crumb>} readouts={slots()?.readouts} config={slots()?.config} actions={slots()?.actions} />
+                </div>
+                <div style={{ flex: 1, 'min-height': 0 }}>
+                    <BookView rows={[]} files={[PDF_PATH]} view={bookView()} ownsRows={false} onChange={() => {}} onBarSlots={setSlots} />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await waitFor(() => expect(readout(canvasElement)).toMatch(/^p\. 1 \/ \d+$/), { timeout: 8000 })
+        mergePages = Number(readout(canvasElement)!.match(/\/ (\d+)$/)![1])
+        const n = mergePages
+        await userEvent.click(c.getByRole('button', { name: 'edit pages' }))
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile]').length).toBe(n))
+        // the newer copy: the same pages, the last one written on, and two more
+        const doc = new jsPDF()
+        for (let p = 1; p <= n + 2; p++) {
+            if (p > 1) doc.addPage()
+            doc.setFontSize(40)
+            doc.text(p === n ? `page ${p}, written on` : `page ${p}`, 20, 60)
+        }
+        const file = new File([doc.output('arraybuffer')], 'lecture v2.pdf', { type: 'application/pdf' })
+        // with one page, the plan keeps none of the old pages, so the head says they were paired by order
+        const summary = `merging lecture v2.pdf${n > 1 ? '' : ' // no page matched, paired by order'} // 1 updated // 2 new`
+        const input = canvasElement.querySelector<HTMLInputElement>('input[type=file][accept="application/pdf,.pdf"]')!
+        await userEvent.upload(input, file)
+        await waitFor(() => expect(c.getByText(summary)).toBeTruthy(), { timeout: 8000 })
+        await expect(c.getByText(`${n} // updated`)).toBeTruthy()
+        await expect(c.getByText(`${n + 2} // new`)).toBeTruthy()
+        // the newer pages are drawn from the picked file, not left as name cards
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile] canvas').length).toBe(n + 2), { timeout: 8000 })
+        // undo puts the pages back as they were; merging again lays the plan out again
+        await userEvent.click(c.getByRole('button', { name: 'undo merge' }))
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile]').length).toBe(n))
+        await expect(c.getByText('drag a page to move it')).toBeTruthy()
+        await expect(c.getByRole('button', { name: 'save' })).toBeDisabled()
+        await userEvent.upload(canvasElement.querySelector<HTMLInputElement>('input[type=file][accept="application/pdf,.pdf"]')!, file)
+        await waitFor(() => expect(c.getByText(summary)).toBeTruthy(), { timeout: 8000 })
+        await userEvent.click(c.getByRole('button', { name: 'save' }))
+        await waitFor(() => expect(mergeCalls.length).toBe(1), { timeout: 8000 })
+        await expect(mergeCalls[0]!.order).toEqual([
+            // kept pages take the newer picture and keep their own text and marks
+            ...Array.from({ length: n - 1 }, (_, i) => ({ with: i + 1, marksOf: i + 1, textOf: i + 1 })),
+            { with: n, marksOf: n },
+            { with: n + 1 },
+            { with: n + 2 },
+        ])
+        await expect((mergeCalls[0]!.with as { name: string }).name).toBe('lecture v2.pdf')
+    },
+}
+
 /** Four quick presses while the first page turns: none cuts the one before short, all four land,
  *  and every turn of the burst runs on the one turn layer (one WebGL context, not four). */
 export const BurstTurns: Story = {
