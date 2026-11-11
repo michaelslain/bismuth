@@ -23,7 +23,7 @@
 .image {
     position: relative;
     width: 100%;
-    aspect-ratio: var(--aspect);
+    aspect-ratio: var(--aspect, 0.75);
     overflow: hidden;
 }
 
@@ -56,7 +56,7 @@
 
 /* against the spine, as an open book holds a page: the middle of the row, where a turn folds */
 .flip .image {
-    width: min(100cqw, calc(100cqh * var(--aspect)));
+    width: min(100cqw, calc(100cqh * var(--aspect, 0.75)));
     margin: 0 0 0 auto;
 }
 
