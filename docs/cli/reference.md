@@ -636,6 +636,7 @@ Full-text search and vault-wide find-and-replace. Both share three booleans: `--
 |---|---|---|---|
 | `search` | `<query> [--limit n] [--json]` | Blends keyword and meaning ranking into one list of notes, PDFs, images and past chats. Prints one `path  score  excerpt` line per hit (a PDF adds `p.<page>`, an image `(image)`, a chat `chat <date> <session-id>`), or the hits as JSON. `--limit` defaults to `10`. | optional |
 | `search` | `<query> --regex\|--case\|--word` | Literal modes: prints ranked matches with snippets, with no cap on results. | no |
+| `find` | `<path> <query> [--ai] [--ask] [--case] [--json]` | Finds a query in one note: prints one `line:col  <line>` row per literal match, and when nothing matches literally (or with `--ai`), the passages the ai picks, each row marked `ai`. `--ask` answers the query as a question from the note, then prints the passages the answer rests on; with `--json` it prints `{answer, passages}`. A note hidden from ai fails with `<path> is hidden from ai`. | no |
 | `replace` | `<query> <replacement> [--scope <path>] [--no-snapshot] [--regex] [--case] [--word]` | Replaces across the vault, or in one note with `--scope`. Prints the result object. | no |
 
 Without `--regex`, the literal modes are mid-word and typo tolerant.
@@ -647,6 +648,10 @@ A server that does not answer within the model-load wait plus five seconds count
 When embeddings are off, the index is still warming up, or the build cannot run the model, the command prints the keyword hits in the same shape, writes `meaning search unavailable (<reason>): keyword results only` on stderr and exits `0`. A running server that answers with an error prints it and exits `1`.
 ```bash
 bismuth search "how do I plan a launch" --limit 5 --vault ~/vault
+```
+`find --ai` and `find --ask` run one turn on the backend `chat.provider` picks, so they take seconds where the literal match is instant. Every row it prints is located in the note's text, so a passage the ai invents never prints.
+```bash
+bismuth find "reading/Essay.md" "the bit about memory palaces" --vault ~/vault
 ```
 `replace` commits a git snapshot of the vault first, so the change can be undone.
 A failed snapshot prints a `warning:` and the replace still runs; `--no-snapshot` skips the snapshot.

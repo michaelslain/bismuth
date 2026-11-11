@@ -696,6 +696,38 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     companion: `${(body as { file: string }).file}.md`,
                     marks: (body as { add?: string[] }).add ?? [],
                 } as unknown as T
+            // Ask ai about one note, faked live: each line holding a word that shares its first four
+            // letters with a word of the query is a passage ("tooth" finds "toothache"); with `ask`,
+            // the answer quotes the best one. A short wait so `asking…` shows; a path with "hidden"
+            // in it refuses like a note hidden from ai.
+            if (pathname === '/find-ai') {
+                const { path: notePath, query, text, ask } = body as {
+                    path: string
+                    query: string
+                    text: string
+                    ask?: boolean
+                }
+                await new Promise(r => setTimeout(r, 600))
+                if (/hidden/i.test(notePath)) throw new Error('this note is hidden from ai')
+                const stems = query.toLowerCase().match(/[a-z]{4,}/g)?.map(w => w.slice(0, 4)) ?? []
+                const matches: { from: number; to: number; text: string }[] = []
+                let at = 0
+                for (const line of text.split('\n')) {
+                    const words = line.toLowerCase().match(/[a-z]+/g) ?? []
+                    const trimmed = line.trim()
+                    if (trimmed && stems.some(s => words.some(w => w.startsWith(s)))) {
+                        const from = at + line.indexOf(trimmed)
+                        matches.push({ from, to: from + trimmed.length, text: trimmed })
+                    }
+                    at += line.length + 1
+                    if (matches.length >= 5) break
+                }
+                if (!ask) return { matches, backend: 'fake' } as unknown as T
+                const answer = matches.length
+                    ? `The note says: ${matches[0].text.replace(/^[-*]\s+(\[.\]\s+)?/, '')}`
+                    : "The note doesn't say."
+                return { matches, backend: 'fake', answer } as unknown as T
+            }
             if (pathname === '/transcript/lines')
                 return { pages: [] } as unknown as T
             if (pathname === '/rows') {

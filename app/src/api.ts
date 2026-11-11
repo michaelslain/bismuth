@@ -573,6 +573,13 @@ export const api = {
     // no GUI since the Search tab folded into the switcher — POST /replace remains for the CLI.)
     searchPrompt: (query: string) =>
         postJson<SearchResult[]>('/search-prompt', { query }),
+    // Ask ai about one note (core/src/findAi.ts): with `ask`, the find bar's question, answered from
+    // the note, plus the passages the answer rests on as ranges into the editor text sent.
+    findAi: (path: string, query: string, text: string, ask = false) =>
+        postJson<{ matches: { from: number; to: number; text: string }[]; backend: string; answer?: string }>(
+            '/find-ai',
+            { path, query, text, ...(ask ? { ask } : {}) },
+        ),
     meta: (path: string) =>
         getJson<Record<string, unknown>>(
             `/meta?path=${encodeURIComponent(path)}`,

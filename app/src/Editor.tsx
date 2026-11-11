@@ -1009,6 +1009,15 @@ export function Editor(props: {
             window.removeEventListener('beforeunload', onBeforeUnload)
     })
 
+    // Enter in the find bar on a query with no literal match asks it as a question about this note,
+    // while editor.findAsksAi is on; the bar shows the answer under itself and marks the passages it
+    // rests on (editor/findPanel.ts).
+    const askFromFind = (question: string, text: string) => {
+        const notePath = currentPath()
+        if (!notePath) return Promise.reject(new Error('save this note to ask ai about it'))
+        return api.findAi(notePath, question, text, true)
+    }
+
     // Find-in-note (default Cmd/Ctrl+F, rebindable via settings.keybindings.find). Handled
     // here rather than in App.tsx's global handler so it only fires for the focused editor
     // and never collides with the browser's native find. Capture phase + stopPropagation so
@@ -1503,8 +1512,9 @@ export function Editor(props: {
             completionTheme, // shared autocomplete-popup styling (also used by the card editor)
             ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
             // In-editor find (Cmd/Ctrl+F by default) — custom bar, see editor/findPanel.ts.
-            // The keybinding is wired below (host capture handler) so it stays rebindable.
-            findExtension(),
+            // The keybinding is wired below (host capture handler) so it stays rebindable. Enter on
+            // a query with no literal match asks it as a question (askFromFind).
+            findExtension(() => (settings.editor.findAsksAi ? askFromFind : undefined)),
             // Highlight find matches IN PLACE inside rendered table widgets (#31) — the find bar never
             // flips a table to raw source. No-op in buffers without tables (e.g. config YAML).
             tableFindHighlight,

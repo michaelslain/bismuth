@@ -12,7 +12,7 @@
 import { test, expect, describe } from 'bun:test'
 import { EditorState } from '@codemirror/state'
 import { SearchQuery } from '@codemirror/search'
-import { nextMatchFrom } from './findPanel'
+import { findCountLabel, nextMatchFrom, stepAiIndex } from './findPanel'
 
 const q = (search: string, caseSensitive = false) =>
     new SearchQuery({ search, caseSensitive, literal: true })
@@ -59,5 +59,35 @@ describe('nextMatchFrom', () => {
 
     test('returns null for an empty / invalid query', () => {
         expect(nextMatchFrom(state, q(''), 0)).toBeNull()
+    })
+})
+
+describe('findCountLabel', () => {
+    const lit = (query: string, total: number, current = 0) => ({ query, total, current })
+
+    test('literal counts are unchanged', () => {
+        expect(findCountLabel(null, lit('', 0), true)).toEqual({ text: '', danger: false })
+        expect(findCountLabel(null, lit('a', 3, 2), true)).toEqual({ text: '2/3', danger: false })
+        expect(findCountLabel(null, lit('a', 3, 0), true)).toEqual({ text: '–/3', danger: false })
+    })
+
+    test('no literal match offers asking only when the editor can ask', () => {
+        expect(findCountLabel(null, lit('a', 0), true)).toEqual({ text: 'no results', danger: true, hint: '↵ ask' })
+        expect(findCountLabel(null, lit('a', 0), false)).toEqual({ text: 'No results', danger: true })
+        expect(findCountLabel(null, lit('a', 0), true, true)).toEqual({ text: 'no results', danger: true })
+    })
+
+    test('the ai passages shown win over the literal count', () => {
+        expect(findCountLabel({ total: 3, current: 1 }, lit('a', 0), true)).toEqual({ text: 'ai 1/3', danger: false })
+        expect(findCountLabel({ total: 0, current: 0 }, lit('a', 0), true).text).toBe('no results')
+    })
+})
+
+describe('stepAiIndex', () => {
+    test('wraps both ways', () => {
+        expect(stepAiIndex(0, 3, 1)).toBe(1)
+        expect(stepAiIndex(2, 3, 1)).toBe(0)
+        expect(stepAiIndex(0, 3, -1)).toBe(2)
+        expect(stepAiIndex(0, 0, 1)).toBe(0)
     })
 })

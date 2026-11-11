@@ -1,6 +1,7 @@
-// Visual spec for <PrivacyPicker> — the privacy slide's body: a level slider over seven switches.
+// Visual spec for <PrivacyPicker> — the privacy slide's body: a level slider over eight switches,
+// or, without the daemon power-up, the one switch that needs no daemon (ask from find).
 //
-// Props: values, onChange, class.
+// Props: values, onChange, daemon, class.
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
@@ -24,21 +25,41 @@ const row = (el: HTMLElement, name: string) => rows(el).find(r => r.textContent!
 const slider = (el: HTMLElement) => within(el).getByRole('slider')
 const tick = () => new Promise(r => setTimeout(r, 0))
 
+/** Where the slide starts: ask from find on, every daemon switch off, slider at ask. */
+export const StartsAtAsk: Story = {
+    play: async ({ canvasElement }) => {
+        expect(rows(canvasElement)).toHaveLength(8)
+        const on = rows(canvasElement).filter(r => r.getAttribute('aria-checked') === 'true')
+        expect(on.map(r => r.textContent)).toEqual([expect.stringContaining('ask from find')])
+        expect(slider(canvasElement).getAttribute('aria-valuetext')).toBe('ask')
+    },
+}
+
 /** Everything off, slider at private. */
 export const AllOff: Story = {
+    args: { values: applyLevel('private') },
     play: async ({ canvasElement }) => {
-        expect(rows(canvasElement)).toHaveLength(7)
         expect(rows(canvasElement).every(r => r.getAttribute('aria-checked') === 'false')).toBe(true)
         expect(slider(canvasElement).getAttribute('aria-valuetext')).toBe('private')
     },
 }
 
-/** The assist preset: five on, mid-turn recall unlocked. */
+/** Without the daemon power-up: no slider, only ask from find, on. */
+export const NoDaemon: Story = {
+    args: { daemon: false },
+    play: async ({ canvasElement }) => {
+        expect(rows(canvasElement)).toHaveLength(1)
+        expect(row(canvasElement, 'ask from find').getAttribute('aria-checked')).toBe('true')
+        expect(within(canvasElement).queryByRole('slider')).toBeNull()
+    },
+}
+
+/** The assist preset: six on, mid-turn recall unlocked. */
 export const Assist: Story = {
     args: { values: applyLevel('assist') },
     play: async ({ canvasElement }) => {
         expect(slider(canvasElement).getAttribute('aria-valuetext')).toBe('assist')
-        expect(rows(canvasElement).filter(r => r.getAttribute('aria-checked') === 'true')).toHaveLength(5)
+        expect(rows(canvasElement).filter(r => r.getAttribute('aria-checked') === 'true')).toHaveLength(6)
     },
 }
 

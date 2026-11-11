@@ -18,6 +18,11 @@
   gap: var(--sp-4) calc(2 * var(--sp-7));
   width: 100%;
 }
+/* without the daemon: the one switch, centred at a column's width */
+.single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: calc(50 * var(--cell-w));
+}
 @container (max-width: 560px) {
   .rows { grid-template-columns: minmax(0, 1fr); }
 }

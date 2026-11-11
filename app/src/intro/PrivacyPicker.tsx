@@ -1,13 +1,13 @@
 import type { Component } from 'solid-js'
-import { For } from 'solid-js'
+import { For, Show } from 'solid-js'
 import StepSlider from '../ui/StepSlider'
 import Text from '../ui/Text'
 import ToggleRow from '../ui/ToggleRow'
 import {
     PRIVACY_LEVELS,
-    PRIVACY_OPTIONS,
     applyLevel,
     levelOf,
+    privacyOptions,
     togglePrivacy,
     type PrivacyLevelId,
     type PrivacyValues,
@@ -17,26 +17,32 @@ import styles from './PrivacyPicker.module.css'
 export type PrivacyPickerProps = {
     values: PrivacyValues
     onChange: (values: PrivacyValues) => void
+    /** The daemon power-up is on: the level slider and the daemon's switches show. Default true. */
+    daemon?: boolean
     class?: string
 }
 
 /** The privacy slide's body: the level slider centred over every privacy switch, two columns wide
- *  (one under 560px). A switch whose prerequisite is off is locked and muted. */
+ *  (one under 560px). A switch whose prerequisite is off is locked and muted. Without the daemon
+ *  only the switches that need no daemon show (ask from find), and no slider. */
 const PrivacyPicker: Component<PrivacyPickerProps> = props => {
+    const daemon = () => props.daemon ?? true
     const level = () => {
         const l = levelOf(props.values)
         return l === 'custom' ? null : l
     }
     return (
         <div class={[styles.picker, props.class ?? ''].filter(Boolean).join(' ')}>
-            <StepSlider
-                label="privacy level"
-                stops={PRIVACY_LEVELS.map(l => ({ id: l.id, label: l.label }))}
-                value={level()}
-                onChange={id => props.onChange(applyLevel(id as PrivacyLevelId))}
-            />
-            <div class={styles.rows}>
-                <For each={PRIVACY_OPTIONS}>
+            <Show when={daemon()}>
+                <StepSlider
+                    label="privacy level"
+                    stops={PRIVACY_LEVELS.map(l => ({ id: l.id, label: l.label }))}
+                    value={level()}
+                    onChange={id => props.onChange(applyLevel(id as PrivacyLevelId))}
+                />
+            </Show>
+            <div class={[styles.rows, daemon() ? '' : styles.single].filter(Boolean).join(' ')}>
+                <For each={privacyOptions(daemon())}>
                     {o => {
                         const blocked = () => !!o.needs && !props.values[o.needs]
                         return (

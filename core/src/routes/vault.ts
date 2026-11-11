@@ -35,6 +35,7 @@ import {
 import { inkSidecarFor } from '../fileKinds'
 import {
     reconcileSettings,
+    readSettings,
     SETTINGS_FILE,
     setFolderIcon,
     setFolderVisibility,
@@ -44,6 +45,7 @@ import {
     resolveVisibility,
     resolveFolderVisibility,
     isDeniedPath,
+    buildDenyPaths,
     type Visibility,
 } from '../visibility'
 import { filterByPath } from '../visibilityFilter'
@@ -621,6 +623,31 @@ export default function vaultRoutes(
             } catch (e) {
                 const status = e instanceof AppError ? e.statusCode : 500
                 return new Response((e as Error).message, { status })
+            }
+        },
+
+        // Ask ai about one note (findAi.ts): the query and the editor's text go to one headless turn on
+        // chat.provider's backend, which answers ranges into that text; with `ask` (the find bar's
+        // Enter on `no results ↵ ask`) it also answers the query as a question. Read-only. The note must be visible to the caller AND to
+        // chat (a note hidden from ai never reaches a backend). findAi is a dynamic import: the
+        // iPad's in-process core has no child_process.
+        'POST /find-ai': async (req, __) => {
+            const body = (await req.json()) as { path?: string; query?: string; text?: string; ask?: boolean }
+            if (typeof body.path !== 'string' || typeof body.query !== 'string' || typeof body.text !== 'string') {
+                return error('path, query and text are required', 400)
+            }
+            try {
+                if (isDeniedPath(await denyEntriesForRequest(req), body.path)) return error('forbidden', 403)
+                if (isDeniedPath(await buildDenyPaths(cfg.vault, 'chat'), body.path)) {
+                    return error('this note is hidden from ai', 403)
+                }
+                const chatProvider = ((await readSettings(cfg.vault))?.data?.chat as { provider?: unknown } | undefined)
+                    ?.provider
+                const { findAi } = await import('../findAi')
+                return ok(await findAi({ query: body.query, text: body.text, ask: body.ask === true, chatProvider }))
+            } catch (e) {
+                if (e instanceof AppError) return error(e.message, e.statusCode)
+                return error((e as Error).message || 'ai find failed', 500)
             }
         },
 

@@ -1605,6 +1605,31 @@ html[data-highlight-hover], html[data-highlight-hover] * {
   text-align: right;
 }
 .bismuth-find-count.bismuth-find-empty { color: var(--danger); }
+/* the `↵ ask` beside `no results`: the key that asks the ai, muted so the readout stays the red part */
+.bismuth-find-hint { color: var(--text-muted); }
+
+/* The ai's answer, under the bar and part of it: a full-width row of the bar (flex-wrap) that never
+   widens it (`contain: inline-size` gives it no width of its own to contribute), split from the
+   controls by the bar's soft rule. Prose in the note's face, scrolling past a third of the pane. */
+.bismuth-find { flex-wrap: wrap; }
+.bismuth-find-answer {
+  flex: 1 0 100%;
+  contain: inline-size;
+  max-height: 33vh;
+  overflow-y: auto;
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: var(--rule-soft);
+  font-family: var(--prose-font);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bismuth-find-answer[hidden] { display: none; }
+.bismuth-find-answer[data-tone='muted'] { color: var(--text-muted); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
+.bismuth-find-answer[data-tone='danger'] { color: var(--danger); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
 
 /* The bar's controls. THIRD-PARTY-DOM EXEMPTION: editor/findPanel.ts is a CodeMirror panel built
    with raw DOM, so it cannot compose the Solid button family; each rule below MIRRORS a component's

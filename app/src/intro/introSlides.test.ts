@@ -48,7 +48,7 @@ describe('SLIDES', () => {
         expect(by.begin.extra).toBe('cta')
         expect(by.name.extra).toBe('name')
         expect(by.privacy.extra).toBe('privacy')
-        expect(by.privacy.requires).toBe('daemon')
+        expect(by.privacy.requires).toBeUndefined()
         expect(by.obsidian.extra).toBe('obsidian')
         expect(by.chat.hero).toBe('agents')
         expect(by.settings.extra).toBe('samples')
@@ -98,7 +98,7 @@ describe('SLIDES', () => {
             [
                 'privacy',
                 'Pick your privacy',
-                'Everything starts off. Slide toward full to let your agents and the daemon do more, or flip each switch yourself. Change any of them later in .settings.',
+                'Ask from find starts on, so a find with no match can ask your agent about the note. Everything else starts off. Change any of them later in .settings.',
             ],
             [
                 'obsidian',
@@ -214,10 +214,10 @@ describe('visibleSlides', () => {
         expect(keys(['cli'])).not.toContain('name')
         expect(keys(['cli'])).toContain('obsidian')
     })
-    it('places privacy right after name, and drops it without the daemon', () => {
+    it('places privacy right after name, and keeps it without the daemon', () => {
         const k = keys(['daemon', 'cli'])
         expect(k[k.indexOf('name') + 1]).toBe('privacy')
-        expect(keys(['cli'])).not.toContain('privacy')
+        expect(keys(['cli'])).toContain('privacy')
         expect(keys(['daemon'])).toContain('privacy')
     })
     it('drops the obsidian and chat slides without cli + mcp', () => {
@@ -235,6 +235,7 @@ describe('visibleSlides', () => {
             'agents',
             'pickagent',
             'powerups',
+            'privacy',
             'settings',
             'begin',
         ])

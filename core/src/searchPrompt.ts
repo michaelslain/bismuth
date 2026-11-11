@@ -281,14 +281,26 @@ function locateNormalized(
  * (never from the model's quote). Pure + exported for tests.
  */
 export function buildSnippet(body: string, quote: string): MatchSnippet | null {
+    const located = locateQuote(body, quote)
+    return located ? snippetAt(body, located.start, located.end) : null
+}
+
+/**
+ * The ORIGINAL `[start, end)` range of `quote` in `body`: exact indexOf, then case-insensitive, then
+ * whitespace-normalized; null when the quote is not in the body at all. Pure. Shared with the find
+ * bar's AI fallback (findAi.ts), which highlights the range in the editor.
+ */
+export function locateQuote(
+    body: string,
+    quote: string,
+): { start: number; end: number } | null {
     if (!quote) return null
     const exact = body.indexOf(quote)
-    if (exact >= 0) return snippetAt(body, exact, exact + quote.length)
-    const ci = body.toLowerCase().indexOf(quote.toLowerCase()) // same length as quote → end = ci+len
-    if (ci >= 0) return snippetAt(body, ci, ci + quote.length)
-    const located = locateNormalized(body, quote)
-    if (located) return snippetAt(body, located.start, located.end)
-    return null
+    if (exact >= 0) return { start: exact, end: exact + quote.length }
+    const ci = body.toLowerCase().indexOf(quote.toLowerCase())
+    // toLowerCase can change a string's length (e.g. 'İ'); only trust a same-length fold
+    if (ci >= 0 && body.toLowerCase().length === body.length) return { start: ci, end: ci + quote.length }
+    return locateNormalized(body, quote)
 }
 
 // Short function/stop words that make poor snippet anchors — skipped when deriving a fallback

@@ -117,7 +117,7 @@ export type VaultIntroProps = {
     /** Seeds the new vault / from obsidian choice (default: `from obsidian` when a source is
      *  seeded, else `new vault`). Lets a story show `from obsidian` with nothing picked. */
     initialVaultStart?: VaultStart
-    /** Seeds the privacy switches (real first run: DEFAULT_PRIVACY, everything off). */
+    /** Seeds the privacy switches (real first run: DEFAULT_PRIVACY, only ask from find on). */
     initialPrivacy?: PrivacyValues
     /** Whether a slide move runs the morph (default true). False cuts instantly (stories whose
      *  play function steps slides and asserts text). A number freezes the morph at that progress
@@ -495,6 +495,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                                         <PrivacyPicker
                                             values={privacy()}
                                             onChange={setPrivacy}
+                                            daemon={powerups().includes('daemon')}
                                         />
                                     </div>
                                 </Show>

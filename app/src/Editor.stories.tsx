@@ -2903,6 +2903,128 @@ export const FindPanelCaseOn: Story = {
     },
 }
 
+const FIND_AI_TEXT = `Buy oat milk and bananas on Friday.
+
+Call the dentist about the toothache before the weekend.
+
+Send the lease back to the landlord, signed on every page.
+
+Book train tickets for the conference in March.
+`
+
+/** A note in an editor, for opening the find bar on, with `editor.findAsksAi` set to `asks`. */
+function findAiStory(path: string, asks = true): Story['render'] {
+    return () => {
+        setSettings('editor', 'findAsksAi', asks)
+        setTransport(fakeTransport({ files: { [path]: FIND_AI_TEXT } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path={path}
+                    initialText={FIND_AI_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    }
+}
+
+async function openFindWith(canvasElement: HTMLElement, query: string) {
+    const dom = canvasElement.querySelector('.cm-editor')
+    const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+    if (!view) throw new Error('could not find EditorView')
+    openSearchPanel(view)
+    const input = await waitFor(() => {
+        const el = canvasElement.querySelector<HTMLInputElement>('.bismuth-find-input')
+        if (!el) throw new Error('find bar not mounted yet')
+        return el
+    })
+    input.value = query
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return { view, input }
+}
+
+const countText = (canvasElement: HTMLElement) =>
+    canvasElement.querySelector('.bismuth-find-count')?.textContent ?? ''
+
+/** A query with no literal match: `no results` in the danger tone, then a muted `↵ ask`. Nothing
+ *  has been asked yet; Enter asks it as a question (FindPanelAsksAndAnswers). */
+export const FindPanelNoResultsAsksAi: Story = {
+    render: findAiStory('Week.md'),
+    play: async ({ canvasElement }) => {
+        await openFindWith(canvasElement, 'tooth pain')
+        await waitFor(() => expect(countText(canvasElement)).toBe('no results ↵ ask'))
+        const count = canvasElement.querySelector('.bismuth-find-count')!
+        await expect(count.classList.contains('bismuth-find-empty')).toBe(true)
+    },
+}
+
+const pressEnter = (input: HTMLInputElement) =>
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+
+const answerBox = (canvasElement: HTMLElement) =>
+    canvasElement.querySelector<HTMLElement>('.bismuth-find-answer')!
+
+/** Enter on `no results ↵ ask` asks the question: the answer opens under the bar as part of it
+ *  (`asking…`, then the answer), the passages it rests on are marked and the first selected, the
+ *  bar reads `ai 1/n`, and Enter steps on. Typing again closes the answer. Live: try your own
+ *  question about the note (the fake ai matches words by their first four letters). */
+export const FindPanelAsksAndAnswers: Story = {
+    render: findAiStory('Week.md'),
+    play: async ({ canvasElement }) => {
+        const { view, input } = await openFindWith(canvasElement, 'when is my tooth appointment?')
+        await waitFor(() => expect(countText(canvasElement)).toBe('no results ↵ ask'))
+        pressEnter(input)
+        await waitFor(() => expect(answerBox(canvasElement).textContent).toBe('asking…'))
+        await waitFor(() => expect(answerBox(canvasElement).textContent).toContain('dentist'))
+        await waitFor(() => expect(countText(canvasElement)).toMatch(/^ai 1\/\d$/))
+        const sel = view.state.selection.main
+        await expect(view.state.sliceDoc(sel.from, sel.to)).toContain('toothache')
+        // the answer is a row of the bar, no wider than it
+        const bar = canvasElement.querySelector('.bismuth-find')!.getBoundingClientRect()
+        const box = answerBox(canvasElement).getBoundingClientRect()
+        await expect(box.top).toBeGreaterThan(bar.top)
+        await expect(box.right).toBeLessThanOrEqual(bar.right + 0.5)
+        await expect(box.width).toBeGreaterThan(bar.width / 2)
+        pressEnter(input)
+        await waitFor(() => expect(countText(canvasElement)).toMatch(/^ai (1|2)\/\d$/))
+        input.value = 'zzz'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await expect(answerBox(canvasElement).hidden).toBe(true)
+        input.value = 'when is my tooth appointment?'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        pressEnter(input)
+        await waitFor(() => expect(answerBox(canvasElement).textContent).toContain('dentist'))
+    },
+}
+
+/** `editor.findAsksAi` off (the default): no match reads `No results`, and Enter asks nothing. */
+export const FindPanelAskOff: Story = {
+    render: findAiStory('Week.md', false),
+    play: async ({ canvasElement }) => {
+        const { input } = await openFindWith(canvasElement, 'when is my tooth appointment?')
+        await waitFor(() => expect(countText(canvasElement)).toBe('No results'))
+        pressEnter(input)
+        await new Promise(r => setTimeout(r, 800))
+        await expect(answerBox(canvasElement).hidden).toBe(true)
+    },
+}
+
+/** A note hidden from ai: the answer row says so, in the danger tone, and nothing is marked. */
+export const FindPanelAskRefused: Story = {
+    render: findAiStory('Hidden/Week.md'),
+    play: async ({ canvasElement }) => {
+        const { input } = await openFindWith(canvasElement, 'what is due?')
+        pressEnter(input)
+        await waitFor(() => expect(answerBox(canvasElement).textContent).toBe('this note is hidden from ai'))
+        await expect(answerBox(canvasElement).dataset.tone).toBe('danger')
+        await expect(countText(canvasElement)).toBe('no results')
+    },
+}
+
 const EXTENDED_TABLE_TEXT = [
     'A table extended horizontally: its toolbar keeps `[∞]` showing with the pointer away.',
     '',

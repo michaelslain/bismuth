@@ -35,7 +35,7 @@ An Obsidian vault is a folder, and `.obsidian/` (the configuration folder) is op
 
 Obsidian has one daily-note config. `fileName` is a Bismuth token string (for example `{{date}} journal`) and `format` is a Moment string, so map the date token to its Moment form and bracket literal text (`YYYY-MM-DD [journal]`). That mapping is unverified, so check the live Daily notes page. If the `folder` or `template` it names does not exist in the vault, report that instead of writing it.
 
-The keys with no Obsidian counterpart are `keybindings`, `appearance.*`, `toolbar`, `tabBar`, `layout`, `templates.newNote`, `graph`, `calendar`, `googleCalendar`, `chat`, `daemon`, `srs`, `localModel`, `mcp`, `codex`, `ui`, `server`, `update`, `terminal`, `folderVisibility`, `statusBar`, `homePage`, `vault` (`backupOnSave`), `attachments.onDrop`, `attachments.naming`, and the other `editor.*` keys (`lineWrapping`, `autoSaveDelay`, `lineHeight`, `grammarCheck`, `wrapSelection`, `wrapSelectionChars`).
+The keys with no Obsidian counterpart are `keybindings`, `appearance.*`, `toolbar`, `tabBar`, `layout`, `templates.newNote`, `graph`, `calendar`, `googleCalendar`, `chat`, `daemon`, `srs`, `localModel`, `mcp`, `codex`, `ui`, `server`, `update`, `terminal`, `folderVisibility`, `statusBar`, `homePage`, `vault` (`backupOnSave`), `attachments.onDrop`, `attachments.naming`, and the other `editor.*` keys (`lineWrapping`, `autoSaveDelay`, `lineHeight`, `grammarCheck`, `findAsksAi`, `wrapSelection`, `wrapSelectionChars`).
 
 ## Convert
 

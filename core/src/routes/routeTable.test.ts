@@ -89,6 +89,7 @@ const EXPECTED = [
     'POST /docs/search',
     'POST /doctor/fix',
     'POST /feedback',
+    'POST /find-ai',
     'POST /folder-icon',
     'POST /folder-visibility',
     'POST /gcal/auth/start',

@@ -192,6 +192,7 @@ If the extension in `path` disagrees with the content type, the extension is cor
 |---|---|---|---|
 | `POST /search` | `{query, opts: {caseSensitive, wholeWord, regex}, snippetLimit?}` | `[{path, matchCount, snippets}]`, every matching note. `400` on an invalid regex. | filtered; none |
 | `POST /search-prompt` | `{query}`, a natural-language question | The `/search` shape plus a `reason` per hit. | filtered; none |
+| `POST /find-ai` | `{path, query, text, ask?}`; `text` is the note's text as the editor holds it, `ask: true` asks `query` as a question | `{matches: [{from, to, text}], backend, answer?}`, ranges into `text`; `answer` only with `ask`. `400` on a missing field, `403` when the caller cannot read `path` or the note is hidden from ai, `413` on a text over the limit, `503` when the backend is not installed. | path-gated; none |
 | `POST /search/semantic` | `{query?, around?, k?, chats?}`; `query` is a text, `around` a note path | `{hits: [{path, score, excerpt}]}` or `{unavailable, message}`, always `200`. `400` when neither `query` nor `around` is a string. | filtered; none |
 | `POST /search/hybrid` | `{query, limit?, channel?, rerank?, agent?}` | `{hits: [{path, kind, score, excerpt}], mode, reason?}`. `400` when `query` is missing or blank. | filtered; none |
 | `POST /docs/search` | `{query, limit?}` | `{hits: [{path, heading, snippet, score}], mode, reason?}`. `400` when `query` is missing or blank. | open; none |
@@ -226,6 +227,8 @@ curl -s -X POST http://localhost:4321/search/hybrid \
 ```
 
 `POST /docs/search` is the route behind `bismuth docs search`. It searches Bismuth's own documentation sections by keyword and, when the vault has `embeddings.enabled` on, by meaning, and fuses the two. `limit` defaults to `8`. A hit's `path` is the docs page, with `#anchor` when the hit is one section. The response has the same `mode` and `reason` as `/search/hybrid`, plus the reason `no-docs` with no hits when the docs tree is not found. A `keyword` answer keeps the keyword scores; a `hybrid` answer scales them so the best hit is `1`. Docs are not vault data, so no visibility filter applies.
+
+`POST /find-ai` returns the passages of a note that a search is about, or, with `ask`, an answer drawn from the note plus the passages it rests on (the find bar's `no results ↵ ask`). It runs one headless turn on the backend `chat.provider` picks, with no tools, in an empty temp dir, and returns only passages it locates in `text`, at most five.
 
 `POST /search-prompt` re-ranks candidates with one Haiku turn through the user's own `claude` binary. It returns `400` when `claude` is not on the path and `500` when the model call fails. The model may read restricted notes while ranking; only the returned list is filtered.
 

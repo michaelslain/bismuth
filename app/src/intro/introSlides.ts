@@ -107,9 +107,8 @@ export const SLIDES: Slide[] = [
         key: 'privacy',
         label: 'privacy',
         title: 'Pick your privacy',
-        body: 'Everything starts off. Slide toward full to let your agents and the daemon do more, or flip each switch yourself. Change any of them later in .settings.',
+        body: 'Ask from find starts on, so a find with no match can ask your agent about the note. Everything else starts off. Change any of them later in .settings.',
         extra: 'privacy',
-        requires: 'daemon',
     },
     {
         key: 'obsidian',

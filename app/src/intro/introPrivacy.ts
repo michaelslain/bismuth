@@ -1,4 +1,12 @@
-export type PrivacyId = 'recall' | 'midTurn' | 'saveSessions' | 'dream' | 'notifications' | 'inheritUserMcp' | 'email'
+export type PrivacyId =
+    | 'findAsksAi'
+    | 'recall'
+    | 'midTurn'
+    | 'saveSessions'
+    | 'dream'
+    | 'notifications'
+    | 'inheritUserMcp'
+    | 'email'
 
 /** Where a switch is saved: a `.settings` key, or a daemon cron's own `enabled:` line (the switch
  *  the daemon page's cron menu shows). */
@@ -12,9 +20,20 @@ export type PrivacyOption = PrivacyTarget & {
     name: string
     desc: string
     needs?: PrivacyId
+    /** Shown and written whether or not the daemon power-up is on (it needs only the agent every
+     *  intro picks). Absent: a daemon switch, on the slide only with the daemon power-up. */
+    noDaemon?: true
 }
 
 export const PRIVACY_OPTIONS: PrivacyOption[] = [
+    {
+        id: 'findAsksAi',
+        path: ['editor', 'findAsksAi'],
+        icon: 'Search',
+        name: 'ask from find',
+        desc: 'Find with no match asks your agent.',
+        noDaemon: true,
+    },
     {
         id: 'recall',
         path: ['daemon', 'recall', 'enabled'],
@@ -67,20 +86,27 @@ export const PRIVACY_OPTIONS: PrivacyOption[] = [
     },
 ]
 
-export type PrivacyLevelId = 'private' | 'recall' | 'assist' | 'full'
+export type PrivacyLevelId = 'private' | 'ask' | 'recall' | 'assist' | 'full'
 
 export type PrivacyLevel = { id: PrivacyLevelId; label: string; on: PrivacyId[] }
 
 export const PRIVACY_LEVELS: PrivacyLevel[] = [
     { id: 'private', label: 'private', on: [] },
-    { id: 'recall', label: 'recall', on: ['recall'] },
-    { id: 'assist', label: 'assist', on: ['recall', 'midTurn', 'saveSessions', 'dream', 'notifications'] },
+    { id: 'ask', label: 'ask', on: ['findAsksAi'] },
+    { id: 'recall', label: 'recall', on: ['findAsksAi', 'recall'] },
+    {
+        id: 'assist',
+        label: 'assist',
+        on: ['findAsksAi', 'recall', 'midTurn', 'saveSessions', 'dream', 'notifications'],
+    },
     { id: 'full', label: 'full', on: PRIVACY_OPTIONS.map(o => o.id) },
 ]
 
 export type PrivacyValues = Record<PrivacyId, boolean>
 
+/** Where the slide starts: the `ask` level, ask from find on and every daemon switch off. */
 export const DEFAULT_PRIVACY: PrivacyValues = {
+    findAsksAi: true,
     recall: false,
     midTurn: false,
     saveSessions: false,
@@ -92,8 +118,7 @@ export const DEFAULT_PRIVACY: PrivacyValues = {
 
 export function applyLevel(level: PrivacyLevelId): PrivacyValues {
     const on = PRIVACY_LEVELS.find(l => l.id === level)?.on ?? []
-    const values = { ...DEFAULT_PRIVACY }
-    for (const id of on) values[id] = true
+    const values = Object.fromEntries(PRIVACY_OPTIONS.map(o => [o.id, on.includes(o.id)])) as PrivacyValues
     return values
 }
 
@@ -114,8 +139,14 @@ export function togglePrivacy(values: PrivacyValues, id: PrivacyId): PrivacyValu
     return next
 }
 
-export function privacyWrites(values: PrivacyValues): PrivacyWrite[] {
-    return PRIVACY_OPTIONS.map(o =>
+/** The switches the slide shows: all of them with the daemon power-up, else only the noDaemon ones. */
+export function privacyOptions(daemon: boolean): PrivacyOption[] {
+    return daemon ? PRIVACY_OPTIONS : PRIVACY_OPTIONS.filter(o => o.noDaemon)
+}
+
+/** One write per switch the slide showed, off ones included. */
+export function privacyWrites(values: PrivacyValues, daemon = true): PrivacyWrite[] {
+    return privacyOptions(daemon).map(o =>
         o.cron === undefined
             ? { path: o.path, value: values[o.id] }
             : { cron: o.cron, value: values[o.id] },

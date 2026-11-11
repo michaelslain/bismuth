@@ -17,8 +17,8 @@
 // rendered table DOM and scrolls the active one into view. So this file carries ZERO table-reveal
 // logic — find just moves the selection like anywhere else, and the widget highlighter reacts to it.
 
-import { EditorView, type Panel, type ViewUpdate } from '@codemirror/view'
-import { type EditorState } from '@codemirror/state'
+import { Decoration, EditorView, type Panel, type ViewUpdate } from '@codemirror/view'
+import { StateEffect, StateField, type EditorState } from '@codemirror/state'
 import {
     search,
     SearchQuery,
@@ -27,7 +27,113 @@ import {
     findNext,
     findPrevious,
     closeSearchPanel,
+    searchPanelOpen,
 } from '@codemirror/search'
+
+// AI ANSWER (while `editor.findAsksAi` is on): a query with no literal match reads `no results ↵ ask`; Enter asks it as a question
+// about the note through the editor's `onAsk` (Editor.tsx: POST /find-ai with `ask`). The answer opens
+// UNDER the bar, as part of it (`.bismuth-find-answer`, the bar's width): `asking…`, then the answer.
+// The passages it rests on come back in the same reply and show through `showAiPassages`: marked
+// with the search-match look, the first one selected, the bar reading `ai 1/3`, and Enter /
+// Shift+Enter / the chevrons stepping through them. Typing a new query or closing the bar drops the
+// answer and the passages.
+
+/** A passage the ai pointed at, as `[from, to)`. */
+export type AiRange = { from: number; to: number }
+/** Ask the ai `query` as a question about `text` (the note as the bar saw it): its answer and the
+ *  passages of `text` the answer rests on, best first. Rejects with the reason it cannot answer. */
+export type OnAsk = (query: string, text: string) => Promise<{ answer?: string; matches: AiRange[] }>
+
+/** The count readout's words, whether they read in the danger tone, and a muted hint after them.
+ *  `ai` is the passages shown (`total` 0 when none); `asked` once the query went to the ai. Pure. */
+export function findCountLabel(
+    ai: { total: number; current: number } | null,
+    literal: { query: string; total: number; current: number },
+    canAsk: boolean,
+    asked = false,
+): { text: string; danger: boolean; hint?: string } {
+    if (ai && ai.total > 0) return { text: `ai ${ai.current}/${ai.total}`, danger: false }
+    if (!literal.query) return { text: '', danger: false }
+    if (literal.total === 0) {
+        if (!canAsk) return { text: 'No results', danger: true }
+        // asked already: the answer row below the bar is the readout, so no hint
+        return asked ? { text: 'no results', danger: true } : { text: 'no results', danger: true, hint: '↵ ask' }
+    }
+    return { text: `${literal.current || '–'}/${literal.total}`, danger: false }
+}
+
+/** The index of the passage a step lands on, wrapping. Pure. */
+export function stepAiIndex(index: number, total: number, dir: 1 | -1): number {
+    return total === 0 ? 0 : (index + dir + total) % total
+}
+
+type AiPassages = { ranges: AiRange[]; current: number }
+const NO_PASSAGES: AiPassages = { ranges: [], current: 0 }
+const setAiPassages = StateEffect.define<AiPassages>()
+const aiMatchMark = Decoration.mark({ class: 'cm-searchMatch' })
+const aiCurrentMark = Decoration.mark({ class: 'cm-searchMatch cm-searchMatch-selected' })
+
+/** The passages, in document order, mapped through edits; emptied when the find bar closes. */
+const aiPassageField = StateField.define<AiPassages>({
+    create: () => NO_PASSAGES,
+    update(v, tr) {
+        for (const e of tr.effects) if (e.is(setAiPassages)) return e.value
+        if (searchPanelOpen(tr.startState) && !searchPanelOpen(tr.state)) return NO_PASSAGES
+        if (!v.ranges.length || !tr.docChanged) return v
+        const ranges = v.ranges
+            .map(r => ({ from: tr.changes.mapPos(r.from, 1), to: tr.changes.mapPos(r.to, -1) }))
+            .filter(r => r.from < r.to)
+        return { ranges, current: Math.min(v.current, Math.max(0, ranges.length - 1)) }
+    },
+    provide: f =>
+        EditorView.decorations.from(f, v =>
+            Decoration.set(
+                v.ranges.map((r, i) => (i === v.current ? aiCurrentMark : aiMatchMark).range(r.from, r.to)),
+                true,
+            ),
+        ),
+})
+
+/** The passages shown, or null when none. */
+export function aiPassages(state: EditorState): AiPassages | null {
+    const v = state.field(aiPassageField, false)
+    return v && v.ranges.length ? v : null
+}
+
+/** Mark `ranges` (any order) and select + reveal the one at `best` of the given order. Returns the
+ *  selected range, or null when there is none to show. */
+export function showAiPassages(view: EditorView, ranges: AiRange[], best = 0): AiRange | null {
+    const len = view.state.doc.length
+    const valid = ranges.filter(r => r.from < r.to && r.to <= len)
+    const sorted = [...valid].sort((a, b) => a.from - b.from)
+    const pick = valid[best] ?? valid[0]
+    return selectPassage(view, sorted, pick ? sorted.indexOf(pick) : 0)
+}
+
+/** Step to the next (1) or previous (-1) passage shown. */
+export function stepAiPassage(view: EditorView, dir: 1 | -1): AiRange | null {
+    const v = aiPassages(view.state)
+    return v ? selectPassage(view, v.ranges, stepAiIndex(v.current, v.ranges.length, dir)) : null
+}
+
+/** Drop the passages shown. */
+export function clearAiPassages(view: EditorView): void {
+    if (aiPassages(view.state)) view.dispatch({ effects: setAiPassages.of(NO_PASSAGES) })
+}
+
+function selectPassage(view: EditorView, ranges: AiRange[], current: number): AiRange | null {
+    const r = ranges[current]
+    view.dispatch({
+        // centred, clear of the answer box that hangs under the find bar
+        effects: [
+            setAiPassages.of({ ranges, current }),
+            ...(r ? [EditorView.scrollIntoView(r.from, { y: 'center' })] : []),
+        ],
+        ...(r ? { selection: { anchor: r.from, head: r.to } } : {}),
+        userEvent: 'select.search',
+    })
+    return r ?? null
+}
 
 // Cap the count scan so a 1-char query in a huge doc can't stall the UI.
 const MAX_COUNT = 10000
@@ -96,7 +202,8 @@ function iconButton(svgPath: string, label: string): HTMLButtonElement {
 
 /** Build the find bar for a view. Conforms to CodeMirror's `Panel` contract so
  *  openSearchPanel/closeSearchPanel manage its lifecycle. */
-export function createFindPanel(view: EditorView): Panel {
+export function createFindPanel(view: EditorView, askFor?: () => OnAsk | undefined): Panel {
+    const onAskNow = () => askFor?.()
     const dom = document.createElement('div')
     dom.className = 'bismuth-find'
     // Keys typed in the bar are the bar's business — don't let them bubble to the
@@ -153,22 +260,89 @@ export function createFindPanel(view: EditorView): Panel {
     closeLabel.textContent = 'x'
     closeBtn.append(closeLabel)
 
-    dom.append(field, count, prevBtn, nextBtn, caseBtn, closeBtn)
+    // The answer, under the bar and part of it: hidden until a question is asked.
+    const answer = document.createElement('div')
+    answer.className = 'bismuth-find-answer'
+    answer.setAttribute('aria-live', 'polite')
+    answer.hidden = true
+
+    dom.append(field, count, prevBtn, nextBtn, caseBtn, closeBtn, answer)
 
     let caseSensitive = getSearchQuery(view.state).caseSensitive
     setCasePressed(caseSensitive)
 
+    // One question at a time: `asked` is the query the box is for (asking or answered), `ticket`
+    // drops a reply that arrives after the query changed or the bar closed.
+    let asked = ''
+    let ticket = 0
+
     const updateCount = () => {
         const q = getSearchQuery(view.state)
-        if (!q.search) {
-            count.textContent = ''
-            count.classList.remove('bismuth-find-empty')
-            return
+        const ai = aiPassages(view.state)
+        const literal = q.search && !ai ? matchStats(view, q) : { total: 0, current: 0 }
+        const label = findCountLabel(
+            ai ? { total: ai.ranges.length, current: ai.current + 1 } : null,
+            { query: q.search, ...literal },
+            !!onAskNow(),
+            !!asked,
+        )
+        count.textContent = label.text
+        count.classList.toggle('bismuth-find-empty', label.danger)
+        if (label.hint) {
+            // the key that asks, in the muted tone beside the red readout
+            const hint = document.createElement('span')
+            hint.className = 'bismuth-find-hint'
+            hint.title = 'Press Enter to ask ai about this note'
+            hint.textContent = label.hint
+            count.append(' ', hint)
         }
-        const { total, current } = matchStats(view, q)
-        count.textContent =
-            total === 0 ? 'No results' : `${current || '–'}/${total}`
-        count.classList.toggle('bismuth-find-empty', total === 0)
+    }
+
+    const showAnswer = (text: string, tone: 'muted' | 'danger' | null) => {
+        answer.hidden = false
+        answer.textContent = text
+        answer.dataset.tone = tone ?? ''
+    }
+    const clearAnswer = () => {
+        ticket++
+        asked = ''
+        answer.hidden = true
+        answer.textContent = ''
+    }
+    const ask = async (query: string) => {
+        const onAsk = onAskNow()
+        if (!onAsk || query === asked) return
+        const mine = ++ticket
+        asked = query
+        const doc = view.state.doc
+        showAnswer('asking…', 'muted')
+        updateCount()
+        try {
+            const r = await onAsk(query, doc.toString())
+            if (mine !== ticket) return
+            const text = r.answer?.trim()
+            if (text) showAnswer(text, null)
+            else if (!r.matches.length) showAnswer('nothing in this note answers that', 'muted')
+            else answer.hidden = true
+            // ranges are into the text sent: an edit made while asking would shift them
+            if (r.matches.length && view.state.doc === doc) showAiPassages(view, r.matches)
+        } catch (e) {
+            if (mine !== ticket) return
+            showAnswer((e as Error).message || 'ai could not answer', 'danger')
+        }
+        updateCount()
+    }
+
+    // Enter, Shift+Enter and the chevrons: step the ai's passages while they show; ask when the
+    // literal query matched nothing; otherwise CodeMirror's own next/previous match.
+    const step = (dir: 1 | -1) => {
+        if (aiPassages(view.state)) stepAiPassage(view, dir)
+        else {
+            const q = getSearchQuery(view.state)
+            if (q.search.trim() && onAskNow() && matchStats(view, q).total === 0) return void ask(q.search.trim())
+            ;(dir === 1 ? findNext : findPrevious)(view)
+        }
+        updateCount()
     }
 
     // Close the bar and return focus to the editor. Tables never need "un-revealing": the in-place
@@ -197,6 +371,8 @@ export function createFindPanel(view: EditorView): Panel {
 
     // Push the input's text as the active query (live highlight) and reveal the nearest match.
     const runQuery = () => {
+        clearAnswer()
+        clearAiPassages(view)
         const from = view.state.selection.main.from
         const q = new SearchQuery({
             search: input.value,
@@ -212,21 +388,18 @@ export function createFindPanel(view: EditorView): Panel {
     input.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
             e.preventDefault()
-            ;(e.shiftKey ? findPrevious : findNext)(view)
-            updateCount()
+            step(e.shiftKey ? -1 : 1)
         } else if (e.key === 'Escape') {
             e.preventDefault()
             closeBar()
         }
     })
     prevBtn.addEventListener('click', () => {
-        findPrevious(view)
-        updateCount()
+        step(-1)
         input.focus()
     })
     nextBtn.addEventListener('click', () => {
-        findNext(view)
-        updateCount()
+        step(1)
         input.focus()
     })
     caseBtn.addEventListener('click', () => {
@@ -251,23 +424,26 @@ export function createFindPanel(view: EditorView): Panel {
             input.focus()
             input.select()
         },
+        destroy() {
+            ticket++ // a reply landing after the bar closed shows nowhere
+        },
         update(u: ViewUpdate) {
             const queryChanged = u.transactions.some(t =>
                 t.effects.some(ef => ef.is(setSearchQuery)),
             )
-            if (!u.docChanged && !u.selectionSet && !queryChanged) return
-            // An external query change (e.g. a re-open seeded from a new selection) should
-            // sync into the field — but never clobber what the user is actively typing.
-            if (queryChanged && document.activeElement !== input) {
-                const cur = getSearchQuery(u.state)
-                if (cur.search !== input.value) input.value = cur.search
-            }
+            const passagesChanged = u.startState.field(aiPassageField, false) !== u.state.field(aiPassageField, false)
+            if (!u.docChanged && !u.selectionSet && !queryChanged && !passagesChanged) return
             updateCount()
         },
     }
 }
 
-/** The editor extension that enables in-editor find with our custom bar. */
-export function findExtension() {
-    return search({ top: true, literal: true, createPanel: createFindPanel })
+/** The editor extension that enables in-editor find with our custom bar; `askFor` returns the
+ *  asker while Enter on a query with no literal match may ask the ai about the note
+ *  (`editor.findAsksAi`), read at each use so the setting applies to an open bar. */
+export function findExtension(askFor?: () => OnAsk | undefined) {
+    return [
+        search({ top: true, literal: true, createPanel: view => createFindPanel(view, askFor) }),
+        aiPassageField,
+    ]
 }

@@ -75,7 +75,7 @@ describe('enterVault', () => {
             [FIRST_RUN_POWERUPS_KEY]: JSON.stringify(['daemon-setup', 'bismuth-install']),
             [FIRST_RUN_AGENT_KEY]: 'free-agent',
             [THEME_VARS_KEY]: JSON.stringify(introThemeVars('paper')),
-            [FIRST_RUN_PRIVACY_KEY]: JSON.stringify(privacyWrites(DEFAULT_PRIVACY)),
+            [FIRST_RUN_PRIVACY_KEY]: JSON.stringify(privacyWrites(DEFAULT_PRIVACY, true)),
         }
         const args = argsOf(calls)
         expect(args.theme).toBe('paper')
@@ -109,17 +109,19 @@ describe('enterVault', () => {
         expect(handoffOf(args)[FIRST_RUN_CONVERT_KEY]).toBeUndefined()
     })
 
-    it('prod: hands over the privacy writes only with the daemon power-up on', async () => {
+    it('prod: hands over the daemon privacy writes only with the daemon power-up on', async () => {
         const privacy = applyLevel('assist')
         const { calls, deps } = rig()
         await enterVault({ ...choice, privacy }, deps)
         const raw = handoffOf(argsOf(calls))[FIRST_RUN_PRIVACY_KEY]
         expect(JSON.parse(raw)).toEqual(privacyWrites(privacy))
-        expect(JSON.parse(raw)).toHaveLength(7)
+        expect(JSON.parse(raw)).toHaveLength(8)
         for (const powerups of [['cli'], []]) {
             const r = rig()
             await enterVault({ ...choice, powerups, privacy }, r.deps)
-            expect(handoffOf(argsOf(r.calls))[FIRST_RUN_PRIVACY_KEY]).toBeUndefined()
+            expect(JSON.parse(handoffOf(argsOf(r.calls))[FIRST_RUN_PRIVACY_KEY])).toEqual([
+                { path: ['editor', 'findAsksAi'], value: true },
+            ])
         }
     })
 

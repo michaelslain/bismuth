@@ -2574,6 +2574,13 @@
     "max": 3000,
     "required": false
   },
+  "editor.findAsksAi": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "editor.grammarCheck": {
     "type": "boolean",
     "default": false,

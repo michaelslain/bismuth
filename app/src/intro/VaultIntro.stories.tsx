@@ -79,7 +79,8 @@ export const Name: Story = {
     args: { startAt: 'name', initialPowerups: ['daemon', 'cli'] },
 }
 
-/** Slide 9 (daemon power-up on) — the privacy slider over the seven switches, all off. */
+/** Slide 9 (daemon power-up on) — the privacy slider over the eight switches, at `ask`: only ask
+ *  from find on. */
 export const Privacy: Story = {
     args: { startAt: 'privacy', initialPowerups: ['daemon', 'cli'] },
     play: async ({ canvasElement }) => {
@@ -88,6 +89,16 @@ export const Privacy: Story = {
         await userEvent.keyboard('{ArrowRight}')
         await waitFor(() => expect(slider.getAttribute('aria-valuetext')).toBe('recall'))
         await expect(canvasElement.textContent).toContain('// privacy')
+    },
+}
+
+/** The privacy slide without the daemon power-up: no slider, only ask from find, already on. */
+export const PrivacyNoDaemon: Story = {
+    args: { startAt: 'privacy', initialPowerups: ['cli'] },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.textContent).toContain('ask from find'))
+        await expect(within(canvasElement).queryByRole('slider')).toBeNull()
+        await expect(canvasElement.textContent).not.toContain('memory recall')
     },
 }
 
@@ -202,15 +213,15 @@ export const Chat: Story = { args: { startAt: 'chat' } }
 export const Settings: Story = { args: { startAt: 'settings' } }
 
 /** Power-ups both cleared: the name, obsidian and chat slides drop out, so next from power-ups
- *  lands on settings and the footer counts nine slides. */
+ *  lands on privacy (ask from find alone) and the footer counts ten slides. */
 export const PowerUpsNoneSkips: Story = {
     args: { startAt: 'powerups', initialPowerups: [], morph: false },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('7/9 // power-ups')).toBeTruthy()
+        await expect(canvas.getByText('7/10 // power-ups')).toBeTruthy()
         await userEvent.click(canvas.getByRole('button', { name: /next/ }))
         await waitFor(() =>
-            expect(canvas.getByText('8/9 // settings')).toBeTruthy(),
+            expect(canvas.getByText('8/10 // privacy')).toBeTruthy(),
         )
     },
 }

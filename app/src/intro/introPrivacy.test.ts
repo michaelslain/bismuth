@@ -7,14 +7,22 @@ import {
     PRIVACY_OPTIONS,
     applyLevel,
     levelOf,
+    privacyOptions,
     privacyWrites,
     togglePrivacy,
 } from './introPrivacy'
 
 describe('introPrivacy', () => {
-    test('default is all off and private', () => {
-        expect(Object.values(DEFAULT_PRIVACY).every(v => v === false)).toBe(true)
-        expect(levelOf(DEFAULT_PRIVACY)).toBe('private')
+    test('the slide starts at ask: only ask from find on', () => {
+        const on = Object.entries(DEFAULT_PRIVACY).filter(([, v]) => v).map(([k]) => k)
+        expect(on).toEqual(['findAsksAi'])
+        expect(levelOf(DEFAULT_PRIVACY)).toBe('ask')
+        expect(levelOf(applyLevel('private'))).toBe('private')
+    })
+
+    test('without the daemon only ask from find shows and is written', () => {
+        expect(privacyOptions(false).map(o => o.id)).toEqual(['findAsksAi'])
+        expect(privacyWrites(DEFAULT_PRIVACY, false)).toEqual([{ path: ['editor', 'findAsksAi'], value: true }])
     })
 
     test('every level round-trips', () => {
@@ -41,15 +49,17 @@ describe('introPrivacy', () => {
         expect(togglePrivacy(DEFAULT_PRIVACY, 'midTurn')).toEqual(DEFAULT_PRIVACY)
     })
 
-    test('writes are seven false entries in option order', () => {
+    test('with the daemon, one write per switch in option order', () => {
         const writes = privacyWrites(DEFAULT_PRIVACY)
         expect(writes).toEqual(
             PRIVACY_OPTIONS.map(o =>
-                o.cron ? { cron: o.cron, value: false } : { path: o.path, value: false },
+                o.cron
+                    ? { cron: o.cron, value: DEFAULT_PRIVACY[o.id] }
+                    : { path: o.path, value: DEFAULT_PRIVACY[o.id] },
             ),
         )
         expect(writes).toContainEqual({ cron: 'dream', value: false })
-        expect(writes).toHaveLength(7)
+        expect(writes).toHaveLength(8)
     })
 
     test('icons exist', () => {

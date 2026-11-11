@@ -7,6 +7,9 @@ import { BOOLEAN_FLAGS, bool, fail, flag, out, positionals, requireVault } from 
 import { hybridQuery, type SearchHit } from '../semantic'
 import { searchVault, type SearchOpts } from '../../../core/src/search'
 import { replaceInVault } from '../../../core/src/replace'
+import { readNote } from '../../../core/src/files'
+import { readSettings } from '../../../core/src/settings'
+import { buildDenyPaths } from '../../../core/src/visibility'
 import { commitVault, snapshotMessage } from '../../../core/src/backup'
 import {
     agentDenyEntries,
@@ -32,7 +35,69 @@ export function semanticLabel(h: SearchHit): string {
     return h.path
 }
 
+/** Every literal occurrence of `query` in `text` (case-folded unless `caseSensitive`). */
+export function literalMatches(
+    text: string,
+    query: string,
+    caseSensitive: boolean,
+): { from: number; to: number }[] {
+    if (!query) return []
+    const hay = caseSensitive ? text : text.toLowerCase()
+    const needle = caseSensitive ? query : query.toLowerCase()
+    if (hay.length !== text.length) return [] // a case fold that changed length cannot map back
+    const out: { from: number; to: number }[] = []
+    for (let i = hay.indexOf(needle); i >= 0; i = hay.indexOf(needle, i + needle.length)) {
+        out.push({ from: i, to: i + needle.length })
+    }
+    return out
+}
+
+/** `line:col` (1-based) of offset `at`, and that line's text. */
+function lineOf(text: string, at: number): { line: number; col: number; text: string } {
+    const start = text.lastIndexOf('\n', at - 1) + 1
+    let end = text.indexOf('\n', at)
+    if (end < 0) end = text.length
+    let line = 1
+    for (let i = 0; i < start; i++) if (text[i] === '\n') line++
+    return { line, col: at - start + 1, text: text.slice(start, end) }
+}
+
 export const commands: CommandMap = {
+    find: {
+        summary:
+            'Find a query in one note: literal matches, or the passages ai picks when none match (--ai asks ai at once, --ask answers it as a question)',
+        usage: '<path> <query> [--ai] [--ask] [--case] [--json]',
+        run: async args => {
+            const vault = requireVault(args)
+            const [path, query] = positionals(args, [...BOOLEAN_FLAGS, 'ai', 'ask', 'json'])
+            if (!path || !query) fail('usage: bismuth find <path> <query> [--ai] [--ask] [--case] [--json]')
+            if (isDeniedPath(await agentDenyEntries(vault), path)) fail(`${path}: not found`)
+            const text = await readNote(vault, path)
+            const ask = bool(args, 'ask')
+            let ai = ask || bool(args, 'ai')
+            let matches = ai ? [] : literalMatches(text, query, bool(args, 'case'))
+            let answer: string | undefined
+            if (!matches.length) {
+                // the same gate as POST /find-ai: a note hidden from ai never reaches a backend
+                if (isDeniedPath(await buildDenyPaths(vault, 'chat'), path)) fail(`${path} is hidden from ai`)
+                const chatProvider = ((await readSettings(vault))?.data?.chat as { provider?: unknown } | undefined)
+                    ?.provider
+                const { findAi } = await import('../../../core/src/findAi')
+                const r = await findAi({ query, text, ask, chatProvider })
+                matches = r.matches
+                answer = r.answer
+                ai = true
+            }
+            const rows = matches.map(m => ({ ...m, ...lineOf(text, m.from), match: text.slice(m.from, m.to), ai }))
+            if (bool(args, 'json')) return out(ask ? { answer, passages: rows } : rows, args)
+            if (answer !== undefined) console.log(answer + (rows.length ? '\n' : ''))
+            if (!rows.length) {
+                if (!ask) console.error(ai ? 'ai found nothing' : 'no results')
+                return
+            }
+            for (const r of rows) console.log(`${r.line}:${r.col}  ${r.ai ? 'ai  ' : ''}${r.text}`)
+        },
+    },
     search: {
         summary: 'Search the vault for a query: keyword and meaning blended when embeddings are on',
         usage: '<query> [--limit n] [--json] [--regex] [--case] [--word]',

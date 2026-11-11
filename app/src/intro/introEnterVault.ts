@@ -31,7 +31,7 @@ export type EnterVaultChoice = {
     /** The Obsidian vault picked on the obsidian slide; kept only when the cli + mcp power-up is
      *  on. Set, the CTA opens `<source>-bismuth` instead of the folder picker. */
     obsidianSource?: string
-    /** The privacy slide's switches; handed over only when the daemon power-up is on. */
+    /** The privacy slide's switches; the daemon's are handed over only when its power-up is on. */
     privacy?: PrivacyValues
 }
 
@@ -113,11 +113,11 @@ export async function enterVault(
     const name = daemonName(choice.daemonName ?? '')
     if (powerups.includes('daemon') && name !== DEFAULT_DAEMON_NAME)
         handoff[FIRST_RUN_DAEMON_NAME_KEY] = name
-    // The privacy slide only shows with the daemon on; every switch is written, off ones included.
-    if (powerups.includes('daemon'))
-        handoff[FIRST_RUN_PRIVACY_KEY] = JSON.stringify(
-            privacyWrites(choice.privacy ?? DEFAULT_PRIVACY),
-        )
+    // The privacy slide always shows (every intro picks an agent); every switch it showed is
+    // written, off ones included. The daemon's switches show only with the daemon power-up on.
+    handoff[FIRST_RUN_PRIVACY_KEY] = JSON.stringify(
+        privacyWrites(choice.privacy ?? DEFAULT_PRIVACY, powerups.includes('daemon')),
+    )
     // localStorage too, for the theme's first paint; it reaches disk lazily, so the copy Rust
     // writes is the one the hand-off relies on. A key from an earlier, abandoned attempt is cleared
     // so it cannot ride along.
