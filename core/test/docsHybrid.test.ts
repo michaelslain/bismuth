@@ -95,6 +95,20 @@ test('a section only the keyword side finds outranks a better meaning match that
     expect(r.hits.map(h => h.path)).toContain('b/semantic.md#vectors')
 })
 
+test('the blend decides which side leads: a keyword weight of 0 orders by meaning alone', async () => {
+    const root = docsTree({
+        'b/semantic.md': TREE['b/semantic.md'],
+        'k/kiosk.md': '# Kiosk\n\n## Setup\n\nthe kiosk needs a stand, a screen, a cable, a plug, a lock, a sign, a mat and a key\n',
+    })
+    configureDocsEmbed({ channel: fakeChannel(), vectorsDir: tempDir('dv-'), docsRoot: root, storeDebounceMs: 10 })
+    const opts = { limit: 10, vault: vaultWith(true), docsRoot: root, build: true }
+    const fit = (keyword: number) => ({ version: 1, weights: { meaning: 1, keyword }, k: 10, rerank: false, fitOn: { cases: 1, objective: 'x', at: '' } })
+    const equal = await docsHybridSearch('kiosk embeddings', { ...opts, fusion: null })
+    expect(equal.hits[0]!.path.startsWith('k/')).toBe(true)
+    const meaningOnly = await docsHybridSearch('kiosk embeddings', { ...opts, fusion: fit(0) })
+    expect(meaningOnly.hits[0]!.path).toBe('b/semantic.md#vectors')
+})
+
 test('embeddings off: today\'s searchDocs result, scores and order untouched', async () => {
     const root = docsTree(TREE)
     const want = searchDocs(root, 'how to work with lists', 5)

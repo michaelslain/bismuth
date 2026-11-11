@@ -141,15 +141,15 @@ async function meaningHits(vault: string, query: string, opts: HybridOpts): Prom
 }
 
 /** Reorder the fused head by the cross-encoder when it answers inside its budget; scores stay the
- *  fused ones, handed out in the new order so they remain descending. */
-async function rerankHead(query: string, hits: HybridHit[]): Promise<HybridHit[]> {
+ *  fused ones, handed out in the new order so they remain descending. `text` is what it reads of a hit. */
+export async function rerankHead<T extends { score: number }>(query: string, hits: T[], text: (t: T) => string): Promise<T[]> {
     try {
         const { sharedReranker, RERANK_TIMEOUT_MS } = await import('./memoryRerank')
         const reranker = sharedReranker()
         if (!reranker) return hits
         const head = hits.slice(0, RERANK_TOP)
         if (head.length < 2) return hits
-        const work = reranker.rerank(query, head.map(h => h.excerpt))
+        const work = reranker.rerank(query, head.map(text))
         work.catch(() => {})
         let timer: ReturnType<typeof setTimeout> | undefined
         const late = new Promise<undefined>(res => {
@@ -163,7 +163,7 @@ async function rerankHead(query: string, hits: HybridHit[]): Promise<HybridHit[]
         }
         if (!logits || logits.length !== head.length) return hits
         const order = head.map((h, i) => ({ h, i, l: logits![i] })).sort((a, b) => b.l - a.l || a.i - b.i)
-        const reordered = order.map((o, i) => ({ ...o.h, score: head[i].score }))
+        const reordered = order.map((o, i) => ({ ...o.h, score: head[i]!.score }))
         return [...reordered, ...hits.slice(RERANK_TOP)]
     } catch {
         return hits
@@ -206,7 +206,7 @@ export async function hybridSearch(vault: string, query: string, opts: HybridOpt
             fusion.k,
         ),
     )
-    if (opts.rerank ?? fusion.rerank) hits = await rerankHead(query, hits)
+    if (opts.rerank ?? fusion.rerank) hits = await rerankHead(query, hits, h => h.excerpt)
     return { hits: hits.slice(0, opts.limit), mode: 'hybrid' }
 }
 

@@ -16,7 +16,7 @@ import { basename, join } from 'node:path'
 import { noteHash } from '@bismuth/memory'
 import type { MemoryNote } from '@bismuth/memory'
 import { bismuthHome } from './bismuthHome'
-import { EMBED_MODEL } from './embedModel'
+import { EMBED_MODEL, EMBED_SPEC } from './embedModel'
 import { WORKER_ARG } from './embedWorker'
 import type { Embedder, RecallDeps } from './memoryRecall'
 
@@ -28,8 +28,8 @@ import type { Embedder, RecallDeps } from './memoryRecall'
  *  `memoryEmbed.test.ts` pins both. */
 
 export { EMBED_MODEL }
-/** bge's retrieval instruction: queries only, never documents. */
-export const QUERY_PREFIX = 'Represent this sentence for searching relevant passages: '
+/** The embedder's query instruction (`EMBED_SPEC`): queries only, never documents. */
+export const QUERY_PREFIX = EMBED_SPEC.query
 export const DEFAULT_IDLE_MS = 10 * 60 * 1000
 export const QUERY_TIMEOUT_MS = 250
 export const REEMBED_DEBOUNCE_MS = 2000
@@ -331,15 +331,14 @@ export default function createEmbedder(opts: EmbedderOptions): LiveEmbedder {
     }
 }
 
-/** The texts embedded for a note: windows of at most `CHUNK_CHARS` chars (breaking on whitespace,
- *  never mid-word unless one word alone exceeds a window), each led by the note's name, description and
- *  tags so a window knows what it belongs to. Capped at `MAX_CHUNKS_PER_NOTE`. Pure. */
-export function noteChunks(note: MemoryNote): string[] {
+/** A note's windows: at most `CHUNK_CHARS` chars each with the header (breaking on whitespace, never
+ *  mid-word unless one word alone exceeds a window), `start` the offset of `text` in the body. Pure. */
+function chunkWindows(note: MemoryNote): { header: string; text: string; start: number }[] {
     const fm = note.frontmatter
     const header = [note.name, fm.description, fm.tags.join(' ')].filter(Boolean).join('\n') + '\n'
     const body = note.content
     const size = Math.max(40, CHUNK_CHARS - header.length)
-    const out: string[] = []
+    const out: { header: string; text: string; start: number }[] = []
     let pos = 0
     while (pos < body.length && out.length < MAX_CHUNKS_PER_NOTE) {
         while (pos < body.length && /\s/.test(body[pos]!)) pos++
@@ -351,10 +350,56 @@ export function noteChunks(note: MemoryNote): string[] {
             if (cut > pos) end = cut
         }
         const text = body.slice(pos, end).trim()
-        if (text) out.push(header + text)
+        if (text) out.push({ header, text, start: pos })
         pos = end
     }
-    return out.length ? out : [header.trimEnd()]
+    return out.length ? out : [{ header: header.trimEnd(), text: '', start: 0 }]
+}
+
+/** The texts embedded for a note: its windows, each led by the note's name, description and tags so a
+ *  window knows what it belongs to. Capped at `MAX_CHUNKS_PER_NOTE`. Pure. */
+export function noteChunks(note: MemoryNote): string[] {
+    return chunkWindows(note).map(w => w.header + w.text)
+}
+
+/** `BISMUTH_CHUNK_CONTEXT=headings` (a bench switch): each embedded window also names the markdown
+ *  headings it sits under. Excerpts never carry the line. */
+export const CHUNK_CONTEXT: 'none' | 'headings' = process.env.BISMUTH_CHUNK_CONTEXT === 'headings' ? 'headings' : 'none'
+/** What a store's index records as its model: vectors made another way are re-embedded, never mixed. */
+export const STORE_MODEL = CHUNK_CONTEXT === 'headings' ? `${EMBED_MODEL}+headings` : EMBED_MODEL
+
+/** The heading path in effect at each offset of a markdown body: `# A`, `## B` → `A > B`. Pure. */
+export function headingPathAt(body: string, offsets: number[]): string[] {
+    const heads: { at: number; level: number; text: string }[] = []
+    const re = /^(#{1,6})[ \t]+(.+?)[ \t#]*$/gm
+    let inFence = false
+    let lineStart = 0
+    for (const line of body.split('\n')) {
+        if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
+        else if (!inFence) {
+            re.lastIndex = 0
+            const m = re.exec(line)
+            if (m) heads.push({ at: lineStart, level: m[1]!.length, text: m[2]!.trim() })
+        }
+        lineStart += line.length + 1
+    }
+    return offsets.map(off => {
+        const stack: { level: number; text: string }[] = []
+        for (const h of heads) {
+            if (h.at >= off) break
+            while (stack.length && stack[stack.length - 1]!.level >= h.level) stack.pop()
+            stack.push(h)
+        }
+        return stack.map(h => h.text).join(' > ')
+    })
+}
+
+/** The texts the store embeds for a note: `noteChunks`, plus the heading line when `CHUNK_CONTEXT` asks. */
+export function embedTexts(note: MemoryNote): string[] {
+    const ws = chunkWindows(note)
+    if (CHUNK_CONTEXT === 'none') return ws.map(w => w.header + w.text)
+    const paths = headingPathAt(note.content, ws.map(w => w.start))
+    return ws.map((w, i) => (paths[i] ? `${w.header}${paths[i]}\n${w.text}` : w.header + w.text))
 }
 
 /** A note scores as its best chunk. */
@@ -560,7 +605,7 @@ export function createVectorStore(
         const m = j?.format === BIN_FORMAT && typeof j.bin === 'string' ? /^vectors-v2\.(\d+)\.bin$/.exec(j.bin) : null
         if (!m || !j.entries) return null
         gen = Number(m[1])
-        if (j.model !== EMBED_MODEL) {
+        if (j.model !== STORE_MODEL) {
             gen++
             orphan = j.bin!
             return null
@@ -613,7 +658,7 @@ export function createVectorStore(
                 model: string
                 vectors: Record<string, { hash: string; dim: number; vecs: string }>
             }
-            if (j.format === CHUNKED_FORMAT && j.model === EMBED_MODEL)
+            if (j.format === CHUNKED_FORMAT && j.model === STORE_MODEL)
                 for (const [name, v] of Object.entries(j.vectors)) {
                     const b = Buffer.from(v.vecs, 'base64')
                     // a zero or ragged dim would make bestChunk loop forever
@@ -675,7 +720,7 @@ export function createVectorStore(
         try {
             const d = JSON.parse(readFileSync(indexFile, 'utf8')) as { model?: string; bin?: string; bytes?: number }
             const m = typeof d.bin === 'string' ? /^vectors-v2\.(\d+)\.bin$/.exec(d.bin) : null
-            if (m && d.model === EMBED_MODEL) {
+            if (m && d.model === STORE_MODEL) {
                 diskGen = Number(m[1])
                 foreign = d.bin !== binName(gen) || d.bytes !== bytes
             }
@@ -728,7 +773,7 @@ export function createVectorStore(
                 tmpFd,
                 JSON.stringify({
                     format: BIN_FORMAT,
-                    model: EMBED_MODEL,
+                    model: STORE_MODEL,
                     bin: binName(nextGen),
                     bytes: at,
                     dead: compact ? 0 : dead,
@@ -791,8 +836,8 @@ export function createVectorStore(
         for (let from = 0; from < todo.length; from += step) {
             if (halted) break
             const slice = todo.slice(from, from + step)
-            const chunks = slice.map(noteChunks)
-            const vecs = await opts.embedder.embed(chunks.flat())
+            const chunks = slice.map(embedTexts)
+            const vecs = await opts.embedder.embed(chunks.flat().map(t => EMBED_SPEC.doc + t))
             let at = 0
             slice.forEach((n, i) => {
                 const mine = vecs.slice(at, at + chunks[i]!.length)

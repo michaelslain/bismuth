@@ -97,5 +97,23 @@
       "heldOutMeaningOnlyRecall": 0.34234234234234234,
       "verdict": "blending keyword and meaning reaches held-out recall@10 0.383, at least meaning alone (0.342): the fitted blend ships"
     }
+  },
+  "docsFusion": {
+    "version": 1,
+    "weights": {
+      "meaning": 1,
+      "keyword": 0.2
+    },
+    "k": 10,
+    "rerank": false,
+    "fitOn": {
+      "cases": 217,
+      "objective": "recall@10 of the labelled docs pages (real docs searches and reads, and Haiku-written questions, from bench/docsSearchReplay.ts) on held-out folds by page or session; the grid point with the best training-fold recall@10 is scored on its held-out fold",
+      "at": "2026-11-11",
+      "folds": 5,
+      "heldOutRecall": 0.8940092165898618,
+      "heldOutMeaningOnlyRecall": 0.8940092165898618,
+      "verdict": "blending keyword and meaning reaches held-out recall@10 0.894, at least meaning alone (0.894): the fitted blend ships"
+    }
   }
 }

@@ -1,5 +1,5 @@
 import { writeSync } from 'node:fs'
-import { EMBED_MODEL } from './embedModel'
+import { EMBED_SPEC } from './embedModel'
 
 /** The child process that holds the embedding model. The model lives out here, not in core, because
  *  freeing it in-process does not return the memory (ort's arenas and the mapped dylib stay resident
@@ -24,8 +24,8 @@ export const WORKER_ARG = '--bismuth-embed-worker'
 export async function loadTransformers(cacheDir: string): Promise<WorkerExtractor> {
     const tf = await import('@huggingface/transformers')
     tf.env.cacheDir = cacheDir
-    const pipe = await tf.pipeline('feature-extraction', EMBED_MODEL, {
-        dtype: 'q8',
+    const pipe = await tf.pipeline('feature-extraction', EMBED_SPEC.id, {
+        dtype: EMBED_SPEC.dtype,
         // Two intra-op threads: embedding is bursty and the user does not want the fans on.
         session_options: {
             intraOpNumThreads: 2,
@@ -36,7 +36,7 @@ export async function loadTransformers(cacheDir: string): Promise<WorkerExtracto
     })
     return {
         async run(texts) {
-            const t = await pipe(texts, { pooling: 'cls', normalize: true })
+            const t = await pipe(texts, { pooling: EMBED_SPEC.pooling, normalize: true })
             const out = { data: Float32Array.from(t.data as Float32Array), dims: [...t.dims] }
             t.dispose?.()
             return out

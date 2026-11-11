@@ -3,7 +3,8 @@
 // that reads the disk or loads a model is lazy-imported: routes/vault.ts imports this file at boot,
 // and mobile runs core in-process.
 import type { DocHit } from '../../mcp/src/docs'
-import { fuseRanks } from './hybridSearch'
+import { fuseRanks, rerankHead } from './hybridSearch'
+import { loadDocsFusionModel, type FusionModel } from './sourceGate'
 import { readEmbeddingsEnabledSync } from './embeddingsSetting'
 
 export type DocsHybridResult = { hits: DocHit[]; mode: 'hybrid' | 'keyword'; reason?: string }
@@ -20,6 +21,8 @@ export type DocsHybridOpts = {
     waitMs?: number
     /** Skip the meaning side and answer from keywords, with this as the `reason`. */
     keywordOnly?: string
+    /** Test seam and bench override: the blend to use instead of the committed fit (null = equal weights). */
+    fusion?: FusionModel | null
 }
 
 /** Candidates each side contributes to the fusion. */
@@ -31,7 +34,7 @@ const POOL = 60
 const FILLER = new Set(
     'a an and are can do does did for how i in is it my of on or the to what when where which who why with work works working'.split(' '),
 )
-const topicWords = (query: string): string => {
+export const topicWords = (query: string): string => {
     const words = query.split(/\s+/).filter(Boolean)
     const kept = words.filter(w => !FILLER.has(w.toLowerCase().replace(/[^a-z]/g, '')))
     return (kept.length > 0 ? kept : words).join(' ')
@@ -58,16 +61,20 @@ export async function docsHybridSearch(query: string, opts: DocsHybridOpts): Pro
     const meaning = await docsQueryHits(query, { k: POOL, root, build: opts.build, waitMs: opts.waitMs })
     if ('unavailable' in meaning) return keywordOnly(meaning.unavailable)
     const keyword = searchDocs(root, topicWords(query), POOL)
+    // The blend fit on docs questions (bench/docsSearchReplay.ts); none committed = equal weights.
+    const fusion = opts.fusion === undefined ? loadDocsFusionModel() : opts.fusion
     // The keyword list leads so a section found by both keeps its match-centred snippet.
-    const fused = fuseRanks<DocHit>([
-        { key: h => h.path, items: keyword },
-        { key: h => h.path, items: meaning.hits.map(asDocHit) },
-    ])
+    const fused = fuseRanks<DocHit>(
+        [
+            { key: h => h.path, items: keyword, weight: fusion?.weights.keyword },
+            { key: h => h.path, items: meaning.hits.map(asDocHit), weight: fusion?.weights.meaning },
+        ],
+        fusion?.k,
+    )
     const top = fused[0]?.score || 1
-    const hits = fused
-        .slice(0, opts.limit)
-        .map(f => ({ ...f.item, score: Math.round((f.score / top) * 1e4) / 1e4 }))
-    return { hits, mode: 'hybrid' }
+    let hits = fused.map(f => ({ ...f.item, score: Math.round((f.score / top) * 1e4) / 1e4 }))
+    if (fusion?.rerank) hits = await rerankHead(query, hits, h => `${h.heading}\n${h.snippet}`)
+    return { hits: hits.slice(0, opts.limit), mode: 'hybrid' }
 }
 
 export async function docsSearchRoute(req: Request, ctx: { vault: string }): Promise<Response> {

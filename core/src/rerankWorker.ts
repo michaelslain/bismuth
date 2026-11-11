@@ -7,7 +7,16 @@ import type { WorkerExtractor } from './embedWorker'
  *  THIS FILE MUST NOT STATICALLY IMPORT THE MODEL PACKAGES: it is reachable from core boot via
  *  `embedWorkerBoot`. */
 
-export const RERANK_MODEL = 'Xenova/ms-marco-MiniLM-L-6-v2'
+/** The cross-encoders `bench/searchReplay.ts` compares; `default` is the one that ships. */
+export const RERANK_MODELS: Record<string, string> = {
+    default: 'Xenova/ms-marco-MiniLM-L-6-v2',
+    'minilm-l12': 'Xenova/ms-marco-MiniLM-L-12-v2',
+    'mxbai-xsmall': 'mixedbread-ai/mxbai-rerank-xsmall-v1',
+    'mxbai-base': 'mixedbread-ai/mxbai-rerank-base-v1',
+    'jina-turbo': 'jinaai/jina-reranker-v1-turbo-en',
+}
+/** `BISMUTH_RERANK_MODEL` names a catalog entry for a bench run; anything else is the shipped model. */
+export const RERANK_MODEL = RERANK_MODELS[process.env.BISMUTH_RERANK_MODEL ?? ''] ?? RERANK_MODELS.default!
 /** The argv marker the compiled sidecar is re-executed with (see `embedWorkerBoot`). */
 export const RERANK_WORKER_ARG = '--bismuth-rerank-worker'
 

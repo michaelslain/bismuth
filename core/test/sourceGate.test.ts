@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { CLOSED_GATE, FEATURE_NAMES, featureVector, gateAccepts, gateProbability, loadFusionModel, loadGateModel, parseFusionModel, parseGateModel } from '../src/sourceGate'
+import { CLOSED_GATE, FEATURE_NAMES, featureVector, gateAccepts, gateProbability, loadDocsFusionModel, loadFusionModel, loadGateModel, parseFusionModel, parseGateModel } from '../src/sourceGate'
 import type { GateFeatures, GateModel } from '../src/sourceGate'
 
 const features: GateFeatures = { cosine: 0.8, background: 0.7, rank: 1, rerank: 2, kind: 'file', inRange: false, promptChars: 99 }
@@ -68,5 +68,11 @@ describe('the committed model file', () => {
         expect(loadFusionModel(ok)).toEqual(ok.fusion)
         for (const bad of [{}, { fusion: null }, { fusion: { ...ok.fusion, k: 0 } }, { fusion: { ...ok.fusion, weights: { meaning: 0, keyword: 0 } } }, { fusion: { ...ok.fusion, rerank: 'no' } }, { fusion: { ...ok.fusion, weights: { meaning: -1, keyword: 1 } } }])
             expect(parseFusionModel(bad)).toBeNull()
+    })
+    test('docs search reads its own blend under docsFusion, never the vault one', () => {
+        const docs = { version: 1, weights: { meaning: 1, keyword: 0.2 }, k: 10, rerank: false, fitOn: { cases: 3, objective: 'x', at: '' } }
+        expect(loadDocsFusionModel({ docsFusion: docs })).toEqual(docs)
+        expect(loadDocsFusionModel({ fusion: docs })).toBeNull()
+        expect(loadDocsFusionModel()).not.toBeNull()
     })
 })

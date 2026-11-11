@@ -120,9 +120,10 @@ export function loadGateModel(raw: unknown = bundled): GateModel {
     return parseGateModel(raw) ?? CLOSED_GATE
 }
 
-/** The committed search blend, null when its numbers are missing or corrupt. */
-export function parseFusionModel(raw: unknown): FusionModel | null {
-    const f = (raw as { fusion?: unknown } | null)?.fusion as Record<string, unknown> | undefined
+/** The committed search blend (`fusion`, or `docsFusion` for `bismuth docs search`), null when its
+ *  numbers are missing or corrupt. */
+export function parseFusionModel(raw: unknown, key: 'fusion' | 'docsFusion' = 'fusion'): FusionModel | null {
+    const f = (raw as Record<string, unknown> | null)?.[key] as Record<string, unknown> | undefined
     if (!f || typeof f !== 'object') return null
     const w = f.weights as Record<string, unknown> | undefined
     if (!w || !finite(w.meaning) || !finite(w.keyword) || w.meaning < 0 || w.keyword < 0 || w.meaning + w.keyword <= 0) return null
@@ -132,4 +133,9 @@ export function parseFusionModel(raw: unknown): FusionModel | null {
 
 export function loadFusionModel(raw: unknown = bundled): FusionModel | null {
     return parseFusionModel(raw)
+}
+
+/** The blend `bismuth docs search` fuses its two lists with; null = equal weights. */
+export function loadDocsFusionModel(raw: unknown = bundled): FusionModel | null {
+    return parseFusionModel(raw, 'docsFusion')
 }
