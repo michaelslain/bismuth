@@ -699,7 +699,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             // Ask ai about one note, faked live: each line holding a word that shares its first four
             // letters with a word of the query is a passage ("tooth" finds "toothache"); with `ask`,
             // the answer quotes the best one. A short wait so `asking…` shows; a path with "hidden"
-            // in it refuses like a note hidden from ai.
+            // in it refuses like one hidden from ai, worded for a note (`.md`) or a file as the route words it.
             if (pathname === '/find-ai') {
                 const { path: notePath, query, text, ask } = body as {
                     path: string
@@ -708,7 +708,8 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     ask?: boolean
                 }
                 await new Promise(r => setTimeout(r, 600))
-                if (/hidden/i.test(notePath)) throw new Error('this note is hidden from ai')
+                if (/hidden/i.test(notePath))
+                    throw new Error(`this ${/\.md$/i.test(notePath) ? 'note' : 'file'} is hidden from ai`)
                 const stems = query.toLowerCase().match(/[a-z]{4,}/g)?.map(w => w.slice(0, 4)) ?? []
                 const matches: { from: number; to: number; text: string }[] = []
                 let at = 0

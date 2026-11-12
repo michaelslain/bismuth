@@ -82,8 +82,8 @@ export const commands: CommandMap = {
                 if (isDeniedPath(await buildDenyPaths(vault, 'chat'), path)) fail(`${path} is hidden from ai`)
                 const chatProvider = ((await readSettings(vault))?.data?.chat as { provider?: unknown } | undefined)
                     ?.provider
-                const { findAi } = await import('../../../core/src/findAi')
-                const r = await findAi({ query, text, ask, chatProvider })
+                const { findAi, findAiNoun } = await import('../../../core/src/findAi')
+                const r = await findAi({ query, text, ask, chatProvider, noun: findAiNoun(path) })
                 matches = r.matches
                 answer = r.answer
                 ai = true

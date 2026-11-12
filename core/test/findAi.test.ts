@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { buildAskPrompt, buildFindPrompt, findAi, locatePassages, parseAskReply, parseFindReply } from '../src/findAi'
+import {
+    buildAskPrompt,
+    buildFindPrompt,
+    findAi,
+    findAiNoun,
+    locatePassages,
+    MAX_FIND_TEXT,
+    parseAskReply,
+    parseFindReply,
+} from '../src/findAi'
 import { AppError } from '../src/error'
 import type { HeadlessTurn } from '../src/chatProviders/headlessTurn'
 
@@ -68,6 +77,23 @@ describe('findAi', () => {
     test('an empty query is a 400', async () => {
         const err = await findAi({ query: '  ', text: NOTE }, { installed: () => ['opencode'] }).catch(e => e)
         expect((err as AppError).statusCode).toBe(400)
+    })
+
+    test('refusals and the empty answer name a note a note and a code or text file a file', async () => {
+        expect(findAiNoun('a/Week.md')).toBe('note')
+        expect(findAiNoun('src/main.ts')).toBe('file')
+        expect(findAiNoun('notes.txt')).toBe('file')
+        const long = 'x'.repeat(MAX_FIND_TEXT + 1)
+        const tooLong = async (noun?: 'note' | 'file') =>
+            ((await findAi({ query: 'q', text: long, noun }, { installed: () => ['opencode'] }).catch(e => e)) as AppError)
+                .message
+        expect(await tooLong()).toBe('this note is too long to ask ai about')
+        expect(await tooLong('file')).toBe('this file is too long to ask ai about')
+        const empty = await findAi(
+            { query: 'q', text: '  ', ask: true, chatProvider: 'opencode', noun: 'file' },
+            { installed: () => ['opencode'] },
+        )
+        expect(empty.answer).toBe('This file is empty.')
     })
 })
 

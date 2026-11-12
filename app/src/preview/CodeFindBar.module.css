@@ -62,6 +62,9 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* While an answer shows, the bar is opaque: --pop-bg-strong lets the file's lines through, and under
+   an answer they read as part of it. */
+.preview-find:has(.preview-find-answer) { background: var(--bg); }
 
 /* PDF variant: an informational note (no input) — the embedded viewer owns text search. */
 .preview-find-note {

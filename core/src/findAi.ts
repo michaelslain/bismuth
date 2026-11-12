@@ -23,6 +23,13 @@ export const MAX_FIND_TEXT = 400_000
 const FIND_TIMEOUT_MS = 90_000
 const NONE = 'NONE'
 
+/** What a refusal calls the file it was asked about: a markdown file is a note, anything else
+ *  (a code or text file a preview shows) is a file. */
+export type FindAiNoun = 'note' | 'file'
+export function findAiNoun(path: string): FindAiNoun {
+    return /\.md$/i.test(path) ? 'note' : 'file'
+}
+
 export type FindAiMatch = { from: number; to: number; text: string }
 /** `answer` only for a question (`ask`): the reply drawn from the note, plain text. */
 export type FindAiResult = { matches: FindAiMatch[]; backend: string; answer?: string }
@@ -115,16 +122,17 @@ export function locatePassages(text: string, passages: string[]): FindAiMatch[] 
 }
 
 export async function findAi(
-    req: { query: string; text: string; ask?: boolean; chatProvider?: unknown },
+    req: { query: string; text: string; ask?: boolean; chatProvider?: unknown; noun?: FindAiNoun },
     deps: {
         installed?: () => readonly string[]
         runTurn?: (turn: HeadlessTurn) => Promise<string>
     } = {},
 ): Promise<FindAiResult> {
     const query = req.query.trim()
+    const noun = req.noun ?? 'note'
     if (!query) throw new AppError('BAD_REQUEST', 'empty search', 400)
     if (req.text.length > MAX_FIND_TEXT) {
-        throw new AppError('TOO_LARGE', 'this note is too long to ask ai about', 413)
+        throw new AppError('TOO_LARGE', `this ${noun} is too long to ask ai about`, 413)
     }
     const installed = deps.installed ?? (() => installedBackendIds())
     const id = resolveAiBackend({ provider: 'auto' }, req.chatProvider, installed)
@@ -133,7 +141,7 @@ export async function findAi(
         throw new AppError('AI_UNAVAILABLE', `${label} is not installed on this machine`, 503)
     }
     if (!req.text.trim()) {
-        return req.ask ? { matches: [], backend: id, answer: 'This note is empty.' } : { matches: [], backend: id }
+        return req.ask ? { matches: [], backend: id, answer: `This ${noun} is empty.` } : { matches: [], backend: id }
     }
     const run = deps.runTurn ?? runHeadlessTurn
     const dir = await mkdtemp(join(tmpdir(), 'bismuth-find-'))

@@ -2989,11 +2989,15 @@ export const FindPanelAsksAndAnswers: Story = {
         await expect(box.top).toBeGreaterThan(bar.top)
         await expect(box.right).toBeLessThanOrEqual(bar.right + 0.5)
         await expect(box.width).toBeGreaterThan(bar.width / 2)
+        // while the answer shows the bar is opaque, so the note's lines stop showing through it
+        const barEl = canvasElement.querySelector<HTMLElement>('.bismuth-find')!
+        await expect(getComputedStyle(barEl).backgroundColor).toMatch(/^rgb\(/)
         pressEnter(input)
         await waitFor(() => expect(countText(canvasElement)).toMatch(/^ai (1|2)\/\d$/))
         input.value = 'zzz'
         input.dispatchEvent(new Event('input', { bubbles: true }))
         await expect(answerBox(canvasElement).hidden).toBe(true)
+        await expect(getComputedStyle(barEl).backgroundColor).toMatch(/^rgba\(/)
         input.value = 'when is my tooth appointment?'
         input.dispatchEvent(new Event('input', { bubbles: true }))
         pressEnter(input)

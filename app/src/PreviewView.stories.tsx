@@ -253,12 +253,16 @@ export const CodeFindAsksAndAnswers: Story = {
         const box = codeAnswer(canvasElement)!.getBoundingClientRect()
         await expect(box.top).toBeGreaterThan(input.getBoundingClientRect().bottom)
         await expect(box.right).toBeLessThanOrEqual(barBox.right + 0.5)
+        // while the answer shows the bar is opaque, so the file's lines stop showing through it
+        const barEl = codeAnswer(canvasElement)!.parentElement!
+        await expect(getComputedStyle(barEl).backgroundColor).toMatch(/^rgb\(/)
         fireEvent.keyDown(input, { key: 'Enter' })
         await waitFor(() => expect(canvas.getByText('ai 2/2')).toBeInTheDocument())
         await fireEvent.click(canvas.getByLabelText('Previous match (Shift+Enter)'))
         await waitFor(() => expect(canvas.getByText('ai 1/2')).toBeInTheDocument())
         await fireEvent.input(input, { target: { value: 'zzz' } })
         await waitFor(() => expect(codeAnswer(canvasElement)).toBeNull())
+        await expect(getComputedStyle(barEl).backgroundColor).toMatch(/^rgba\(/)
         await expect(canvasElement.querySelectorAll('[data-find-match]').length).toBe(0)
         // asked again, it ends answered: the state to try
         await fireEvent.input(input, { target: { value: 'how does it greet someone?' } })
@@ -273,7 +277,7 @@ export const CodeFindAskRefused: Story = {
     play: async ({ canvasElement }) => {
         const { input } = await openCodeFindWith(canvasElement, 'what does it return?')
         fireEvent.keyDown(input, { key: 'Enter' })
-        await waitFor(() => expect(codeAnswer(canvasElement)?.textContent).toBe('this note is hidden from ai'))
+        await waitFor(() => expect(codeAnswer(canvasElement)?.textContent).toBe('this file is hidden from ai'))
         await expect(canvasElement.querySelectorAll('[data-find-match]').length).toBe(0)
     },
 }

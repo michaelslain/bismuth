@@ -1628,6 +1628,9 @@ html[data-highlight-hover], html[data-highlight-hover] * {
   overflow-wrap: anywhere;
 }
 .bismuth-find-answer[hidden] { display: none; }
+/* While an answer shows, the bar is opaque: --pop-bg-strong lets the note's lines through, and under
+   an answer they read as part of it. */
+.bismuth-find:has(> .bismuth-find-answer:not([hidden])) { background: var(--bg); }
 .bismuth-find-answer[data-tone='muted'] { color: var(--text-muted); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
 .bismuth-find-answer[data-tone='danger'] { color: var(--danger); font-family: var(--ui-font-stack); font-size: var(--fs-ui); }
 

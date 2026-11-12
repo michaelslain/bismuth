@@ -162,7 +162,7 @@ export const AnswerRefused: Story = {
             query="where is the greeting"
             count="no results"
             matches={0}
-            answer="this note is hidden from ai"
+            answer="this file is hidden from ai"
             answerTone="danger"
         />
     ),    play: async ({ canvasElement }) => {

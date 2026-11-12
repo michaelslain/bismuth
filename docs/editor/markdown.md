@@ -140,7 +140,7 @@ The passages of the note the answer rests on come with it: they are marked like 
 
 Typing in the find bar closes the answer and drops the passages, and `Enter` asks again. A passage inside a rendered table scrolls into view without a mark. `bismuth find --ask` asks the same question from a shell; see the [CLI reference](../cli/reference.md#search-and-replace).
 
-A code or text file's preview asks the same way. Its find bar (`Mod+F` over the file) reads `no results ↵ ask` on a query with no match while `editor.findAsksAi` is on, and `Enter` asks the question about the file's text: the answer opens under the bar, the passages it rests on are marked like matches with the best one scrolled into view, and the bar reads `ai 1/2`. A file hidden from ai is refused in red the same way, and with the setting off the bar reads `No results` and sends nothing.
+A code or text file's preview asks the same way. Its find bar (`Mod+F` over the file) reads `no results ↵ ask` on a query with no match while `editor.findAsksAi` is on, and `Enter` asks the question about the file's text: the answer opens under the bar, the passages it rests on are marked like matches with the best one scrolled into view, and the bar reads `ai 1/2`. A file hidden from ai is refused in red the same way, as `this file is hidden from ai`, and with the setting off the bar reads `No results` and sends nothing.
 
 ## Dates in properties
 
