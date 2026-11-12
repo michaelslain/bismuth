@@ -1,5 +1,5 @@
 // bench/bookEditE2E.ts — end-to-end probe for editing a PDF read as a book: boots core + Vite on their
-// own ports over a temp vault holding a 3-page PDF, opens it in headless Chrome, switches to pages,
+// own ports over a temp vault holding a 3-page PDF, opens it in headless Chrome, flips it into a book,
 // checks the right-click menu holds the page rows and the pane rows, removes page 2 in the page sorter
 // and saves (the PDF on disk has 2 pages after), turns the pages dark, then fixes a page's text in
 // text mode and reads it back from the companion note.
@@ -105,9 +105,10 @@ async function main() {
     await waitFor(() => ev(`(() => { const el = [...document.querySelectorAll('*')].find(e => e.children.length === 0 && /^scans$/.test(e.textContent.trim())); if (el) { el.click(); return true } return false })()`))
     const opened = await waitFor(() => ev(`(() => { const el = [...document.querySelectorAll('*')].find(e => e.children.length === 0 && /^lecture(\\.pdf)?$/.test(e.textContent.trim())); if (el) { el.click(); return true } return false })()`))
     step('1 pdf opens', !!opened)
-    await waitFor(() => clickButton('pages'))
+    // a lone pdf opens as pages that scroll (the viewer); flipping them is the book
+    await waitFor(() => clickButton('flip'))
     const book = await waitFor(() => ev(`!!document.querySelector('[data-book] [data-book-page="right"]')`))
-    step('2 pages mode shows the book', !!book)
+    step('2 flip shows the book', !!book)
     await sleep(1500)
 
     // switching lands where the reader was: book on page 3 → the viewer shows page 3; the viewer on
@@ -119,13 +120,12 @@ async function main() {
     await waitFor(async () => ((await bookReadout()) ?? '').startsWith('pp. 2–3'))
     await clickButton('scroll')
     const vp = await waitFor(async () => ((await viewerPage()) === 2 ? 2 : null), 8000)
-    step('2b pages 2–3 → scroll lands on page 2', vp === 2, String(await viewerPage()))
+    step('2b book on pages 2–3 → scroll lands on page 2', vp === 2, String(await viewerPage()))
     await ev(`(() => { const all = [...document.querySelectorAll('*')].filter(e => e.scrollHeight > e.clientHeight + 50 && getComputedStyle(e).overflowY !== 'visible'); const el = all.sort((a, b) => b.scrollHeight - a.scrollHeight)[0]; el.scrollTop = 0 })()`)
     await waitFor(async () => (await viewerPage()) === 1, 8000)
-    await clickButton('pages')
+    await clickButton('flip')
     const br = await waitFor(async () => ((await bookReadout()) ?? '').startsWith('p. 1 /') && (await bookReadout()), 8000)
-    step('2c scroll back on page 1 → pages opens page 1, not the 2–3 it left', !!br, String(await bookReadout()))
-    await clickButton('pages')
+    step('2c scroll back on page 1 → flip opens page 1, not the 2–3 it left', !!br, String(await bookReadout()))
     await sleep(800)
 
     // one right-click menu: the page's rows, then the pane's
@@ -180,8 +180,12 @@ async function main() {
     const companion = join(VAULT, 'scans', 'lecture.pdf.md')
     const saved = await waitFor(async () => (existsSync(companion) && readFileSync(companion, 'utf8').includes('Fixed by hand.') ? true : null))
     step('6b companion note holds the fixed text', !!saved)
-    const shown = await waitFor(() => ev(`document.querySelector('[data-text-spread]')?.textContent.includes('Fixed by hand.') ?? false`))
-    step('6c text mode sets the fixed text', !!shown)
+    // leave text mode and come back: the section is drawn again from the saved transcript
+    await clickButton('pages')
+    const left = await waitFor(() => ev(`!document.querySelector('[data-page-key]')`), 8000)
+    await clickButton('text')
+    const shown = await waitFor(() => ev(`[...document.querySelectorAll('[data-page-key]')].some(e => e.textContent.includes('Fixed by hand.'))`))
+    step('6c text mode shows the fixed text after pages and back', !!left && !!shown, left ? '' : 'the section never left')
     await shot('6-text-fixed')
 
     chrome.close()
