@@ -2,7 +2,7 @@
 // blend) put the files an agent went and fetched nearer the top? Every prompt of the vault's Claude Code
 // session logs that was followed by reading a vault file is a case (bench/recallReplayCases.ts): the query
 // is the prompt, the labels are the notes, PDFs and images read before the next prompt.
-//   bun bench/searchReplay.ts pools  --vault <dir> [--logs <dir>] --out <dir> [--embed <name>] [--context none|headings]
+//   bun bench/searchReplay.ts pools  --vault <dir> [--logs <dir>] --out <dir> [--embed <name>] [--context none|headings|summaries]
 //   bun bench/searchReplay.ts rerank --out <dir> --reranker <name>
 //   bun bench/searchReplay.ts fit    --dir <dir> [--reranker <name>] --key fusion|docsFusion [--write core/src/sourceGateModel.json]
 //   bun bench/searchReplay.ts score  --base <dir> [--base-reranker <name>] [--fixed kw,k,rerank] --variant <dir> [--reranker <name>] [--folds 5] [--draws 2000]
@@ -150,7 +150,15 @@ async function pools() {
     const out = resolve(need('--out'))
     // read at import by core's embedder and store: set before anything below loads them
     if (flag('--embed')) process.env.BISMUTH_EMBED_MODEL = flag('--embed')
-    if (flag('--context')) process.env.BISMUTH_CHUNK_CONTEXT = flag('--context')
+    const context = flag('--context')
+    if (context) {
+        if (!['none', 'headings', 'summaries'].includes(context)) throw new Error('--context must be none, headings or summaries')
+        process.env.BISMUTH_CHUNK_CONTEXT = context
+        // summaries come from `bismuth summary build --vault <vault>`: without them the variant is the base
+        const { hasSummaries } = await import('../core/src/noteSummaryStore')
+        if (context === 'summaries' && !hasSummaries(vault))
+            throw new Error(`no note summaries for ${vault}: run bismuth summary build --vault <vault> first`)
+    }
     const logs = flag('--logs') ?? join(homedir(), '.claude', 'projects', encodeProjectDir(vault))
     mkdirSync(out, { recursive: true })
     const files = new Set<string>()

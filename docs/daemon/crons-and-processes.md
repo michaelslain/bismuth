@@ -101,6 +101,8 @@ If the prompt contains `{{changedSinceLastRun}}`, the daemon replaces it with a 
 
 The daemon moves the bookmarks only when the session ends with `[CRON_RESULT:SUCCESS]`, never after a failure, a kill or an unknown result. The vault bookmark moves to a snapshot taken when the run started, so an edit made during the run is seen next time. The memory bookmark moves to a snapshot taken at the end, so the cron's own memory writes do not retrigger it.
 
+Once an incremental run that checks the vault passes its gate, the daemon also refreshes the vault's note summaries beside the session when the vault has any ([summary layers](../vault/summary-layers.md#keep-summaries-fresh)).
+
 An incremental cron needs a git repository with at least one commit in each area. An area with no repository or no commit reads as "nothing changed", so the cron is skipped without a warning. The vault's repository comes from Bismuth's local snapshots (`vault.backupOnSave`, on by default), and the memory repository comes from the snapshots core takes of that folder.
 
 ## Put the memory health report in a prompt
@@ -150,7 +152,7 @@ A vault's brain starts by writing any default file that is missing, so a new vau
 `dream` runs hourly with a 30-minute timeout at `tier: balanced` and `effort: high`, is incremental over both the vault and the memory directory, and has no `notify`. In one session it:
 
 1. Reads the vault notes and memory notes that changed, and every session transcript note (`auto-*`) in the memory graph. Before it deletes a transcript, it adds a line for the session to that day's `day-YYYY-MM-DD` note, and it lists changed vault notes there too ([day notes and `now`](memory.md#day-notes-and-now)).
-2. Works the `{{brainReport}}` agenda worst first, item after item until 12 are fixed, the list runs out, or about 25 minutes pass; anything beyond 12 waits for the next hourly run, which runs for it even when nothing else changed. That covers collapsing dated snapshot notes into one note that carries its history inside it, merging duplicates, linking orphans, adding sources and splitting oversized notes. A `rollup` item folds old day notes into a week note and old week notes into a month note.
+2. Works the `{{brainReport}}` agenda worst first, item after item until 12 are fixed, the list runs out, or about 25 minutes pass; anything beyond 12 waits for the next hourly run, which runs for it even when nothing else changed. That covers collapsing dated snapshot notes into one note that carries its history inside it, merging duplicates, linking orphans, adding sources and splitting oversized notes. A `rollup` item has the coarser note link old day notes from their week note and old week notes from their month note.
 3. Folds what matters into a small set of canonical memory notes (`user-profile`, `user-beliefs`, `user-reading`, `user-writing`, `user-projects`, `user-routine`, `user-context`, or one note named for a topic) with `remember`, and deletes each transcript note after extracting from it.
 4. Keeps `user-profile` (a `type: profile` note of at most 1,500 characters: who you are, what you do, how you work) current. Every session starts with it.
 5. Writes atomic notes of at most 2,000 characters, gives a topic with four or more notes one `type: hub` note, links each fact to its vault note or ends it with `(session YYYY-MM-DD)`, and moves a replaced fact to a dated line under `## History`.

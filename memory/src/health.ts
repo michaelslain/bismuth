@@ -225,9 +225,9 @@ export function brainHealth(allNotes: MemoryNote[], opts?: { vaultNames?: Set<st
         add({ kind: 'cluster', notes: cap(names), detail: `${names.length} notes repeat the stem "${s}" once dates and status words are stripped; merge them into one` }, names.length)
     }
 
-    // rollup: old digest notes fold into the coarser period
+    // rollup: old digest notes the coarser period does not link yet
     for (const r of rollupPlan(notes, todayISO(now)))
-        add({ kind: 'rollup', notes: r.from, detail: `fold into ${r.into}` }, r.from.length)
+        add({ kind: 'rollup', notes: r.from, detail: `link from ${r.into}` }, r.from.length)
 
     // duplicate
     const sets = plain.map(n => ({ n, w: wordSet(n) }))

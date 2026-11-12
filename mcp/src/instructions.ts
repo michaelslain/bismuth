@@ -23,6 +23,7 @@ export const SERVER_INSTRUCTIONS =
     'Asked about a past conversation ("yesterday", "last time", "what we talked about"): run ' +
     '`bismuth history [words] --on <date>` first; memory holds distilled facts, not what was ' +
     'said, and session logs are not in the vault or .daemon/logs. ' +
+    'A question spanning many notes or weeks: `bismuth ask "<question>"` can answer it with sources. ' +
     "Asked about the user's tasks, deadlines or what is due: run `bismuth task list --query " +
     "'not done and due before <date>'` and read the descriptions, never grep for the user's " +
     'wording; tasks live in any note and a task names its deliverable, not its project ' +

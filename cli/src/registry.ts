@@ -41,6 +41,7 @@ import * as ocr from './commands/ocr'
 import * as transcribeCmd from './commands/transcribe'
 import * as pdf from './commands/pdf'
 import * as image from './commands/image'
+import * as summary from './commands/summary'
 
 /** Merge order is load-bearing: a later group's key overwrites an earlier one. */
 const GROUPS: { commands: CommandMap }[] = [
@@ -82,6 +83,7 @@ const GROUPS: { commands: CommandMap }[] = [
     transcribeCmd,
     pdf,
     image,
+    summary,
 ]
 
 export const registry: CommandMap = Object.assign(

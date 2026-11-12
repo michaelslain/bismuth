@@ -7,6 +7,7 @@ import { parseFrontmatter } from './frontmatter'
 import { getParsedNote, type ParsedNote } from './parsedNotes'
 import {
     CHUNK_CHARS,
+    CHUNK_CONTEXT,
     createVectorStore,
     hashOf,
     MAX_CHUNKS_PER_NOTE,
@@ -133,7 +134,8 @@ const titleOf = (path: string, body: string): string => {
 
 /** A vault note in the shape the shared store hashes and chunks: the path is the name, the title the
  *  description, so every chunk leads with path, title and tags. */
-function memoryNote(path: string, body: string, tags: readonly string[]): MemoryNote {
+function memoryNote(path: string, body: string, tags: readonly string[], summary?: string): MemoryNote {
+    const title = titleOf(path, body)
     return {
         name: path,
         content: stripMarks(stripTranscriptMarkers(body)),
@@ -143,9 +145,22 @@ function memoryNote(path: string, body: string, tags: readonly string[]): Memory
             tags: [...tags],
             created: '',
             updated: '',
-            description: titleOf(path, body),
+            description: summary ? `${title}\n${summary}` : title,
         },
     } as MemoryNote
+}
+
+/** `CHUNK_CONTEXT=summaries`: each vault's note summaries by path (noteSummaries.ts), loaded once per
+ *  scan, so a chunk header carries the note's summary line. */
+const summaryLines = new Map<string, Map<string, string>>()
+const summaryFor = (vault: string, path: string): string | undefined =>
+    CHUNK_CONTEXT === 'summaries' ? summaryLines.get(vault)?.get(path) : undefined
+
+async function loadSummaryLines(vault: string): Promise<void> {
+    if (CHUNK_CONTEXT !== 'summaries') return
+    const { loadSummaries } = await import('./noteSummaryStore')
+    const all = await loadSummaries(vault)
+    summaryLines.set(vault, new Map([...all].map(([p, s]) => [p, s.summary])))
 }
 
 /** One MemoryNote per ParsedNote: the object stays the same while the file is unchanged, which is
@@ -156,12 +171,12 @@ async function toNote(vault: string, p: ParsedNote): Promise<MemoryNote> {
     const known = memoryNotes.get(p)
     if (known) return known
     let note: MemoryNote
-    if (p.body !== null) note = memoryNote(p.rel, p.body, p.tags)
+    if (p.body !== null) note = memoryNote(p.rel, p.body, p.tags, summaryFor(vault, p.rel))
     else {
         // The cache dropped this note's text (raw-bytes budget): parse a fresh copy, uncached.
         const { readNote } = await getFileAccess()
         const { data, body } = parseFrontmatter(await readNote(vault, p.rel))
-        note = memoryNote(p.rel, body, extractTags(data, body))
+        note = memoryNote(p.rel, body, extractTags(data, body), summaryFor(vault, p.rel))
     }
     memoryNotes.set(p, note)
     return note
@@ -371,6 +386,7 @@ async function readInto(vault: string, notes: Map<string, MemoryNote>, paths: st
 }
 
 async function scan(vault: string, st: VaultState): Promise<void> {
+    await loadSummaryLines(vault)
     const { listMarkdown, listTree } = await getFileAccess()
     const found = new Set<string>()
     for (const p of await listMarkdown(vault)) {

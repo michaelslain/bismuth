@@ -94,10 +94,27 @@ export function digestsCovering(notes: MemoryNote[], start: string, end: string)
         .map(r => r.n)
 }
 
-/** Old day notes fold into their week; old week notes into the month holding their Thursday. */
+/** Names a note links with `[[name]]`, `[[name|alias]]` or `[[name#heading]]`. */
+function linkedNames(n: MemoryNote | undefined): Set<string> {
+    const out = new Set<string>()
+    if (!n) return out
+    for (const m of n.content.matchAll(/\[\[([^\]|#]+)[^\]]*\]\]/g)) out.add(m[1]!.trim())
+    return out
+}
+
+/** Old day notes belong to their week; old week notes to the month holding their Thursday. A finer note is listed until its coarser note links it. */
 export function rollupPlan(notes: MemoryNote[], today: string): Rollup[] {
+    const byName = new Map(notes.map(n => [n.name, n]))
+    const links = new Map<string, Set<string>>()
+    const linksOf = (into: string): Set<string> => {
+        if (!links.has(into)) links.set(into, linkedNames(byName.get(into)))
+        return links.get(into)!
+    }
     const groups = new Map<string, string[]>()
-    const push = (into: string, from: string) => groups.set(into, [...(groups.get(into) ?? []), from])
+    const push = (into: string, from: string) => {
+        if (linksOf(into).has(from)) return
+        groups.set(into, [...(groups.get(into) ?? []), from])
+    }
     for (const n of notes) {
         const ref = isDigestNote(n) ? parseDigestName(n.name) : null
         if (!ref) continue

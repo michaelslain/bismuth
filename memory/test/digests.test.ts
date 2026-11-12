@@ -2,10 +2,10 @@ import { describe, test, expect } from 'bun:test'
 import type { MemoryNote } from '../src/graph.ts'
 import { digestName, parseDigestName, isDigestNote, digestsCovering, rollupPlan, NOW_NOTE, isNowNote } from '../src/digests.ts'
 
-const note = (name: string, type: string = 'daily'): MemoryNote => ({
+const note = (name: string, type: string = 'daily', content: string = ''): MemoryNote => ({
     name,
     frontmatter: { type: type as MemoryNote['frontmatter']['type'], tags: [], created: '2026-01-01', updated: '2026-01-01' },
-    content: '',
+    content,
     backlinks: [],
 })
 
@@ -115,6 +115,28 @@ describe('rollupPlan', () => {
             { into: 'month-2026-01', from: ['week-2026-W05'] },
             { into: 'month-2026-04', from: ['week-2026-W14'] },
         ])
+    })
+
+    test('a week note linking a day clears it; an unlinked day stays', () => {
+        const week = note('week-2026-W41', 'daily', '## Days\n- [[day-2026-10-05|the fifth]] — a')
+        const ns = [week, note('day-2026-10-05'), note('day-2026-10-06')]
+        expect(rollupPlan(ns, today)).toEqual([{ into: 'week-2026-W41', from: ['day-2026-10-06'] }])
+    })
+
+    test('every day linked leaves no item, heading links count', () => {
+        const week = note('week-2026-W41', 'daily', '- [[day-2026-10-05#Sessions]]\n- [[day-2026-10-06]]')
+        expect(rollupPlan([week, note('day-2026-10-05'), note('day-2026-10-06')], today)).toEqual([])
+    })
+
+    test('a day linked only from another week note is still unlinked', () => {
+        const other = note('week-2026-W40', 'daily', '[[day-2026-10-05]]')
+        expect(rollupPlan([other, note('day-2026-10-05')], today)).toEqual([{ into: 'week-2026-W41', from: ['day-2026-10-05'] }])
+    })
+
+    test('a month note links weeks the same way', () => {
+        const month = note('month-2026-02', 'daily', '## Weeks\n- [[week-2026-W06]] — x')
+        expect(rollupPlan([month, note('week-2026-W06'), note('week-2026-W07')], today)).toEqual([{ into: 'month-2026-02', from: ['week-2026-W07'] }])
+        expect(rollupPlan([month, note('week-2026-W06')], today)).toEqual([])
     })
 
     test('nothing newer is planned, month notes and non-digests are left alone', () => {

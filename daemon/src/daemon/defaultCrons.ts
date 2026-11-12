@@ -130,7 +130,7 @@ What to do per kind:
 - \`broken-link\` — a \`[[link]]\` that resolves to nothing. Repoint it at the right note, or remove the link.
 - \`no-profile\` — write \`user-profile\` (rule 8).
 - \`no-hub\` — write the hub (rule 7).
-- \`rollup\` — digest notes old enough to fold. The detail line says \`fold into <name>\`. Read the finer notes it lists, and, if the coarser note already exists, read it too (\`cat "$BISMUTH_MEMORY_DIR/<name>.md"\`) and keep everything in it; \`remember\` the coarser note (\`week-YYYY-Www\` or \`month-YYYY-MM\`, \`type: daily\`, at most 2,000 characters, same three sections, merged), then \`forget\` the finer ones. Forget a finer note only after everything in it is in the coarser one.
+- \`rollup\` — digest notes the coarser note does not link yet. The detail line says \`link from <name>\`. Read the finer notes it lists, and, if the coarser note already exists, read it too (\`cat "$BISMUTH_MEMORY_DIR/<name>.md"\`) and keep everything in it; \`remember\` the coarser note (\`week-YYYY-Www\` or \`month-YYYY-MM\`, \`type: daily\`, at most 2,000 characters) with a \`description\` that summarises the period and a \`## Days\` section (week) or \`## Weeks\` section (month) holding one line per finer note: \`- [[day-YYYY-MM-DD]] — <that day's description>\`. Never \`forget\` the finer notes.
 - \`no-description\` — add a one-line \`description\` to the note's frontmatter (rule 9).
 
 A report with no items means the graph is healthy: go on to Steps 4 to 8.
@@ -148,7 +148,7 @@ NEVER use the Read tool on files >50 KB — it'll blow your context. Always use 
 
 This is the highest-value thing you do and the thing most often skipped. The \`dated-name\` and \`cluster\` items of the report are exactly this work.
 
-Digest notes are never part of a cluster: \`day-YYYY-MM-DD\`, \`week-YYYY-Www\` and \`month-YYYY-MM\` with \`type: daily\`, and the \`now\` note. Never collapse, merge or forget them here or in Step 7; they fold only through \`rollup\` items.
+Digest notes are never part of a cluster: \`day-YYYY-MM-DD\`, \`week-YYYY-Www\` and \`month-YYYY-MM\` with \`type: daily\`, and the \`now\` note. Never collapse, merge or forget them here or in Step 7; the coarser ones link the finer ones through \`rollup\` items.
 
 Treat these as belonging to one cluster even when the stems differ slightly:
 

@@ -10,6 +10,7 @@ import {
     type BrainAgenda,
 } from './brainReport'
 import { NOW_FACTS_PLACEHOLDER, nowFacts } from './nowFacts'
+import { refreshSummaries } from './summaryRefresh'
 import { atomicWriteJson } from '../lib/atomicJson.ts'
 import { processPageTriggers } from './pages'
 import { processButtonTriggers } from './buttons'
@@ -1352,6 +1353,10 @@ async function fireJob(
         }
         promptOverride = plan.prompt
         checkpoint = plan
+        // The run looks at changed vault notes: summarise them too, beside the session, never
+        // blocking it (summaryRefresh.ts; a vault without summaries is left alone).
+        if (job.checkpointDirs.includes('vault'))
+            void refreshSummaries(ctx.root).catch(e => console.error(`${tag} summaries: ${e instanceof Error ? e.message : String(e)}`))
     }
 
     const key = jobKey(ctx, job.file)

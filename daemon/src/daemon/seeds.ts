@@ -107,6 +107,7 @@ export const PRIOR_SEED_HASHES: Record<string, string[]> = {
         '042ad8d4e511754a666aaf03b97baf92168a6ff20b4ef6cdd4314bc844412548', // v14 — the dream before day notes, roll-ups and `now` (same body as v13 plus the `enabled:` line)
         'f0c29b018e57bafd47098a25e480163afd49ae30d53bd6480573d805a4c49cfa', // v15 — the dream with day notes, roll-ups and `now`, before digest notes were kept out of clusters
         '991f94e5bac7ead44d2a4eec9f3ef31d1ba1886ca67651ac6b1a0b7a79b25d47', // v16 — the dream before digest notes were condensed in place, not split
+        '5f7f7158f3e97f8c01d1d373526cc0b9b3a9f7312793f333a38c57da7ffedd7a', // v17 — the dream whose rollup items fold day notes into a week note and forget them, before the linked chain
     ],
     'vault-review': [
         '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39', // v1 — 2026-06-28 (unchanged through f48076b)

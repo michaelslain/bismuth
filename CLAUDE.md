@@ -217,6 +217,7 @@ They override framework habits, and most violations compile, render and pass tes
 | feedback page, `bismuth feedback`, the hosted relay in `services/feedback/` | `docs/overview/feedback.md` |
 | visibility (what agents may read) | `docs/vault/visibility.md` |
 | vault semantic search (notes, PDFs, images, chats), embeddings switch, `bismuth image describe` | `docs/vault/semantic-search.md` |
+| note summaries, `bismuth summary`, `bismuth ask` across digests and notes | `docs/vault/summary-layers.md` |
 | a PDF's text layer, `bismuth ocr` | `docs/vault/ocr.md` |
 | merging a newer version of a PDF into the vault's copy (`merge a new version` in the page sorter, `bismuth pdf merge`, how pages are matched) | `docs/vault/pdf-merge.md` |
 | book bases and the PDF/image reader (pages, markdown text and side by side, scrolled or flipped, locating a passage on its page, highlights, bookmarks, the page sorter, dark pages), reading one image or PDF as a book, `bismuth book` | `docs/bases/views/book.md` |

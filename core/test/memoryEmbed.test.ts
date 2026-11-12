@@ -1179,3 +1179,11 @@ test('the bin fd and the temp index are fsynced before the rename (injected fs s
     expect(log[1]).toMatch(/^fsync vectors-v2\.json\.\d+\.tmp$/)
     expect(log[2]).toBe('rename vectors-v2.json')
 })
+
+test('parseChunkContext: headings and summaries are the switches; anything else is none', async () => {
+    const { parseChunkContext } = await import('../src/memoryEmbed')
+    expect(parseChunkContext('summaries')).toBe('summaries')
+    expect(parseChunkContext('headings')).toBe('headings')
+    expect(parseChunkContext('bogus')).toBe('none')
+    expect(parseChunkContext(undefined)).toBe('none')
+})

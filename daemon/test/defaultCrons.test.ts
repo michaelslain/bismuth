@@ -648,7 +648,7 @@ test('dream writes day notes, rolls them up and rewrites now: steps, exceptions 
     expect(DREAM).toContain('## Notes changed')
     expect(DREAM).toContain('## Facts touched')
     expect(DREAM).toContain('- `rollup`')
-    expect(DREAM).toContain('fold into <name>')
+    expect(DREAM).toContain('link from <name>')
     expect(DREAM).toContain('## Step 8: Rewrite `now`')
     for (const h of ['## Active', '## Due', '## Open threads', '## Recent days'])
         expect(DREAM).toContain(h)

@@ -362,11 +362,15 @@ export function noteChunks(note: MemoryNote): string[] {
     return chunkWindows(note).map(w => w.header + w.text)
 }
 
-/** `BISMUTH_CHUNK_CONTEXT=headings` (a bench switch): each embedded window also names the markdown
- *  headings it sits under. Excerpts never carry the line. */
-export const CHUNK_CONTEXT: 'none' | 'headings' = process.env.BISMUTH_CHUNK_CONTEXT === 'headings' ? 'headings' : 'none'
+/** `BISMUTH_CHUNK_CONTEXT` (a bench switch): `headings` makes each embedded window also name the
+ *  markdown headings it sits under; `summaries` puts the vault note's summary (noteSummaries.ts) in
+ *  every window's header, after its title (vaultEmbed.ts). Excerpts never carry either line. */
+export type ChunkContext = 'none' | 'headings' | 'summaries'
+export const parseChunkContext = (v: string | undefined): ChunkContext =>
+    v === 'headings' || v === 'summaries' ? v : 'none'
+export const CHUNK_CONTEXT: ChunkContext = parseChunkContext(process.env.BISMUTH_CHUNK_CONTEXT)
 /** What a store's index records as its model: vectors made another way are re-embedded, never mixed. */
-export const STORE_MODEL = CHUNK_CONTEXT === 'headings' ? `${EMBED_MODEL}+headings` : EMBED_MODEL
+export const STORE_MODEL = CHUNK_CONTEXT === 'none' ? EMBED_MODEL : `${EMBED_MODEL}+${CHUNK_CONTEXT}`
 
 /** The heading path in effect at each offset of a markdown body: `# A`, `## B` → `A > B`. Pure. */
 export function headingPathAt(body: string, offsets: number[]): string[] {
@@ -397,7 +401,7 @@ export function headingPathAt(body: string, offsets: number[]): string[] {
 /** The texts the store embeds for a note: `noteChunks`, plus the heading line when `CHUNK_CONTEXT` asks. */
 export function embedTexts(note: MemoryNote): string[] {
     const ws = chunkWindows(note)
-    if (CHUNK_CONTEXT === 'none') return ws.map(w => w.header + w.text)
+    if (CHUNK_CONTEXT !== 'headings') return ws.map(w => w.header + w.text)
     const paths = headingPathAt(note.content, ws.map(w => w.start))
     return ws.map((w, i) => (paths[i] ? `${w.header}${paths[i]}\n${w.text}` : w.header + w.text))
 }

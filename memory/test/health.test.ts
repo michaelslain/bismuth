@@ -233,8 +233,8 @@ describe('brainHealth digests', () => {
         const items = run([note('day-2026-10-05', 'x', 'daily'), note('day-2026-10-06', 'x', 'daily'), note('day-2026-11-05', 'x', 'daily'), note('week-2026-W06', 'x', 'daily')])
         const rolls = items.filter(i => i.kind === 'rollup')
         expect(rolls).toEqual([
-            { kind: 'rollup', notes: ['day-2026-10-05', 'day-2026-10-06'], detail: 'fold into week-2026-W41' },
-            { kind: 'rollup', notes: ['week-2026-W06'], detail: 'fold into month-2026-02' },
+            { kind: 'rollup', notes: ['day-2026-10-05', 'day-2026-10-06'], detail: 'link from week-2026-W41' },
+            { kind: 'rollup', notes: ['week-2026-W06'], detail: 'link from month-2026-02' },
         ])
     })
 })
