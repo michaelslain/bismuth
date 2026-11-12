@@ -19,7 +19,7 @@ type Story = StoryObj<typeof meta>
 
 function Body(props: { children: import('solid-js').JSX.Element }) {
     return (
-        <div style={{ position: 'relative', width: '560px', height: '96px' }}>
+        <div style={{ position: 'relative', width: '760px', height: '200px' }}>
             {props.children}
         </div>
     )
@@ -33,6 +33,9 @@ function Harness(props: {
     count: string
     matches: number
     caseOn?: boolean
+    hint?: string
+    answer?: string
+    answerTone?: 'muted' | 'danger'
 }) {
     const [query, setQuery] = createSignal(props.query)
     const [matchCase, setMatchCase] = createSignal(!!props.caseOn)
@@ -45,6 +48,10 @@ function Harness(props: {
                 count={props.count}
                 noResults={query() !== '' && props.matches === 0}
                 matchCount={props.matches}
+                canAsk={props.hint !== undefined || props.answer !== undefined}
+                hint={props.hint}
+                answer={props.answer}
+                answerTone={props.answerTone}
                 caseSensitive={matchCase()}
                 onToggleCase={() => setMatchCase(v => !v)}
                 onStep={d => steps.push(d)}
@@ -101,6 +108,68 @@ export const NoResults: Story = {
         await expect(getComputedStyle(count).color).toBe(want)
         await expect(canvas.getByLabelText('Next match (Enter)')).toBeDisabled()
         await expect(canvas.getByLabelText('Previous match (Shift+Enter)')).toBeDisabled()
+    },
+}
+
+/** A query with no match while asking from find is on: `no results` in the danger tone, then the
+ *  key that asks, muted. */
+export const AskHint: Story = {
+    render: () => <Harness query="where is the greeting" count="no results" matches={0} hint="↵ ask" />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const hint = await canvas.findByText('↵ ask')
+        await expect(hint).toHaveAttribute('title', 'Press Enter to ask ai about this file')
+        await expect(getComputedStyle(hint).color).not.toBe(getComputedStyle(canvas.getByText(/no results/)).color)
+    },
+}
+
+/** The ai's answer under the bar, part of it: prose, the bar's width, split by the soft rule. */
+export const Answer: Story = {
+    render: () => (
+        <Harness
+            query="where is the greeting"
+            count="ai 1/2"
+            matches={2}
+            answer="greet returns a friendly, capitalized greeting: Hello, then the name."
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const answer = await canvas.findByTestId('find-answer')
+        const bar = answer.parentElement!.getBoundingClientRect()
+        const box = answer.getBoundingClientRect()
+        await expect(box.right).toBeLessThanOrEqual(bar.right + 0.5)
+        await expect(box.top).toBeGreaterThan(canvas.getByPlaceholderText('find').getBoundingClientRect().bottom)
+    },
+}
+
+/** Asking: a muted status line in the answer row. */
+export const Asking: Story = {
+    render: () => (
+        <Harness query="where is the greeting" count="no results" matches={0} answer="asking…" answerTone="muted" />
+    ),
+    play: async ({ canvasElement }) => {
+        const answer = await within(canvasElement).findByTestId('find-answer')
+        await expect(answer.textContent).toBe('asking…')
+        await expect(answer).toHaveAttribute('aria-live', 'polite')
+    },
+}
+
+/** The ai could not answer: the reason in the danger tone. */
+export const AnswerRefused: Story = {
+    render: () => (
+        <Harness
+            query="where is the greeting"
+            count="no results"
+            matches={0}
+            answer="this note is hidden from ai"
+            answerTone="danger"
+        />
+    ),    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const answer = await canvas.findByTestId('find-answer')
+        // the refusal and the red count share the danger ink
+        await expect(getComputedStyle(answer).color).toBe(getComputedStyle(canvas.getByText('no results')).color)
     },
 }
 

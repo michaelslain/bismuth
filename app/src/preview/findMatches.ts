@@ -66,3 +66,20 @@ export function stepMatchIndex(
     if (total <= 0) return 0
     return (((current + dir) % total) + total) % total
 }
+
+/** The passages an ai answer rests on (best first, as `/find-ai` returns them) as matches to mark:
+ *  ranges outside `textLength`, empty or overlapping an earlier one dropped, the rest in text order,
+ *  and `current` the index of the best one. No passages → `{ matches: [], current: 0 }`. */
+export function aiPassageMatches(
+    ranges: FindMatch[],
+    textLength: number,
+): { matches: FindMatch[]; current: number } {
+    const valid: FindMatch[] = []
+    for (const r of ranges) {
+        if (r.from < 0 || r.from >= r.to || r.to > textLength) continue
+        if (valid.some(v => v.from < r.to && r.from < v.to)) continue
+        valid.push({ from: r.from, to: r.to })
+    }
+    const sorted = [...valid].sort((a, b) => a.from - b.from)
+    return { matches: sorted, current: valid.length ? sorted.indexOf(valid[0]) : 0 }
+}

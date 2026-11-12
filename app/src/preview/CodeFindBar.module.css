@@ -40,6 +40,28 @@
   text-align: right;
 }
 .preview-find-count.is-empty { color: var(--danger); }
+/* Asking from find is on: a wider floor, so a question still has room beside `no results ↵ ask` and
+   the answer row reads as prose rather than a column. Wide from the moment the bar opens, so it
+   never jumps when a query stops matching. */
+.preview-find-asks { min-width: calc(var(--cell-w) * 88); max-width: calc(100% - 2 * var(--sp-5)); }
+
+/* `↵ ask`: the key that asks, muted beside the red readout. */
+.preview-find-hint { color: var(--text-muted); }
+
+/* The ai's answer, under the field and part of the bar: it takes the bar's width and never widens it
+   (`contain: inline-size` gives it no width of its own to contribute), split from the controls by the
+   field's own underline (a second rule here would double it), scrolling past a third of the pane.
+   Font, size and tone come from ui/Text. */
+.preview-find-answer {
+  contain: inline-size;
+  max-height: 33vh;
+  overflow-y: auto;
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* PDF variant: an informational note (no input) — the embedded viewer owns text search. */
 .preview-find-note {

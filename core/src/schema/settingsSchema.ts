@@ -347,7 +347,7 @@ export const SETTINGS_SCHEMA: Schema = {
         findAsksAi: {
             type: 'boolean',
             default: false,
-            doc: "In the find bar (Mod+F), Enter on a query with no literal match asks it as a question about the note: the note's text goes to the agent chat.provider picks, and the answer shows under the bar. Off is the default: the bar reads No results and nothing is sent. The first-run intro's privacy slide turns it on unless you switch it off there. A note hidden from ai is never sent.",
+            doc: "In the find bar (Mod+F), Enter on a query with no literal match asks it as a question about the note, or about the code or text file a preview shows: its text goes to the agent chat.provider picks, and the answer shows under the bar. Off is the default: the bar reads No results and nothing is sent. The first-run intro's privacy slide turns it on unless you switch it off there. A note hidden from ai is never sent.",
         },
         grammarCheck: {
             type: 'boolean',

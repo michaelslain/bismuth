@@ -142,6 +142,7 @@ export const Code: Story = {
  *  future change that starts skipping comments fails here instead of quietly editing 3 back to 2. */
 export const CodeFind: Story = {
     render: () => {
+        setSettings('editor', 'findAsksAi', false)
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
         return <PreviewView path={CODE_PATH} tagNames={NO_TAGS} />
     },
@@ -177,6 +178,7 @@ export const CodeFind: Story = {
  *  Previous/Next steppers disabled since there is nothing to step through. */
 export const CodeFindNoResults: Story = {
     render: () => {
+        setSettings('editor', 'findAsksAi', false)
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
         return <PreviewView path={CODE_PATH} tagNames={NO_TAGS} />
     },
@@ -193,6 +195,86 @@ export const CodeFindNoResults: Story = {
             expect(canvas.getByText('No results')).toBeInTheDocument(),
         )
         await expect(canvas.getByLabelText('Next match (Enter)')).toBeDisabled()
+    },
+}
+
+/** A code preview with `editor.findAsksAi` set to `asks`, for asking the find bar a question. */
+function codeAskStory(path: string, asks = true): Story['render'] {
+    return () => {
+        setSettings('editor', 'findAsksAi', asks)
+        setTransport(fakeTransport({ files: { [path]: CODE_CONTENT } }))
+        return <PreviewView {...{ path }} tagNames={NO_TAGS} />
+    }
+}
+
+async function openCodeFindWith(canvasElement: HTMLElement, query: string) {
+    const canvas = within(canvasElement)
+    const root = canvasElement.querySelector(`.${styles['preview-app']}`) as HTMLElement
+    await canvas.findByText(/export function greet/)
+    fireEvent.keyDown(root, { key: 'f', ctrlKey: true })
+    const input = (await canvas.findByPlaceholderText('find')) as HTMLInputElement
+    await fireEvent.input(input, { target: { value: query } })
+    return { canvas, input }
+}
+
+const codeAnswer = (canvasElement: HTMLElement) =>
+    canvasElement.querySelector<HTMLElement>('[data-testid="find-answer"]')
+
+/** `editor.findAsksAi` on, a query with no literal match: `no results` in the danger tone, then a
+ *  muted `↵ ask`. Nothing is asked until Enter (CodeFindAsksAndAnswers). */
+export const CodeFindNoResultsAsksAi: Story = {
+    render: codeAskStory(CODE_PATH),
+    play: async ({ canvasElement }) => {
+        const { canvas } = await openCodeFindWith(canvasElement, 'how does it greet someone?')
+        await waitFor(() => expect(canvas.getByText('↵ ask')).toBeInTheDocument())
+        await expect(canvas.getByText(/no results/)).toBeInTheDocument()
+        await expect(codeAnswer(canvasElement)).toBeNull()
+    },
+}
+
+/** Enter on `no results ↵ ask` asks the question about the file: `asking…` under the bar, then the
+ *  answer, with the passages it rests on marked like matches, the best one active, the bar reading
+ *  `ai 1/2` and Enter stepping on. Typing again drops the answer and the marks. Live: ask your own
+ *  question (the fake ai matches words by their first four letters). */
+export const CodeFindAsksAndAnswers: Story = {
+    render: codeAskStory(CODE_PATH),
+    play: async ({ canvasElement }) => {
+        const { canvas, input } = await openCodeFindWith(canvasElement, 'how does it greet someone?')
+        fireEvent.keyDown(input, { key: 'Enter' })
+        await waitFor(() => expect(codeAnswer(canvasElement)?.textContent).toBe('asking…'))
+        await waitFor(() => expect(codeAnswer(canvasElement)?.textContent).toContain('greet'))
+        await waitFor(() => expect(canvas.getByText('ai 1/2')).toBeInTheDocument())
+        const marks = canvasElement.querySelectorAll('[data-find-match]')
+        await expect(marks.length).toBe(2)
+        await expect(marks[0]).toHaveAttribute('data-active')
+        await expect(marks[0]?.textContent).toContain('export function greet')
+        // the answer is a row of the bar, under it and no wider than it
+        const barBox = codeAnswer(canvasElement)!.parentElement!.getBoundingClientRect()
+        const box = codeAnswer(canvasElement)!.getBoundingClientRect()
+        await expect(box.top).toBeGreaterThan(input.getBoundingClientRect().bottom)
+        await expect(box.right).toBeLessThanOrEqual(barBox.right + 0.5)
+        fireEvent.keyDown(input, { key: 'Enter' })
+        await waitFor(() => expect(canvas.getByText('ai 2/2')).toBeInTheDocument())
+        await fireEvent.click(canvas.getByLabelText('Previous match (Shift+Enter)'))
+        await waitFor(() => expect(canvas.getByText('ai 1/2')).toBeInTheDocument())
+        await fireEvent.input(input, { target: { value: 'zzz' } })
+        await waitFor(() => expect(codeAnswer(canvasElement)).toBeNull())
+        await expect(canvasElement.querySelectorAll('[data-find-match]').length).toBe(0)
+        // asked again, it ends answered: the state to try
+        await fireEvent.input(input, { target: { value: 'how does it greet someone?' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        await waitFor(() => expect(canvas.getByText('ai 1/2')).toBeInTheDocument())
+    },
+}
+
+/** A file hidden from ai: the answer row gives the reason in the danger tone and nothing is marked. */
+export const CodeFindAskRefused: Story = {
+    render: codeAskStory('Hidden/example.ts'),
+    play: async ({ canvasElement }) => {
+        const { input } = await openCodeFindWith(canvasElement, 'what does it return?')
+        fireEvent.keyDown(input, { key: 'Enter' })
+        await waitFor(() => expect(codeAnswer(canvasElement)?.textContent).toBe('this note is hidden from ai'))
+        await expect(canvasElement.querySelectorAll('[data-find-match]').length).toBe(0)
     },
 }
 

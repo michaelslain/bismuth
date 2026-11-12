@@ -29,6 +29,9 @@ import {
     closeSearchPanel,
     searchPanelOpen,
 } from '@codemirror/search'
+import { findCountLabel } from './findCountLabel'
+
+export { findCountLabel }
 
 // AI ANSWER (while `editor.findAsksAi` is on): a query with no literal match reads `no results ↵ ask`; Enter asks it as a question
 // about the note through the editor's `onAsk` (Editor.tsx: POST /find-ai with `ask`). The answer opens
@@ -43,24 +46,6 @@ export type AiRange = { from: number; to: number }
 /** Ask the ai `query` as a question about `text` (the note as the bar saw it): its answer and the
  *  passages of `text` the answer rests on, best first. Rejects with the reason it cannot answer. */
 export type OnAsk = (query: string, text: string) => Promise<{ answer?: string; matches: AiRange[] }>
-
-/** The count readout's words, whether they read in the danger tone, and a muted hint after them.
- *  `ai` is the passages shown (`total` 0 when none); `asked` once the query went to the ai. Pure. */
-export function findCountLabel(
-    ai: { total: number; current: number } | null,
-    literal: { query: string; total: number; current: number },
-    canAsk: boolean,
-    asked = false,
-): { text: string; danger: boolean; hint?: string } {
-    if (ai && ai.total > 0) return { text: `ai ${ai.current}/${ai.total}`, danger: false }
-    if (!literal.query) return { text: '', danger: false }
-    if (literal.total === 0) {
-        if (!canAsk) return { text: 'No results', danger: true }
-        // asked already: the answer row below the bar is the readout, so no hint
-        return asked ? { text: 'no results', danger: true } : { text: 'no results', danger: true, hint: '↵ ask' }
-    }
-    return { text: `${literal.current || '–'}/${literal.total}`, danger: false }
-}
 
 /** The index of the passage a step lands on, wrapping. Pure. */
 export function stepAiIndex(index: number, total: number, dir: 1 | -1): number {

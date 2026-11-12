@@ -123,7 +123,7 @@ Note editor behaviour.
 | `lineWrapping` | boolean | `true` | | Wrap long lines. |
 | `spellcheck` | boolean | `true` | | Spell-check the note body. |
 | `grammarCheck` | boolean | `false` | | Grammar and style check the note body, independent of spellcheck. |
-| `findAsksAi` | boolean | `false` | | In the find bar, `Enter` on a query with no literal match asks it as a question about the note, sending the note's text to the `chat.provider` agent. The first-run privacy slide turns it on unless you switch it off there. |
+| `findAsksAi` | boolean | `false` | | In the find bar, `Enter` on a query with no literal match asks it as a question about the note, or about the code or text file a preview shows, sending its text to the `chat.provider` agent. The first-run privacy slide turns it on unless you switch it off there. |
 | `autoSaveDelay` | number | `800` | 200 to 3000 | Milliseconds of idle before a note saves. |
 | `lineHeight` | number | `1.25` | 0.8 to 1.8 | Prose line height as a multiple of the 18px row unit, not of the font size. |
 | `mathMacros` | string | `""` | | LaTeX preamble of `\newcommand` and `\def` definitions, available in every `$...$` and `$$...$$` in the vault. |

@@ -1,6 +1,6 @@
 // app/src/preview/findMatches.test.ts
 import { describe, expect, test } from 'bun:test'
-import { findMatches, segmentText, stepMatchIndex } from './findMatches'
+import { aiPassageMatches, findMatches, segmentText, stepMatchIndex } from './findMatches'
 
 describe('findMatches', () => {
     test('empty query yields no matches', () => {
@@ -101,5 +101,26 @@ describe('stepMatchIndex', () => {
 
     test('no matches → 0', () => {
         expect(stepMatchIndex(5, 0, 1)).toBe(0)
+    })
+})
+
+describe('aiPassageMatches', () => {
+    test('marks passages in text order with the best one current', () => {
+        const r = aiPassageMatches([{ from: 20, to: 25 }, { from: 2, to: 6 }, { from: 10, to: 12 }], 30)
+        expect(r.matches).toEqual([{ from: 2, to: 6 }, { from: 10, to: 12 }, { from: 20, to: 25 }])
+        expect(r.current).toBe(2)
+    })
+
+    test('drops empty, out-of-range and overlapping passages', () => {
+        const r = aiPassageMatches(
+            [{ from: 4, to: 8 }, { from: 6, to: 10 }, { from: 3, to: 3 }, { from: 25, to: 40 }, { from: 12, to: 14 }],
+            30,
+        )
+        expect(r.matches).toEqual([{ from: 4, to: 8 }, { from: 12, to: 14 }])
+        expect(r.current).toBe(0)
+    })
+
+    test('no passages is nothing to mark', () => {
+        expect(aiPassageMatches([], 10)).toEqual({ matches: [], current: 0 })
     })
 })

@@ -2,6 +2,9 @@
 // The find popover floated over a preview's body (Cmd/Ctrl+F). `mode="code"` is the live find field
 // over a code/text file; `mode="pdf"` is the one informational note ("not available yet") that
 // shares the same floating chrome — one component owning the chrome, not two importing it.
+// Code mode also carries the ai answer (PreviewView: `editor.findAsksAi`): a muted `↵ ask` hint after
+// a `no results` count, and the answer as a row UNDER the field, part of the bar and its width — the
+// preview twin of the note find bar's `.bismuth-find-answer` (editor/findPanel.ts).
 import { Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { IconButton } from '../ui/IconButton'
@@ -21,6 +24,16 @@ export type CodeFindBarProps = {
     count?: string
     /** Code mode: a non-empty query that matched nothing (the count reads danger, steppers disable). */
     noResults?: boolean
+    /** Code mode: Enter on a query with no match may ask the ai, so the bar is wide enough for a
+     *  question beside `no results ↵ ask`. */
+    canAsk?: boolean
+    /** Code mode: a muted hint after the count ('↵ ask' when Enter would ask the ai). */
+    hint?: string
+    /** Code mode: the ai's answer row under the bar (`asking…`, the answer, or why it could not);
+     *  absent → no row. */
+    answer?: string
+    /** The answer row's tone: 'muted' for a status line, 'danger' for a refusal, absent for an answer. */
+    answerTone?: 'muted' | 'danger'
     matchCount?: number
     caseSensitive?: boolean
     onToggleCase?: () => void
@@ -40,7 +53,10 @@ const CodeFindBar: Component<CodeFindBarProps> = props => {
         // pressed anywhere in the find bar, including the trailing buttons.
         <div
             class={styles['preview-find']}
-            classList={{ [styles['preview-find-note']]: props.mode === 'pdf' }}
+            classList={{
+                [styles['preview-find-note']]: props.mode === 'pdf',
+                [styles['preview-find-asks']]: props.mode !== 'pdf' && !!props.canAsk,
+            }}
             onKeyDown={e => e.stopPropagation()}
         >
             <Show
@@ -94,6 +110,17 @@ const CodeFindBar: Component<CodeFindBarProps> = props => {
                         }}
                     >
                         {props.count}
+                        <Show when={props.hint}>
+                            {' '}
+                            <Text
+                                as="span"
+                                inherit
+                                class={styles['preview-find-hint']}
+                                title="Press Enter to ask ai about this file"
+                            >
+                                {props.hint}
+                            </Text>
+                        </Show>
                     </Text>
                     <IconButton
                         icon="ChevronUp"
@@ -124,6 +151,19 @@ const CodeFindBar: Component<CodeFindBarProps> = props => {
                     />
                     <CloseButton label="Close (Esc)" onClick={props.onClose} />
                 </SearchBar>
+                <Show when={props.answer}>
+                    <Text
+                        as="div"
+                        size={props.answerTone ? 'ui' : 'body'}
+                        tone={props.answerTone ?? 'default'}
+                        register={props.answerTone ? 'chrome' : 'prose'}
+                        class={styles['preview-find-answer']}
+                        aria-live="polite"
+                        data-testid="find-answer"
+                    >
+                        {props.answer}
+                    </Text>
+                </Show>
             </Show>
         </div>
     )

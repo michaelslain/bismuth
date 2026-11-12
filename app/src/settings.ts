@@ -80,7 +80,7 @@ export interface Settings {
         lineWrapping: boolean
         spellcheck: boolean // spell check the note body (Harper)
         grammarCheck: boolean // grammar + style check the note body (Harper); off by default
-        findAsksAi: boolean // Enter on a find with no match asks the note's ai a question; off by default
+        findAsksAi: boolean // Enter on a find with no match asks ai a question about the note or previewed file; off by default
 
         autoSaveDelay: number // ms of idle before save
         lineHeight: number // editor prose line height, as a multiplier of --row-h (18px), not the font size

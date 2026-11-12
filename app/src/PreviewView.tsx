@@ -34,6 +34,10 @@
 // global find handler, and the editor only binds it when the editor is focused, so mirroring
 // that here is what makes Cmd+F work when a preview tab is focused):
 //   • code/text — a real find bar: highlight every match, next/prev + count, scroll-to-active.
+//                 While `editor.findAsksAi` is on, a query with no match reads `no results ↵ ask` and
+//                 Enter asks it as a question about the file (POST /find-ai with `ask`, the note find
+//                 bar's path): the answer shows under the bar and the passages it rests on are marked
+//                 like matches, the bar reading `ai 1/3` and stepping through them.
 //   • pdf       — PdfPages renders pdf.js's own text layer per page (selectable/copyable text),
 //                 but there is no find-bar UI over it yet, so Find shows a one-line note instead
 //                 of pretending to search. DOCUMENTED LIMITATION: no in-app PDF text search.
@@ -56,7 +60,8 @@ import type { NoteCandidate } from './editor/wikilink'
 import { previewKind, type PreviewKind } from './preview/previewKind'
 import { buildAssetUrl } from './preview/assetUrl'
 import { highlightColor, setHighlightColor } from './preview/highlightColor'
-import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
+import { aiPassageMatches, findMatches, segmentText, stepMatchIndex, type FindMatch } from './preview/findMatches'
+import { findCountLabel } from './editor/findCountLabel'
 import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
 import HighlightLayer from './preview/HighlightLayer'
@@ -359,6 +364,19 @@ export function PreviewView(props: {
     const [query, setQuery] = createSignal('')
     const [caseSensitive, setCaseSensitive] = createSignal(false)
     const [activeIndex, setActiveIndex] = createSignal(0)
+    // The ai answer (editor.findAsksAi): `asked` is the query the answer row is for (asking or
+    // answered), `answer` that row, `aiMatches` the passages it rests on (null when none show).
+    // `askTicket` drops a reply that lands after the query, the file or the bar changed.
+    const [asked, setAsked] = createSignal('')
+    const [answer, setAnswer] = createSignal<{ text: string; tone?: 'muted' | 'danger' } | null>(null)
+    const [aiMatches, setAiMatches] = createSignal<FindMatch[] | null>(null)
+    let askTicket = 0
+    const clearAsk = () => {
+        askTicket++
+        setAsked('')
+        setAnswer(null)
+        setAiMatches(null)
+    }
 
     let rootRef: HTMLDivElement | undefined
     let inputRef: HTMLInputElement | undefined
@@ -789,15 +807,17 @@ export function PreviewView(props: {
         { equals: (a, b) => a[0] === b[0] && a[1] === b[1] },
     )
 
-    // Matches + segmented render, only for code/text with a live query.
-    const matches = createMemo(() =>
+    // Matches + segmented render, only for code/text with a live query. While the ai's passages
+    // show they ARE the matches: marked, stepped and scrolled to the same way.
+    const literalMatches = createMemo(() =>
         kind() === 'code' && query()
             ? findMatches(code() ?? '', query(), caseSensitive(), MAX_MATCHES)
             : [],
     )
-    const capped = () => matches().length >= MAX_MATCHES
+    const matches = () => aiMatches() ?? literalMatches()
+    const capped = () => !aiMatches() && literalMatches().length >= MAX_MATCHES
     const segments = createMemo(() =>
-        kind() === 'code' && query() && matches().length
+        kind() === 'code' && (query() || aiMatches()) && matches().length
             ? segmentText(code() ?? '', matches())
             : null,
     )
@@ -806,6 +826,7 @@ export function PreviewView(props: {
     // so stale state never lingers and a new image re-attempts its load.
     createEffect(
         on([path, code], () => {
+            clearAsk()
             setActiveIndex(0)
             setImgFailed(false)
             setImageSize(undefined)
@@ -830,22 +851,59 @@ export function PreviewView(props: {
         )
     })
 
+    const canAsk = () => settings.editor.findAsksAi === true
+
+    // Ask `q` as a question about the file: `asking…` under the bar, then the answer, and the
+    // passages it rests on marked with the best one active.
+    const ask = async (q: string) => {
+        if (q === asked()) return
+        const mine = ++askTicket
+        const text = code() ?? ''
+        setAsked(q)
+        setAnswer({ text: 'asking…', tone: 'muted' })
+        try {
+            const r = await api.findAi(path(), q, text, true)
+            if (mine !== askTicket) return
+            const said = r.answer?.trim()
+            const shown = aiPassageMatches(r.matches, text.length)
+            if (said) setAnswer({ text: said })
+            else if (!shown.matches.length) setAnswer({ text: 'nothing in this file answers that', tone: 'muted' })
+            else setAnswer(null)
+            // ranges are into the text sent: a file that reloaded while asking would shift them
+            if (shown.matches.length && (code() ?? '') === text) {
+                setAiMatches(shown.matches)
+                setActiveIndex(shown.current)
+            }
+        } catch (e) {
+            if (mine !== askTicket) return
+            setAnswer({ text: (e as Error).message || 'ai could not answer', tone: 'danger' })
+        }
+    }
+
+    // Enter, Shift+Enter and the chevrons: step the ai's passages while they show; ask when the
+    // literal query matched nothing; otherwise the next/previous match.
     const step = (dir: 1 | -1) => {
         const n = matches().length
         if (n) setActiveIndex(stepMatchIndex(activeIndex(), n, dir))
+        else if (query().trim() && canAsk()) void ask(query().trim())
     }
 
     const closeFind = () => {
+        clearAsk()
         setFindOpen(false)
         rootRef?.focus()
     }
 
-    const countLabel = () => {
-        if (!query()) return ''
-        const n = matches().length
-        if (n === 0) return 'No results'
-        return `${activeIndex() + 1}/${n}${capped() ? '+' : ''}`
-    }
+    const countLabel = createMemo(() => {
+        const ai = aiMatches()
+        const label = findCountLabel(
+            ai ? { total: ai.length, current: activeIndex() + 1 } : null,
+            { query: query(), total: literalMatches().length, current: activeIndex() + 1 },
+            canAsk(),
+            !!asked(),
+        )
+        return capped() ? { ...label, text: `${label.text}+` } : label
+    })
 
     // Focus the input whenever the code find bar opens (element mounts after the signal flips).
     createEffect(() => {
@@ -1154,14 +1212,22 @@ export function PreviewView(props: {
                         mode={kind() === 'pdf' ? 'pdf' : 'code'}
                         query={query()}
                         onQuery={value => {
+                            clearAsk()
                             setActiveIndex(0)
                             setQuery(value)
                         }}
-                        count={countLabel()}
-                        noResults={query() !== '' && matches().length === 0}
+                        count={countLabel().text}
+                        noResults={countLabel().danger}
+                        canAsk={canAsk()}
+                        hint={countLabel().hint}
+                        answer={answer()?.text}
+                        answerTone={answer()?.tone}
                         matchCount={matches().length}
                         caseSensitive={caseSensitive()}
-                        onToggleCase={() => setCaseSensitive(v => !v)}
+                        onToggleCase={() => {
+                            clearAsk()
+                            setCaseSensitive(v => !v)
+                        }}
                         onStep={step}
                         onClose={closeFind}
                         inputRef={el => (inputRef = el)}
