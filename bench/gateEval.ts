@@ -49,7 +49,7 @@ export type PackCaps = { files: number; chats: number; docs: number }
 
 /** The candidates a pack would keep: per case and source, the `cap` accepted with the best cosine. A chat
  *  scored by both the ordinary and the time path takes one slot (per case, duplicates by `key` keep the
- *  ordinary row), and ordinary rows (`set` not 'time') sort before time rows, as recall packs them. */
+ *  ordinary row), and ordinary rows (`path` not 'time') sort before time rows, as recall packs them. */
 export function packCapped(accepted: EvalRow[], cap: number | PackCaps = PACK_CAP): EvalRow[] {
     const groups = new Map<string, EvalRow[]>()
     for (const r of accepted) {

@@ -170,16 +170,19 @@ export function buildGuardProfile(o: { denyPaths: string[]; allowed: string[]; p
     ].join('\n')
 }
 
+/** PURE. Whether `p` is `home` or lies under it. opencode's config discovery walks up from its cwd and `lstat`s every
+ *  ancestor's `.claude`; from under the real home that reaches `~/.claude`, which the guard denies, and the server answers
+ *  `UnexpectedStatus: 500` on its first request. So a run's cwd must sit outside the real home. */
+export const underHome = (p: string, home: string): boolean => {
+    const h = home.replace(/\/+$/, '')
+    return p === h || p.startsWith(`${h}/`)
+}
+
 export async function runOpencode(o: OpencodeOptions): Promise<OpencodeRun> {
     const started = Date.now()
     const avail = checkSandboxWrapperAvailability()
     if (!avail.available) return fail(`refused: ${describeSandboxWrapperUnavailable(avail.reason)}`, started)
     if (o.denyPaths.length === 0) return fail('refused: no denyPaths, would run unwrapped', started)
-    const opencode = Bun.which('opencode')
-    if (!opencode) return fail('opencode not found on PATH', started)
-    const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('') })
-    const port = probe.port as number
-    probe.stop(true)
     const real = (p: string) => {
         try {
             return realpathSync(p)
@@ -187,6 +190,13 @@ export async function runOpencode(o: OpencodeOptions): Promise<OpencodeRun> {
             return p
         }
     }
+    if (underHome(real(o.cwd), real(homedir())))
+        return fail(`refused: cwd ${o.cwd} is inside the home folder, where opencode's config discovery hits the denied ~/.claude and the server answers 500; put the run outside the home folder`, started)
+    const opencode = Bun.which('opencode')
+    if (!opencode) return fail('opencode not found on PATH', started)
+    const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('') })
+    const port = probe.port as number
+    probe.stop(true)
     const repo = resolve(import.meta.dir, '..')
     const deny = [...new Set([...o.denyPaths, ...o.denyPaths.map(real), join(repo, '.claude')])]
     const allowed = [o.cwd, o.home, o.binDir, repo, dirname(process.execPath)].map(real)

@@ -14,10 +14,12 @@
 // search, the meaning index is off in this vault), `bismuth read` and the file readers. Zen models (the two free
 // ones only) go through `runOpencode` under an OS read-deny of the real vault and ~/.claude; Claude is Haiku only.
 // The summary has one row per model and arm and no pass line.
-import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { cpus, homedir, totalmem } from 'node:os'
+// Results (runs.jsonl, summary.json) live in --out; the agents' files sit in /private/tmp/bismuth-synth-<hash> when --out is
+// under the home folder, since opencode's server answers 500 from there (`underHome` in opencodeAgent.ts).
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpus, homedir, tmpdir, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { runOpencode } from './opencodeAgent'
+import { runOpencode, underHome } from './opencodeAgent'
 import { SEARCH_FIRST, openedReferences, policyHook, toolPolicy } from './qualityReplayCases'
 import { judgePoolSize } from './recallReplayCases'
 import {
@@ -397,10 +399,13 @@ export async function runEval(o: RunOptions) {
     const vault = JSON.parse(readFileSync(join(o.out, 'vault.json'), 'utf8')) as SynthVault
     const problems = validateSynth(vault)
     if (problems.length) throw new Error(`vault.json is not valid:\n${problems.join('\n')}`)
-    const vaultDir = writeVaultFilesOnce(o.out, vault)
+    // what the agents touch (the made-up vault, their `bismuth`, opencode's homes) sits outside the real home; results stay in --out
+    const work = agentWorkDir(o.out, realpathSync(homedir()))
+    mkdirSync(work, { recursive: true })
+    const vaultDir = writeVaultFilesOnce(work, vault)
     const byPath = new Map(vault.notes.map(n => [n.path, n.text] as const))
-    const binDir = join(o.out, 'bin')
-    const emptyConfig = join(o.out, 'empty-claude-config')
+    const binDir = join(work, 'bin')
+    const emptyConfig = join(work, 'empty-claude-config')
     mkdirSync(binDir, { recursive: true })
     mkdirSync(emptyConfig, { recursive: true })
     // the `bismuth` the agents call: this checkout's CLI on the made-up vault, with no chat history to read
@@ -412,7 +417,7 @@ export async function runEval(o: RunOptions) {
     const jobs = qs.flatMap(q => o.arms.flatMap(arm => o.models.map(model => ({ q, arm, model, k: `${model}|${arm}|${q.id}` }))))
     const todo = jobs.filter(j => store.get(j.k)?.status !== 'ok')
     console.log(`${jobs.length} runs, ${jobs.length - todo.length} cached, pool ${o.concurrency}`)
-    const homes = join(o.out, 'homes')
+    const homes = join(work, 'homes')
     mkdirSync(homes, { recursive: true })
 
     await pool(todo, o.concurrency, async ({ q, arm, model, k }) => {
@@ -455,6 +460,13 @@ export async function runEval(o: RunOptions) {
     const summary = summarize(rows)
     writeFileSync(join(o.out, 'summary.json'), JSON.stringify({ questions: qs.length, rows: summary }, null, 2))
     return summary
+}
+
+/** PURE. Where the agents' files go: `out` itself, unless it lies under the real home, where opencode's server answers 500
+ *  (`underHome` in opencodeAgent.ts); then a folder in /private/tmp named by a hash of `out`, so a rerun on the same
+ *  `--out` finds the same one, and a session's scratchpad vanishing takes nothing with it. */
+export function agentWorkDir(out: string, home: string, tmp = existsSync('/private/tmp') ? '/private/tmp' : tmpdir()): string {
+    return underHome(out, home) ? join(tmp, `bismuth-synth-${new Bun.CryptoHasher('sha1').update(out).digest('hex').slice(0, 12)}`) : out
 }
 
 function writeVaultFilesOnce(out: string, v: SynthVault): string {

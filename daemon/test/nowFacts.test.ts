@@ -131,6 +131,15 @@ test('the Due list is cut at a line boundary, never mid-line', async () => {
     for (const l of due) expect(l).toMatch(/\[due 2026-11-08\] — \[\[big\]\]$/)
 })
 
+test('a first due line longer than the cap is cut, not dropped', async () => {
+    put('long.md', `- [ ] ${'very long task words '.repeat(80)}[due 2026-11-08]`)
+    const out = await nowFacts(root, memory, NOW)
+    const due = out.split('### Vault folders')[0]!.split('\n').slice(1).join('\n').trim()
+    expect(due).toStartWith('- very long task words')
+    expect(due).toEndWith('…')
+    expect(due.length).toBeLessThanOrEqual(1100)
+})
+
 test('tasks due today or later come before overdue ones', async () => {
     put(
         'a.md',

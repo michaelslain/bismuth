@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, realpathSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     buildOpencodeArgv,
     buildOpencodeConfig,
     buildOpencodeEnv,
     buildGuardProfile,
+    underHome,
     buildOpencodeServeArgv,
     parseOpencodeEvents,
     runOpencode,
@@ -163,6 +164,11 @@ describe('runOpencode refusals', () => {
         expect(r.status).toBe('error')
         expect(r.answer).toContain('refused')
     })
+    test('a cwd inside the home folder refuses with the reason instead of a bare 500', async () => {
+        const r = await runOpencode({ model: 'm', message: 'x', system: '', cwd: join(homedir(), '.cache'), home: tmpdir(), denyPaths: ['/nowhere'], binDir: tmpdir(), timeoutMs: 1000 })
+        expect(r.status).toBe('error')
+        expect(r.answer).toContain('inside the home folder')
+    })
 })
 
 // Live proof, made-up text only. OPENCODE_LIVE=1 bun test bench/opencodeAgent.test.ts
@@ -202,4 +208,13 @@ describe.skipIf(!process.env.OPENCODE_LIVE)('live guard proof', () => {
             server.stop(true)
         }
     }, 120_000)
+})
+
+describe('underHome', () => {
+    test('a path inside the home folder is refused, a sibling with the same prefix is not', () => {
+        expect(underHome('/Users/a/.cache/x', '/Users/a')).toBe(true)
+        expect(underHome('/Users/a', '/Users/a/')).toBe(true)
+        expect(underHome('/Users/ab/x', '/Users/a')).toBe(false)
+        expect(underHome('/private/tmp/x', '/Users/a')).toBe(false)
+    })
 })

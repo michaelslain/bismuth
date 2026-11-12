@@ -50,7 +50,8 @@ function clip(text: string, max: number): string {
     return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`
 }
 
-/** Whole lines only, at most `max` characters: a line that does not fit is dropped, never cut. */
+/** Whole lines only, at most `max` characters: a line that does not fit is dropped, never cut. The one exception is a
+ *  first line longer than `max` on its own, which is cut, so a non-empty list never renders as nothing. */
 function clipLines(lines: string[], max: number): string {
     const kept: string[] = []
     let len = 0
@@ -60,7 +61,7 @@ function clipLines(lines: string[], max: number): string {
         kept.push(line)
         len = next
     }
-    return kept.join('\n')
+    return kept.length || !lines.length ? kept.join('\n') : clip(lines[0]!, max)
 }
 
 /** Markdown facts for the dream's `now` note, at most 2,500 characters. Never throws on a missing

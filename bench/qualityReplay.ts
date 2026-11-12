@@ -12,7 +12,7 @@
 // Every arm has the same tools: blended `bismuth search` (the meaning index is built once on the copy, under --out, never in
 // the real cache) and `bismuth history`, which sees only the sessions that started before the case's prompt. Each arm's sample i
 // is judged against none's sample i in both orders (the judge is not told the arm); the two verdicts merge, and a pair whose
-// orders disagree is a tie. The control is none#1 against none#2. Reliance verdicts name the items a block-arm answer used.
+// orders disagree is a tie. The control is none#i against none#K+i, from K more none runs per case. Reliance verdicts name the items a block-arm answer used.
 // The junk-vs-none cost of an item refits the gate's exchange rate (bench/fitSourceGate.ts refitOnJunkCost) from the
 // held-out references and junk rows of sample 1. Every run and verdict is cached under --out, keyed by what it was given, so
 // a rerun resumes. `--pilot n` runs the first n chosen cases (a prefix of the full sweep) and writes pilot-usage.json.
@@ -167,6 +167,44 @@ export type RunResult = {
     costUsd: number
     durationMs: number
     model: string
+    /** Wall time the run spent with the machine asleep, from the heartbeat's gaps (`watchSleep`). A run that spans a
+     *  lid-closed sleep times out mid-flight and reads long. */
+    sleptMs?: number
+}
+
+/** A heartbeat gap longer than this is the process not running: the machine slept. */
+const SLEEP_GAP_MS = 5_000
+const HEARTBEAT_MS = 1_000
+
+/** Wall-clock spans the process did not run. Clock-agnostic: a 1 s heartbeat that finds more than SLEEP_GAP_MS since the
+ *  last beat records the gap. */
+export const sleepGaps: { from: number; to: number }[] = []
+export function watchSleep(now: () => number = Date.now): () => void {
+    let last = now()
+    const t = setInterval(() => {
+        const at = now()
+        if (at - last > SLEEP_GAP_MS) sleepGaps.push({ from: last, to: at })
+        last = at
+    }, HEARTBEAT_MS)
+    t.unref()
+    return () => clearInterval(t)
+}
+
+/** How much of [from, to] lies inside recorded sleep gaps. */
+export const sleptDuring = (from: number, to: number, gaps = sleepGaps): number =>
+    gaps.reduce((a, g) => a + Math.max(0, Math.min(to, g.to) - Math.max(from, g.from)), 0)
+
+/** One agent call with retries: a failed or timed-out run is retried once, and up to three more times while each failed
+ *  attempt overlapped a machine sleep, so a closed lid costs a rerun instead of a missing pair. */
+export async function runWithRetry<C>(agent: (c: C) => Promise<RunResult>, call: C, log?: (s: string) => void): Promise<RunResult> {
+    let r = await agent(call)
+    for (let attempt = 1; attempt <= 4 && (r.status === 'error' || r.status === 'timeout'); attempt++) {
+        const slept = (r.sleptMs ?? 0) > SLEEP_GAP_MS
+        if (attempt > 1 && !slept) break
+        if (slept) log?.(`  machine slept ${Math.round(r.sleptMs! / 1000)}s during a run that ended ${r.status}; retrying`)
+        r = await agent(call)
+    }
+    return r
 }
 
 export const loadCache = <T,>(path: string): Map<string, T> => {
@@ -276,6 +314,7 @@ async function runAgent(userMessage: string, copy: string, binDir: string, model
     res.tokens = (lastCall.input_tokens ?? 0) + (lastCall.cache_creation_input_tokens ?? 0) + (lastCall.cache_read_input_tokens ?? 0) + (u.output_tokens ?? 0)
     res.tokensAll = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0)
     res.durationMs = Date.now() - started
+    res.sleptMs = sleptDuring(started, started + res.durationMs)
     return res
 }
 
@@ -329,12 +368,13 @@ export function conversationOf(lines: string[], lineNo: number): string {
 /** One case, with everything the arms need. `convo` already has the vault path replaced by the copy's. */
 export type CaseInput = { id: number; session: string; set: EvalRow['set']; heldOut: boolean; at: string; prompt: string; convo: string; visible: string[]; cands: Cand[]; dates: (key: string) => string | undefined }
 
-export type Job = { caseId: number; arm: RealArm; sample: number; keys: string[]; message: string; system: string; runKey: string }
+export type Job = { caseId: number; arm: RealArm; sample: number; keys: string[]; message: string; system: string; runKey: string; /** a none run that only the control uses: samples K..2K-1 */ control?: true }
 
 const runKeyOf = (model: string, system: string, message: string, sample: number, visible: string[]) => hashOf([TAG, 'run', model, system, message, `sample${sample}`, hashOf(visible.join(','))].join('\u0000'))
 
 /** Every (case, arm, sample) run. An arm whose block is empty has the same message as none, so the same key: one run. `search` has none's
- *  message under a longer system prompt, so its key differs. */
+ *  message under a longer system prompt, so its key differs. Each case also gets K more none runs, samples K..2K-1, marked `control`:
+ *  the control pairs none#i with none#K+i, so it averages K independent pairs as every arm does and its interval is the noise floor at K. */
 export function buildJobs(cases: CaseInput[], o: { samples: number; agentModel: string; copy: string; kFallback: number }): Job[] {
     const jobs: Job[] = []
     for (const c of cases) {
@@ -348,6 +388,8 @@ export function buildJobs(cases: CaseInput[], o: { samples: number; agentModel: 
             const message = [`Today is ${c.at.slice(0, 10)}.`, c.convo ? `<conversation-so-far>\n${c.convo}\n</conversation-so-far>` : '', block ? `<bismuth-memory>\n${block}</bismuth-memory>` : '', c.prompt].filter(Boolean).join('\n\n')
             const system = arm === 'search' ? `${AGENT_SYSTEM} ${SEARCH_FIRST}` : AGENT_SYSTEM
             for (let sample = 0; sample < o.samples; sample++) jobs.push({ caseId: c.id, arm, sample, keys: block ? keys : [], message, system, runKey: runKeyOf(o.agentModel, system, message, sample, c.visible) })
+            if (arm === 'none')
+                for (let sample = o.samples; sample < 2 * o.samples; sample++) jobs.push({ caseId: c.id, arm, sample, keys: [], message, system, runKey: runKeyOf(o.agentModel, system, message, sample, c.visible), control: true })
         }
     }
     return jobs
@@ -364,7 +406,8 @@ export function planWork(jobs: Job[], caseIds: number[]) {
     const ids = new Set(caseIds)
     const mine = jobs.filter(j => ids.has(j.caseId))
     const at = (id: number, arm: RealArm, s: number) => mine.find(j => j.caseId === id && j.arm === arm && j.sample === s)
-    const samples = mine.length ? Math.max(...mine.map(j => j.sample)) + 1 : 0
+    const armed = mine.filter(j => !j.control)
+    const samples = armed.length ? Math.max(...armed.map(j => j.sample)) + 1 : 0
     let pairs = 0
     let identical = 0
     for (const id of ids)
@@ -377,7 +420,8 @@ export function planWork(jobs: Job[], caseIds: number[]) {
                 else pairs++
             }
         }
-    const control = samples >= 2 ? [...ids].filter(id => at(id, 'none', 0) && at(id, 'none', 1)).length : 0
+    let control = 0
+    for (const id of ids) for (let s = 0; s < samples; s++) if (at(id, 'none', s) && at(id, 'none', samples + s)) control++
     const rel = new Set(mine.filter(j => j.keys.length).map(j => j.runKey))
     return { cases: ids.size, agentRuns: new Set(mine.map(j => j.runKey)).size, arms: mine.length, pairs: pairs + control, judgements: (pairs + control) * 2, identicalToNone: identical, reliance: rel.size }
 }
@@ -430,8 +474,7 @@ export async function sweep(o: SweepOpts): Promise<SweepResult> {
     let spent = 0
     await pool(todo, o.workers, async j => {
         const call = { caseId: j.caseId, message: j.message, system: j.system, model: o.models.agent }
-        let r = await o.runner.agent(call)
-        if (r.status === 'error' || r.status === 'timeout') r = await o.runner.agent(call)
+        const r = await runWithRetry(o.runner.agent, call, log)
         if (r.status === 'ok' || r.status === 'max_turns') {
             runs.set(j.runKey, r)
             fresh.runs.add(j.runKey)
@@ -455,7 +498,7 @@ export async function sweep(o: SweepOpts): Promise<SweepResult> {
         appendFileSync(probesPath, JSON.stringify({ k: probeKey(o.models.agent, m), v: rec }) + '\n')
     })
 
-    // pair judgements: sample i of an arm against sample i of none, each in both orders; the control is none#1 against none#2
+    // pair judgements: sample i of an arm against sample i of none, each in both orders; the control is none#i against none#K+i
     const at = (id: number, arm: RealArm, s: number) => o.jobs.find(j => j.caseId === id && j.arm === arm && j.sample === s)
     const pairs: PairJob[] = []
     const addPair = (arm: PairArm, caseId: number, sample: number, base: Job | undefined, other: Job | undefined) => {
@@ -468,8 +511,9 @@ export async function sweep(o: SweepOpts): Promise<SweepResult> {
         pairs.push({ arm, caseId, sample, base, other, same: base.runKey === other.runKey, texts, keys: [verdictKey('pair', o.models.judge, PAIRWISE_SYSTEM, texts[0]), verdictKey('pair', o.models.judge, PAIRWISE_SYSTEM, texts[1])] })
     }
     for (const c of o.cases) {
-        for (const arm of COMPARED) for (const s of new Set(o.jobs.filter(j => j.caseId === c.id).map(j => j.sample))) addPair(arm, c.id, s, at(c.id, 'none', s), at(c.id, arm, s))
-        addPair('control', c.id, 0, at(c.id, 'none', 0), at(c.id, 'none', 1))
+        const samples = [...new Set(o.jobs.filter(j => j.caseId === c.id && !j.control).map(j => j.sample))]
+        for (const arm of COMPARED) for (const s of samples) addPair(arm, c.id, s, at(c.id, 'none', s), at(c.id, arm, s))
+        for (const s of samples) addPair('control', c.id, s, at(c.id, 'none', s), at(c.id, 'none', samples.length + s))
     }
     const rels: RelJob[] = []
     for (const j of o.jobs) {
@@ -680,8 +724,7 @@ export async function needleSweep(o: { dir: string; jobs: NeedleJob[]; runner: R
     let done = 0
     await pool(todo, o.workers, async j => {
         const call = { caseId: j.caseId, message: j.message, system: j.system, model: o.models.agent }
-        let r = await o.runner.agent(call)
-        if (r.status === 'error' || r.status === 'timeout') r = await o.runner.agent(call)
+        const r = await runWithRetry(o.runner.agent, call, o.log)
         if (r.status === 'ok' || r.status === 'max_turns') {
             runs.set(j.runKey, r)
             fresh.runs++
@@ -991,6 +1034,9 @@ if (import.meta.main) {
     const dry = argv.includes('--dry')
     const models = { agent: flag('--agent-model') ?? DEFAULT_MODEL, judge: flag('--judge-model') ?? DEFAULT_MODEL, reliance: flag('--reliance-model') ?? DEFAULT_MODEL }
     const workers = flag('--concurrency') ? Math.max(1, Number(flag('--concurrency'))) : judgePoolSize(cpus().length, totalmem(), 600 * 1024 * 1024, 8)
+    // a sweep runs for hours: keep the machine from idling to sleep while this process lives (a closed lid still sleeps; runWithRetry reruns what that cost)
+    if (!dry) watchSleep()
+    if (process.platform === 'darwin' && !dry && Bun.which('caffeinate')) Bun.spawn(['caffeinate', '-ims', '-w', String(process.pid)], { stdio: ['ignore', 'ignore', 'ignore'] }).unref()
     const slots = flag('--search-slots') ? Math.max(1, Number(flag('--search-slots'))) : searchSlots(cpus().length, totalmem(), workers)
     mkdirSync(out, { recursive: true })
     const log = (s: string) => console.log(`${new Date().toISOString().slice(11, 19)} ${s}`)
@@ -1133,7 +1179,7 @@ if (import.meta.main) {
 
     if (pilot) {
         const outcomes = Object.fromEntries([...COMPARED, 'control' as const].map(a => [a, armSummary(a, res, inputs, 2000).outcomes]))
-        const report = { ...usage, needles: 'none run: --pilot runs no needles', planned: plan, plannedAtTarget: fullPlan, models, outcomes, failures: res.failures, searchWarm, searchFallbacks: searchFallbacksByArm(REAL_ARMS, jobs.map(j => ({ arm: j.arm, run: res.runs.get(j.runKey) }))) }
+        const report = { ...usage, needles: 'none run: --pilot runs no needles', planned: plan, plannedAtTarget: fullPlan, models, outcomes, failures: res.failures, searchWarm, searchFallbacks: searchFallbacksByArm(REAL_ARMS, jobs.filter(j => !j.control).map(j => ({ arm: j.arm, run: res.runs.get(j.runKey) }))) }
         writeFileSync(join(out, 'pilot-usage.json'), JSON.stringify(report, null, 2) + '\n')
         console.log(JSON.stringify(report, null, 2))
         process.exit(0)
@@ -1148,7 +1194,7 @@ if (import.meta.main) {
     const irrelevantOf = (j: Job) => new Set(j.keys.map((k, i) => { const x = caseOf.get(j.caseId)!.cands.find(y => y.key === k); return x?.y === 0 && !x?.matched ? i + 1 : 0 }).filter(Boolean))
     const first: unknown[] = []
     const later: unknown[] = []
-    for (const j of jobs) {
+    for (const j of jobs.filter(x => !x.control)) {
         const c = caseOf.get(j.caseId)!
         const r = res.runs.get(j.runKey)
         const row: Record<string, unknown> = { caseId: j.caseId, session: c.session, prompt: c.prompt, at: c.at, heldOut: c.heldOut, arm: j.arm, sample: j.sample + 1, injected: j.keys, run: r ?? null }
@@ -1218,7 +1264,7 @@ if (import.meta.main) {
         limits: ['the vault copy is today\'s vault, so an older prompt can see notes written after it, equally in every arm', 'samples of one prompt share a session; the session intervals keep a session together, the prompt intervals do not'],
         selection,
         searchWarm,
-        searchFallbacks: searchFallbacksByArm(REAL_ARMS, jobs.map(j => ({ arm: j.arm, run: res.runs.get(j.runKey) }))),
+        searchFallbacks: searchFallbacksByArm(REAL_ARMS, jobs.filter(j => !j.control).map(j => ({ arm: j.arm, run: res.runs.get(j.runKey) }))),
         failures: res.failures,
         ...(needleRes ? { needles: needleSummary(needleRes, samples) } : {}),
         arms,
@@ -1236,7 +1282,7 @@ if (import.meta.main) {
             lambda: { old: ex.lambda, oldInputs: { fetchTokens: ex.fetch.total, itemTokens: ex.item.tokens }, new: cost.lambda, newInputs: { savedTokensPerHit: saved.saved.point, junkCostTokensPerItem: cost.costTokensPerItem.point }, range: lambdaRange },
         },
         spend: { runs: allRuns.length, costUsd: sumU(r => r.costUsd), tokens: sumU(r => r.tokens), tokensAll: sumU(r => r.tokensAll), meanTokensPerRun: sumU(r => r.tokens) / Math.max(1, allRuns.length), meanSecondsPerRun: sumU(r => r.durationMs) / Math.max(1, allRuns.length) / 1000, statuses: Object.fromEntries(['ok', 'max_turns'].map(s => [s, allRuns.filter(r => r.status === s).length])), usage },
-        armTotals: Object.fromEntries(REAL_ARMS.map(a => [a, (() => { const rs = jobs.filter(j => j.arm === a).map(j => res.runs.get(j.runKey)).filter((r): r is RunResult => !!r); return { runs: rs.length, meanTokens: rs.reduce((x, r) => x + r.tokens, 0) / Math.max(1, rs.length), meanToolCalls: rs.reduce((x, r) => x + r.toolCalls, 0) / Math.max(1, rs.length), meanTurns: rs.reduce((x, r) => x + r.turns, 0) / Math.max(1, rs.length), deniedCalls: rs.reduce((x, r) => x + r.denied, 0) } })()])),
+        armTotals: Object.fromEntries(REAL_ARMS.map(a => [a, (() => { const rs = jobs.filter(j => j.arm === a && !j.control).map(j => res.runs.get(j.runKey)).filter((r): r is RunResult => !!r); return { runs: rs.length, meanTokens: rs.reduce((x, r) => x + r.tokens, 0) / Math.max(1, rs.length), meanToolCalls: rs.reduce((x, r) => x + r.toolCalls, 0) / Math.max(1, rs.length), meanTurns: rs.reduce((x, r) => x + r.turns, 0) / Math.max(1, rs.length), deniedCalls: rs.reduce((x, r) => x + r.denied, 0) } })()])),
         refit: refit ? { ...refit, model: undefined, shipped: undefined } : null,
         refitReference: refitReference ? { ...refitReference, model: undefined, shipped: undefined, note: `the refit at a stated rate ${refitAt}, not a measured one; reference only` } : null,
         keptModel: { threshold: model.threshold, rateMeasured, row: keptRow },

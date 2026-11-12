@@ -3,7 +3,7 @@
 // out of the verdicts. No model; the path checks resolve symlinks, so they read the file system.
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
-import { packSources } from '../core/src/sourcePack'
+import { SOURCE_LIMITS, packSources } from '../core/src/sourcePack'
 import type { SourceHit } from '../core/src/semanticSources'
 import { bootstrapDraws, bootstrapInterval, intervalOf } from './gateEval'
 
@@ -81,17 +81,22 @@ export const gateKeys = (cands: Cand[]): string[] => cands.filter(c => c.accepte
 
 /** The keys of the junk arm: `k` candidates judged irrelevant that no fetch matched. The gate's own junk goes
  *  first, then the highest-cosine irrelevant candidates (the near misses a gate loosened to this degree would
- *  let through). Fewer irrelevant candidates than `k` = all of them. */
+ *  let through). Fewer irrelevant candidates than `k` = all of them. Each source keeps at most its `SOURCE_LIMITS`
+ *  prompt cap, the most the block can show, so every key returned is one the agent saw. */
 export function junkKeys(cands: Cand[], k: number): string[] {
     const irrelevant = cands.filter(c => c.y === 0 && !c.matched)
     const own = irrelevant.filter(c => c.accepted).sort((a, b) => b.cosine - a.cosine)
     const rest = irrelevant.filter(c => !c.accepted).sort((a, b) => b.cosine - a.cosine)
     const seen = new Set<string>()
     const out: string[] = []
+    const per = { files: 0, chats: 0, docs: 0 }
     for (const c of [...own, ...rest]) {
         if (out.length >= k) break
         if (seen.has(c.key)) continue
+        const section = c.kind === 'chat' ? 'chats' : c.kind === 'docs' ? 'docs' : 'files'
+        if (per[section] >= SOURCE_LIMITS.prompt[section]) continue
         seen.add(c.key)
+        per[section]++
         out.push(c.key)
     }
     return out
@@ -154,8 +159,10 @@ const shellWords = (c: string): string[] | null => {
 }
 
 /** Whether a Bash command is one read-only `bismuth` call. No chaining, redirects or substitution, no `--vault`
- *  (it would point the call at another vault), and no argument that names a path outside the working directory. */
-export function bismuthAllowed(command: string): { ok: true } | { ok: false; why: string } {
+ *  (it would point the call at another vault), and no argument that names a path outside the working directory. With
+ *  `root`, every argument is also resolved against it with symlinks followed, so a link inside the copy that leads out
+ *  does not pass. */
+export function bismuthAllowed(command: string, root?: string): { ok: true } | { ok: false; why: string } {
     const c = command.trim()
     const bare = withoutQuotes(c)
     if (bare === null || SHELL_META.test(bare)) return { ok: false, why: 'shell metacharacters are not allowed' }
@@ -164,6 +171,7 @@ export function bismuthAllowed(command: string): { ok: true } | { ok: false; why
     if (words[0] !== 'bismuth') return { ok: false, why: 'only `bismuth` commands run' }
     if (words.some(w => /^--(vault|api)(=|$)/.test(w))) return { ok: false, why: '--vault and --api are not allowed' }
     if (words.slice(1).some(w => /^(\/|~|\$)/.test(w) || /(^|\/)\.\.(\/|$)/.test(w))) return { ok: false, why: 'paths outside the vault are not allowed' }
+    if (root !== undefined && words.slice(1).some(w => !insideRoot(root, w.startsWith('-') ? w.slice(w.indexOf('=') + 1 || w.length) : w))) return { ok: false, why: 'paths outside the vault are not allowed' }
     const [a, b] = [words[1] ?? '', words[2] ?? '']
     if (['read', 'map', 'brain', 'highlights'].includes(a)) return { ok: true }
     if (a === 'docs' && ['list', 'read', 'search'].includes(b)) return { ok: true }
@@ -203,7 +211,7 @@ export const globPatternOk = (pattern: string): boolean => !/^(\/|~)/.test(patte
 /** What the replayed (or judging) agent may call: the one policy behind both the PreToolUse hook and `canUseTool`.
  *  `bash` false removes Bash (the judge). */
 export function toolPolicy(root: string, name: string, input: Record<string, unknown>, bash = true): { ok: true } | { ok: false; why: string } {
-    if (name === 'Bash') return bash ? bismuthAllowed(String(input.command ?? '')) : { ok: false, why: 'this tool is not available' }
+    if (name === 'Bash') return bash ? bismuthAllowed(String(input.command ?? ''), root) : { ok: false, why: 'this tool is not available' }
     if (name !== 'Read' && name !== 'Grep' && name !== 'Glob') return { ok: false, why: 'this tool is not available' }
     const p = input.file_path ?? input.path
     if (p !== undefined && !insideRoot(root, String(p))) return { ok: false, why: 'paths outside the vault are not readable' }
@@ -381,19 +389,6 @@ export function parsePairwise(text: string): { better: 'A' | 'B' | 'tie'; reason
     return better ? { better, reason: String(j?.reason ?? '').slice(0, 400) } : null
 }
 
-/** Which side holds the arm, decided by a hash of the case and comparison, so the order is random but reproducible. */
-export const armIsA = (caseId: number, comparison: string): boolean => parseInt(hashOf(`order|${caseId}|${comparison}`).slice(0, 2), 16) % 2 === 0
-
-/** The arm's outcome against `none` given which side was which. */
-export function outcomeOf(better: 'A' | 'B' | 'tie', armIsSideA: boolean): Outcome {
-    if (better === 'tie') return 'tie'
-    return (better === 'A') === armIsSideA ? 'win' : 'loss'
-}
-
-/** The sessions whose logs `bismuth history show` may open in the replay: train and validation. Test sessions hold the answers. */
-export const historySessions = (split: { train: Set<string>; validation: Set<string> }, ids: string[]): string[] =>
-    ids.filter(id => split.train.has(id) || split.validation.has(id))
-
 /** The kept model when no refit was made: the current model scored at the old rate, never shipped, so `--write` writes the current weights. `refit` wins when it exists. */
 export function keepModel<R extends { current: R['shippedRow']; ship: boolean; shipped: unknown; shippedRow: unknown }>(refit: R | null, atOldRate: () => R, model: R['shipped']): R {
     if (refit) return refit
@@ -477,7 +472,13 @@ export function excerptsBlock(items: { cand: Cand; date?: string }[], vaultCopy:
     return `${refs}\n\n# Excerpts\n\n${bodies}`
 }
 
-/** The keys of `keys` the run opened: a Read or Bash call whose argument names the item as `packSources` told the agent to open it. */
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Whether `arg` names `path` whole: the next character ends the word (end, space or quote), so `paper.pdf` does not match
+ *  `paper.pdf.md` or `paper.pdf.draw`. `lead` is a pattern that must come right before it. */
+const namesWhole = (arg: string, lead: string, path: string): boolean => new RegExp(`${lead}${escapeRe(path)}(?=$|[\\s"'\`])`).test(arg)
+
+/** The keys of `keys` the run opened: a Read or Bash call whose argument names the item, whole, as `packSources` told the agent to open it. */
 export function openedReferences(keys: string[], tools: { name: string; arg: string }[], vaultCopy: string): string[] {
     const root = vaultCopy.replace(/\/+$/, '')
     return keys.filter(key => {
@@ -485,15 +486,16 @@ export function openedReferences(keys: string[], tools: { name: string; arg: str
         const prefix = key.slice(0, i)
         const id = key.slice(i + 1)
         return tools.some(t => {
-            if (prefix === 'chat') return t.arg.includes(`history show ${id}`)
-            if (prefix === 'docs') return t.arg.includes(`docs read ${id}`)
-            return t.arg.includes(`${root}/${id}`) || new RegExp(`\\bbismuth read ["']?${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(t.arg)
+            if (prefix === 'chat') return namesWhole(t.arg, 'history show ', id)
+            if (prefix === 'docs') return namesWhole(t.arg, 'docs read ', id)
+            return namesWhole(t.arg, '', `${root}/${id}`) || namesWhole(t.arg, `\\bbismuth read ["']?`, id)
         })
     })
 }
 
 /** The sessions `bismuth history` may show for a prompt at `promptAt`: those that started strictly before it, sorted. The
- *  prompt's own session and every later one are absent. */
+ *  prompt's own session is absent only when the caller passes that session's start as `promptAt` (the replay does); a
+ *  prompt's own time would let its session, which started earlier, through. Every later session is absent either way. */
 export function historyVisible(sessionStarts: Map<string, number>, promptAt: number): string[] {
     return [...sessionStarts.entries()].filter(([, t]) => t < promptAt).map(e => e[0]).sort()
 }

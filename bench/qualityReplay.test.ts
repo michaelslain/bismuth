@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, readFile
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { encodeProjectDir } from '../memory/src/sessionHistory'
-import { AGENT_SYSTEM, argOf, allSessionStarts, armSummary, buildJobs, buildNeedleJobs, fallbacksIn, needleSummary, needleSweep, needleVisible, pairVerdict, parseNeedleVerdict, planNeedles, planWork, prepareCase, REAL_ARMS, searchesIn, searchFallbacksByArm, searchSlots, sweep, usageReport, warmCases, warmReport, withoutDropped, type CaseInput, type RunResult, type Runner, type SearchExec } from './qualityReplay'
+import { AGENT_SYSTEM, argOf, allSessionStarts, armSummary, buildJobs, buildNeedleJobs, fallbacksIn, needleSummary, needleSweep, needleVisible, pairVerdict, parseNeedleVerdict, planNeedles, planWork, prepareCase, REAL_ARMS, runWithRetry, searchesIn, sleptDuring, searchFallbacksByArm, searchSlots, sweep, usageReport, warmCases, warmReport, withoutDropped, type CaseInput, type RunResult, type Runner, type SearchExec } from './qualityReplay'
 import type { Needle } from './needleCases'
 import { SEARCH_FIRST, historyVisible, type Cand } from './qualityReplayCases'
 
@@ -87,7 +87,7 @@ describe('sweep with a fake runner', () => {
         const judged = asked.filter(a => a.lookup)
         expect(judged.length).toBeGreaterThan(0)
         for (const a of judged) expect(a.text).not.toMatch(/\b(references|excerpts|junk|search|none)\b|bismuth-memory/)
-        expect(first.pairs.filter(p => p.arm === 'control').length).toBe(3)
+        expect(first.pairs.filter(p => p.arm === 'control').length).toBe(3 * opts.samples)
         // an arm run that is identical to none makes no judge call and ties by construction
         const same = first.pairs.find(p => p.same)!
         expect(pairVerdict(same, first.verdicts)).toMatchObject({ outcome: 'tie', byConstruction: true })
@@ -169,6 +169,50 @@ describe('history per case', () => {
         expect(argOf({ file_path: '/' + 'x'.repeat(400) }).length).toBe(401)
         rmSync(join(out, 'history-config'), { recursive: true, force: true })
         expect(existsSync(join(logs, 'old.jsonl'))).toBe(true)
+    })
+    test('a rerun over the links a killed run left behind does not throw EEXIST, and the new visible set wins', () => {
+        const logs = join(root, 'logs-rerun')
+        mkdirSync(logs, { recursive: true })
+        for (const id of ['old', 'mid']) writeFileSync(join(logs, `${id}.jsonl`), '{}\n')
+        const out = join(root, 'out-rerun')
+        const indexHome = join(out, 'index-home')
+        mkdirSync(join(indexHome, 'cache', 'chat-vectors'), { recursive: true })
+        const dirs = { out, copy, logs, indexHome, realModels: null, cli: '/x/cli.ts' }
+        prepareCase(dirs, 9, ['old', 'mid'])
+        expect(() => prepareCase(dirs, 9, ['old'])).not.toThrow()
+        const h = join(out, 'history-config', 'case-9', 'projects', encodeProjectDir(copy))
+        expect(readdirSync(h)).toEqual(['old.jsonl'])
+        expect(readdirSync(join(out, 'case-home', '9', 'cache')).sort()).toEqual(['chat-vectors', 'docs-vectors', 'vault-vectors'])
+        expect(existsSync(join(logs, 'mid.jsonl'))).toBe(true)
+    })
+})
+
+describe('a machine sleep', () => {
+    const run = (status: RunResult['status'], sleptMs = 0): RunResult => ({ status, answer: '', toolCalls: 0, turns: 0, tools: [], denied: 0, denials: [], searches: 0, searchFallbacks: 0, usage: {}, tokens: 0, tokensAll: 0, costUsd: 0, durationMs: 1, model: 'm', sleptMs })
+    const scripted = (list: RunResult[]) => {
+        let i = 0
+        return { agent: async () => list[i++]!, calls: () => i }
+    }
+    test('a failed run is retried once when the machine stayed awake', async () => {
+        const f = scripted([run('timeout'), run('timeout'), run('ok')])
+        expect((await runWithRetry(f.agent, {})).status).toBe('timeout')
+        expect(f.calls()).toBe(2)
+    })
+    test('runs that overlapped a sleep keep being retried, up to four retries', async () => {
+        const f = scripted([run('timeout', 600_000), run('timeout', 60_000), run('ok')])
+        const lines: string[] = []
+        expect((await runWithRetry(f.agent, {}, s => lines.push(s))).status).toBe('ok')
+        expect(f.calls()).toBe(3)
+        expect(lines[0]).toContain('machine slept 600s')
+        const g = scripted(Array.from({ length: 9 }, () => run('error', 60_000)))
+        await runWithRetry(g.agent, {})
+        expect(g.calls()).toBe(5)
+    })
+    test('sleep gaps count only where they overlap the run', () => {
+        const gaps = [{ from: 100, to: 200 }, { from: 500, to: 900 }]
+        expect(sleptDuring(0, 1000, gaps)).toBe(500)
+        expect(sleptDuring(150, 600, gaps)).toBe(150)
+        expect(sleptDuring(300, 400, gaps)).toBe(0)
     })
 })
 

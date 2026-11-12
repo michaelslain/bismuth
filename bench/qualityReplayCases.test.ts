@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 import {
-    armIsA,
     bismuthAllowed,
     gateKeys,
     hashOrder,
@@ -13,7 +12,6 @@ import {
     toolPolicy,
     intervalNotBelow,
     junkCost,
-    historySessions,
     historyVisible,
     mergeOrders,
     netIntervals,
@@ -28,7 +26,6 @@ import {
     lookupVerdict,
     meanFired,
     mutationReason,
-    outcomeOf,
     parsePairwise,
     savedPerHit,
     sourcesBlock,
@@ -78,8 +75,15 @@ describe('arms', () => {
     test('gate keys are the accepted ones, best first', () => expect(gateKeys(cands)).toEqual(['note:a.md', 'note:b.md']))
     test('junk keys: own junk first, then near misses, never relevant, matched or unjudged', () => {
         expect(junkKeys(cands, 1)).toEqual(['note:b.md'])
-        expect(junkKeys(cands, 3)).toEqual(['note:b.md', 'note:d.md', 'note:c.md'])
-        expect(junkKeys(cands, 9)).toEqual(['note:b.md', 'note:d.md', 'note:c.md'])
+        expect(junkKeys(cands, 3)).toEqual(['note:b.md', 'note:d.md'])
+        expect(junkKeys(cands, 9)).toEqual(['note:b.md', 'note:d.md'])
+    })
+    test('junk keys stop at the shipped cap per source, the most the block shows', () => {
+        const many = [...['a', 'b', 'c', 'd'].map((n, i) => cand(`note:${n}.md`, 0.9 - i / 10, 0)), cand('chat:s1', 0.5, 0), cand('docs:x.md', 0.4, 0)]
+        const keys = junkKeys(many, 6)
+        expect(keys).toEqual(['note:a.md', 'note:b.md', 'chat:s1', 'docs:x.md'])
+        const items = keys.map(k => ({ cand: many.find(c => c.key === k)! }))
+        for (const k of keys) expect(sourcesBlock(items, '/v')).toContain(k.slice(k.indexOf(':') + 1))
     })
     test('meanFired ignores cases where the gate stayed shut', () => {
         expect(meanFired([0, 0, 2, 4])).toBe(3)
@@ -144,6 +148,13 @@ describe('the tool guard', () => {
     test('the hook lets a read-only bismuth call through', async () => {
         expect((await run('Bash', { command: 'bismuth read notes/a.md' })).continue).toBe(true)
         expect((await run('Bash', { command: 'bismuth search "a|b" --regex' })).continue).toBe(true)
+    })
+    test('a bismuth argument through a symlink that leads out of the copy is refused', async () => {
+        expect(bismuthAllowed('bismuth read link/secret.md', root)).toEqual({ ok: false, why: 'paths outside the vault are not allowed' })
+        expect(bismuthAllowed('bismuth read --file=link/secret.md', root).ok).toBe(false)
+        expect(bismuthAllowed('bismuth read notes/a.md', root).ok).toBe(true)
+        expect(bismuthAllowed('bismuth search linked words --regex', root).ok).toBe(true)
+        expect((await run('Bash', { command: 'bismuth read link/secret.md' })).hookSpecificOutput?.permissionDecision).toBe('deny')
     })
     test('--vault and outside paths in a bismuth call are refused', () => {
         expect(bismuthAllowed('bismuth read a.md --vault /Users/m/vault').ok).toBe(false)
@@ -232,24 +243,10 @@ describe('statistics', () => {
 })
 
 describe('judge replies', () => {
-    test('pairwise parse and order', () => {
+    test('pairwise parse', () => {
         expect(parsePairwise('{"better":"A","reason":"fuller"}')).toEqual({ better: 'A', reason: 'fuller' })
         expect(parsePairwise('sure: {"better": "tie", "reason": "same"}')?.better).toBe('tie')
         expect(parsePairwise('no idea')).toBeNull()
-        expect(outcomeOf('A', true)).toBe('win')
-        expect(outcomeOf('A', false)).toBe('loss')
-        expect(outcomeOf('tie', true)).toBe('tie')
-        expect(armIsA(3, 'gate')).toBe(armIsA(3, 'gate'))
-        const sides = Array.from({ length: 200 }, (_, i) => armIsA(i, 'gate'))
-        expect(sides.filter(Boolean).length).toBeGreaterThan(70)
-        expect(sides.filter(Boolean).length).toBeLessThan(130)
-    })
-})
-
-describe('history links', () => {
-    test('train and validation sessions are linked, test sessions are not', () => {
-        const split = { train: new Set(['a']), validation: new Set(['b']), test: new Set(['c']) }
-        expect(historySessions(split, ['a', 'b', 'c', 'd'])).toEqual(['a', 'b'])
     })
 })
 
@@ -310,11 +307,15 @@ describe('real-prompt selection and merging', () => {
         const keys = ['note:a.md', 'note:b.md', 'chat:s1', 'docs:x.md']
         const tools = [{ name: 'Read', arg: '/v/a.md' }, { name: 'Bash', arg: 'bismuth history show s1' }, { name: 'Bash', arg: 'bismuth docs read x.md' }, { name: 'Read', arg: '/v/ab.md' }]
         expect(openedReferences(keys, tools, '/v')).toEqual(['note:a.md', 'chat:s1', 'docs:x.md'])
+        const pdf = ['note:paper.pdf', 'docs:x.md']
+        const near = [{ name: 'Read', arg: '/v/paper.pdf.md' }, { name: 'Bash', arg: 'bismuth read paper.pdf.draw' }, { name: 'Bash', arg: 'bismuth docs read x.md.bak' }]
+        expect(openedReferences(pdf, near, '/v')).toEqual([])
+        expect(openedReferences(pdf, [{ name: 'Bash', arg: 'bismuth read "paper.pdf" --page 2' }], '/v')).toEqual(['note:paper.pdf'])
     })
 })
 
 describe('selection to summary, with fake runners', () => {
-    // 5 prompts in 3 sessions, one held out. Every case has one accepted candidate and one rejected one, so the references and
+    // 5 prompts in 3 sessions, two held out. Every case has one accepted candidate and one rejected one, so the references and
     // junk arms each carry a block. The fake agent writes a marker per arm and sample; only the references arm opens its item and says RICH.
     const copy = '/vault-copy'
     const mkCase = (id: number, session: string, heldOut: boolean): CaseInput => ({
@@ -354,18 +355,27 @@ describe('selection to summary, with fake runners', () => {
         try {
             const models = { agent: 'fake', judge: 'fake', reliance: 'fake' }
             const jobs = buildJobs(cases, { samples: 2, agentModel: models.agent, copy, kFallback: 3 })
-            expect(jobs.length).toBe(cases.length * REAL_ARMS.length * 2)
+            // K=2 samples per arm, plus K more none runs for the control
+            expect(jobs.length).toBe(cases.length * REAL_ARMS.length * 2 + cases.length * 2)
+            expect(jobs.filter(j => j.control).map(j => [j.arm, j.sample])).toEqual(cases.flatMap(() => [['none', 2], ['none', 3]]))
             const plan = planWork(jobs, cases.map(c => c.id))
             expect(plan).toMatchObject({ cases: 5 })
             const res = await sweep({ dir, jobs, cases, runner, models, workers: 2, log: () => {} })
             expect(res.failures).toEqual([])
 
             const control = res.pairs.filter(p => p.arm === 'control')
-            expect(control.length).toBe(cases.length)
+            // K control pairs per prompt, none#i against none#K+i, as each arm averages K pairs
+            expect(control.length).toBe(cases.length * 2)
             for (const p of control) {
                 expect([p.base.arm, p.other.arm]).toEqual(['none', 'none'])
-                expect([p.base.sample, p.other.sample]).toEqual([0, 1])
+                expect([p.base.sample, p.other.sample]).toEqual([p.sample, p.sample + 2])
                 expect(p.same).toBe(false)
+            }
+            // every arm's sample i is paired with none's sample i, never a control run
+            for (const p of res.pairs.filter(x => x.arm !== 'control')) {
+                expect(p.base.arm).toBe('none')
+                expect(p.base.sample).toBe(p.other.sample)
+                expect(p.base.control).toBeUndefined()
             }
             expect(res.pairs.length).toBe(plan.pairs)
 
@@ -386,8 +396,8 @@ describe('selection to summary, with fake runners', () => {
             }
             // the control compares two none answers, neither says RICH, so every judgement is a tie
             const c = armSummary('control', res, cases, 400)
-            expect(c.judgedPairs).toBe(cases.length)
-            expect(c.outcomes).toMatchObject({ win: 0, loss: 0, tie: cases.length })
+            expect(c.judgedPairs).toBe(cases.length * 2)
+            expect(c.outcomes).toMatchObject({ win: 0, loss: 0, tie: cases.length * 2 })
             expect(c.all.net).toBe(0)
             // references is the only arm whose answer is richer than none's: all wins, so the control is not just echoing every arm
             const r = armSummary('references', res, cases, 400)
