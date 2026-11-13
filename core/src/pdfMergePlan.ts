@@ -29,13 +29,14 @@ export type PageMatch = { same: number; added: number }
  *  with room left under their writing scanned again with one more line written there, and a real
  *  pair of versions of a pocket book whose pages are known (8 pages, 15 newer, half-empty pages on
  *  both sides). SAME_MIN is the lowest likeness any page showed against itself (0.623, a pocket book
- *  page photographed with a shadow across its foot); 1 of the pocket book's 114 pairs of different
- *  pages reaches it. ADDED_MIN is the cut with the fewest pages on the wrong side (0.073): one rescan
- *  reads as written on (a page half in shadow, 0.29), no one-line page reads as untouched (the least,
- *  0.08). Held out, a newer export of the same pocket book (17 pages, one page written on) plans
- *  right: its 7 untouched pages show 0.020 to 0.067 added ink, the written one 0.225. */
+ *  page whose newer export frames it differently; it scores the same with the shadow across its foot
+ *  taken out of its ink); 1 of the pocket book's 114 pairs of different pages reaches it. ADDED_MIN is
+ *  the cut with the fewest pages on the wrong side (0.091): one rescan reads as written on (the edge
+ *  of the page beneath showing as a dark band across the foot, 0.20) and one one-line page reads as
+ *  untouched (0.05). Held out, a newer export of the same pocket book (17 pages, one page written on)
+ *  plans right: its 7 untouched pages show 0.020 to 0.067 added ink, the written one 0.225. */
 export const SAME_MIN = 0.623
-export const ADDED_MIN = 0.073
+export const ADDED_MIN = 0.091
 
 const N = INK_W * INK_H
 

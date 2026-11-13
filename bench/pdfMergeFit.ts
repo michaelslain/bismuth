@@ -130,9 +130,23 @@ async function rescanned(line: boolean): Promise<Uint8Array> {
         const [l, t, r, b] = [2, 3, 4, 5].map(k => 0.04 * rand(i, k)) as [number, number, number, number]
         ctx.save()
         ctx.translate(w / 2, h / 2)
-        ctx.rotate(((rand(i, 6) - 0.5) * 1.6 * Math.PI) / 180)
+        const turn = ((rand(i, 6) - 0.5) * 1.6 * Math.PI) / 180
+        ctx.rotate(turn)
         ctx.translate(-w / 2, -h / 2)
-        ctx.drawImage(img as never, img.width * l, img.height * t, img.width * (1 - l - r), img.height * (1 - t - b), 0, 0, w, h)
+        // drawn a little larger, so the turned photo still fills the frame: a scanner app crops to the
+        // page and never leaves a wedge of blank canvas in a corner
+        const over = Math.cos(turn) + Math.abs(Math.sin(turn)) * Math.max(w / h, h / w)
+        ctx.drawImage(
+            img as never,
+            img.width * l,
+            img.height * t,
+            img.width * (1 - l - r),
+            img.height * (1 - t - b),
+            (w * (1 - over)) / 2,
+            (h * (1 - over)) / 2,
+            w * over,
+            h * over,
+        )
         ctx.restore()
         const at = bands(i).under
         if (line && at !== null) {

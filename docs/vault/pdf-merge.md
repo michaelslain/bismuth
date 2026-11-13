@@ -48,7 +48,7 @@ Highlights and other annotations are left out when pages are compared, so a page
 
 - If the two PDFs share no unchanged page (every page photographed again), every page pairs by order: page 1 with page 1, and so on, with extra new pages added at the end. The head reads `no page matched, paired by order`. A page inserted in the middle then shifts every pairing after it, so check the pages before you save, or press `undo merge`.
 - A page that changed past matching (most of it rewritten) with another page added beside it can be paired with the wrong page by position. The sorter shows it before anything is written: press `undo merge` to leave the pages as they were.
-- A page photographed half in shadow can read as written on, so its transcript is dropped and read again.
+- A page photographed with a dark band across it, such as the edge of the page beneath it, can read as written on, so its transcript is dropped and read again.
 - If the vault's PDF is encrypted or signed, saving fails with `409 PDF_NOT_WRITABLE` and nothing is written, as for any [page rewrite](pdf-pages.md).
 - On the iPad the plan cannot be made: the toast reads `merging a newer version needs the desktop app`.
 
