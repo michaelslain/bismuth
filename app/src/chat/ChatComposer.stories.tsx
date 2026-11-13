@@ -8,7 +8,7 @@
 // changed face between writing it and reading it back.
 // A component with no story is invisible to visual verification, which is to say untested.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { EditorView } from '@codemirror/view'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
@@ -56,6 +56,68 @@ function Composer(props: {
             />
         </div>
     )
+}
+
+/** A table in a draft is the note's own table editor (livePreview's table widget): a cell takes a
+ *  click and typing, and the edit lands in the message text that Enter sends. The draft under the
+ *  box shows that text live. */
+export const TableDraft: Story = {
+    render: () => {
+        const [text, setText] = createSignal(
+            [
+                'Can you fill this in?',
+                '',
+                '| day | plan |',
+                '| --- | --- |',
+                '| mon | gym |',
+                '| tue |  |',
+            ].join('\n'),
+        )
+        return (
+            <div style={{ width: '640px', 'max-width': '100%' }}>
+                <ChatComposer
+                    value={text}
+                    onInput={setText}
+                    placeholder={() => 'Message'}
+                    getNotes={none}
+                    getMemories={none}
+                    getTags={none}
+                    getFiles={none}
+                    onFileMention={noop}
+                    onPaste={noop}
+                    onKeyDown={() => false}
+                    onReady={(_: ComposerHandle) => {}}
+                />
+                <pre data-testid="draft">{text()}</pre>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cell = await waitFor(() => {
+            const c = canvasElement.querySelector<HTMLElement>(
+                '[data-cell][data-r="2"][data-c="1"]',
+            )
+            if (!c) throw new Error('no table cell yet')
+            return c
+        })
+        await userEvent.click(cell)
+        // The first edit loads the cell editor; type once it is open.
+        await waitFor(() => expect(cell.dataset.editing).toBe('1'))
+        // Into the cell's own editor, as a real keystroke's input event lands (userEvent's synthetic
+        // keys reach CodeMirror as keydowns with no text input).
+        await waitFor(() =>
+            expect(document.activeElement?.closest('[data-cell]')).toBeTruthy(),
+        )
+        document.execCommand('insertText', false, 'rest')
+        // A cell commits on blur, like a note's table.
+        await userEvent.click(canvasElement.querySelector('[data-testid="draft"]')!)
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="draft"]')!
+                    .textContent,
+            ).toContain('| tue | rest |'),
+        )
+    },
 }
 
 /** Empty, showing the placeholder — the resting state of a new chat. */

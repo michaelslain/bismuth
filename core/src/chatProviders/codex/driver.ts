@@ -62,6 +62,7 @@ import {
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import type { ChatBackend, ChatTurnContext } from '../backends'
 import { CHAT_RENDERING_NOTE } from '../../chatRenderingNote'
+import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import { readCodexOptIns } from '../../settings'
 import {
     localUnreachableMessage,
@@ -195,6 +196,9 @@ interface CodexExecArgsInput {
     /** Local-model provider `--config` overrides (agentBackends/localModel.ts), inserted right after
      *  `--skip-git-repo-check`. Absent = the user's own codex config decides. */
     localArgs?: string[]
+    /** CHAT_LINE_REF_NOTE when the vault's editor shows line numbers, else '' or absent
+     *  (chatLineRefNote.ts); joined after CHAT_RENDERING_NOTE in `developer_instructions`. */
+    lineRefNote?: string
 }
 
 /** A TOML basic string: `JSON.stringify` covers `"`, `\\` and the C0 control chars; TOML also wants
@@ -227,7 +231,9 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     // exec has no system-prompt flag, and `developer_instructions` is the string key it reads instead.
     args.push(
         '--config',
-        `developer_instructions=${tomlBasicString(CHAT_RENDERING_NOTE)}`,
+        `developer_instructions=${tomlBasicString(
+            [CHAT_RENDERING_NOTE, a.lineRefNote].filter(Boolean).join('\n\n'),
+        )}`,
     )
     if (a.threadId) args.push('resume', a.threadId)
     for (const p of a.imagePaths) args.push('--image', p)
@@ -416,6 +422,7 @@ async function runTurn(
         threadId: s.threadId,
         imagePaths: paths,
         localArgs: local?.args,
+        lineRefNote: await chatLineRefNoteFor(s.cwd),
     })
 
     let proc: ReturnType<typeof Bun.spawn>

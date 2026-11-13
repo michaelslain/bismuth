@@ -14,6 +14,7 @@
 // papering over it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
+import { setPendingAnchor } from './pendingAnchor'
 import { EditorView } from '@codemirror/view'
 import { forEachDiagnostic } from '@codemirror/lint'
 import { openSearchPanel } from '@codemirror/search'
@@ -3292,6 +3293,43 @@ const inkedEditor = (path: string, text: string) => () => {
             />
         </div>
     )
+}
+
+/** A chat reply's line link (`[[Long#L40-L42]]`, editor/lineAnchor.ts) opens the note with those
+ *  lines selected and scrolled into view, beside their numbers in the gutter. The open goes through
+ *  the same pending-anchor channel a `[[Note#Heading]]` click uses. */
+export const OpensAtLineAnchor: Story = {
+    render: () => {
+        // Line numbers on for this story only, put back when it unmounts: flipping the setting
+        // while the note is open rebuilds the view, which would undo the reveal under test.
+        const restore = settings.editor.lineNumbers
+        setSettings('editor', 'lineNumbers', true)
+        onCleanup(() => setSettings('editor', 'lineNumbers', restore))
+        setPendingAnchor('Long.md', 'L40-L42')
+        return inkedEditor('Long.md', A_LOT_OF_PROSE)()
+    },
+    play: async ({ canvasElement }) => {
+        const view = viewOf(canvasElement)
+        await waitFor(() =>
+            expect(view.state.selection.main.empty).toBe(false),
+        )
+        const sel = view.state.selection.main
+        await expect(view.state.doc.lineAt(sel.from).number).toBe(40)
+        await expect(view.state.doc.lineAt(sel.to).number).toBe(42)
+        await expect(sel.to).toBe(view.state.doc.line(42).to)
+        // Line 40 is on screen, and the gutter beside it reads 40.
+        // The scroll lands on the view's next measure, after the selection.
+        await waitFor(() => {
+            const scroller = scrollerOf(canvasElement).getBoundingClientRect()
+            const top = view.coordsAtPos(sel.from)!
+            expect(top.top).toBeGreaterThanOrEqual(scroller.top)
+            expect(top.bottom).toBeLessThanOrEqual(scroller.bottom)
+        })
+        const gutter = [
+            ...canvasElement.querySelectorAll('.cm-lineNumbers .cm-gutterElement'),
+        ].find(el => el.textContent === '40')
+        await expect(gutter).toBeTruthy()
+    },
 }
 
 /** Entering draw mode drops the text selection: the range collapses to its head, so exiting

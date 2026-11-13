@@ -68,6 +68,7 @@ import {
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import { titleFromPrompt } from '../titleFromPrompt'
 import { CHAT_RENDERING_NOTE } from '../../chatRenderingNote'
+import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import {
     opencodeCliArgs,
     opencodeMajor,
@@ -684,7 +685,8 @@ async function getOrCreateSession(
 }
 
 /** The system text a server-mode turn carries: how the chat renders the reply
- *  (CHAT_RENDERING_NOTE), then the memory — the session-start brain block (fetched once per
+ *  (CHAT_RENDERING_NOTE), how to cite a note's lines when the editor shows line numbers
+ *  (chatLineRefNote.ts), then the memory — the session-start brain block (fetched once per
  *  session) and the recall for THIS prompt — when the vault has a memory dir. opencode 1 sends it
  *  as the prompt's `system`; opencode 2 stores it in a session instructions entry before the
  *  prompt. */
@@ -692,7 +694,11 @@ async function turnSystemText(
     s: OpencodeSession,
     text: string,
 ): Promise<string> {
-    if (!s.memoryDir) return CHAT_RENDERING_NOTE
+    // How to cite a note's lines, read from .settings every turn so a toggle applies on the next
+    // message (chatLineRefNote.ts; '' with line numbers off).
+    const lineRefNote = await chatLineRefNoteFor(s.cwd)
+    const head = [CHAT_RENDERING_NOTE, lineRefNote].filter(Boolean)
+    if (!s.memoryDir) return head.join('\n\n')
     // `system` is per-call (fresh every turn), so the session ledger would wrongly suppress notes
     // on later turns: reset it before each recall.
     const svc = recallServiceFor(s.cwd, s.memoryDir)
@@ -729,7 +735,7 @@ async function turnSystemText(
             brainBySession.set(s, b.context)
     }
     const parts = [brainText, recalled?.context].filter((p): p is string => !!p)
-    return [CHAT_RENDERING_NOTE, ...parts].join('\n\n')
+    return [...head, ...parts].join('\n\n')
 }
 
 /** Send one turn against the shared opencode SERVER: registers a listener on the server's global

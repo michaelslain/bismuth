@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'bun:test'
 import { buildCodexExecArgs } from '../../src/chatProviders/codex/driver'
 import { CHAT_RENDERING_NOTE } from '../../src/chatRenderingNote'
+import { CHAT_LINE_REF_NOTE } from '../../src/chatLineRefNote'
 
 const base = {
     jsonFlag: '--json' as const,
@@ -43,5 +44,18 @@ describe('buildCodexExecArgs', () => {
         expect(developerInstructions(args)).toBe(CHAT_RENDERING_NOTE)
         const at = args.findIndex(a => a.startsWith('developer_instructions='))
         expect(at).toBeLessThan(args.indexOf('resume'))
+    })
+
+    test('with line numbers on, the line-citation note follows the rendering note', () => {
+        const args = buildCodexExecArgs({
+            ...base,
+            lineRefNote: CHAT_LINE_REF_NOTE,
+        })
+        expect(developerInstructions(args)).toBe(
+            `${CHAT_RENDERING_NOTE}\n\n${CHAT_LINE_REF_NOTE}`,
+        )
+        expect(
+            developerInstructions(buildCodexExecArgs({ ...base, lineRefNote: '' })),
+        ).toBe(CHAT_RENDERING_NOTE)
     })
 })

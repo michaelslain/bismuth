@@ -50,6 +50,35 @@ export const Assistant: Story = {
     },
 }
 
+const lineRefText = [
+    'The claim you want to tighten is [[Proposal#L12]], and the evidence for it sits in [[Proposal#L3-L8]].',
+    '',
+    'A heading link still reads as the note name: [[Proposal#Goals]].',
+].join('\n')
+
+/** A reply citing a note's lines while line numbers are on (core/src/chatLineRefNote.ts): each
+ *  `[[Note#L12]]` reads as `Proposal:12`, a range as `Proposal:3–8`, and a click opens the note
+ *  with those lines selected. A heading anchor keeps reading as the bare note name. */
+export const LineReferences: Story = {
+    render: () => (
+        <div style={{ width: '480px' }}>
+            <ChatTextBubble text={lineRefText} role="assistant" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
+        const labels = [
+            ...canvasElement.querySelectorAll('[data-line-anchor]'),
+        ].map(el => el.textContent)
+        await expect(labels).toEqual([':12', ':3–8'])
+        const text = canvasElement.querySelector<HTMLElement>('.cm-content')!.innerText
+        await expect(text).toContain('Proposal:12')
+        await expect(text).toContain('Proposal:3–8')
+        await expect(text).not.toContain('#L12')
+        await expect(text).not.toContain('Goals')
+    },
+}
+
 const fenceText = [
     'Run the migration, then restart:',
     '',

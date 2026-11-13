@@ -42,6 +42,7 @@ import {
 import { htmlBlockField, pushInlineHtml } from './htmlPreview'
 import { numberedLine, codeLineNumberTheme } from './codeLineNumbers'
 import { isThematicBreak } from './thematicBreak'
+import { lineAnchorLabel, parseLineAnchor, type LineAnchor } from './lineAnchor'
 import { renderCalloutHtml, CALLOUT_TYPES, type CalloutHeader } from './callout'
 import { renderNoteBody, renderInline } from '../bases/markdown'
 import { hide, syntaxMark, pushEmphasis } from './inlineEmphasis'
@@ -236,6 +237,34 @@ function indentLine(cls: string, depth: number): Decoration {
 // NOTE: Task-list lines (- [ ] / - [x]) also match the bullet regex. A follow-up task
 // will render those as checkboxes. That checkbox renderer must guard lines BEFORE this
 // bullet rule runs (i.e. skip the bullet widget for task lines).
+/** The `:12` / `:12–18` after a wikilink's name when it carries a line anchor (lineAnchor.ts). It
+ *  carries `cm-wikilink` so a click on it opens the link like the name does (linkClicks.ts). */
+class LineAnchorWidget extends WidgetType {
+    constructor(readonly label: string) {
+        super()
+    }
+    eq(other: LineAnchorWidget): boolean {
+        return other.label === this.label
+    }
+    toDOM(): HTMLElement {
+        const span = document.createElement('span')
+        span.className = 'cm-wikilink'
+        span.setAttribute('data-line-anchor', '')
+        span.textContent = this.label
+        return span
+    }
+    ignoreEvent(): boolean {
+        return false
+    }
+}
+
+/** The line range of a wikilink's inner text with no alias and a `#L…` anchor, else null. */
+function lineAnchorOf(inner: string): LineAnchor | null {
+    if (inner.includes('|')) return null
+    const hash = inner.indexOf('#')
+    return hash === -1 ? null : parseLineAnchor(inner.slice(hash + 1))
+}
+
 class BulletWidget extends WidgetType {
     private readonly depth: number
 
@@ -477,7 +506,17 @@ function pushWikilinks(
         deco.push(wikilink.range(visFrom, visTo))
         if (!onCursor) {
             if (visFrom > s) deco.push(hide.range(s, visFrom))
-            if (end > visTo) deco.push(hide.range(visTo, end))
+            // A line anchor (`#L12`, lineAnchor.ts) reads as `:12` after the name instead of hiding.
+            const lines = visTo < end - 2 ? lineAnchorOf(m[1]) : null
+            if (lines) {
+                const anchorEnd = end - 2 // before the closing `]]`
+                deco.push(
+                    Decoration.replace({
+                        widget: new LineAnchorWidget(lineAnchorLabel(lines)),
+                    }).range(visTo, anchorEnd),
+                )
+                deco.push(hide.range(anchorEnd, end))
+            } else if (end > visTo) deco.push(hide.range(visTo, end))
         } else {
             // Revealed: the `[[`, folder path, and `]]` render in dim Monaspace.
             if (visFrom > s) deco.push(syntaxMark.range(s, visFrom))

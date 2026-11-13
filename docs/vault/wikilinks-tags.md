@@ -22,10 +22,13 @@ This note links to `Gamma` and `reading/Gamma` (the embed produces no link), and
 | Alias | `[[My Note\|shown text]]` | `My Note`; the editor shows `shown text` |
 | Heading | `[[My Note#Section]]` | `My Note`, opened scrolled to the `Section` heading |
 | Path | `[[reading/My Note]]` | exactly `reading/My Note.md` |
+| Line | `[[My Note#L12]]`, `[[My Note#L12-L18]]` | `My Note`, opened with line 12 (or lines 12 to 18) selected; shown as `My Note:12` or `My Note:12–18` |
 | Combined | `[[reading/My Note#Section\|Alias]]` | `reading/My Note`, heading and alias applied |
 | Folder | `[[reading/Books/]]` | the folder `reading/Books`; clicking it shows the folder in the file tree |
 
 Anything between the brackets is allowed except `]`, so `[[2024-01-15]]`, `[[doc-v1.2.3]]` and `[[note@tag]]` are valid targets. An empty `[[]]` is ignored. In live preview the editor hides the brackets, the folder path and the heading, and shows the alias, or the bare name if there is none.
+
+A line anchor is `L` and a line number counted from 1 over the whole file, frontmatter included, the numbers the editor's line-number gutter shows. A range past the end of the note is cut at its last line; one starting past the end opens the note at its saved scroll position. An anchor like `L12 notes` is a heading anchor, not a line anchor.
 
 A heading anchor matches an ATX heading (`## Section`) by its text, ignoring case and repeated spaces. If no heading matches, the note simply opens at its saved scroll position.
 
@@ -143,7 +146,7 @@ The same module provides `pickByBase` and `linkTargetFor`, which the editor uses
 ### Editor helpers
 
 The pure helpers in `app/src/editor/wikilink.ts` and `app/src/editor/tag.ts` have no CodeMirror imports, so they run under `bun test`.
-`matchWikilinkPrefix` finds the rightmost unclosed `[[` on the line, `matchWikilinkHeadingPrefix` splits an open link at its first `#`, `matchTagPrefix` applies the inline-tag boundary rule, and `parseWikilink` splits `target#heading|alias` and derives `display`.
+`matchWikilinkPrefix` finds the rightmost unclosed `[[` on the line, `matchWikilinkHeadingPrefix` splits an open link at its first `#`, `matchTagPrefix` applies the inline-tag boundary rule, and `parseWikilink` splits `target#heading|alias` and derives `display`. `parseLineAnchor` (`app/src/editor/lineAnchor.ts`) reads an `L12` or `L12-L18` anchor; live preview draws it as a `:12` label inside the link (`LineAnchorWidget` in `livePreview.ts`), and `revealHeading` in `Editor.tsx` selects the lines instead of seeking a heading.
 `wikilinkVisibleRange` returns the slice live preview leaves visible.
 `buildInsert` appends `]]` only when it is not already ahead.
 `matchTagListItem` in `app/src/editor/autocomplete.ts` completes the segment after the last comma of a frontmatter `tags:` line.
@@ -153,4 +156,4 @@ The completion sources are wired in `app/src/editor/autocomplete.ts`; heading co
 
 `SECOND_BRAIN_KINDS` in `core/src/graph.ts` is `note` and `tag`. A tag node has no `folder` field.
 
-Source: `core/src/wikilinks.ts`, `core/src/tags.ts`, `core/src/vault.ts`, `core/src/graphBuilder.ts`, `core/src/linkTarget.ts`, `core/src/graph.ts`, `core/src/schema/coerce.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/autocomplete.ts`, `app/src/editor/wikilinkOptions.ts`, `app/src/Editor.tsx`, `app/src/FileTree.tsx`, `app/src/ui/openNote.ts`
+Source: `core/src/wikilinks.ts`, `core/src/tags.ts`, `core/src/vault.ts`, `core/src/graphBuilder.ts`, `core/src/linkTarget.ts`, `core/src/graph.ts`, `core/src/schema/coerce.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/lineAnchor.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/tag.ts`, `app/src/editor/autocomplete.ts`, `app/src/editor/wikilinkOptions.ts`, `app/src/Editor.tsx`, `app/src/FileTree.tsx`, `app/src/ui/openNote.ts`

@@ -77,6 +77,7 @@ import { propertySchemas, noteSchemaForText } from './propertyRegistry'
 import { findHeadingLineIndex, type NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import { takePendingAnchor, clearPendingAnchor } from './pendingAnchor'
+import { clampLineAnchor, parseLineAnchor } from './editor/lineAnchor'
 import { takePendingCursor } from './pendingCursor'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 import {
@@ -679,6 +680,18 @@ async function runDropActions(
  *  EditorView.scrollIntoView primitive the find bar (findPanel.revealFrom) uses. Returns false
  *  when no heading matches, so the caller can fall through to the normal scroll-restore. */
 function revealHeading(view: EditorView, heading: string): boolean {
+    // A line anchor (`[[Note#L12-L18]]`, lineAnchor.ts) selects those lines instead.
+    const lines = parseLineAnchor(heading)
+    if (lines) {
+        const r = clampLineAnchor(lines, view.state.doc.lines)
+        if (!r) return false
+        const from = view.state.doc.line(r.from).from
+        view.dispatch({
+            selection: { anchor: from, head: view.state.doc.line(r.to).to },
+            effects: EditorView.scrollIntoView(from, { y: 'center' }),
+        })
+        return true
+    }
     const idx = findHeadingLineIndex(
         view.state.doc.toString().split('\n'),
         heading,

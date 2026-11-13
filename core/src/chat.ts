@@ -51,6 +51,7 @@ import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
 import { CHAT_RENDERING_NOTE } from './chatRenderingNote'
 import { agentShellEnv } from './agentEnvFile'
 import { AGENT_CLI_NOTE } from './agentCliNote'
+import { chatLineRefNoteFor } from './chatLineRefNote'
 import { findVaultRoot } from './findVaultRoot'
 import {
     detachSessionSink,
@@ -471,6 +472,9 @@ interface ChatSession {
     id: string
     /** The vault dir; the query()'s cwd so `claude` operates against the user's notes. */
     cwd: string
+    /** CHAT_LINE_REF_NOTE when the vault's editor shows line numbers, else '' — read once per
+     *  session in createSession (chatLineRefNote.ts), so a toggle reaches the next chat. */
+    lineRefNote: string
     /** The push-input mailbox feeding query() as the multi-turn `prompt`. */
     input: InputQueue
     /** The live query() generator + control surface (interrupt/setModel/setPermissionMode/close). */
@@ -1230,6 +1234,7 @@ async function createSession(
     const session: ChatSession = {
         id: chatId,
         cwd,
+        lineRefNote: await chatLineRefNoteFor(cwd),
         input,
         model: local ? local.model : savedModel,
         local,
@@ -1488,13 +1493,19 @@ function spawnChatQuery(
                 // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
                 // relative paths resolve against $HOME instead of `cwd`. The append says how the chat
                 // transcript renders the reply (KaTeX math), which a terminal tab's TUI never gets,
-                // and, in a vault, that the `bismuth` CLI is the way into Bismuth (agentCliNote.ts).
+                // then how to cite a note's lines when the editor shows line numbers
+                // (chatLineRefNote.ts), and, in a vault, that the `bismuth` CLI is the way into
+                // Bismuth (agentCliNote.ts).
                 systemPrompt: {
                     type: 'preset',
                     preset: 'claude_code',
-                    append: findVaultRoot(session.cwd)
-                        ? `${CHAT_RENDERING_NOTE}\n\n${AGENT_CLI_NOTE}`
-                        : CHAT_RENDERING_NOTE,
+                    append: [
+                        CHAT_RENDERING_NOTE,
+                        session.lineRefNote,
+                        findVaultRoot(session.cwd) ? AGENT_CLI_NOTE : '',
+                    ]
+                        .filter(Boolean)
+                        .join('\n\n'),
                 },
                 // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
                 // closure to it. (canUseTool ALSO carries the AskUserQuestion interactive-question flow — see
