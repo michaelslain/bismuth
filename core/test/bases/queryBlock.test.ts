@@ -101,3 +101,10 @@ test('a malformed key in one comma-separated slot does not poison the others', (
         parseQueryBlock('tasks:\nsort: desc, note.due').sort,
     ).toEqual([{ property: 'note.due', direction: 'ASC' }])
 })
+
+test('layoutGiven is set only when the block writes a valid view', () => {
+    expect(parseQueryBlock('of: [[x]]').layoutGiven).toBeUndefined()
+    expect(parseQueryBlock('of: [[x]]\nview: heatmap').layoutGiven).toBe(true)
+    expect(parseQueryBlock('of: [[x]]\nas: list').layoutGiven).toBe(true)
+    expect(parseQueryBlock('of: [[x]]\nview: bogus').layoutGiven).toBeUndefined()
+})

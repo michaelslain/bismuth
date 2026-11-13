@@ -291,6 +291,28 @@ describe('buildQueryBlockBody — base -> FLAT', () => {
     })
 })
 
+describe('base layout given or not', () => {
+    test('an explicit view: table survives a builder round trip', () => {
+        const body = 'of: [[Habits]]\nview: table'
+        const s = parseQueryBlockBody(body)
+        expect(s.layoutGiven).toBe(true)
+        expect(s.view).toBe('table')
+        expect(buildQueryBlockBody(s)).toBe(body)
+    })
+    test('a block without view: keeps drawing the base layout after a save', () => {
+        const s = parseQueryBlockBody('of: [[Habits]]')
+        expect(s.layoutGiven).toBe(false)
+        // the builder shows the base's own layout without writing it into the block
+        expect(buildQueryBlockBody({ ...s, view: 'heatmap' })).toBe('of: [[Habits]]')
+    })
+    test('picking a layout in the builder writes it, table included', () => {
+        const s = parseQueryBlockBody('of: [[Habits]]')
+        expect(buildQueryBlockBody({ ...s, view: 'table', layoutGiven: true })).toBe(
+            'of: [[Habits]]\nview: table',
+        )
+    })
+})
+
 describe('parseQueryBlockBody — flat tasks/base', () => {
     test('base round-trip', () => {
         const s = parseQueryBlockBody(

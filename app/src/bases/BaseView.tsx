@@ -20,6 +20,8 @@ import { BaseSkeleton } from './BaseSkeleton'
 import { parseBase, parseBaseFile } from '../../../core/src/bases/parse'
 import { runView } from '../../../core/src/bases/query'
 import { resolveQueryBasePath } from './queryBasePath'
+import { combineFilters } from '../../../core/src/bases/filters'
+import { mergeQueryView } from '../../../core/src/bases/queryView'
 import { vaultTree } from '../treeStore'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
 import type {
@@ -40,8 +42,10 @@ import { createTaskWrites } from './baseTaskWrites'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import { pushToast } from '../ui/toastStore'
 import {
+    dayRow,
     planSetValue,
     planToggle,
+    rowsOnDay,
     type HeatmapOrigin,
     type HeatmapWriteSeam,
     type WriteRow,
@@ -100,6 +104,9 @@ interface Doc {
     // neither of which has a table of its own to fall back to.
     rows: Row[]
     basePath?: string
+    /** A ```query block's `of:` base file declares no `source:`, so it owns the rows the block
+     *  draws: a heatmap write goes into that base's rows rather than a note's property. */
+    refOwnsRows?: boolean
 }
 
 /** A fully resolved base: the document plus the source spec it resolves to
@@ -109,6 +116,7 @@ interface LoadedRows {
     config: BaseConfig
     spec?: SourceSpec // undefined for a view block with no of:/tasks: → empty state
     basePath?: string
+    refOwnsRows?: boolean
     rows: Row[]
 }
 
@@ -184,27 +192,40 @@ export function BaseView(props: {
     async function loadDocument(): Promise<Doc> {
         if (props.view) {
             const v = props.view
+            const basePath =
+                v.source?.kind === 'base'
+                    ? resolveQueryBasePath(
+                          v.source.ref,
+                          vaultTree().map(e => e.path),
+                      )
+                    : undefined
+            // An `of:` block draws the referenced base with that base's own view config (axes,
+            // aggregate, columns); the block's keys are laid over it by `mergeQueryView`.
+            let baseView: ViewConfig = { type: v.as }
+            let refOwnsRows = false
+            let baseConfig: BaseConfig | undefined
+            if (basePath) {
+                try {
+                    const parsed = parseBaseFile(await api.read(basePath), {
+                        name: noteLabel(basePath),
+                        path: basePath,
+                    })
+                    baseConfig = parsed.config
+                    baseView = parsed.config.view
+                    refOwnsRows = !parsed.config.source
+                } catch {
+                    // an unreadable or non-base file keeps the block's own layout
+                }
+            }
+            // The referenced base's filters, formulas and properties stay; the block's `where`
+            // narrows them and its own `source` replaces the base's.
             const config: BaseConfig = {
-                view: {
-                    type: v.as,
-                    sort: v.sort,
-                    groupBy: v.group ? { property: v.group } : undefined,
-                    limit: v.limit,
-                },
-                filters: v.where,
+                ...baseConfig,
+                view: mergeQueryView(baseView, v),
+                filters: combineFilters(baseConfig?.filters, v.where),
                 source: v.source,
             }
-            return {
-                config,
-                rows: [],
-                basePath:
-                    v.source?.kind === 'base'
-                        ? resolveQueryBasePath(
-                              v.source.ref,
-                              vaultTree().map(e => e.path),
-                          )
-                        : undefined,
-            }
+            return { config, rows: [], basePath, refOwnsRows }
         }
         if (props.path) {
             // A base file is a `.base.jsonl` file or a `type: base` md note. Reuse the body
@@ -334,6 +355,7 @@ export function BaseView(props: {
             const result: LoadedRows = {
                 config: d.config,
                 basePath: d.basePath,
+                refOwnsRows: d.refOwnsRows,
                 spec,
                 rows,
             }
@@ -657,21 +679,36 @@ export function BaseView(props: {
         const xKey = chart.x
         const yKey = chart.y
         const isCount = chart.aggregate === 'count' || !yKey
-        const origin: HeatmapOrigin = ownsRows() ? 'base' : 'query'
+        const origin: HeatmapOrigin =
+            ownsRows() || data()?.refOwnsRows ? 'base' : 'query'
 
-        const rowsFor = (date: string): WriteRow[] => {
-            const pt = chart.points.find(p => p.date === date)
-            if (!pt) return []
-            return pt.rows.map(i => {
-                const r = rowsAll[i]
-                return { index: r.index, path: r.file.path, note: r.note }
-            })
+        const toWrite = (r: Row): WriteRow => ({
+            index: r.index,
+            path: r.file.path,
+            note: r.note,
+        })
+        const rowsFor = (date: string): WriteRow[] =>
+            rowsOnDay(chart.points, rowsAll, date, toWrite)
+        // Every stored row of the base, before the block's `where:`/`limit:`: a day whose row the
+        // block hides still writes to that row.
+        const storedFor = (date: string): WriteRow[] => {
+            const stored = data()?.rows ?? []
+            const all = buildChartData(stored, { ...view, x: xKey, bin: 'day' })
+            return rowsOnDay(all.points, stored, date, toWrite)
         }
 
         const onSetDay = async (date: string, entered: number | undefined) => {
             if (!yKey) return
-            const row = rowsFor(date)[0]
-            const intent = planSetValue({ origin, xKey, yKey, date, row, entered })
+            const row = dayRow(origin, rowsFor(date), () => storedFor(date))
+            const intent = planSetValue({
+                origin,
+                xKey,
+                yKey,
+                date,
+                row,
+                entered,
+                basePath: path,
+            })
             try {
                 switch (intent.kind) {
                     case 'none':

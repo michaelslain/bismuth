@@ -25,10 +25,10 @@ A flat spec is one `key: value` per line. A line splits at its first colon, so `
 
 | Key | Meaning |
 |---|---|
-| `of: [[Base]]` | Render that base. It follows the base's own source, so a base over notes shows those notes. |
+| `of: [[Base]]` | Render that base with its own layout and axes (`x`, `y`, `aggregate`, columns). It follows the base's own source, so a base over notes shows those notes. |
 | `tasks:` | Query checkbox tasks. Bare `tasks:` means all tasks; narrow with `where:`. |
 | `from: [[Base]]` | With `tasks:`, scope tasks to the notes that base selects. Alone it does nothing. |
-| `view: <layout>` | The layout; see [bases overview](./overview.md#what-layouts-are-there). `as:` is an alias; `view:` wins when both appear. |
+| `view: <layout>` | The layout; see [bases overview](./overview.md#what-layouts-are-there). `as:` is an alias; `view:` wins when both appear. With `of:`, it replaces the base's layout and keeps its axes. |
 | `where: <expr>` | A [Bases expression](./query-syntax.md) filtering the rows. |
 | `sort: <property>[ desc][, ...]` | Sort keys applied in order. `desc` or `reverse` after a key reverses that key: `sort: note.due desc, note.name`. |
 | `group: <property>` | Group rows by a property, ascending. |
@@ -55,6 +55,8 @@ group: status
 ````
 
 `of:` and `tasks:` are exclusive: with both, `of:` wins and `tasks:` and `from:` are ignored.
+
+An `of:` block draws the referenced base with that base's own layout and axes. A block that writes only `of: [[sleep]]` over a heatmap base is that heatmap. The block's `view:`, `sort:`, `group:` and `limit:` override the base's when written; every other key of the base's view stays. The base's `filters`, formulas and property declarations stay too, and the block's `where:` narrows the base's filters. A heatmap drawn this way is clickable like the base itself: over a base that owns its rows, a click writes a row into that base; over a base that reads notes, it sets the base's `y` property on that day's note.
 
 A flat block never iterates the vault. A block with neither `of:` nor `tasks:`, or with `from:` alone, has no source and shows `no matches`, the faint italic line every layout shows for an empty result. To list notes, use the inline config form below, or point `of:` at a base whose `source` is `notes`.
 
@@ -120,6 +122,8 @@ The builder's source choice decides the form it writes:
 | Tasks | A flat spec with `tasks:` text, and optional `from`, `view`, `group` and `limit`. |
 | Base | A flat spec with `of:`, and optional `where`, `view`, `group` and `limit`. |
 
+A Base block with no `view:` draws the referenced base's own layout, and the builder's **show as** shows that layout. Saving without changing it writes no `view:`, so the block keeps following the base. Picking a layout writes it, `table` included.
+
 Note filters offer operators that follow the property's type (text, number, date, checkbox, tag, list, link) and compile to ordinary expressions such as `file.hasTag("book")` and `date(due) < today()`. The "match all / any" switch joins conditions with `&&` or `||`. An expression the builder cannot model is kept as written in an advanced field, so reopening a hand-edited query never drops it.
 
 The pencil appears only when the builder can reproduce the block exactly. A flat spec always qualifies. A config block qualifies only if its keys are limited to `source`, `view`, `sort`, `groupBy` and `limit`, its source is `notes` or `notes where <expression>`, and the whole expression maps back to condition rows. A block with `filters:`, `formulas:`, `properties:` or `schema:` has no pencil and is edited as source.
@@ -173,4 +177,4 @@ Source revealing uses a CodeMirror `StateField` of revealed block indices (`reve
 
 The builder is `app/src/bases/QueryBuilder.tsx` over the pure `app/src/bases/queryGen.ts`: `buildQueryBlockBody` and `parseQueryBlockBody` convert between a `BuilderState` and the block text (equivalent, not byte-identical), `compileNotesRow` compiles a condition to an expression leaf, and `isBuilderRepresentable` is the round-trip check that gates the pencil. The Tasks source writes Tasks-style filter text with the sort on its own `sort by` line inside a `tasks: |-` block scalar, which `translateTaskDsl` reads back. `app/src/editor/openQueryBuilder.tsx` mounts the modal outside any component tree, `replaceQueryBody` in `queryBuilderEdit.ts` rewrites one block's body as a single transaction, and the slash item lives in `app/src/editor/slashMenu.ts` (id `query-builder`).
 
-Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryRanges.ts`, `app/src/editor/queryBuilderEdit.ts`, `app/src/editor/openQueryBuilder.tsx`, `app/src/editor/slashMenu.ts`, `app/src/editor/queryComplete.ts`, `core/src/bases/queryBlock.ts`, `core/src/bases/parse.ts`, `core/src/bases/taskDsl.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/QueryBuilder.tsx`, `app/src/bases/queryGen.ts`, `cli/src/commands/base.ts`, `core/test/bases/queryBlock.test.ts`
+Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryRanges.ts`, `app/src/editor/queryBuilderEdit.ts`, `app/src/editor/openQueryBuilder.tsx`, `app/src/editor/slashMenu.ts`, `app/src/editor/queryComplete.ts`, `core/src/bases/queryBlock.ts`, `core/src/bases/parse.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/queryView.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/QueryBuilder.tsx`, `app/src/bases/queryGen.ts`, `cli/src/commands/base.ts`, `core/test/bases/queryBlock.test.ts`

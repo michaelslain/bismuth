@@ -19,6 +19,7 @@ import {
 } from '../../../core/src/bases/properties'
 import { rowSchema } from '../propertyRegistry'
 import { propertyEditKind, type PropertyEditKind } from './propertyEdit'
+import { nextCheckboxValue } from './checkboxCycle'
 import { PropertyValueEditor } from './PropertyValueEditor'
 import PlainButton from '../ui/PlainButton'
 import { pushToast } from '../ui/toastStore'
@@ -50,9 +51,9 @@ export type TableCellProps = {
 const TableCell: Component<TableCellProps> = props => {
     const value = () => resolveProperty(props.col, props.row)
     // A boolean never becomes an `editing` state and never mounts PropertyValueEditor — a click
-    // commits the flip immediately. Checking the kind here (rather than gating on it inside the
-    // editor) is what keeps `editing()` boolean-free, so the Show below never has to special-case
-    // it once open.
+    // commits the next step of the cycle (unanswered, checked, unchecked) immediately. Checking
+    // the kind here (rather than gating on it inside the editor) is what keeps `editing()`
+    // boolean-free, so the Show below never has to special-case it once open.
     const kindOf = (siblings: unknown[]) =>
         propertyEditKind(
             props.col,
@@ -65,6 +66,16 @@ const TableCell: Component<TableCellProps> = props => {
     // and a read-only value (never opens) apart; only an open editor needs the siblings.
     const restingKind = createMemo(() => kindOf([]).kind)
     const isBoolean = () => restingKind() === 'boolean'
+    // A checkbox by TYPE (declared in the base or the vault registry), not just by its current
+    // value: only then can a click clear it, since a cleared untyped cell is no longer a checkbox.
+    const typedBoolean = () =>
+        propertyEditKind(
+            props.col,
+            undefined,
+            rowSchema(props.row),
+            [],
+            propertyType(props.config, props.col),
+        ).kind === 'boolean'
     const isReadonly = () => restingKind() === 'readonly'
     // What the open editor edits, frozen at the moment the cell opens. The row refetches while
     // an editor is open (the previous cell's save lands a moment later), and recomputing the
@@ -95,7 +106,7 @@ const TableCell: Component<TableCellProps> = props => {
         const kind = kindOf(props.siblingValues())
         if (kind.kind === 'readonly') return
         if (kind.kind === 'boolean') {
-            commit(!(value() === true))
+            commit(nextCheckboxValue(value(), typedBoolean()))
             return
         }
         setEditing({ kind, value: value(), storedCount: props.storedCount?.() ?? 0 })

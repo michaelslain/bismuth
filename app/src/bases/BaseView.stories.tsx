@@ -16,7 +16,7 @@ import {
     type FakeTransportSeed,
 } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
-import type { Row, SourceSpec } from '../../../core/src/bases/types'
+import type { QueryBlock, Row, SourceSpec } from '../../../core/src/bases/types'
 import { taskToRow } from '../../../core/src/bases/taskRow'
 import type { Task } from '../../../core/src/tasks'
 import { saveSession } from './flashcardsQueue'
@@ -1320,6 +1320,135 @@ export const HeatmapChart: Story = {
     play: async ({ canvasElement }) => {
         await painted(canvasElement)
         expect(canvasElement.querySelector('table')).toBeNull()
+    },
+}
+
+/** A ```query block `of:` a heatmap base draws with THAT base's axes: the base reads notes and
+ *  sets `y: sleep`; each day note also carries a `calories` column ahead of `sleep`, which is what
+ *  auto-detection would pick if the block's view config dropped the base's `y`. The caption must
+ *  name `sleep`. */
+const SLEEP_BASE =
+    '{"type":"base","view":"heatmap","source":"notes","x":"date","y":"sleep","aggregate":"sum"}\n'
+const SLEEP_DAYS: Row[] = ['2026-11-08', '2026-11-09', '2026-11-10'].map((date, i) => ({
+    file: {
+        ...syntheticBaseFile(`days/${date}.md`),
+        folder: 'days',
+        name: date,
+        basename: date,
+    },
+    note: { date, calories: 2000 + i * 100, sleep: 6 + i },
+    formula: {},
+}))
+const SLEEP_BLOCK: QueryBlock = { source: { kind: 'base', ref: '[[sleep.base.jsonl]]' }, as: 'table' }
+
+export const QueryBlockOfBaseHeatmap: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'sleep.base.jsonl': SLEEP_BASE }, rows: SLEEP_DAYS }),
+        )
+        return <BaseView view={SLEEP_BLOCK} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        await waitFor(() => {
+            const text = canvasElement.textContent ?? ''
+            expect(text).toContain('sum of sleep per day')
+            expect(text).not.toContain('calories')
+        })
+        expect(canvasElement.querySelector('table')).toBeNull()
+    },
+}
+
+/** The referenced base's own `filters` stay inside the embed: the base reads notes under `days/`,
+ *  and a dated note outside that folder (carrying `sleep`) must not be drawn. */
+const SCOPED_BASE =
+    '{"type":"base","view":"heatmap","source":"notes","filters":"file.inFolder(\\"days\\")","x":"date","y":"sleep","aggregate":"sum"}\n'
+const OUTSIDE_DATE = '2026-11-05'
+const SCOPED_DAYS: Row[] = [
+    ...SLEEP_DAYS,
+    {
+        file: {
+            ...syntheticBaseFile(`misc/${OUTSIDE_DATE}.md`),
+            folder: 'misc',
+            name: OUTSIDE_DATE,
+            basename: OUTSIDE_DATE,
+        },
+        note: { date: OUTSIDE_DATE, sleep: 9 },
+        formula: {},
+    },
+]
+
+export const QueryBlockOfScopedBaseHeatmap: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'sleep.base.jsonl': SCOPED_BASE }, rows: SCOPED_DAYS }),
+        )
+        return <BaseView view={SLEEP_BLOCK} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        const inScope = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('[data-bucket="2026-11-09"]')
+            if (!el || el.textContent === '.') throw new Error('in-scope day not drawn yet')
+            return el
+        })
+        expect(inScope.textContent).not.toBe('.')
+        const outside = canvasElement.querySelector<HTMLElement>(
+            `[data-bucket="${OUTSIDE_DATE}"]`,
+        )
+        expect(outside?.textContent).toBe('.')
+    },
+}
+
+/** An `of:` block over a base that OWNS its rows writes a row into that base file. */
+const WORDS_ROWS: Row[] = [
+    {
+        file: syntheticBaseFile('words.base.jsonl'),
+        note: { date: todayISO(), words: 3 },
+        formula: {},
+        index: 0,
+    },
+]
+
+export const QueryBlockOfCollectionHeatmap: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    'words.base.jsonl': `{"type":"base","view":"heatmap","x":"date","y":"words"}\n{"date":"${todayISO()}","words":3}\n`,
+                },
+                rows: WORDS_ROWS,
+            }),
+        )
+        return (
+            <BaseView
+                view={{ source: { kind: 'base', ref: '[[words.base.jsonl]]' }, as: 'table' }}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        const emptyDay = addDaysISO(todayISO(), -2)
+        const cell = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(`[data-bucket="${emptyDay}"]`)
+            if (!el) throw new Error('empty-day cell not yet rendered')
+            return el
+        })
+        cell.click()
+        const input = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLInputElement>('input')
+            if (!el) throw new Error('day editor not yet open')
+            return el
+        })
+        input.value = '5'
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        await waitFor(() => {
+            const added = WORDS_ROWS.find(r => r.note.date === emptyDay)
+            if (!added) throw new Error('row not appended to the base file yet')
+            expect(added.file.path).toBe('words.base.jsonl')
+            expect(Number(added.note.words)).toBe(5)
+        })
+        expect(WORDS_ROWS.length).toBe(2)
     },
 }
 

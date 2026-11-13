@@ -216,7 +216,7 @@ Left-clicking a heatmap day edits it, and what it writes depends on where the ba
 
 In the number field on a collection, a value on an empty day adds a row with `x` and `y`, a value on a filled day updates that row, and an empty field or `0` deletes it.
 A day that already holds several rows opens the drill with `N entries — edit in the table`.
-A heatmap inside a ```` ```query ```` block has no file to write to, so a click only opens the drill.
+A heatmap inside a ```` ```query ```` block with `of: [[Base]]` writes the same way, using the referenced base's `y`: into the base's rows when it owns them, else into the clicked note. When the block's `where:` or `limit:` hides a day's stored row, a value typed on that day updates that row rather than adding a second row for the same date. A block with no `of:` has no file to write to, so a click only opens the drill.
 
 ## See the notes behind a bucket
 
@@ -248,7 +248,7 @@ Without a pane width, the CLI's heatmap weeks run from the Monday before the fir
 
 The layouts are drawn by `BarView.tsx` (bar rows in `barRows.ts`), `LineView.tsx` (the plot in `asciiLine.ts`), `StatView.tsx` with `StatTiles.tsx`/`StatTile.tsx`/`SparklineChart.tsx`, and `HeatmapView.tsx` with `heatmapLayout.ts` (`heatmapRange`, `levelOf`/`levelEdges`, `legendRanges`, `monthLabels`, `streaks`). `ChartFrame.tsx` lays out the readout, body, footer and drill around each view, measures the body's character grid, and shows the shared empty state. `ChartDrill.tsx` is the drill list.
 
-`HeatmapView` calls `buildChartData` with `bin: 'day'`, then `buildHeatmapWeeks(points, range)` snaps the range to whole Monday–Sunday columns. What a click does is `dayAction` in `heatmapWrites.ts`, and what it writes is `planSetValue`/`planToggle`; `BaseView.tsx` builds the `HeatmapWriteSeam` (origin `base` when the base has no `source:`) and runs the writes with `api.rowCreate`/`rowUpdate`/`rowDelete` or `api.setProperty`.
+`HeatmapView` calls `buildChartData` with `bin: 'day'`, then `buildHeatmapWeeks(points, range)` snaps the range to whole Monday–Sunday columns. What a click does is `dayAction` in `heatmapWrites.ts`, and what it writes is `planSetValue`/`planToggle`, with the day's row chosen by `dayRow` (the visible rows first, then the base's stored rows); `BaseView.tsx` builds the `HeatmapWriteSeam` (origin `base` when the base, or the base a query block points at, has no `source:`) and runs the writes with `api.rowCreate`/`rowUpdate`/`rowDelete` or `api.setProperty`.
 
 Stat metrics are `metricResults(rows, view, today)` in `core/src/bases/metrics.ts`; `defaultMetric` synthesizes the fallback tile. Trend fitting is `fitTrend` in `trend.ts`. The math comes from `chartDefinitionLatex`, `trendLatex` and `metricToLatex` in `chartLatex.ts`, rendered by `ui/Tex.tsx`; captions and readouts come from `chartCaption`, `bucketReadout` and `formatValue` in `chartText.ts`.
 

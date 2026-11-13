@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dayAction, planSetValue, planToggle } from './heatmapWrites'
+import { dayAction, dayRow, planSetValue, planToggle, rowsOnDay } from './heatmapWrites'
 
 describe('dayAction', () => {
     test('base-owned numeric, no row yet: edit with no current value', () => {
@@ -184,6 +184,32 @@ describe('planSetValue', () => {
         })
     })
 
+    test('query origin, the row is the base file itself: never sets a property on it', () => {
+        const intent = planSetValue({
+            origin: 'query',
+            xKey: 'date',
+            yKey: 'sleep',
+            date: '2026-09-14',
+            row: { path: 'sleep.base.jsonl', note: {} },
+            entered: 1,
+            basePath: 'sleep.base.jsonl',
+        })
+        expect(intent).toEqual({ kind: 'none' })
+    })
+
+    test('block over a base that owns its rows: origin base writes a row, keyed by the merged y', () => {
+        const intent = planSetValue({
+            origin: 'base',
+            xKey: 'date',
+            yKey: 'sleep',
+            date: '2026-09-14',
+            row: undefined,
+            entered: 1,
+            basePath: 'sleep.base.jsonl',
+        })
+        expect(intent).toEqual({ kind: 'create', note: { date: '2026-09-14', sleep: 1 } })
+    })
+
     test('query origin, no row: no write', () => {
         const intent = planSetValue({
             origin: 'query',
@@ -244,5 +270,37 @@ describe('planToggle', () => {
             rows: [{ path: 'entry.md', note: {} }],
         })
         expect(intent).toEqual({ kind: 'none' })
+    })
+})
+
+describe('a day whose stored row the view hides', () => {
+    const stored = [
+        { index: 0, path: 'Habits.base.jsonl', note: { date: '2026-11-01', pushups: 10 } },
+        { index: 1, path: 'Habits.base.jsonl', note: { date: '2026-11-02', pushups: 20 } },
+    ]
+    const points = [
+        { date: '2026-11-01', rows: [0] },
+        { date: '2026-11-02', rows: [1] },
+    ]
+    test('rowsOnDay maps chart indices back to rows', () => {
+        expect(rowsOnDay(points, stored, '2026-11-02', r => r)).toEqual([stored[1]])
+        expect(rowsOnDay(points, stored, '2026-11-03', r => r)).toEqual([])
+    })
+    test('a base-owned view updates the hidden row instead of creating a second one', () => {
+        const row = dayRow('base', [], () => rowsOnDay(points, stored, '2026-11-02', r => r))
+        expect(
+            planSetValue({
+                origin: 'base',
+                xKey: 'date',
+                yKey: 'pushups',
+                date: '2026-11-02',
+                row,
+                entered: 30,
+            }),
+        ).toEqual({ kind: 'update', index: 1, note: { date: '2026-11-02', pushups: 30 } })
+    })
+    test('a visible row wins, and a query view never reaches for hidden rows', () => {
+        expect(dayRow('base', [stored[0]], () => [stored[1]])).toBe(stored[0])
+        expect(dayRow('query', [], () => [stored[1]])).toBeUndefined()
     })
 })

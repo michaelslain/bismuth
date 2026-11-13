@@ -28,6 +28,9 @@ import { api } from '../api'
 import type { Row, SortSpec, ViewType } from '../../../core/src/bases/types'
 import type { TreeEntry } from '../../../core/src/graph'
 import { basePickerOptions } from './basePickerOptions'
+import { resolveQueryBasePath } from './queryBasePath'
+import { parseBaseFile } from '../../../core/src/bases/parse'
+import { fileBasename } from '../../../core/src/pathUtils'
 import { columnLabel } from './columnLabel'
 import { columnsOf } from './propertyColumns'
 import { FILE_PSEUDO } from './filterOps'
@@ -126,6 +129,32 @@ export function QueryBuilder(props: {
         basePickerOptions((tree() ?? []).filter(e => e.kind !== 'dir')),
     )
 
+    // A base block with no `view:` of its own draws the referenced base's layout, so the
+    // "show as" picker shows that layout until the user picks one (`layoutGiven`).
+    const [baseLayout] = createResource(
+        () =>
+            state.source === 'base' && state.baseRef && state.layoutGiven !== true
+                ? { ref: state.baseRef, paths: (tree() ?? []).map(e => e.path) }
+                : undefined,
+        async ({ ref, paths }) => {
+            const path = resolveQueryBasePath(ref, paths)
+            if (!path) return undefined
+            try {
+                return parseBaseFile(await api.read(path), {
+                    name: fileBasename(path),
+                    path,
+                }).config.view.type
+            } catch {
+                return undefined
+            }
+        },
+    )
+    createEffect(() => {
+        const layout = baseLayout()
+        if (!layout || state.layoutGiven === true) return
+        setState({ view: layout, layoutGiven: false })
+    })
+
     // --- live preview ---------------------------------------------------------------------
     const [previewBody, setPreviewBody] = createSignal(
         buildQueryBlockBody(state),
@@ -204,7 +233,9 @@ export function QueryBuilder(props: {
                         <Select
                             value={state.view}
                             options={VIEW_KIND_OPTIONS}
-                            onChange={v => setState('view', v as ViewType)}
+                            onChange={v =>
+                                setState({ view: v as ViewType, layoutGiven: true })
+                            }
                         />
                     </SettingsField>
                     <SettingsField label="group by">

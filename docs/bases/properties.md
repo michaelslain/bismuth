@@ -83,7 +83,7 @@ A property's `type` is functional: it selects the editor and the display.
 | `text` | Plain single-line text. |
 | `markdown` | A multiline markdown body. |
 | `number` | A number, formatted by `number` and `unit`. |
-| `boolean` | A checkbox. |
+| `boolean` | A checkbox. In a table cell of a column declared `boolean` (or `checkbox`), a click cycles unanswered, checked, unchecked, then back to unanswered; unanswered removes the property from the note, so an absent property stays distinct from `false`. A column with no declared type toggles checked and unchecked. |
 | `select` | One choice from `options`. |
 | `multiselect` | Any subset of `options`. |
 | `date` | A calendar date, `YYYY-MM-DD`. |
@@ -172,7 +172,7 @@ The kanban card's inline editor (`app/src/bases/KanbanCard.tsx`, `PropertyValueE
 | `text` | single-line input |
 | `markdown` | multiline textarea, rendered as block markdown |
 | `number` | numeric input, displayed through `numberFormat.ts` |
-| `boolean` | chip toggle |
+| `boolean` | chip toggle; a table cell cycles through `checkboxCycle.ts` |
 | `date`, `datetime` | date or datetime-local input |
 | `select` | dropdown |
 | `multiselect` | the comma-separated field in `app/src/ui/TagsField.tsx` |
@@ -180,4 +180,4 @@ The kanban card's inline editor (`app/src/bases/KanbanCard.tsx`, `PropertyValueE
 
 An untyped property takes that same fallback path. `base validate` checks each declared `default` against its type with `validatePropertyValue`.
 
-Source: `core/src/bases/parse.ts`, `core/src/bases/properties.ts`, `core/src/bases/query.ts`, `core/src/bases/types.ts`, `app/src/bases/propertyEdit.ts`, `app/src/bases/PropertyValueEditor.tsx`, `app/src/bases/numberFormat.ts`, `app/src/bases/BaseSettings.tsx`, `app/src/ui/TagsField.tsx`
+Source: `core/src/bases/parse.ts`, `core/src/bases/properties.ts`, `core/src/bases/query.ts`, `core/src/bases/types.ts`, `app/src/bases/propertyEdit.ts`, `app/src/bases/checkboxCycle.ts`, `app/src/bases/rowWrites.ts`, `app/src/bases/PropertyValueEditor.tsx`, `app/src/bases/numberFormat.ts`, `app/src/bases/BaseSettings.tsx`, `app/src/ui/TagsField.tsx`

@@ -13,6 +13,7 @@ import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { setTransport } from '../api'
 import type { Transport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import Text from '../ui/Text'
 import { EMPTY_FILE } from '../../../core/src/bases/types'
 import {
     expectCompletions,
@@ -429,7 +430,9 @@ export const EditableBooleanAndSelect: Story = {
         expect(widths()).toEqual(before)
 
         // The boolean cell: one click flips it, immediately, with no `input` ever appearing —
-        // and the flip survives because the row store above is real.
+        // and the flip survives because the row store above is real. `done` has no declared
+        // type, so it toggles and never clears to unanswered (a cleared untyped cell would stop
+        // being a checkbox).
         const boolBtn = () =>
             firstRowCells()[doneIdx]!.querySelector<HTMLElement>('button')!
         // The boolean is the `[ ]` / `[x]` BooleanValue glyph: false is drawn, not blank.
@@ -677,6 +680,105 @@ export const RightClickOpensRowEditor: Story = {
         await waitFor(() =>
             expect(document.querySelector('[role="dialog"]')).toBeNull(),
         )
+    },
+}
+
+// A habit tracker over REAL day notes: one row per day, one checkbox column per habit, and an
+// in-memory note store behind `/set-property` + `/delete-property`, so each click visibly sticks
+// and the frontmatter under the table shows exactly what the note on disk now holds. A habit
+// nobody has logged yet is ABSENT from the note (the `—` cell), not `false`.
+const HABITS = ['meditate', 'read', 'workout']
+const HABIT_CONFIG: BaseConfig = {
+    declaredProperties: HABITS,
+    properties: Object.fromEntries(HABITS.map(h => [h, { type: { kind: 'boolean' } }])),
+    view: { type: 'table' },
+}
+const dayRow = (date: string, note: Record<string, unknown>): Row => ({
+    file: {
+        ...syntheticBaseFile(`days/${date}.md`),
+        folder: 'days',
+        name: date,
+        basename: date,
+    },
+    note: { date, ...note },
+    formula: {},
+})
+
+/** Click a habit cell three times: `—` (not logged) → `[x]` (done) → `[ ]` (missed) → `—`
+ *  again, and the note's frontmatter below follows: `true`, `false`, then the line is gone. */
+export const HabitTableCheckboxes: Story = {
+    render: () => {
+        const [notes, setNotes] = createSignal<Row[]>([
+            dayRow('2026-11-10', { meditate: true, read: false, workout: true }),
+            dayRow('2026-11-11', { meditate: true }),
+            dayRow('2026-11-12', {}),
+        ])
+        const write = (path: string, edit: (n: Record<string, unknown>) => void) =>
+            setNotes(rows =>
+                rows.map(r => {
+                    if (r.file.path !== path) return r
+                    const note = { ...r.note }
+                    edit(note)
+                    return { ...r, note }
+                }),
+            )
+        const base = fakeTransport()
+        setTransport({
+            ...base,
+            post: async (path, body) => {
+                const b = body as { path: string; key: string; value?: unknown }
+                if (path === '/set-property') {
+                    write(b.path, n => (n[b.key] = b.value))
+                    return new Response('ok')
+                }
+                if (path === '/delete-property') {
+                    write(b.path, n => delete n[b.key])
+                    return new Response('ok')
+                }
+                return base.post(path, body)
+            },
+        })
+        return (
+            <div style={{ display: 'grid', gap: '16px', width: '420px' }}>
+                <TableView
+                    result={runView(HABIT_CONFIG, notes())}
+                    config={HABIT_CONFIG}
+                    basePath="habits.base.jsonl"
+                />
+                <div data-testid="frontmatter">
+                    {notes().map(r => (
+                        <div style={{ 'margin-bottom': '8px' }}>
+                            <Text as="p" tone="muted">{`${r.file.path}`}</Text>
+                            {HABITS.filter(h => h in r.note).map(h => (
+                                <Text as="p">{`${h}: ${String(r.note[h])}`}</Text>
+                            ))}
+                            {HABITS.some(h => h in r.note) ? null : (
+                                <Text as="p" tone="faint">no habits logged</Text>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const ths = [...canvasElement.querySelectorAll('thead th')] as HTMLElement[]
+        const col = ths.findIndex(th => (th.textContent ?? '').trim() === 'read')
+        // Last row: 2026-11-12, nothing logged yet.
+        const cell = () =>
+            canvasElement.querySelectorAll<HTMLElement>('tbody tr:last-child td')[col]!
+        const glyph = () => (cell().textContent ?? '').trim()
+        const disk = () => canvasElement.querySelector('[data-testid="frontmatter"]')!.textContent ?? ''
+        const lastNote = () => disk().split('days/2026-11-12.md')[1] ?? ''
+        expect(glyph()).toBe('—')
+        expect(lastNote()).not.toContain('read')
+        cell().querySelector<HTMLElement>('button')!.click()
+        await waitFor(() => expect(lastNote()).toContain('read: true'))
+        cell().querySelector<HTMLElement>('button')!.click()
+        await waitFor(() => expect(lastNote()).toContain('read: false'))
+        cell().querySelector<HTMLElement>('button')!.click()
+        await waitFor(() => expect(lastNote()).not.toContain('read'))
+        expect(glyph()).toBe('—')
     },
 }
 

@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { QueryBuilder } from './QueryBuilder'
 import type { BuilderState } from './queryGen'
-import { defaultBuilderState } from './queryGen'
+import { defaultBuilderState, parseQueryBlockBody } from './queryGen'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
@@ -184,6 +184,58 @@ export const BaseSource: Story = {
         return (
             <QueryBuilder initial={initial} onConfirm={noop} onClose={noop} />
         )
+    },
+}
+
+const HABITS_BASE = '{"type":"base","view":"heatmap","x":"date","y":"pushups"}\n'
+
+/** A base vault holding one heatmap base, for the builder's base-layout stories. */
+function seedHabits(): void {
+    setTransport(fakeTransport({ files: { 'Habits.base.jsonl': HABITS_BASE }, rows: SAMPLE_ROWS }))
+}
+
+/** Editing `of: [[Habits]]`, a block with no `view:` of its own: "show as" reads the base's own
+ *  layout (heatmap), and saving without touching it keeps the block layout-free, so it goes on
+ *  drawing whatever layout the base has. */
+export const BaseOwnLayout: Story = {
+    render: () => {
+        seedHabits()
+        confirmed = undefined
+        return (
+            <QueryBuilder
+                initial={parseQueryBlockBody('of: [[Habits]]')}
+                onConfirm={capture}
+                onClose={noop}
+            />
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await waitFor(() => expect(body.getByText('heatmap')).toBeInTheDocument())
+        await userEvent.click(body.getByText('save'))
+        await expect(confirmed).toBe('of: [[Habits]]')
+    },
+}
+
+/** Editing `of: [[Habits]]` + `view: table`: the block names its layout, so "show as" reads
+ *  table (not the base's heatmap) and saving keeps `view: table` in the block. */
+export const BaseExplicitTable: Story = {
+    render: () => {
+        seedHabits()
+        confirmed = undefined
+        return (
+            <QueryBuilder
+                initial={parseQueryBlockBody('of: [[Habits]]\nview: table')}
+                onConfirm={capture}
+                onClose={noop}
+            />
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await expect(await body.findByText('table')).toBeInTheDocument()
+        await userEvent.click(body.getByText('save'))
+        await expect(confirmed).toBe('of: [[Habits]]\nview: table')
     },
 }
 

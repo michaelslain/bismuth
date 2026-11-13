@@ -386,6 +386,10 @@ export interface ParsedBase {
 export interface QueryBlock {
     source?: SourceSpec
     as: ViewType
+    // True when the block names a valid `view:` (or legacy `as:`) itself. `as` always holds a
+    // value (a default when none is written), so this is what tells a written layout from a
+    // default one: only a written layout overrides the referenced base's own layout.
+    layoutGiven?: true
     where?: string
     sort?: SortSpec[]
     group?: string

@@ -70,7 +70,8 @@ export function parseQueryBlock(src: string): QueryBlock {
     // `view:` is the current render-mode key; `as:` is the legacy spelling. A tasks
     // query defaults to a checkbox list; everything else to a table.
     const mode = kv.view ?? kv.as
-    const as = (VIEW_TYPES as string[]).includes(mode)
+    const layoutGiven = (VIEW_TYPES as string[]).includes(mode)
+    const as = layoutGiven
         ? (mode as ViewType)
         : source?.kind === 'tasks'
           ? 'list'
@@ -105,6 +106,7 @@ export function parseQueryBlock(src: string): QueryBlock {
     return {
         source,
         as,
+        ...(layoutGiven ? { layoutGiven: true as const } : {}),
         where: kv.where || undefined,
         sort,
         group: kv.group || undefined,

@@ -77,12 +77,12 @@ export const EditInPlace: Story = {
     },
 }
 
-/** A boolean cell never becomes an `editing` state — a click commits the flip immediately,
- *  with no `PropertyValueEditor`/input ever mounted. Read-only look is the same `x`/blank
- *  `renderValue.tsx` uses; state is a real signal, so two clicks round-trip true → false → true. */
+/** A boolean cell never becomes an `editing` state — a click commits the next step immediately,
+ *  with no `PropertyValueEditor`/input ever mounted. The cell starts unanswered, so the first
+ *  click checks it (`x`) and the second unchecks it (blank here: this story shows only checked). */
 export const BooleanToggle: Story = {
     render: () => {
-        const [done, setDone] = createSignal(false)
+        const [done, setDone] = createSignal<boolean | null>(null)
         const row = (): Row => ({
             file: syntheticBaseFile('Reading List.md'),
             note: { title: 'Dune', done: done() },
@@ -96,7 +96,7 @@ export const BooleanToggle: Story = {
                     col="done"
                     config={sampleBaseConfig()}
                     siblingValues={() => []}
-                    onCommit={v => setDone(v === true)}
+                    onCommit={v => setDone(v === null ? null : v === true)}
                 >
                     <Text as="span" data-testid="cell-value">
                         {done() ? 'x' : ''}

@@ -83,10 +83,14 @@ export function planSetValue(params: {
     date: string
     row: WriteRow | undefined
     entered: number | undefined
+    /** The base file the view draws. A query-origin write never lands on it: a base file's own
+     *  frontmatter is its config, not a day's value. */
+    basePath?: string
 }): WriteIntent {
-    const { origin, xKey, yKey, date, row, entered } = params
+    const { origin, xKey, yKey, date, row, entered, basePath } = params
     if (origin === 'query') {
         if (!row || entered === undefined) return { kind: 'none' }
+        if (row.path === basePath) return { kind: 'none' }
         return { kind: 'set-property', path: row.path, key: propName(yKey), value: entered }
     }
     if (!row) {
@@ -96,6 +100,30 @@ export function planSetValue(params: {
     if (row.index === undefined) return { kind: 'none' }
     if (entered === undefined || entered === 0) return { kind: 'delete', index: row.index }
     return { kind: 'update', index: row.index, note: { ...row.note, [yKey]: entered } }
+}
+
+/** A day's rows as write handles, read off a chart built over `rows`: `buildChartData`'s
+ *  `points[].rows` are indices into the array it was handed. */
+export function rowsOnDay<R>(
+    points: readonly { date?: string; rows: number[] }[],
+    rows: readonly R[],
+    date: string,
+    toWrite: (row: R) => WriteRow,
+): WriteRow[] {
+    const pt = points.find(p => p.date === date)
+    return pt ? pt.rows.map(i => toWrite(rows[i])) : []
+}
+
+/** The row a typed value on a day writes to: the first row the view shows on that day, else, for a
+ *  base-owned view, the first of the base's stored rows on it. A view can hide a day's stored row
+ *  (an `of:` block's `where:` or `limit:`), and that row is still the one to update, not a reason to
+ *  create a second row for the same date. */
+export function dayRow(
+    origin: HeatmapOrigin,
+    visible: WriteRow[],
+    stored: () => WriteRow[],
+): WriteRow | undefined {
+    return visible[0] ?? (origin === 'base' ? stored()[0] : undefined)
 }
 
 /** Decide the write for the `toggle` action (base-owned, counting rows) — empty day → `rowCreate`
@@ -117,8 +145,10 @@ export function planToggle(params: {
 }
 
 /** The write seam HeatmapView is handed by BaseView — undefined when the view has no write
- *  target at all (an inline ```query block with no base file), in which case every square is
- *  read-only and a click only ever opens the drill list. */
+ *  target at all (an inline ```query block with no `of:` base, or an `of:` that names no file),
+ *  in which case every square is read-only and a click only ever opens the drill list. A block
+ *  over a base that owns its rows writes into that base's rows (origin `base`); over a base
+ *  that reads notes, it writes the clicked note's own property (origin `query`). */
 export type HeatmapWriteSeam = {
     origin: HeatmapOrigin
     isCount: boolean

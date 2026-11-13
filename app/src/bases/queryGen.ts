@@ -106,6 +106,11 @@ export interface BuilderState {
     }
     baseRef?: string
     baseWhere?: string
+    /** Whether a base source's `view:` is written in the block. `true`: the block names its layout,
+     *  so `view` is written back even when it is `table`. `false`: the block draws the referenced
+     *  base's own layout, so no `view:` is written and `view` only shows that layout. Unset: a state
+     *  built before this was tracked, written as before (any layout but `table`). */
+    layoutGiven?: boolean
     tasks: TaskFilters
 }
 
@@ -343,7 +348,11 @@ export function buildQueryBlockBody(state: BuilderState): string {
     lines.push(`of: ${state.baseRef ?? ''}`.trimEnd())
     const where = state.baseWhere?.trim() || compileNotesWhere(state.notes)
     if (where) lines.push(`where: ${where}`)
-    if (state.view && state.view !== 'table') lines.push(`view: ${state.view}`)
+    const writeView =
+        state.layoutGiven === undefined
+            ? !!state.view && state.view !== 'table'
+            : state.layoutGiven && !!state.view
+    if (writeView) lines.push(`view: ${state.view}`)
     if (state.group) lines.push(`group: ${state.group}`)
     if (state.limit != null) lines.push(`limit: ${state.limit}`)
     return lines.join('\n')
@@ -718,6 +727,7 @@ export function parseQueryBlockBody(body: string): BuilderState {
         state.baseRef = qb.source.ref
         if (qb.where) state.baseWhere = qb.where
         state.view = asView(qb.as, 'table')
+        state.layoutGiven = !!qb.layoutGiven
     } else if (qb.source?.kind === 'tasks') {
         state.source = 'tasks'
         const tf = defaultTaskFilters()
