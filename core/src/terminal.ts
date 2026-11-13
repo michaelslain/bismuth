@@ -310,6 +310,36 @@ export interface PtyEnvParams {
     agentEnv?: Record<string, string>
 }
 
+/** Variables a terminal emulator exports to name itself (or tmux, to name its session). Bismuth
+ *  started from Ghostty, iTerm, kitty, WezTerm, Terminal.app or tmux inherits them, and a tab must
+ *  not claim to be that terminal. */
+export const HOST_TERMINAL_VARS = [
+    'TERM_PROGRAM_VERSION',
+    'TERM_SESSION_ID',
+    'LC_TERMINAL',
+    'LC_TERMINAL_VERSION',
+    'ITERM_SESSION_ID',
+    'ITERM_PROFILE',
+    'KITTY_WINDOW_ID',
+    'KITTY_PID',
+    'KITTY_LISTEN_ON',
+    'KITTY_PUBLIC_KEY',
+    'KITTY_INSTALLATION_DIR',
+    'WEZTERM_PANE',
+    'WEZTERM_EXECUTABLE',
+    'WEZTERM_UNIX_SOCKET',
+    'GHOSTTY_RESOURCES_DIR',
+    'GHOSTTY_BIN_DIR',
+    'GHOSTTY_SHELL_FEATURES',
+    'ALACRITTY_WINDOW_ID',
+    'ALACRITTY_SOCKET',
+    'VTE_VERSION',
+    'KONSOLE_VERSION',
+    'WT_SESSION',
+    'TMUX',
+    'TMUX_PANE',
+] as const
+
 /**
  * Build the PTY environment: the parent env (undefined values stripped) + TERM, plus
  * the relay provenance vars (CLAUDE_RELAY_URL, CLAUDE_TERMINAL_ID). When the relay shim
@@ -341,7 +371,15 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
     // cannot find the tab's session and the relay's SessionEnd hook has nothing to save into memory.
     // An app launched by an agent (or `dev:app` from a Claude terminal) carries all of these.
     for (const k of HOST_CLAUDE_SESSION_VARS) env[k] = ''
+    // The tab IS an xterm.js terminal and says so: 24-bit colour, and its own program name. Without
+    // COLORTERM a TUI (opencode) falls back to the 256-colour palette, which Terminal.tsx tints toward
+    // the theme, and paints its panels grey. The launching terminal's identity is cleared the same
+    // "" way as the host session vars above: a TUI that reads TERM_PROGRAM=ghostty or KITTY_WINDOW_ID
+    // turns on protocols xterm.js does not speak, and one that reads TMUX thinks it sits inside tmux.
+    for (const k of HOST_TERMINAL_VARS) env[k] = ''
     env.TERM = 'xterm-256color'
+    env.COLORTERM = 'truecolor'
+    env.TERM_PROGRAM = 'bismuth'
     // Suppress oh-my-zsh's blocking "Would you like to update? [Y/n]" prompt — an embedded
     // app terminal shouldn't nag at startup, and the prompt eats the first keystrokes.
     env.DISABLE_AUTO_UPDATE = 'true'

@@ -39,6 +39,9 @@ Each tab starts with the variables below set on top of your own environment.
 | Variable | Value |
 |----------|-------|
 | `TERM` | `xterm-256color` |
+| `COLORTERM` | `truecolor`, so a full-screen program (opencode, vim) paints its own 24-bit colors instead of the theme-tinted 256-color palette |
+| `TERM_PROGRAM` | `bismuth` |
+| `TERM_PROGRAM_VERSION`, `LC_TERMINAL`, `TMUX` and the other variables a terminal emulator or tmux exports to name itself (Ghostty, iTerm, kitty, WezTerm, Alacritty, Terminal.app) | Empty, so an app started from another terminal does not make each tab claim to be that terminal, which turns on protocols the tab does not speak |
 | `CLAUDE_TERMINAL_ID` | This tab's session id; the hooks require it |
 | `CLAUDE_RELAY_URL` | This window's backend, such as `http://localhost:4321` |
 | `BISMUTH_API` | The same URL, so `bismuth app …` drives this window |
@@ -53,6 +56,8 @@ Each window runs its own backend on its own port, so a `claude` session reports 
 
 A terminal's text is the same size and row height as code in a note: [`appearance`](../settings/reference.md#appearance) `editorFontSize` and `monoScale` set its size, and [`editor`](../settings/reference.md#editor) `lineHeight` sets its row height.
 
+A full-screen program (one on the terminal's alternate screen: opencode, vim, htop) gets rows exactly one font high instead, and its block and box-drawing characters are drawn as solid shapes on the GPU, so a logo built from blocks and a box edged with `┃` join with no gaps. The terminal returns to the note's row height when the program exits.
+
 Colors follow the active theme: the terminal reads `--term-bg` and `--term-fg` (falling back to `--bg` and `--fg`) and builds the 16-color ANSI palette from the theme's accent palette.
 The text cursor is the app-wide cursor ([`appearance`](../settings/reference.md#appearance) `cursorWidth`, `cursorGlideMs`, `cursorBlinkSeconds`). The font stack starts with Monaspace Xenon, then common Nerd Font faces, then the system monospace.
 
@@ -66,7 +71,9 @@ The text cursor is the app-wide cursor ([`appearance`](../settings/reference.md#
 
 ### The PTY and its WebSocket
 
-Each tab is a `bun-pty` session in `core/src/terminal.ts`, exposed on `GET /terminal?cols=<n>&rows=<n>&termId=<id>` and rendered by xterm.js in `app/src/Terminal.tsx`. The WebSocket carries binary frames:
+Each tab is a `bun-pty` session in `core/src/terminal.ts`, exposed on `GET /terminal?cols=<n>&rows=<n>&termId=<id>` and rendered by xterm.js in `app/src/Terminal.tsx`. A tab draws with xterm's DOM renderer; when the buffer switches to the alternate screen it loads `@xterm/addon-webgl` (whose custom glyphs fill each cell) and drops the row to the font's height (`terminalLineHeight` in `app/src/terminalMetrics.ts`), and it disposes the addon on the way back, so only full-screen programs hold a WebGL context. A lost context falls back to the DOM renderer. The PTY environment comes from `buildPtyEnv`, which sets `COLORTERM` and `TERM_PROGRAM` and clears every name in `HOST_TERMINAL_VARS`.
+
+The WebSocket carries binary frames:
 
 | Tag byte | Direction | Payload |
 |----------|-----------|---------|
@@ -210,4 +217,4 @@ It waits for the primary font with `document.fonts.load` before constructing xte
 - Subagents cannot spawn subagents, so the tree is two levels deep: session, then subagents.
 - A `claude` session outside an app terminal never loads the plugin, and its hooks would no-op without `CLAUDE_TERMINAL_ID` anyway.
 
-Source: `core/src/terminal.ts`, `core/src/relay.ts`, `core/src/routes/relay.ts`, `core/src/claudeWhich.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/`, `relay/lib/report.ts`, `relay/lib/recall.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `relay/shim/zdotdir/`, `core/src/agentBackends/catalog.ts`, `cli/src/commands/relay.ts`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `relay/test/wrap.test.ts`
+Source: `core/src/terminal.ts`, `app/src/terminalMetrics.ts`, `core/src/relay.ts`, `core/src/routes/relay.ts`, `core/src/claudeWhich.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/`, `relay/lib/report.ts`, `relay/lib/recall.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `relay/shim/zdotdir/`, `core/src/agentBackends/catalog.ts`, `cli/src/commands/relay.ts`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `relay/test/wrap.test.ts`

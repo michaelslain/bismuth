@@ -500,3 +500,46 @@ export const MatchesNoteCode: Story = {
         ).toBeLessThanOrEqual(1 / window.devicePixelRatio + 0.01)
     },
 }
+
+// A full-screen program's opening screen, shaped like opencode's: it enters the alternate screen,
+// paints its own 24-bit panel colour, draws a logo from block glyphs (█ ▀ ▄) and an input box edged
+// with `┃`. On the alternate screen the terminal switches to the GPU renderer and the font-high
+// row (terminalMetrics.ts), so the logo is solid and the edge one unbroken line; on the DOM
+// renderer at the note's row the logo broke into stripes and the edge into dashes.
+const BG = '\x1b[48;2;43;47;63m'
+const LOGO = '\x1b[38;2;150;160;200m'
+const EDGE = '\x1b[38;2;190;130;230m'
+const FULL_SCREEN_FRAMES = [
+    '\x1b[?1049h\x1b[H' + BG + '\x1b[2J',
+    '\x1b[4;10H' + LOGO + '█▀▀█ █▀▀█ █▀▀ █▀▀▄ █▀▀ █▀▀█ █▀▀▄ █▀▀',
+    '\x1b[5;10H' + LOGO + '█  █ █▄▄█ █▀▀ █  █ █   █  █ █  █ █▀▀',
+    '\x1b[6;10H' + LOGO + '▀▀▀▀ █    ▀▀▀ ▀  ▀ ▀▀▀ ▀▀▀▀ ▀▀▀  ▀▀▀',
+    '\x1b[8;8H' + EDGE + '┃' + '\x1b[38;2;120;130;160m Ask anything…',
+    '\x1b[9;8H' + EDGE + '┃',
+    '\x1b[10;8H' + EDGE + '┃' + '\x1b[38;2;220;150;240m Build\x1b[38;2;200;205;220m · local model',
+    '\x1b[8;12H',
+]
+
+export const FullScreenProgram: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <FakeSocketTerminal
+                id="story-terminal-full-screen"
+                frames={FULL_SCREEN_FRAMES}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        // GPU renderer up (a canvas in the screen), or, where the browser has no WebGL, the DOM
+        // grid at the font's own height: shorter than a note's row either way it falls back.
+        await waitFor(() => {
+            if (canvasElement.querySelector('.xterm-screen canvas')) return
+            const row = canvasElement.querySelector('.xterm-rows > div')
+            const host = canvasElement.querySelector('.term-host')
+            if (!row || !host) throw new Error('terminal not rendered yet')
+            const noteRow = parseFloat(getComputedStyle(host).lineHeight)
+            if (!(row.getBoundingClientRect().height < noteRow))
+                throw new Error('full-screen grid still at the note row')
+        })
+    },
+}

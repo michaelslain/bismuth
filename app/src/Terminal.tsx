@@ -3,6 +3,7 @@
 import { onMount, onCleanup, createEffect, createSignal } from 'solid-js'
 import { Terminal as Xterm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { settings } from './settings'
 import { resolveAppearance } from './themes'
@@ -10,6 +11,7 @@ import { customThemeOverrides } from './customThemes'
 import { api, wsBase } from './api'
 import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 import { ensureContrast } from './terminalAnsi'
+import { terminalLineHeight } from './terminalMetrics'
 
 // --- ANSI palette, DERIVED from the live theme tokens (never hand-authored) -------------
 // xterm.js wants 16 named colors. Rather than author 64 hex values across the four ASCII
@@ -377,10 +379,16 @@ export function TerminalTab(props: {
             ) as HTMLElement | null
         return rowsEl
     }
+    // The grid's box for the cursor overlay. The GPU renderer (a full-screen program, see
+    // syncRenderer) draws to a canvas with no .xterm-rows, but .xterm-screen is cols × rows cells
+    // under either renderer.
+    const getGridEl = (): HTMLElement | null =>
+        getRowsEl() ??
+        (container?.querySelector('.xterm-screen') as HTMLElement | null)
     // Recompute the cached geometry from the live grid. Called only on fit/resize/focus,
     // NOT per render. This is the only place that reads layout for the cursor overlay.
     const recomputeCursorMetrics = (): void => {
-        const rows = getRowsEl()
+        const rows = getGridEl()
         if (!term || !rows || !container) return
         const cRect = container.getBoundingClientRect()
         const rRect = rows.getBoundingClientRect()
@@ -405,10 +413,44 @@ export function TerminalTab(props: {
         term.options.fontSize = fontSize
         term.options.lineHeight = 1
         const glyphRow = getRowsEl()?.firstElementChild?.getBoundingClientRect().height ?? 0
-        if (glyphRow > 0) term.options.lineHeight = row / glyphRow
+        // A full-screen program (opencode, vim) keeps the font's own row: see terminalMetrics.ts.
+        const lh = terminalLineHeight(
+            row,
+            glyphRow,
+            term.buffer.active.type === 'alternate',
+        )
+        if (lh !== 1) term.options.lineHeight = lh
         fit?.fit()
         sendResize()
         recomputeCursorMetrics()
+    }
+
+    // A full-screen program (opencode, vim) draws logos and panels from block and box glyphs. The
+    // DOM renderer draws them from the font, which leaves a seam around every cell; the GPU renderer
+    // draws them as solid cell-filling shapes. It is loaded only while the alternate screen is up,
+    // so a shell prompt costs no GPU context, and on context loss (the browser caps how many live
+    // at once) or no WebGL at all the terminal stays on the DOM renderer.
+    let webgl: WebglAddon | undefined
+    const syncRenderer = (): void => {
+        if (!term) return
+        const alternate = term.buffer.active.type === 'alternate'
+        if (alternate && !webgl) {
+            try {
+                const addon = new WebglAddon()
+                addon.onContextLoss(() => {
+                    addon.dispose()
+                    if (webgl === addon) webgl = undefined
+                })
+                term.loadAddon(addon)
+                webgl = addon
+            } catch {
+                webgl = undefined
+            }
+        } else if (!alternate && webgl) {
+            webgl.dispose()
+            webgl = undefined
+        }
+        rowsEl = null
     }
 
     const sendResize = () => {
@@ -662,6 +704,12 @@ export function TerminalTab(props: {
         term.loadAddon(fit)
         term.open(container)
         applyTextMetrics()
+        // Entering or leaving the alternate screen swaps the renderer and the row height; the resize
+        // this sends makes the program redraw on the new grid.
+        term.buffer.onBufferChange(() => {
+            syncRenderer()
+            applyTextMetrics()
+        })
         term.focus()
 
         // Custom cursor overlay that glides smoothly between positions — xterm's native

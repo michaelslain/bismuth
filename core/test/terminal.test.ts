@@ -14,6 +14,7 @@ import {
     sessionCount,
     resizeSession,
     buildPtyEnv,
+    HOST_TERMINAL_VARS,
     HOST_CLAUDE_SESSION_VARS,
     loginShellArgs,
     shimSpecsFor,
@@ -76,6 +77,26 @@ test('buildPtyEnv sets relay provenance vars + TERM', () => {
     expect(env.TERM).toBe('xterm-256color')
     expect(env.CLAUDE_RELAY_URL).toBe('http://localhost:4321')
     expect(env.CLAUDE_TERMINAL_ID).toBe('tab-1')
+})
+
+test('buildPtyEnv declares truecolor + names itself, clearing the launching terminal\'s identity', () => {
+    const env = buildPtyEnv({
+        ...ENV_BASE,
+        base: {
+            PATH: '/usr/bin',
+            TERM_PROGRAM: 'ghostty',
+            TERM_PROGRAM_VERSION: '1.2.0',
+            GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/Contents/Resources/ghostty',
+            KITTY_WINDOW_ID: '3',
+            TMUX: '/tmp/tmux-501/default,1,0',
+        },
+        realClaude: null,
+    })
+    expect(env.COLORTERM).toBe('truecolor')
+    expect(env.TERM_PROGRAM).toBe('bismuth')
+    // "" not deleted: bun-pty merges the parent environ under this object, so only "" clears it.
+    for (const k of HOST_TERMINAL_VARS) expect(env[k]).toBe('')
+    expect(env.PATH).toBe('/usr/bin')
 })
 
 test("buildPtyEnv sets BISMUTH_API to this core's URL so in-tab `bismuth app` targets the right window", () => {
