@@ -138,14 +138,14 @@ async function main() {
     step('8 save closes the sorter', !!closed)
     const after = await waitFor(async () => ((await pageCount(pdf)) === total ? total : null), 30_000)
     step('9 pdf on disk has the merged page count', after === total, `${before.pages} -> ${await pageCount(pdf)}`)
-    const kept = planned?.steps.flatMap((s, i) => (s.kind === 'keep' && before.text.includes((s.page ?? -1) + 1) ? [i + 1] : [])) ?? []
+    const kept = planned?.steps.flatMap((s, i) => ((s.kind === 'keep' || s.kind === 'only') && before.text.includes((s.page ?? -1) + 1) ? [i + 1] : [])) ?? []
     const text = existsSync(`${pdf}.md`) ? transcriptPages(readFileSync(`${pdf}.md`, 'utf8')) : []
-    step('10 kept pages keep their text, updated and new pages have none', JSON.stringify(text) === JSON.stringify(kept), `text on ${JSON.stringify(text)}`)
+    step('10 kept and old-only pages keep their text, updated and new pages have none', JSON.stringify(text) === JSON.stringify(kept), `text on ${JSON.stringify(text)}`)
     await sleep(1500)
     await shot('3-after-save')
     const again = spawnSync('bun', [join(ROOT, 'cli/src/index.ts'), 'pdf', 'merge', 'scans/notebook.pdf', newerRel, '--vault', VAULT], { encoding: 'utf8', timeout: 120_000 })
-    const re = JSON.parse(again.stdout || 'null') as { kept: number; pages: number } | null
-    step('11 merging the same version again keeps every page', !!re && re.kept === re.pages, again.stdout.slice(0, 120))
+    const re = JSON.parse(again.stdout || 'null') as { kept: number; only: number; pages: number } | null
+    step('11 merging the same version again keeps every page', !!re && re.kept + re.only === re.pages, again.stdout.slice(0, 120))
 
     chrome.close()
     writeFileSync(join(OUT, 'results.json'), JSON.stringify(results, null, 2))

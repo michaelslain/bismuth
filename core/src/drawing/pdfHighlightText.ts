@@ -9,7 +9,7 @@
 // inside one of its rects. That is the rule PDFKit uses for page.selection(for:), so a Bismuth
 // highlight, a Preview highlight and `bismuth highlights` agree on the words.
 /// <reference path="../pdfjs-worker.d.ts" />
-import { createCanvas, DOMMatrix, Path2D } from '@napi-rs/canvas'
+import { createCanvas, DOMMatrix, Path2D, type Canvas } from '@napi-rs/canvas'
 import type { Highlight } from './model'
 import { highlightPlainText } from './pageHighlights'
 import { fitImage } from './pageInk'
@@ -152,6 +152,33 @@ async function preparePdfjsGlobals(): Promise<void> {
     g.DOMMatrix ??= DOMMatrix
     g.Path2D ??= Path2D
     g.pdfjsWorker ??= await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
+}
+
+type ScratchCanvas = { canvas: Canvas | null; context: unknown }
+
+/** The canvases pdf.js draws scratch work on (a scanned page's image, a pattern, a mask), made from
+ *  the `@napi-rs/canvas` imported above. pdf.js's own Node factory `require`s that package at
+ *  runtime, which a compiled binary cannot resolve, so without this every page holding an image
+ *  fails to draw in the installed app. Pass it as `getDocument`'s `CanvasFactory`. */
+export class PdfjsCanvasFactory {
+    constructor(_opts?: unknown) {}
+    create(width: number, height: number): ScratchCanvas {
+        if (width <= 0 || height <= 0) throw new Error('Invalid canvas size')
+        const canvas = createCanvas(width, height)
+        return { canvas, context: canvas.getContext('2d') }
+    }
+    reset(cc: ScratchCanvas, width: number, height: number): void {
+        if (!cc.canvas) throw new Error('Canvas is not specified')
+        if (width <= 0 || height <= 0) throw new Error('Invalid canvas size')
+        cc.canvas.width = width
+        cc.canvas.height = height
+    }
+    destroy(cc: ScratchCanvas): void {
+        if (!cc.canvas) throw new Error('Canvas is not specified')
+        cc.canvas.width = cc.canvas.height = 0
+        cc.canvas = null
+        cc.context = null
+    }
 }
 
 /** pdf.js, loaded with its one load-time warning muted: the failed `@napi-rs/canvas` require that

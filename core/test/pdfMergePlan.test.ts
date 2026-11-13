@@ -61,6 +61,12 @@ describe('planMerge', () => {
         expect(show(planMerge(m, 6))).toEqual(['=0', '=1', '2>2', '=3', '=4', '+5'])
     })
 
+    test('pages before the first match pair counting back from it', () => {
+        // the newer copy starts at old page 2, which was written over past matching since
+        expect(plan(['A', 'B', 'C', 'D', 'E'], ['X', 'D', 'E', 'F'])).toEqual(['~0', '~1', '2>0', '=3', '=4', '+3'])
+        expect(plan(['A', 'B', 'C'], ['X', 'Y', 'C'])).toEqual(['0>0', '1>1', '=2'])
+    })
+
     test('nothing in common pairs every page by order', () => {
         expect(plan(['A', 'B'], ['X', 'Y', 'Z'])).toEqual(['0>0', '1>1', '+2'])
         expect(plan(['A', 'B', 'C'], ['X'])).toEqual(['0>0', '~1', '~2'])

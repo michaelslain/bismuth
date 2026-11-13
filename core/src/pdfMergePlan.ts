@@ -222,7 +222,10 @@ export function planMerge(match: PageMatch[][], newCount: number, cuts: { sameMi
         oldOf[j] = i
         usedOld.add(i)
     }
-    // Between consecutive matches, pair the leftovers by position.
+    // Between consecutive matches, pair the leftovers by position, counted from the match they follow.
+    // Before the first match there is only the match after them, so they count back from it: a newer
+    // copy that starts a few pages later pairs its first page with the old page just before the match,
+    // not with the old first page. With no match at all, every page pairs by order from the start.
     const bounds: [number, number][] = [[-1, -1], ...anchors, [oldCount, newCount]]
     for (let k = 0; k + 1 < bounds.length; k++) {
         const [i0, j0] = bounds[k]!
@@ -231,9 +234,13 @@ export function planMerge(match: PageMatch[][], newCount: number, cuts: { sameMi
         for (let i = i0 + 1; i < i1; i++) olds.push(i)
         const news: number[] = []
         for (let j = j0 + 1; j < j1; j++) news.push(j)
-        for (let n = 0; n < Math.min(olds.length, news.length); n++) {
-            pairOf[news[n]!] = olds[n]!
-            usedOld.add(olds[n]!)
+        const fromEnd = k === 0 && anchors.length > 0
+        const pairs = Math.min(olds.length, news.length)
+        for (let n = 0; n < pairs; n++) {
+            const o = fromEnd ? olds[olds.length - pairs + n]! : olds[n]!
+            const j = fromEnd ? news[news.length - pairs + n]! : news[n]!
+            pairOf[j] = o
+            usedOld.add(o)
         }
     }
     // Pages left over on both sides that are the same page moved: matched one to one, closest first.

@@ -7,7 +7,7 @@ import { createCanvas } from '@napi-rs/canvas'
 import { AppError } from './error'
 import { getFileAccess } from './fileAccess'
 import { isPdfPath } from './fileKinds'
-import { loadPdfjs } from './drawing/pdfHighlightText'
+import { loadPdfjs, PdfjsCanvasFactory } from './drawing/pdfHighlightText'
 import { rewritePdfPages, type PageSource, type WithPdf } from './pdfPages'
 import { INK_H, INK_W, pageMatch, planMerge, type MergeStep } from './pdfMergePlan'
 
@@ -29,7 +29,13 @@ type PdfjsPage = {
  *  so grey, shaded or cleaned-up scans of one page map alike. The page is stretched to the map. */
 export async function pageInk(bytes: Uint8Array): Promise<Float32Array[]> {
     const pdfjs = await loadPdfjs()
-    const task = pdfjs.getDocument({ data: new Uint8Array(bytes), verbosity: 0, disableFontFace: true, useWorkerFetch: false })
+    const task = pdfjs.getDocument({
+        data: new Uint8Array(bytes),
+        verbosity: 0,
+        disableFontFace: true,
+        useWorkerFetch: false,
+        CanvasFactory: PdfjsCanvasFactory,
+    })
     try {
         const doc = (await task.promise) as unknown as { numPages: number; getPage(n: number): Promise<PdfjsPage> }
         const out: Float32Array[] = []
@@ -67,6 +73,7 @@ export async function pageInk(bytes: Uint8Array): Promise<Float32Array[]> {
         return out
     } catch (e) {
         if (e instanceof AppError) throw e
+        console.error('[pdf merge] drawing a page failed:', e)
         throw new AppError('PDF_UNREADABLE', 'cannot draw the pdf pages', 400)
     } finally {
         await (task as unknown as { destroy(): Promise<void> }).destroy().catch(() => {})
