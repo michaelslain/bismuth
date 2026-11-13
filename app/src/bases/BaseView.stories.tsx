@@ -1373,7 +1373,7 @@ const SCOPED_DAYS: Row[] = [
             name: OUTSIDE_DATE,
             basename: OUTSIDE_DATE,
         },
-        note: { date: OUTSIDE_DATE, sleep: 9 },
+        note: { date: OUTSIDE_DATE, calories: 2500, sleep: 9 },
         formula: {},
     },
 ]
@@ -1449,6 +1449,99 @@ export const QueryBlockOfCollectionHeatmap: Story = {
             expect(Number(added.note.words)).toBe(5)
         })
         expect(WORDS_ROWS.length).toBe(2)
+    },
+}
+
+/** The same heatmap written as a base config (`source: base` + `ref:` + `view: heatmap`) draws
+ *  with the referenced base's axes, as the `of:` block above does: the caption names `sleep`,
+ *  never the `calories` column auto-detection would pick. */
+const SLEEP_CONFIG_BLOCK = 'source: base\nref: "[[sleep.base.jsonl]]"\nview: heatmap\n'
+
+export const QueryBlockConfigOverBaseHeatmap: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'sleep.base.jsonl': SLEEP_BASE }, rows: SLEEP_DAYS }),
+        )
+        return <BaseView source={SLEEP_CONFIG_BLOCK} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        await waitFor(() => {
+            const text = canvasElement.textContent ?? ''
+            expect(text).toContain('sum of sleep per day')
+            expect(text).not.toContain('calories')
+        })
+    },
+}
+
+/** A config-form block keeps the referenced base's `filters`: a dated note outside `days/` stays
+ *  undrawn. */
+export const QueryBlockConfigOverScopedBaseHeatmap: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'sleep.base.jsonl': SCOPED_BASE }, rows: SCOPED_DAYS }),
+        )
+        return <BaseView source={SLEEP_CONFIG_BLOCK} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>('[data-bucket="2026-11-09"]')
+            if (!el || el.textContent === '.') throw new Error('in-scope day not drawn yet')
+        })
+        const outside = canvasElement.querySelector<HTMLElement>(
+            `[data-bucket="${OUTSIDE_DATE}"]`,
+        )
+        expect(outside?.textContent).toBe('.')
+    },
+}
+
+/** A config-form block over a base that OWNS its rows writes a day's value into that base file,
+ *  under the base's own `y`. */
+const PAGES_ROWS: Row[] = [
+    {
+        file: syntheticBaseFile('pages.base.jsonl'),
+        note: { date: todayISO(), minutes: 10, pages: 3 },
+        formula: {},
+        index: 0,
+    },
+]
+
+export const QueryBlockConfigOverCollectionHeatmap: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    'pages.base.jsonl': `{"type":"base","view":"heatmap","x":"date","y":"pages"}\n{"date":"${todayISO()}","minutes":10,"pages":3}\n`,
+                },
+                rows: PAGES_ROWS,
+            }),
+        )
+        return <BaseView source={'source: base\nref: "[[pages.base.jsonl]]"\nview: heatmap\n'} />
+    },
+    play: async ({ canvasElement }) => {
+        await painted(canvasElement)
+        const emptyDay = addDaysISO(todayISO(), -2)
+        const cell = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(`[data-bucket="${emptyDay}"]`)
+            if (!el) throw new Error('empty-day cell not yet rendered')
+            return el
+        })
+        cell.click()
+        const input = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLInputElement>('input')
+            if (!el) throw new Error('day editor not yet open')
+            return el
+        })
+        input.value = '5'
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        await waitFor(() => {
+            const added = PAGES_ROWS.find(r => r.note.date === emptyDay)
+            if (!added) throw new Error('row not appended to the base file yet')
+            expect(added.file.path).toBe('pages.base.jsonl')
+            expect(Number(added.note.pages)).toBe(5)
+            expect(added.note.minutes).toBeUndefined()
+        })
     },
 }
 

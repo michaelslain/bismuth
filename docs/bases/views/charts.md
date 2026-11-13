@@ -216,7 +216,7 @@ Left-clicking a heatmap day edits it, and what it writes depends on where the ba
 
 In the number field on a collection, a value on an empty day adds a row with `x` and `y`, a value on a filled day updates that row, and an empty field or `0` deletes it.
 A day that already holds several rows opens the drill with `N entries — edit in the table`.
-A heatmap inside a ```` ```query ```` block with `of: [[Base]]` writes the same way, using the referenced base's `y`: into the base's rows when it owns them, else into the clicked note. When the block's `where:` or `limit:` hides a day's stored row, a value typed on that day updates that row rather than adding a second row for the same date. A block with no `of:` has no file to write to, so a click only opens the drill.
+A heatmap inside a ```` ```query ```` block with `of: [[Base]]`, or written as a config with `source: base` and `ref:`, writes the same way, using the referenced base's `y`: into the base's rows when it owns them, else into the clicked note. When the block's `where:` or `limit:` hides a day's stored row, a value typed on that day updates that row rather than adding a second row for the same date. A block that points at no base has no file to write to, so a click only opens the drill.
 
 ## See the notes behind a bucket
 

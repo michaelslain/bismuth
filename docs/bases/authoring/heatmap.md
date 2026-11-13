@@ -36,6 +36,6 @@ aggregate: sum
 - Clicking writes only when the target is unambiguous. On a base with a `source:`, a click edits only a day with exactly one note and a numeric `y`, and writes that note's frontmatter; every other day opens the drill list instead.
 - On a base that owns its rows, entering an empty value or `0` deletes that day's row, and a day holding several rows opens the drill list instead of editing.
 - The current streak is 0 unless the latest logged day is today or yesterday; a day with a value of 0 or less breaks a streak.
-- A ```` ```query ```` block with `of: [[Base]]` draws the base's heatmap with its `x`, `y` and `aggregate`, and a click writes like the base itself. A block with no `of:` is read-only.
+- A ```` ```query ```` block with `of: [[Base]]`, or written as a config with `source: base` and `ref:`, draws the base's heatmap with its `x`, `y`, `aggregate` and `filters`, and a click writes like the base itself. A block that points at no base is read-only.
 
 Full reference: [docs/bases/views/charts.md](../views/charts.md#heatmap-layout)

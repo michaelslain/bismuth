@@ -426,6 +426,15 @@ function parseBaseObject(o: Record<string, unknown>): BaseConfig {
     }
 }
 
+/** Whether a base config written as text names its own layout (`view: <kind>`, or a legacy
+ *  `views:` entry's `type:`). `parseBase` fills in `table` when it does not, so a ```query block
+ *  over another base needs this to tell "draw as table" from "draw the base's way". */
+export function configLayoutGiven(text: string): boolean {
+    const o = safeYaml(text)
+    if (!o) return false
+    return isValidType(legacyView(o)?.type) || isValidType(o.view)
+}
+
 export function parseBase(text: string): BaseConfig {
     const o = safeYaml(text)
     if (!o) return EMPTY_BASE

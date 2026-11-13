@@ -105,6 +105,8 @@ view: table
 ```
 ````
 
+A config block with `source: base` and a `ref:` draws the referenced base the way an `of:` block does. The base's layout, axes (`x`, `y`, `aggregate`) and other view keys, its `filters`, formulas and property declarations all carry into the block. Every key the block writes overrides the base's, and its `filters:` narrow the base's. The block's layout replaces the base's only when the block writes `view:`. A block of just `source: base`, `ref: "[[sleep]]"` and `view: heatmap` over a heatmap base draws that base's heatmap, and a click on a day writes like the base itself.
+
 Malformed YAML in a config block gives an empty table. A `views:` list is read through its first entry only. A query block has no write-back that rewrites the block, so write it flat by hand.
 
 ## Can I build a query without writing it?

@@ -17,11 +17,11 @@ import { changeAffectsView, type ViewDeps } from './changeRelevance'
 import { reconcileViewResult } from './reconcileRows'
 import { RowCache } from './rowCache'
 import { BaseSkeleton } from './BaseSkeleton'
-import { parseBase, parseBaseFile } from '../../../core/src/bases/parse'
+import { configLayoutGiven, parseBase, parseBaseFile } from '../../../core/src/bases/parse'
 import { runView } from '../../../core/src/bases/query'
 import { resolveQueryBasePath } from './queryBasePath'
 import { combineFilters } from '../../../core/src/bases/filters'
-import { mergeQueryView } from '../../../core/src/bases/queryView'
+import { mergeQueryConfig, mergeQueryView } from '../../../core/src/bases/queryView'
 import { vaultTree } from '../treeStore'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
 import type {
@@ -186,37 +186,42 @@ export function BaseView(props: {
         },
     )
 
+    // The base a ```query block points at (`of: [[Base]]`, or `source: base` + `ref:` in the
+    // config form), with its parsed config. `config` is undefined when the file is unreadable or
+    // not a base: the block then keeps its own config.
+    async function loadReferencedBase(
+        source: SourceSpec | undefined,
+    ): Promise<{ basePath: string; config?: BaseConfig } | undefined> {
+        if (source?.kind !== 'base' || !source.ref) return undefined
+        const basePath = resolveQueryBasePath(
+            source.ref,
+            vaultTree().map(e => e.path),
+        )
+        if (!basePath) return undefined
+        try {
+            const { config } = parseBaseFile(await api.read(basePath), {
+                name: noteLabel(basePath),
+                path: basePath,
+            })
+            return { basePath, config }
+        } catch {
+            return { basePath }
+        }
+    }
+
     // Reads the file (or parses the inline/query-block config) into the DOCUMENT — the part
     // of resolving a base that's an HTTP round-trip. The source is carried on `config.source`
     // rather than resolved here; see `activeSpec` below for where it is actually consulted.
     async function loadDocument(): Promise<Doc> {
         if (props.view) {
             const v = props.view
-            const basePath =
-                v.source?.kind === 'base'
-                    ? resolveQueryBasePath(
-                          v.source.ref,
-                          vaultTree().map(e => e.path),
-                      )
-                    : undefined
             // An `of:` block draws the referenced base with that base's own view config (axes,
             // aggregate, columns); the block's keys are laid over it by `mergeQueryView`.
-            let baseView: ViewConfig = { type: v.as }
-            let refOwnsRows = false
-            let baseConfig: BaseConfig | undefined
-            if (basePath) {
-                try {
-                    const parsed = parseBaseFile(await api.read(basePath), {
-                        name: noteLabel(basePath),
-                        path: basePath,
-                    })
-                    baseConfig = parsed.config
-                    baseView = parsed.config.view
-                    refOwnsRows = !parsed.config.source
-                } catch {
-                    // an unreadable or non-base file keeps the block's own layout
-                }
-            }
+            const ref = await loadReferencedBase(v.source)
+            const basePath = ref?.basePath
+            const baseConfig = ref?.config
+            const baseView: ViewConfig = baseConfig?.view ?? { type: v.as }
+            const refOwnsRows = !!baseConfig && !baseConfig.source
             // The referenced base's filters, formulas and properties stay; the block's `where`
             // narrows them and its own `source` replaces the base's.
             const config: BaseConfig = {
@@ -239,8 +244,18 @@ export function BaseView(props: {
             })
             return { config, rows, basePath: props.path }
         }
-        const config = parseBase(props.source ?? '')
-        return { config, rows: [] }
+        const text = props.source ?? ''
+        const block = parseBase(text)
+        // A config-form ```query block over another base (`source: base` + `ref:`) draws that
+        // base the way an `of:` block does: its axes, aggregate and filters, under the block's keys.
+        const ref = await loadReferencedBase(block.source)
+        if (!ref?.config) return { config: block, rows: [] }
+        return {
+            config: mergeQueryConfig(ref.config, block, configLayoutGiven(text)),
+            rows: [],
+            basePath: ref.basePath,
+            refOwnsRows: !ref.config.source,
+        }
     }
 
     const sig = createMemo(() =>
