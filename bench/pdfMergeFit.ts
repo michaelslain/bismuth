@@ -8,13 +8,20 @@
 //            greyer or cleaner, smaller, re-encoded as JPEG
 //   one line a rescan with one line of another page's writing under the page's last line (pages
 //            whose writing runs to the foot have no room and are left out)
-// and scores each against the page (pageMatch). ADDED_MIN is the midpoint between the most added ink
-// a rescan shows and the least a one-line page shows; SAME_MIN is the lowest likeness any rescan or
-// one-line page shows. Pairs of different pages are printed too: they overlap SAME_MIN on sparse
-// pages, which is why the plan lines pages up in order rather than trusting one score.
-// The held-out check plans the real pair with the fitted cuts and compares the plan with --expect,
+// and scores each against the page (pageMatch). --fit-pair adds a real pair of versions whose pages are
+// known (--truth, `old:new` page numbers from 1; `old:new?` marks a page written on past matching,
+// counted on neither side), with half-empty pages on both sides: its pairs of different pages are what
+// a likeness that trusts blank paper gets wrong.
+// SAME_MIN is the lowest likeness any page shows against itself, a rescan or a known pair, so every
+// page can still match; pairs of different pages at or over it are counted (the scan's pages within 3
+// of each other, the fit pair's), since the plan lines pages up in order rather than trusting one
+// score. A pair missed costs more than a pair of different pages over the cut: a missed page is read
+// as written on, or pairs with the wrong page. ADDED_MIN is the added-ink cut with the fewest pages on
+// the wrong side between rescans and one-line pages; ties take the middle of the widest gap.
+// The held-out check plans another real pair with the fitted cuts and compares the plan with --expect,
 // one word per merged page (keep update add only), in order.
-// Usage: bun bench/pdfMergeFit.ts <scan.pdf> --pair <old.pdf> <new.pdf> --expect "add add keep ..."
+// Usage: bun bench/pdfMergeFit.ts <scan.pdf> --fit-pair <old.pdf> <new.pdf> --truth "4:2 5:3 3:1? ..."
+//            --pair <old.pdf> <new.pdf> --expect "add add keep ..."
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import type * as Canvas from '@napi-rs/canvas'
@@ -32,13 +39,42 @@ type PDFRawStream = PdfLib.PDFRawStream
 const argv = process.argv.slice(2)
 const pairAt = argv.indexOf('--pair')
 const expectAt = argv.indexOf('--expect')
+const fitAt = argv.indexOf('--fit-pair')
+const truthAt = argv.indexOf('--truth')
 const file = argv[0]
-if (!file || file.startsWith('--') || pairAt < 0 || expectAt < 0) {
-    console.error('usage: bun bench/pdfMergeFit.ts <scan.pdf> --pair <old.pdf> <new.pdf> --expect "add add keep ..."')
+if (!file || file.startsWith('--') || pairAt < 0 || expectAt < 0 || fitAt < 0 || truthAt < 0) {
+    console.error(
+        'usage: bun bench/pdfMergeFit.ts <scan.pdf> --fit-pair <old.pdf> <new.pdf> --truth "4:2 5:3 3:1? ..." --pair <old.pdf> <new.pdf> --expect "add add keep ..."',
+    )
     process.exit(2)
 }
 const [pairOld, pairNew] = [argv[pairAt + 1]!, argv[pairAt + 2]!]
 const expected = argv[expectAt + 1]!.trim().split(/\s+/)
+const [fitOld, fitNew] = [argv[fitAt + 1]!, argv[fitAt + 2]!]
+// known pairs of the fit pair, 0-based; `?` pairs are the same page written on past matching
+const truth = argv[truthAt + 1]!
+    .trim()
+    .split(/\s+/)
+    .map(t => {
+        const m = /^(\d+):(\d+)(\?)?$/.exec(t)
+        if (!m) throw new Error(`--truth: ${t} is not old:new`)
+        return { old: +m[1]! - 1, new: +m[2]! - 1, past: !!m[3] }
+    })
+
+/** The cut between `low` (should fall under it) and `high` (should reach it) with the fewest values on
+ *  the wrong side; among equal ones, the middle of the widest gap. */
+function fewestWrong(low: number[], high: number[]): { cut: number; wrong: number } {
+    const values = [...low, ...high].sort((x, y) => x - y)
+    let best = { cut: values[0]!, wrong: Infinity }
+    let widest = -1
+    for (let k = 0; k + 1 < values.length; k++) {
+        const cut = (values[k]! + values[k + 1]!) / 2
+        const wrong = low.filter(v => v >= cut).length + high.filter(v => v < cut).length
+        const gap = values[k + 1]! - values[k]!
+        if (wrong < best.wrong || (wrong === best.wrong && gap > widest)) [best, widest] = [{ cut, wrong }, gap]
+    }
+    return best
+}
 
 /** A repeatable number in [0, 1) for page `i`, draw `k`. */
 const rand = (i: number, k: number) => {
@@ -148,21 +184,23 @@ const different: number[] = []
 for (let a = 0; a < base.length; a++)
     for (let b = 0; b < base.length; b++) if (a !== b && Math.abs(a - b) <= 3) different.push(pageMatch(base[a]!, rescans[b]!).same)
 
+const [fa, fb] = await Promise.all([
+    pageInk(new Uint8Array(await Bun.file(fitOld).arrayBuffer())),
+    pageInk(new Uint8Array(await Bun.file(fitNew).arrayBuffer())),
+])
+const fitMatch = fa.map(g => fb.map(h => pageMatch(g, h)))
+const isKnown = (i: number, j: number) => truth.some(t => t.old === i && t.new === j)
+const fitSame = truth.filter(t => !t.past).map(t => fitMatch[t.old]![t.new]!.same)
+const fitDifferent: number[] = []
+fitMatch.forEach((row, i) => row.forEach((m, j) => isKnown(i, j) || fitDifferent.push(m.same)))
+
 const maxRescanAdded = Math.max(...rescan.map(m => m.added))
 const minLineAdded = Math.min(...oneLine.map(m => m.added))
-const sameMin = Math.min(...rescan.map(m => m.same))
-// the cut with the fewest pages on the wrong side (a rescan read as written on, or a one-line page
-// read as untouched); among equal ones, the middle of the widest gap
-const values = [...rescan.map(m => m.added), ...oneLine.map(m => m.added)].sort((x, y) => x - y)
-let addedMin = 0
-let fewest = Infinity
-let widest = -1
-for (let k = 0; k + 1 < values.length; k++) {
-    const cut = (values[k]! + values[k + 1]!) / 2
-    const wrong = rescan.filter(m => m.added >= cut).length + oneLine.filter(m => m.added < cut).length
-    const gap = values[k + 1]! - values[k]!
-    if (wrong < fewest || (wrong === fewest && gap > widest)) [addedMin, fewest, widest] = [cut, wrong, gap]
-}
+const sameMin = Math.min(...rescan.map(m => m.same), ...fitSame)
+const addedMin = fewestWrong(
+    rescan.map(m => m.added),
+    oneLine.map(m => m.added),
+).cut
 const rescanWrong = rescan.flatMap((m, i) => (m.added >= addedMin ? [`p${i + 1}`] : []))
 const lineWrong = oneLine.flatMap((m, k) => (m.added < addedMin ? [`p${lineIndex[k]! + 1}`] : []))
 const r2 = (x: number) => x.toFixed(2)
@@ -175,6 +213,13 @@ console.log(
 )
 console.log(
     `  different pages (within 3 of each other): likeness up to ${r2(Math.max(...different))}, ${different.filter(s => s >= sameMin).length} of ${different.length} at or over the fitted SAME_MIN`,
+)
+console.log(`fit pair ${fitOld} -> ${fitNew}:`)
+console.log(
+    `  known pairs: likeness ${truth.map(t => `${t.old + 1}->${t.new + 1} ${r2(fitMatch[t.old]![t.new]!.same)}${t.past ? ' (written past matching)' : ''}`).join(', ')}`,
+)
+console.log(
+    `  different pages: likeness up to ${r2(Math.max(...fitDifferent))}, ${fitDifferent.filter(s => s >= sameMin).length} of ${fitDifferent.length} at or over the fitted SAME_MIN`,
 )
 console.log(`fit: SAME_MIN ${sameMin.toFixed(3)} (code has ${SAME_MIN}), ADDED_MIN ${addedMin.toFixed(3)} (code has ${ADDED_MIN})`)
 console.log(

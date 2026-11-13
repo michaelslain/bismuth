@@ -25,14 +25,16 @@ export type PageMatch = { same: number; added: number }
 
 /** The cut above which two pages can be the same page scanned again, and the added ink at which the
  *  same page counts as written on. Fit by `bench/pdfMergeFit.ts` on a 59-page scanned notebook, each
- *  page scanned again by simulation (cropped, turned, greyer or cleaner, re-encoded), and the 17
- *  pages with room left under their writing scanned again with one more line written there.
- *  SAME_MIN is the lowest likeness a rescan showed (0.575). ADDED_MIN is the cut with the fewest pages
- *  on the wrong side (0.073): one rescan reads as written on (a page half in shadow, 0.28), no
- *  one-line page reads as untouched (the least, 0.08). Held out, a real newer export of an 8-page
- *  notebook (2 pages before, 7 after, one page written on) plans right: its 7 untouched pages show
- *  0.020 to 0.055 added ink, the written one 0.232. */
-export const SAME_MIN = 0.575
+ *  page scanned again by simulation (cropped, turned, greyer or cleaner, re-encoded), the 17 pages
+ *  with room left under their writing scanned again with one more line written there, and a real
+ *  pair of versions of a pocket book whose pages are known (8 pages, 15 newer, half-empty pages on
+ *  both sides). SAME_MIN is the lowest likeness any page showed against itself (0.623, a pocket book
+ *  page photographed with a shadow across its foot); 1 of the pocket book's 114 pairs of different
+ *  pages reaches it. ADDED_MIN is the cut with the fewest pages on the wrong side (0.073): one rescan
+ *  reads as written on (a page half in shadow, 0.29), no one-line page reads as untouched (the least,
+ *  0.08). Held out, a newer export of the same pocket book (17 pages, one page written on) plans
+ *  right: its 7 untouched pages show 0.020 to 0.067 added ink, the written one 0.225. */
+export const SAME_MIN = 0.623
 export const ADDED_MIN = 0.073
 
 const N = INK_W * INK_H
@@ -97,6 +99,8 @@ function moved(b: ArrayLike<number>, m: Move, out: Float32Array): Float32Array {
     return out
 }
 
+/** How alike `a` and `b` are over the whole page (a correlation, -1..1): ink on one page where the
+ *  other has paper counts against them, so it is what lines a newer page up with an old one. */
 function correlation(a: Float32Array, b: Float32Array): number {
     let ma = 0
     let mb = 0
@@ -121,6 +125,44 @@ function correlation(a: Float32Array, b: Float32Array): number {
     return ab / Math.sqrt(aa * bb)
 }
 
+/** How alike `a` and `b` are where both pages have ink, once lined up (a correlation, -1..1): the
+ *  likeness two pages are judged by. Paper blank on either page is left out: two half-empty pages
+ *  agree on most of their paper whatever is written on them, which made any two of them look like
+ *  the same page. With no cell inked on both, two blank pages are alike and a blank page is unlike a
+ *  written one. */
+function inkCorrelation(a: Float32Array, b: Float32Array): number {
+    let n = 0
+    let ma = 0
+    let mb = 0
+    let blankA = true
+    let blankB = true
+    for (let i = 0; i < N; i++) {
+        if (a[i]! > 0) blankA = false
+        if (b[i]! > 0) blankB = false
+        if (a[i]! > 0 && b[i]! > 0) {
+            n++
+            ma += a[i]!
+            mb += b[i]!
+        }
+    }
+    if (n === 0) return blankA && blankB ? 1 : 0
+    ma /= n
+    mb /= n
+    let ab = 0
+    let aa = 0
+    let bb = 0
+    for (let i = 0; i < N; i++) {
+        if (!(a[i]! > 0 && b[i]! > 0)) continue
+        const da = a[i]! - ma
+        const db = b[i]! - mb
+        ab += da * db
+        aa += da * da
+        bb += db * db
+    }
+    if (aa < 1e-12 || bb < 1e-12) return aa < 1e-12 && bb < 1e-12 ? 1 : 0
+    return ab / Math.sqrt(aa * bb)
+}
+
 /** A page scanned again comes out cropped and framed a little differently: these are the scales
  *  and shifts tried, a coarse pass, a finer one around its best, and a half-cell one around that. */
 const COARSE_SCALE = [0.92, 1, 1.08]
@@ -134,8 +176,11 @@ export function pageMatch(a: ArrayLike<number>, b: ArrayLike<number>): PageMatch
     const buf = new Float32Array(N)
     let best: Move = { sx: 1, sy: 1, dx: 0, dy: 0 }
     let bestR = -2
+    // the coarse pass places the page by the whole page, where ink against paper counts against a
+    // move; the finer passes settle it by the ink alone, the likeness it is then judged by
+    let score = correlation
     const tryMove = (m: Move) => {
-        const r = correlation(sa, moved(sb, m, buf))
+        const r = score(sa, moved(sb, m, buf))
         if (r > bestR) {
             bestR = r
             best = m
@@ -144,6 +189,8 @@ export function pageMatch(a: ArrayLike<number>, b: ArrayLike<number>): PageMatch
     for (const sx of COARSE_SCALE)
         for (const sy of COARSE_SCALE) for (const dx of COARSE_SHIFT) for (const dy of COARSE_SHIFT) tryMove({ sx, sy, dx, dy })
     const c = best
+    score = inkCorrelation
+    bestR = -2
     for (const ex of [-0.04, 0, 0.04])
         for (const ey of [-0.04, 0, 0.04])
             for (const ox of [-1, 0, 1])

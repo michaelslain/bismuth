@@ -110,6 +110,30 @@ describe('pageMatch', () => {
         expect(pageMatch(page(rows), page([40, 44, 48, 52])).same).toBeLessThan(SAME_MIN)
     })
 
+    /** A half-empty page: a few lines of words at the top, the rest paper. `seed` sets where the words
+     *  break, so two seeds are two different notes written in the same band. */
+    const note = (seed: number, shift = 0) => {
+        const g = new Float32Array(INK_W * INK_H)
+        for (let r = 3; r < 15; r += 3) {
+            let x = 2 + ((seed * 5 + r) % 4)
+            while (x < INK_W - 2) {
+                const len = 2 + ((seed * 13 + r * 7 + x * 3) % 6)
+                for (let k = 0; k < len && x + k < INK_W - 2; k++) {
+                    const y = r + shift
+                    if (y >= 0 && y < INK_H) g[y * INK_W + x + k] = 0.3 + 0.1 * ((x + k + seed) % 3)
+                }
+                x += len + 2 + ((seed + x) % 3)
+            }
+        }
+        return g
+    }
+
+    test('two half-empty pages with different notes in the same band are not alike', () => {
+        // the paper they share below their notes says nothing about whether they are the same page
+        expect(pageMatch(note(1), note(2)).same).toBeLessThan(SAME_MIN)
+        expect(pageMatch(note(1), note(1, 1)).same).toBeGreaterThan(SAME_MIN)
+    })
+
     test('two blank pages are alike, a blank and a written page are not', () => {
         expect(pageMatch(page([]), page([])).same).toBe(1)
         expect(pageMatch(page([]), page(rows)).same).toBe(0)
