@@ -371,6 +371,15 @@ Checks the machine and, when a vault is given, the vault for leftovers from olde
 
 An agent always runs with safe repairs only, and the `vault` section is dropped in a vault that hides anything, because its finding ids carry note paths. The report ends with `agent mode // destructive repairs need the owner` when repairs were held back.
 
+## errors
+
+Reads the log of errors the app window threw and nothing handled. Headless: it reads the log file, so no running app is needed. What is recorded is in [troubleshooting](../overview/troubleshooting.md#read-the-errors-the-app-window-threw).
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `errors` | `[--since <iso>] [--limit <n>] [--all] [--vault <dir>] [--pretty]` | Prints this vault's entries oldest first, or every vault's with `--all` or outside a vault. | no |
+| `errors clear` | `[--pretty]` | Empties the log, every vault's entries, and prints `{cleared}`. | no |
+
 ## export and render
 
 Turns a note, base, sheet or drawing into a file, and reads a PDF's highlights back out as text. Everything is headless. PDF and PNG of notes, bases and sheets drive a headless Chrome against the same HTML the app's exporter produces.

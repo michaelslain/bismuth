@@ -612,6 +612,7 @@ These routes act on the machine rather than the vault. They never invalidate vau
 | `GET /doctor` | none | A `DoctorReport` from a dry run. | owner only; none |
 | `POST /doctor/fix` | `{only?: string[]}` | The `DoctorReport` after repairs. | owner only; applies repairs |
 | `POST /feedback` | `{kind, title, body, contact?, meta?}` | `{id}` | owner only; sends the feedback to the hosted relay |
+| `POST /app-errors` | `{kind: "error"\|"rejection", message, stack?, source?}` | The entry as written | owner only; appends to the app error log, stamped with this vault. An invalid body is `400` |
 | `GET /update/status` | none | `{available, behind, localSha, remoteSha, builtSha, dirty, reason?}` | open; none |
 | `POST /update/apply` | `{reset?: true}` | The initial `UpdateProgress`. | open; starts a rebuild. `reset` is owner only |
 | `GET /update/progress` | none | `{phase, message?, log?, diverged?, backupBranch?, cancelling?}` | open; none |

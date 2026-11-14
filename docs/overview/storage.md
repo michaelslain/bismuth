@@ -67,6 +67,7 @@ The exclusion rules live in `.git/info/exclude` and are kept current on every sn
 | `layout-cache/` | One JSON layout per graph signature, plus a warm-start seed per vault | Yes; layouts recompute |
 | `daemon/` | Machine identity and daemon state | See [daemon storage](../daemon/storage.md) |
 | `run/` | One record per running core: port, vault, pid and the owner token (mode `0600`) | Yes while no core is running |
+| `logs/app-errors.jsonl` | Errors the app window threw and nothing handled, one JSON line each, read by `bismuth errors`; trimmed to its newest 500 entries past 512 KB | Yes; `bismuth errors clear` empties it |
 | `gcal/` | Google OAuth credentials, tokens and the sync manifest | Deleting disconnects Google Calendar |
 | `chat/models.json` | The model last used in each chat session | Yes; sessions fall back to their default model |
 | `tmp/` | Pasted files staged for chat | Yes; entries older than 24 hours are pruned at boot |
@@ -135,4 +136,4 @@ The Bases row cache is held in memory only and clears when the server version ad
 
 `app/src/viewCache.ts` wraps every `localStorage` access in `try`/`catch` and scopes caches with `scopedKey(key, apiBase)`. `localStorage` is shared by every window of one origin, which is why the tab layout is keyed by window id (`app/src/windowId.ts`) and the tree and graph caches by backend. The theme-variable key is declared in `app/src/storageKeys.ts` and read by the inline script in `app/index.html`. Bump `GRAPH_CACHE_KEY` in `app/src/App.tsx` whenever the layout `CACHE_VERSION` changes.
 
-Source: `core/src/files.ts`, `core/src/fileKinds.ts`, `core/src/backup.ts`, `core/src/bismuthHome.ts`, `core/src/layout-cache.ts`, `core/src/runRegistry.ts`, `core/src/tmpFiles.ts`, `core/src/chatModelStore.ts`, `core/src/statusBarTrust.ts`, `core/src/bismuthInstall.ts`, `core/src/agentEnvFile.ts`, `core/src/notifierPointer.ts`, `core/src/gcal/manifest.ts`, `core/src/schema/settingsSchema.ts`, `app/src-tauri/src/lib.rs`, `app/src/viewCache.ts`, `app/src/windowId.ts`, `app/src/storageKeys.ts`, `app/src/App.tsx`, `app/src/settings.ts`
+Source: `core/src/files.ts`, `core/src/fileKinds.ts`, `core/src/backup.ts`, `core/src/bismuthHome.ts`, `core/src/layout-cache.ts`, `core/src/runRegistry.ts`, `core/src/appErrors.ts`, `core/src/tmpFiles.ts`, `core/src/chatModelStore.ts`, `core/src/statusBarTrust.ts`, `core/src/bismuthInstall.ts`, `core/src/agentEnvFile.ts`, `core/src/notifierPointer.ts`, `core/src/gcal/manifest.ts`, `core/src/schema/settingsSchema.ts`, `app/src-tauri/src/lib.rs`, `app/src/viewCache.ts`, `app/src/windowId.ts`, `app/src/storageKeys.ts`, `app/src/App.tsx`, `app/src/settings.ts`

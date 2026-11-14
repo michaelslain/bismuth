@@ -34,6 +34,18 @@ A healthy machine prints `bismuth doctor // all clear`. Otherwise each line name
 |---|---|---|
 | `connection lost — polling` in the status bar, or a `Connection lost. Retrying...` toast | The window has no current confirmation that the backend answers. Your notes are safe on disk. | Wait, or click **Retry now**. If it lasts over a minute, relaunch Bismuth. Details in [status messages](status-messages.md#the-connection-is-lost). |
 
+## Read the errors the app window threw
+
+Every error the app window throws and nothing handles, and every unhandled promise rejection, is recorded in an error log, and the window shows a toast that reads `error // <message> // recorded, see bismuth errors`. Read the log with:
+
+```bash
+bismuth errors --pretty
+```
+
+Each entry has the time (`ts`), `kind` (`error` or `rejection`), the `message`, the `stack` and the `source` (`file:line:col`) when the browser gave them, and the `vault` the window had open. Inside a vault the command lists that vault's errors; `--all` lists every vault's, `--since <iso>` keeps later entries and `--limit <n>` the newest `n`. `bismuth errors clear` empties the log. Include the entry in a bug report.
+
+A window reports each distinct error once per launch, and stops after twenty distinct errors, so an error that repeats in a loop leaves one entry and one toast. ResizeObserver's `loop completed with undelivered notifications` warning is browser noise and is not recorded. On the iPad and iOS in-process backend there is no log: the toast reads `error // <message>` alone.
+
 ## The CLI or MCP server is missing after an update
 
 | Symptom | Cause | Fix |

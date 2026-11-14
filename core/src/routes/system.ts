@@ -8,6 +8,7 @@ import {
     cancelUpdate,
 } from '../selfUpdate'
 import { submitFeedback } from '../feedback'
+import { parseAppErrorReport, recordAppError } from '../appErrors'
 import { ok, error, type Handler, type RouteContext } from './context'
 
 const enc = new TextEncoder()
@@ -132,6 +133,16 @@ export default function systemRoutes(
             if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const r = await submitFeedback(await req.json().catch(() => null))
             return r.ok ? ok({ id: r.id }) : error(r.error, r.status)
+        },
+
+        // An error the window threw and nothing caught (app/src/errorReport.ts), appended to the
+        // machine-wide log `bismuth errors` reads (core/src/appErrors.ts), stamped with this vault.
+        // Owner-only: only the app's own window reports, so an agent cannot write into the log.
+        'POST /app-errors': async req => {
+            if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            const report = parseAppErrorReport(await req.json().catch(() => null))
+            if (!report) return error('not an error report', 400)
+            return ok(recordAppError({ ...report, vault: cfg.vault }))
         },
     }
 }

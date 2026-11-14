@@ -136,6 +136,7 @@ import type { PropertySchemaSet } from '../../core/src/schema/namedSchemas'
 import type { ThemesFeed } from '../../core/src/theme/customTheme'
 import type { DoctorReport } from '../../core/src/doctor/types'
 import type { FeedbackPayload } from '../../core/src/feedbackContract'
+import type { AppErrorReport } from './errorReport'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
 import type { TranscribeJobRequest, TranscribeJobState } from '../../core/src/transcribeJobTypes'
 import type { DaemonSnapshot } from '../../core/src/daemonGraph'
@@ -932,6 +933,10 @@ export const api = {
     // relay. Throws the relay's or core's error text on failure.
     sendFeedback: (payload: FeedbackPayload) =>
         postJson<{ id: string }>('/feedback', payload),
+    // An error the window threw and nothing caught (errorReport.ts), appended to the log
+    // `bismuth errors` reads (core/src/appErrors.ts).
+    reportAppError: (report: AppErrorReport) =>
+        postJson<unknown>('/app-errors', report),
     // Git-based self-update: auto-check status + start (background) + poll progress.
     updateStatus: () => getJson<UpdateStatus>('/update/status'),
     // `reset` (a diverged clone only): save HEAD on a backup branch and reset to origin/main first.

@@ -54,6 +54,7 @@ const EXPECTED = [
     'GET /vault-data',
     'GET /version',
     'POST /agents/free/install',
+    'POST /app-errors',
     'POST /asset',
     'POST /asset/fetch',
     'POST /backup',

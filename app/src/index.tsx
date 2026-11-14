@@ -5,6 +5,7 @@ import { lazy } from 'solid-js'
 // so it no longer ships in the entry bundle.
 import './fonts'
 import { isTauri } from './platform'
+import { createErrorReporter, installErrorReporter } from './errorReport'
 
 // First-run takeover: when the bundled app launches with no vault yet, lib.rs injects
 // `window.__BISMUTH_FIRST_RUN__` and does NOT start a backend — so we render the intro instead
@@ -27,6 +28,22 @@ const Root = lazy(() =>
 // every later test). Now it's explicit: call start() once here, at real app boot. Dynamic import
 // + the !firstRun gate preserve the original property that the intro takeover never loads
 // serverVersion's chunk or talks to a backend that doesn't exist yet (see the comment above).
+// Uncaught errors and unhandled rejections go to core's error log (`bismuth errors`) and raise one
+// toast each. Installed before anything else boots so a throw during boot is caught too; api and
+// the toast store load on the first error, so the entry chunk stays small. First run has no backend.
+if (!firstRun) {
+    installErrorReporter(
+        window,
+        createErrorReporter({
+            send: r => import('./api').then(({ api }) => api.reportAppError(r)),
+            notify: text =>
+                void import('./ui/toastStore').then(({ pushToast }) =>
+                    pushToast(text, { tone: 'danger', ttl: 10_000 }),
+                ),
+        }),
+    )
+}
+
 if (!firstRun) {
     import('./serverVersion')
         .then(({ start }) => start())

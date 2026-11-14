@@ -34,6 +34,7 @@ import * as docs from './commands/docs'
 import * as memory from './commands/memory'
 import * as theme from './commands/theme'
 import * as feedback from './commands/feedback'
+import * as errors from './commands/errors'
 import * as vaultMap from './commands/map'
 import * as brain from './commands/brain'
 import * as history from './commands/history'
@@ -76,6 +77,7 @@ const GROUPS: { commands: CommandMap }[] = [
     memory,
     theme,
     feedback,
+    errors,
     vaultMap,
     brain,
     history,

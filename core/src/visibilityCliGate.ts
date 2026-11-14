@@ -212,6 +212,9 @@ const ALWAYS_SAFE_COMMANDS = new Set([
     // `docs` reads Bismuth's own product docs (the same pages the ungated bismuth_docs_* MCP tools
     // serve), never vault content.
     'docs',
+    // `errors` reads the app's own uncaught-error log: Bismuth's error text and stacks, never a
+    // note body.
+    'errors',
     'install',
     'uninstall',
     'app',

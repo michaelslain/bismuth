@@ -22,6 +22,12 @@ What to do: click **fix** to apply exactly the listed repairs; the toast becomes
 
 No toast appears when nothing is pending or when the backend has no doctor (the iPad and iOS in-process backend).
 
+## `error // <message> // recorded, see bismuth errors`
+
+The app window threw an error that nothing handled, or a promise rejected with no handler. The toast shows once per distinct error per launch, in the danger colour, for ten seconds. When the error could not reach the log (the iPad and iOS in-process backend), it reads `error // <message>` alone.
+
+What to do: whatever you were doing may not have finished; check it and retry. Run `bismuth errors --pretty` to read the full entry with its stack, and include it in a bug report. Details in [troubleshooting](troubleshooting.md#read-the-errors-the-app-window-threw).
+
 ## Updates
 
 | Message | Meaning and action |
@@ -119,6 +125,6 @@ The window is a frontend talking over HTTP on your own machine to a local backen
 
 Two mechanisms keep a quiet vault's stream alive. The backend writes a `: keepalive` comment every `server.sseHeartbeatMs` (default 5000 ms, [settings reference](../settings/reference.md)), and `Bun.serve` runs with a 255-second idle timeout. A network path that vanishes (sleep, Wi-Fi switch, VPN) drops the stream with no close frame, so the window also polls `GET /version` every 5 seconds. When neither signal confirms the backend, the connection state turns disconnected, the poll speeds to every second and the stream retries in the background. The status-bar label and the toast both read that one state.
 
-Toasts come from `pushToast`; the connection toast is pushed by `serverVersion.ts` and the label rendered by the status bar. Each folder you open gets its own backend process on its own port (`POST /open-folder`), and its window is pinned to that backend with `?api=<url>`, so two open folders share no caches, watchers or tabs.
+Toasts come from `pushToast`; the error toast is pushed by `errorReport.ts`, installed in `index.tsx`, which also posts the error to `POST /app-errors` (`core/src/appErrors.ts`); the connection toast is pushed by `serverVersion.ts` and the label rendered by the status bar. Each folder you open gets its own backend process on its own port (`POST /open-folder`), and its window is pinned to that backend with `?api=<url>`, so two open folders share no caches, watchers or tabs.
 
-Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/doctorToast.ts`, `app/src/UpdateBanner.tsx`, `app/src/shell/StatusBar.tsx`, `app/src/shell/InboxIndicator.tsx`, `app/src/ExportView.tsx`, `app/src/Editor.tsx`, `app/src/ui/ToastHost.tsx`, `core/src/server.ts`, `core/src/openFolder.ts`, `core/src/statusBarItems.ts`
+Source: `app/src/errorReport.ts`, `app/src/index.tsx`, `core/src/appErrors.ts`, `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/doctorToast.ts`, `app/src/UpdateBanner.tsx`, `app/src/shell/StatusBar.tsx`, `app/src/shell/InboxIndicator.tsx`, `app/src/ExportView.tsx`, `app/src/Editor.tsx`, `app/src/ui/ToastHost.tsx`, `core/src/server.ts`, `core/src/openFolder.ts`, `core/src/statusBarItems.ts`
