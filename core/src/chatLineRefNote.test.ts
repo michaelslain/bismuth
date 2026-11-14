@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { describe, expect, test } from 'bun:test'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tempDir } from '../test/tempDirs'
 import {
     CHAT_LINE_REF_NOTE,
     chatLineRefNote,
@@ -9,16 +9,11 @@ import {
     readLineNumbersSetting,
 } from './chatLineRefNote'
 
-const dirs: string[] = []
 function vault(settings?: string): string {
-    const d = mkdtempSync(join(tmpdir(), 'line-ref-'))
-    dirs.push(d)
+    const d = tempDir('line-ref-')
     if (settings !== undefined) writeFileSync(join(d, '.settings'), settings)
     return d
 }
-afterEach(() => {
-    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
-})
 
 test('the note names the anchor form the transcript renders', () => {
     expect(CHAT_LINE_REF_NOTE).toContain('[[Note#L12]]')
