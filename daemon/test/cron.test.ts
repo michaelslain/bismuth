@@ -8,6 +8,8 @@ import {
     rmSync,
     writeFileSync,
     mkdirSync,
+    readdirSync,
+    readFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -32,6 +34,7 @@ import {
     notificationsEnabled,
     announcesNewPages,
     listPageSlugs,
+    fireFileChangeCron,
     type FailureCause,
     type LastFiredEntry,
     type ScheduleCronJob,
@@ -191,12 +194,44 @@ test('loadCronJobs keys a display-named cron by its file slug, not its display n
     })
 })
 
-// A running-job double-trigger test (firing `answer-emails` again while its first run is still
-// in flight should not start a second run) would need `fireFileChangeCron`/`fireJob`, which call
-// through to `sendMessage` (the Agent SDK session). cron.test.ts has no session/Agent-SDK mocking
-// harness — cronActivity.test.ts notes the same limitation ("fireJob is not directly callable in
-// a test (it calls the Agent SDK)") — so that case is skipped here rather than built on new
-// machinery; `runningJobs`/`jobKey` gating (cron.ts ~1264) is the code path that would cover it.
+// Two overlapping fires of one job start it once: `fireJob` claims `runningJobs` before its first
+// await, so the second of two concurrent `fireFileChangeCron` calls finds the job already running.
+// The test goes through the incremental "no changes" skip (a root that is not a git repo has
+// nothing to diff), which needs no Agent SDK session.
+test('two overlapping fires claim the job once + the skip releases its claim', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bismuth-claim-'))
+    try {
+        const c = {
+            root,
+            name: 'm',
+            cronsDir,
+            memoryDir: join(root, 'memory'),
+            runningFile: join(root, 'running.json'),
+            lastFiredFile: join(root, 'last-fired.json'),
+            logsDir: join(root, 'logs'),
+        } as unknown as VaultContext
+        cronFile(
+            'triage',
+            'name: triage\non: file-change\nwatch: inbox.md\nincremental: true',
+        )
+        const [job] = await loadCronJobs(c)
+        if (job?.on !== 'file-change') throw new Error('expected a file-change job')
+        const skips = () =>
+            readdirSync(join(root, 'logs'))
+                .map(f => readFileSync(join(root, 'logs', f), 'utf8'))
+                .join('')
+                .split('skipped: no changes').length - 1
+        await Promise.all([
+            fireFileChangeCron(c, job, ['a.md']),
+            fireFileChangeCron(c, job, ['b.md']),
+        ])
+        expect(skips()).toBe(1)
+        await fireFileChangeCron(c, job, ['c.md'])
+        expect(skips()).toBe(2)
+    } finally {
+        rmSync(root, { recursive: true, force: true })
+    }
+})
 
 // ── Retry backoff on consecutive failures ────────────────────────────────────
 //

@@ -213,6 +213,8 @@ Crons and processes are read by `daemon/src/lib/frontmatter.ts`, which is not a 
 
 One scheduler tick every 60 seconds visits each enabled vault when this device is the owner. It skips a disabled or running job and a file-change job, and fires any other job whose schedule matches now or that is overdue. `shouldFireOnTick` returns the reason, `schedule` or `catch-up`, that `fireJob` logs; `missedTickSince` finds a matched minute between the last run's end and the previous minute. The same process polls trigger files every 5 seconds: it runs cron triggers, then page triggers, for each enabled vault. A device that is not the owner heartbeats but fires nothing, and deletes triggers unread.
 
+`fireJob` marks a job running before its first await (the agenda and the incremental diff), so ticks that overlap during a slow wake fire it once; the later fire logs `already running — fire ignored`. A fire that skips without starting a session clears the mark.
+
 In-memory state is keyed `<vault root>::<file slug>`, so two vaults can each have a cron of the same name. `.last-fired.json`, `.running.json` and the activity log are keyed by display name instead. Editing `name:` by hand changes the key and orphans the cron's history, which can make an overdue-looking cron fire again at the next tick.
 
 ### The file watcher

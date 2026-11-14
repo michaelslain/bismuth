@@ -1303,11 +1303,11 @@ export async function substituteNowFacts(
  * `incremental` crons get an extra pre-fire gate (see incrementalCron.ts): the daemon diffs the
  * job's checkpoint ref against its repo BEFORE any of the running-state bookkeeping below, and
  * when there's nothing relevant to look at, returns immediately having only updated `lastFired`
- * (result "skipped") — no session, no PTY, no running-jobs entry, no cost. When there IS
- * something to review (or this is the first run), the job's `{{changedSinceLastRun}}` placeholder
- * is resolved before the prompt is sent, and — only after the session reports SUCCESS — the
- * checkpoint ref is advanced to a working-tree snapshot (vault: start of run, memory: end of run) so
- * the next run only sees newer changes.
+ * (result "skipped") — no session, no PTY, no cost, and the running-jobs claim released. When
+ * there IS something to review (or this is the first run), the job's `{{changedSinceLastRun}}`
+ * placeholder is resolved before the prompt is sent, and — only after the session reports
+ * SUCCESS — the checkpoint ref is advanced to a working-tree snapshot (vault: start of run, memory:
+ * end of run) so the next run only sees newer changes.
  */
 async function fireJob(
     ctx: VaultContext,
@@ -1315,6 +1315,36 @@ async function fireJob(
     lastFired: Record<string, LastFiredEntry>,
     opts: { reason: FireReason; changedPaths?: string[] },
 ): Promise<void> {
+    // Claimed before the first await: every caller's `runningJobs.has` check runs before this
+    // call, so a claim taken after the pre-fire awaits lets overlapping ticks each fire the job.
+    const key = jobKey(ctx, job.file)
+    if (runningJobs.has(key)) {
+        console.log(
+            `[cron:${ctx.name}] "${job.name}" already running — fire ignored`,
+        )
+        return
+    }
+    runningJobs.add(key)
+    let started = false
+    try {
+        started = await startJob(ctx, job, lastFired, opts, key)
+    } finally {
+        // A started session releases the claim in its own `finally`.
+        if (!started) {
+            jobAbortControllers.delete(key)
+            runningJobs.delete(key)
+        }
+    }
+}
+
+/** The body of `fireJob`, run under its claim; true once the background session has started. */
+async function startJob(
+    ctx: VaultContext,
+    job: CronJob,
+    lastFired: Record<string, LastFiredEntry>,
+    opts: { reason: FireReason; changedPaths?: string[] },
+    key: string,
+): Promise<boolean> {
     const tag = `[cron:${ctx.name}] "${job.name}"`
     const triggerContext = opts.changedPaths?.join(', ')
     let promptOverride: string | undefined
@@ -1349,7 +1379,7 @@ async function fireJob(
                 }),
             )
             console.log(`${tag} ${note}`)
-            return
+            return false
         }
         promptOverride = plan.prompt
         checkpoint = plan
@@ -1359,9 +1389,7 @@ async function fireJob(
             void refreshSummaries(ctx.root).catch(e => console.error(`${tag} summaries: ${e instanceof Error ? e.message : String(e)}`))
     }
 
-    const key = jobKey(ctx, job.file)
     const ac = new AbortController()
-    runningJobs.add(key)
     jobAbortControllers.set(key, ac)
     const startedAt = Date.now()
     await markRunning(ctx, job.name)
@@ -1585,6 +1613,7 @@ async function fireJob(
     sessionPromise.catch(err =>
         console.error(`${tag} unhandled error:`, err),
     )
+    return true
 }
 
 /**

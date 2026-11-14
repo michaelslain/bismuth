@@ -197,8 +197,8 @@ function areaBlock(area: IncrementalArea, since: string): string {
 /**
  * The impure half: resolve an incremental cron's checkpoint deltas against each of its repos,
  * filter them, and decide skip vs. run - plus (if running) the prompt with the placeholder
- * resolved. Called from cron.ts's fireJob BEFORE any of the running-state bookkeeping, so a skip
- * is a true no-op (no session, no PTY, no running-jobs entry). Skip iff EVERY area is past its
+ * resolved. Called from cron.ts's fireJob under its running-jobs claim but before markRunning, so a
+ * skip is a true no-op (no session, no PTY, the claim released). Skip iff EVERY area is past its
  * first run and has zero filtered files, and `opts.pendingAgenda` is not set: a job whose
  * brain-report agenda still has work runs with every area reading "nothing changed".
  */
