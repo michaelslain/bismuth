@@ -1,6 +1,6 @@
 # Status messages
 
-Bismuth tells you what it is doing through short-lived toasts (top-right pop-ups) and readouts in the status bar at the bottom of the window. This page lists the messages you can see, each led by its exact text, with what it means and what to do. For a symptom with no message, start from [troubleshooting](troubleshooting.md).
+Bismuth tells you what it is doing through short-lived toasts (pop-ups at the bottom centre of the window, just over the status bar) and readouts in the status bar at the bottom of the window. This page lists the messages you can see, each led by its exact text, with what it means and what to do. For a symptom with no message, start from [troubleshooting](troubleshooting.md).
 
 Messages that end in `: <reason>` carry the underlying error text in place of `<reason>`; include it in a bug report.
 
