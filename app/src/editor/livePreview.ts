@@ -1152,11 +1152,9 @@ function buildDecorations(
                 // inline math: $...$ by the shared rule (editor/inlineMath.ts) — no whitespace
                 // just inside either `$`, a closing `$` not followed by a digit, `\$` literal — so
                 // a dollar amount like `$5 and $10` stays text.
-                // Render it display-STYLE (\displaystyle — full-size fractions/sums/limits, the
-                // same typography as a $$ block) but still INLINE (displayMode:false → flows in the
-                // text, no jarring centered line break mid-sentence). So `$\frac{a}{b}$` looks like
-                // the block instead of the cramped default inline style. `\displaystyle` is a valid
-                // KaTeX switch; throwOnError:false in renderMath shrugs off anything malformed.
+                // Rendered in KaTeX's inline (text) style, as reading mode renders it: limits sit
+                // beside `\lim`/`\sum` and fractions shrink, so a tall expression stays inside the
+                // row pitch instead of stretching its line and pushing the lines below apart.
                 for (const m of findInlineMath(text)) {
                     const s = line.from + m.from
                     const end = line.from + m.to
@@ -1178,10 +1176,7 @@ function buildDecorations(
                     } else {
                         deco.push(
                             Decoration.replace({
-                                widget: new MathWidget(
-                                    `\\displaystyle ${m.inner}`,
-                                    false,
-                                ),
+                                widget: new MathWidget(m.inner, false),
                             }).range(s, end),
                         )
                     }

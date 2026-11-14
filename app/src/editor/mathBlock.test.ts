@@ -4,7 +4,7 @@
 
 import { test, expect, describe } from 'bun:test'
 import { EditorState } from '@codemirror/state'
-import { scanMultilineInlineMath, isInMathBlock } from './mathBlock'
+import { scanMultilineInlineMath, isInMathBlock, mathField } from './mathBlock'
 
 const inMath = (doc: string, pos: number) =>
     isInMathBlock(EditorState.create({ doc }), pos)
@@ -101,5 +101,33 @@ describe('scanMultilineInlineMath', () => {
         expect(scanMultilineInlineMath('text $a +\nb$ end')).toEqual([
             { from: 5, to: 12 },
         ])
+    })
+})
+
+describe('a $$ block opens when the caret touches it', () => {
+    const doc = 'before\n$$\nx^2\n$$\nafter'
+    const blockFrom = doc.indexOf('$$')
+    const blockTo = doc.lastIndexOf('$$') + 2
+    // Rendered = the block is one atomic widget; opened = no atomic range left for it.
+    const opened = (head: number) =>
+        EditorState.create({
+            doc,
+            selection: { anchor: head },
+            extensions: [mathField],
+        })
+            .field(mathField)
+            .atomic.size === 0
+
+    test('caret on the line above leaves it rendered', () => {
+        expect(opened(blockFrom - 1)).toBe(false)
+    })
+    test('caret at its start edge (an arrow key stepping onto it) opens it', () => {
+        expect(opened(blockFrom)).toBe(true)
+    })
+    test('caret at its end edge opens it', () => {
+        expect(opened(blockTo)).toBe(true)
+    })
+    test('caret on the line below leaves it rendered', () => {
+        expect(opened(blockTo + 1)).toBe(false)
     })
 })

@@ -99,6 +99,7 @@ class MathBlockWidget extends WidgetType {
     toDOM(): HTMLElement {
         const div = document.createElement('div')
         div.className = 'cm-math-block'
+        div.dataset.mathBlock = ''
         div.innerHTML = renderMath(this.expr, true)
         // If KaTeX wasn't loaded yet, renderMath returned "" and kicked off the lazy
         // load — fill the node in once the library is ready (same final output). Keep the
@@ -119,10 +120,9 @@ class MathBlockWidget extends WidgetType {
     }
 }
 
-/** Inline (displayMode:false) KaTeX widget for a multi-line `$…$` span. Rendered
- *  `\displaystyle` inline to match livePreview.ts's single-line inline math, so a `$…$`
- *  that soft-wrapped looks identical to one on a single line (KaTeX ignores the interior
- *  whitespace once rendered, so the source indentation question is moot). */
+/** Inline (displayMode:false) KaTeX widget for a multi-line `$…$` span, in the same inline text
+ *  style as livePreview.ts's single-line inline math, so a `$…$` that soft-wrapped looks
+ *  identical to one on a single line (KaTeX ignores the interior whitespace once rendered). */
 class InlineMathWidget extends WidgetType {
     private readonly expr: string
     private _unsub?: () => void
@@ -137,7 +137,7 @@ class InlineMathWidget extends WidgetType {
     }
 
     private render(): string {
-        return renderMath(`\\displaystyle ${this.expr}`, false)
+        return renderMath(this.expr, false)
     }
 
     toDOM(): HTMLElement {
@@ -331,6 +331,11 @@ function build(state: EditorState): {
     // and the caret couldn't rest right after the math.
     const reveals = (from: number, to: number) =>
         state.selection.ranges.some(r => r.from < to && r.to > from)
+    // A `$$` block opens when the caret merely TOUCHES it, at either edge, as a fenced code block
+    // does: a rendered block is one atomic widget, so the caret can only ever reach its edges (a
+    // click on it, an arrow key stepping onto it). With the half-open rule above it never opened.
+    const touches = (from: number, to: number) =>
+        state.selection.ranges.some(r => r.from <= to && r.to >= from)
     const decos: Range<Decoration>[] = []
     // Inactive (widget-rendered) replace ranges — also registered as EditorView.atomicRanges (see
     // mathField.provide) so the caret steps OVER the whole widget instead of falling into its hidden
@@ -371,7 +376,7 @@ function build(state: EditorState): {
 
                     const blockFrom = line.from
                     const blockTo = jLine.to
-                    const cursorInside = reveals(blockFrom, blockTo)
+                    const cursorInside = touches(blockFrom, blockTo)
                     claimed.push({ from: blockFrom, to: blockTo })
 
                     if (!cursorInside) {
@@ -520,5 +525,28 @@ const mathTheme = EditorView.theme({
  * `$ ... $` spans with rendered KaTeX widgets when the cursor is outside them.
  */
 export function mathBlock(): Extension {
-    return [mathField, mathTheme]
+    return [mathField, mathTheme, mathBlockClick]
 }
+
+/** A click on a rendered `$$` block opens it with the caret at the end of its first LaTeX line,
+ *  ready to type, rather than wherever CodeMirror maps a point on a block widget (one of its two
+ *  edges, which lands on a `$$` fence). */
+const mathBlockClick = EditorView.domEventHandlers({
+    mousedown(event, view) {
+        if (event.button !== 0) return false
+        const block = (event.target as HTMLElement | null)?.closest?.(
+            '[data-math-block]',
+        )
+        if (!block) return false
+        const from = view.posAtDOM(block)
+        const open = view.state.doc.lineAt(from)
+        const first =
+            open.number < view.state.doc.lines
+                ? view.state.doc.line(open.number + 1)
+                : open
+        view.dispatch({ selection: { anchor: first.to } })
+        view.focus()
+        event.preventDefault()
+        return true
+    },
+})

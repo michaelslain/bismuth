@@ -574,6 +574,110 @@ export const LineRhythm: Story = {
     },
 }
 
+const MATH_TEXT = [
+    '# Limits of $f(x)$',
+    '',
+    '## The squeeze $a_n \\le b_n \\le c_n$',
+    '',
+    '### Bound $\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$',
+    '',
+    'For every $\\epsilon > 0$ there is a $\\delta$ such that',
+    '$\\lim_{x \\to a} f(x) = L$ holds whenever $0 < |x - a| < \\delta$,',
+    'and $|f(x) - L| \\le \\epsilon$ follows on this line.',
+    'A fraction $\\frac{a}{b}$ sits in this line too.',
+    'A plain line under the math.',
+    '',
+    '$$',
+    '\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}',
+    '$$',
+    '',
+    'A line after the block.',
+    '',
+].join('\n')
+
+/** Math as a note carries it: in headings, tall inline math (`\lim`, `\le`, a fraction) inside
+ *  running prose, and a `$$` display block. Three things are checked. Heading math takes the
+ *  heading's size and weight (it sat at one fixed body size, regular weight). Every prose row stays
+ *  at the pitch however tall its math (display-style limits and fractions stretched their rows).
+ *  A click on the rendered block opens its source with the caret in it (it never opened). */
+export const MathInNotes: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Math.md': MATH_TEXT } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Math.md"
+                    initialText={MATH_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.cm-math-block .katex'))
+                throw new Error('math block not rendered yet')
+            if (canvasElement.querySelectorAll('.cm-math .katex').length < 8)
+                throw new Error('inline math not rendered yet')
+            return true
+        })
+        await document.fonts.ready
+        const lines = [
+            ...canvasElement.querySelectorAll('.cm-content > .cm-line'),
+        ] as HTMLElement[]
+        const mathOf = (l: HTMLElement) =>
+            styleOf(l.querySelector('.cm-math .katex'))
+        // Headings: the math is the heading's weight, and scales with the heading.
+        const heads = lines.filter(l => /\bcm-h[1-3]\b/.test(l.className))
+        await expect(heads.length).toBe(3)
+        for (const h of heads)
+            await expect(mathOf(h)!.fontWeight).toBe(styleOf(h)!.fontWeight)
+        const size = (l: HTMLElement) => parseFloat(mathOf(l)!.fontSize)
+        await expect(size(heads[0])).toBeGreaterThan(size(heads[1]))
+        await expect(size(heads[1])).toBeGreaterThan(size(heads[2]))
+        // Prose: every row holding math is exactly one pitch.
+        const pitch = px(
+            styleOf(canvasElement.querySelector('.cm-scroller'))!.lineHeight,
+        )
+        const prose = lines.filter(
+            l => !/\bcm-h\d\b/.test(l.className) && l.querySelector('.cm-math'),
+        )
+        await expect(prose.length).toBe(4)
+        await expect(
+            prose
+                .map(l => l.getBoundingClientRect().height)
+                .filter(h => Math.abs(h - pitch) > 0.5),
+        ).toEqual([])
+        // The block: a click opens its source, caret on its LaTeX line.
+        const block = canvasElement.querySelector('[data-math-block]')!
+        const r = block.getBoundingClientRect()
+        const at = {
+            clientX: r.left + r.width / 2,
+            clientY: r.top + r.height / 2,
+            bubbles: true,
+            button: 0,
+        }
+        block.dispatchEvent(new MouseEvent('mousedown', at))
+        block.dispatchEvent(new MouseEvent('mouseup', at))
+        await waitFor(() => {
+            if (canvasElement.querySelector('[data-math-block]'))
+                throw new Error('block still rendered')
+            return true
+        })
+        const view = EditorView.findFromDOM(
+            canvasElement.querySelector('.cm-editor') as HTMLElement,
+        )!
+        const head = view.state.selection.main.head
+        await expect(view.state.doc.lineAt(head).text).toContain('\\sum')
+        // Leave the story at rest: caret on the empty last line, block rendered again, no focus.
+        view.dispatch({ selection: { anchor: view.state.doc.length } })
+        view.contentDOM.blur()
+    },
+}
+
 /** A rendered callout, and the ONE way back into it. `CalloutWidget.ignoreEvent` returned a
  *  blanket `true`, which tells CodeMirror to ignore every event inside the widget — including the
  *  double-click that reveals it — so a callout became permanently uneditable the moment it

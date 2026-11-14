@@ -2003,6 +2003,16 @@ html[data-highlight-hover], html[data-highlight-hover] * {
   font-size: var(--editor-font-size);
 }
 
+/* Math in a heading takes the heading's size and weight, so `# Limits of $f(x)$` reads as one
+   heading. KaTeX's own `.katex` rule sets `font: normal …`, which resets the weight, so the weight
+   is handed down explicitly; KaTeX ships bold faces, so a bold heading gets bold glyphs. */
+.cm-editor :is(.cm-h1, .cm-h2, .cm-h3, .cm-h4, .cm-h5, .cm-h6) .cm-math {
+  font-size: inherit;
+}
+.cm-editor :is(.cm-h1, .cm-h2, .cm-h3, .cm-h4, .cm-h5, .cm-h6) .cm-math .katex {
+  font-weight: inherit;
+}
+
 /* Task bracket fields — `[due 2026-09-14]`, `[high]`, `[every week]`. A MARK, not a
    replacement: the literal syntax is the drawing, so there is nothing to hide and no
    cursor-reveal to build. Same token pair as .cm-tag so a field and a #tag read as one

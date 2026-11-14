@@ -28,7 +28,7 @@ Read this page to learn what each markdown construct looks like in the editor an
 | ` ```lang ` fence | A code block with a language label, a copy button and line numbers | Double-click it, or type inside |
 | `\| a \| b \|` table | An editable table; see [tables](tables.md) | Right-click a cell, then Edit source |
 | `$x^2$` | Typeset math, inline | Move the caret onto it to show the LaTeX |
-| `$$` on its own line, then LaTeX, then `$$` | A typeset display equation | Move the caret into the block |
+| `$$` on its own line, then LaTeX, then `$$` | A typeset display equation | Click it, or move the caret onto it |
 | `<div>...</div>` | The HTML, rendered | Click it, or move the caret into it |
 | `![[image.png]]` | The image, PDF, audio, video or note, inline; see [attachments](../vault/attachments.md) | Move the caret into the embed |
 | ` ```query `, ` ```graph `, ` ```draw ` | A live view, graph or drawing; see [query blocks](../bases/query-block.md), [graph block](graph-block.md) and [ink](ink.md) | The block's own source button |
@@ -101,7 +101,7 @@ A quote (lines starting with `>`) carries the same copy button as a code block, 
 
 ## Math
 
-Inline math renders at display size but flows in the sentence, so `$\frac{a}{b}$` looks like the block form. A `$...$` span can run across several lines; an unclosed `$` ends at a blank line or code fence, so a price like `$5` does not swallow the note.
+Inline math renders in LaTeX's inline style, as the reader shows it: limits sit beside `\lim` and `\sum`, and fractions are small, so a tall expression keeps its line at the same height as the lines around it. Math in a heading takes the heading's size and weight. A click on a `$$` block opens its LaTeX with the caret on the first line. A `$...$` span can run across several lines; an unclosed `$` ends at a blank line or code fence, so a price like `$5` does not swallow the note.
 
 ## Write a literal dollar sign
 
