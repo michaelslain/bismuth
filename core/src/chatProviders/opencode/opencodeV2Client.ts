@@ -82,6 +82,9 @@ export interface OpencodeV2Client {
     ): Promise<void>
     /** Every message of a session, oldest first (all pages). */
     messages(sessionId: string): Promise<unknown[]>
+    /** `GET /api/session?directory=…`: the directory's sessions, newest first, up to `limit`
+     *  (verified live: `directory=` filters, `location[directory]=` is ignored on this route). */
+    sessions(directory: string, limit: number): Promise<unknown[]>
     deleteSession(sessionId: string): Promise<void>
     /** `POST /api/session/{id}/revert/stage` then `…/revert/commit`: drop `messageId` and every
      *  message after it from the session, leaving the files on disk as they are. */
@@ -288,6 +291,25 @@ export function createOpencodeV2Client(
                 cursor = next
             }
             return out
+        },
+        async sessions(directory, limit) {
+            const out: unknown[] = []
+            let cursor: string | null = null
+            for (let page = 0; page < 50 && out.length < limit; page++) {
+                const q: string = cursor
+                    ? `cursor=${encodeURIComponent(cursor)}`
+                    : `directory=${encodeURIComponent(directory)}&limit=${Math.min(limit, 100)}`
+                const j = (await call('GET', `/api/session?${q}`)) as {
+                    data?: unknown
+                    cursor?: { next?: unknown }
+                } | null
+                const data = Array.isArray(j?.data) ? j.data : []
+                out.push(...data)
+                const next = j?.cursor?.next
+                if (!data.length || typeof next !== 'string' || !next) break
+                cursor = next
+            }
+            return out.slice(0, limit)
         },
         async setTitle(sessionId, title) {
             await call('PATCH', `/api/session/${sid(sessionId)}`, { title })

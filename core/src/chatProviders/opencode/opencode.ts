@@ -72,7 +72,8 @@ import {
 } from '../sessionSink'
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import { titleFromPrompt } from '../titleFromPrompt'
-import { CHAT_RENDERING_NOTE } from '../../chatRenderingNote'
+import { chatInstructionParts } from '../../chatInstructions'
+import { installedMcpLaunch } from '../../bismuthInstall'
 import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import {
     opencodeCliArgs,
@@ -130,6 +131,17 @@ import {
 } from './opencodeConfig'
 import { readOpencodeServers } from './opencodeLocalServers'
 import { contextOverflowMessage, isContextOverflow } from './opencodeOverflow'
+import {
+    estimateTokens,
+    leanerTier,
+    observedBase,
+    OPENCODE_BASE_TOKENS,
+    pickTier,
+    tierHasBrain,
+    tierProfile,
+    type InjectTier,
+    type TurnBudget,
+} from './opencodeBudget'
 import {
     localUnreachableMessage,
     resolveLocalSpawn,
@@ -239,6 +251,8 @@ interface OpencodeSession {
     spawnEnv: Record<string, string> | null
     /** The config this session's server was opened with; the compact profile is built from it. */
     configInput: OpencodeConfigInput
+    /** The leanest tier this chat has run on (opencodeBudget.ts); later turns never inject more. */
+    tier?: InjectTier
     /** A `set_model` waiting on the model fetch; the next turn waits for it. */
     modelPick?: Promise<void>
 }
@@ -280,6 +294,9 @@ let liveInput: OpencodeConfigInput | null = null
 /** Models whose prompt overflowed the loaded window: their later turns start on the compact profile.
  *  Keyed `provider/model|window` (`?` when no window was detected). */
 const compactModels = new Set<string>()
+/** opencode's own opening tokens per profile, as the last first turn on it reported (learnBase);
+ *  absent until one did, when OPENCODE_BASE_TOKENS stands in. */
+const observedBases: Partial<Record<OpencodeProfile, number>> = {}
 
 function compactKey(model: string | null | undefined): string {
     return `${model ?? ''}|${injectedWindows.get(model ?? '') ?? '?'}`
@@ -367,6 +384,31 @@ async function detectLimits(
     return { limits, infos }
 }
 
+/** The memory folder of each vault whose chats run with the daemon on, as the last session opened
+ *  there said: the server's config is shared, so a call that knows no memory folder reuses it. */
+const mcpMemoryDirs = new Map<string, string>()
+
+/** The Bismuth MCP for a vault's opencode chats: the installed server with the vault and the `chat`
+ *  channel in its env (the same gate acp/driver.ts's buildMcpServers sets), plus the memory folder
+ *  when the daemon is on, which turns its memory tools on. Null when the MCP is not installed. */
+export function opencodeMcp(
+    cwd: string,
+    mcp = installedMcpLaunch(),
+): OpencodeConfigInput['mcp'] {
+    if (!mcp) return null
+    const memoryDir = mcpMemoryDirs.get(cwd)
+    return {
+        command: mcp.command,
+        environment: {
+            ...mcp.environment,
+            BISMUTH_VAULT: cwd,
+            BISMUTH_MCP_CHANNEL: 'chat',
+            BISMUTH_AGENT_CHANNEL: 'chat',
+            ...(memoryDir ? { BISMUTH_MEMORY_DIR: memoryDir } : {}),
+        },
+    }
+}
+
 /** Open the shared default server for a vault: the local model, its saved servers and the detected
  *  windows ride its injected config. A window that differs from the live server's injected limit
  *  replaces it once; an unchanged reopen keeps it. */
@@ -423,6 +465,7 @@ async function openDefaultServerOnce(
         servers,
         limits: rememberedLimits,
         profile: 'default',
+        mcp: opencodeMcp(cwd),
     }
     let input = base
     let server = await ensureOpencodeServer(bin, configEnv(input)).catch(
@@ -991,6 +1034,8 @@ async function getOrCreateSession(
     resume: string | undefined,
     memoryDir: string | undefined,
 ): Promise<OpencodeSession | null> {
+    if (memoryDir) mcpMemoryDirs.set(cwd, memoryDir)
+    else mcpMemoryDirs.delete(cwd)
     const bin = whichBinary('opencode')
     if (!bin) {
         sink({
@@ -1137,22 +1182,85 @@ async function getOrCreateSession(
     return session
 }
 
-/** The system text a server-mode turn carries: how the chat renders the reply
- *  (CHAT_RENDERING_NOTE), how to cite a note's lines when the editor shows line numbers
- *  (chatLineRefNote.ts), then the memory — the session-start brain block (fetched once per
- *  session) and the recall for THIS prompt — when the vault has a memory dir. opencode 1 sends it
- *  as the prompt's `system`; opencode 2 stores it in a session instructions entry before the
- *  prompt. */
-async function turnSystemText(
+/** The pieces of a server-mode turn's system text: `head` is how the chat renders the reply
+ *  (CHAT_RENDERING_NOTE) and how to cite a note's lines when the editor shows line numbers
+ *  (chatLineRefNote.ts); `brain` is the session-start brain block (fetched once per session) and
+ *  `recall` the recall for THIS prompt, both only when the vault has a memory dir. The tier
+ *  (opencodeBudget.ts) decides whether the brain block rides along: `joinSystem`. opencode 1 sends
+ *  the text as the prompt's `system`; opencode 2 stores it in a session instructions entry before
+ *  the prompt. */
+type SystemParts = { head: string[]; brain: string; recall: string }
+
+function joinSystem(p: SystemParts, tier: InjectTier): string {
+    const parts = [tierHasBrain(tier) ? p.brain : '', p.recall].filter(Boolean)
+    return [...p.head, ...parts].join('\n\n')
+}
+
+/** What a turn would inject, as the token counts the tier choice weighs. */
+function turnBudget(
+    model: string | null | undefined,
+    p: SystemParts,
+    text: string,
+): TurnBudget {
+    return {
+        window: injectedWindows.get(model ?? '') ?? null,
+        base: {
+            default: observedBases.default ?? OPENCODE_BASE_TOKENS.default,
+            compact: observedBases.compact ?? OPENCODE_BASE_TOKENS.compact,
+        },
+        always: estimateTokens(joinSystem({ ...p, brain: '' }, 'lean')),
+        brain: estimateTokens(p.brain),
+        message: estimateTokens(text),
+    }
+}
+
+/** The tier this turn runs on: the richest one the model's window holds, never richer than the
+ *  chat already stepped down to, and `lean` once the model overflowed even so. */
+function chooseTier(
+    s: OpencodeSession,
+    model: string | null | undefined,
+    p: SystemParts,
+    text: string,
+): InjectTier {
+    let tier = pickTier(turnBudget(model, p, text))
+    if (s.tier) tier = leanerTier(tier, s.tier)
+    if (compactModels.has(compactKey(model))) tier = 'lean'
+    return tier
+}
+
+/** Learn opencode's own share of an opening request from a chat's first turn, which carries no
+ *  history: its first step's input less what Bismuth injected and the message. */
+function learnBase(
+    profile: OpencodeProfile,
+    firstTurn: boolean,
+    inputTokens: number | null,
+    system: string,
+    text: string,
+): void {
+    if (!firstTurn || inputTokens === null) return
+    const base = observedBase(
+        inputTokens,
+        estimateTokens(system),
+        estimateTokens(text),
+    )
+    if (base !== null) observedBases[profile] = base
+}
+
+/** The instructions every backend shares (chatInstructions.ts), which lead every tier's system
+ *  text. */
+export function opencodeInstructionHead(cwd: string, lineRefNote = ''): string[] {
+    return chatInstructionParts(cwd, lineRefNote)
+}
+
+async function turnSystemParts(
     s: OpencodeSession,
     text: string,
-    opts?: { compact?: boolean },
-): Promise<string> {
+): Promise<SystemParts> {
     // How to cite a note's lines, read from .settings every turn so a toggle applies on the next
     // message (chatLineRefNote.ts; '' with line numbers off).
     const lineRefNote = await chatLineRefNoteFor(s.cwd)
-    const head = [CHAT_RENDERING_NOTE, lineRefNote].filter(Boolean)
-    if (!s.memoryDir) return head.join('\n\n')
+    const head = opencodeInstructionHead(s.cwd, lineRefNote)
+    if (!s.memoryDir) return { head, brain: '', recall: '' }
     // `system` is per-call (fresh every turn), so the session ledger would wrongly suppress notes
     // on later turns: reset it before each recall.
     const svc = recallServiceFor(s.cwd, s.memoryDir)
@@ -1170,8 +1278,8 @@ async function turnSystemText(
     // map, memory index) ahead of that turn's recall. Fetched once per session and reused; opencode
     // exposes no compact/clear hook to refetch on. Via the recall service so the settings gate
     // applies.
-    // The compact profile is for windows too small for the brain block, so it carries the recall only.
-    let brainText = opts?.compact ? '' : brainBySession.get(s)
+    // Fetched even when the tier drops it, so its size can be weighed against the window.
+    let brainText = brainBySession.get(s)
     if (brainText === undefined) {
         const b = await recallWithin(
             svc,
@@ -1189,8 +1297,7 @@ async function turnSystemText(
         if (b?.context && b.context.includes('# Vault map'))
             brainBySession.set(s, b.context)
     }
-    const parts = [brainText, recalled?.context].filter((p): p is string => !!p)
-    return [...head, ...parts].join('\n\n')
+    return { head, brain: brainText, recall: recalled?.context ?? '' }
 }
 
 /** opencode 1's `session.prompt` body: the model split into provider and model ids, the agent only
@@ -1271,7 +1378,10 @@ async function runTurnServer(
         // Per-turn memory injection (RE-FIX: opencode had none before server mode): recall off the
         // CURRENT prompt and ride it as `system` — a genuine per-call override, verified live
         // (SessionPromptData.system), so this is real auto-recall, not a once-per-session digest.
-        const system = await turnSystemText(s, text)
+        // opencode 1 runs one profile, so a small window only drops the brain block here.
+        const parts = await turnSystemParts(s, text)
+        s.tier = chooseTier(s, model, parts, text)
+        const system = joinSystem(parts, s.tier)
         if (slash) {
             const res = await server.client.session.command({
                 path: { id: s.sessionId as string },
@@ -1465,6 +1575,7 @@ async function v2Attempt(
     images: ChatImage[] | undefined,
     server: ServerV2,
     profile: OpencodeProfile,
+    system: string,
     model: string | null | undefined,
     slash: { command: string; args: string } | null,
 ): Promise<V2Attempt> {
@@ -1523,9 +1634,6 @@ async function v2Attempt(
     )
 
     try {
-        const system = await turnSystemText(s, text, {
-            compact: profile === 'compact',
-        })
         // Best-effort: the entries route is experimental, and a turn without its system text still runs.
         await client
             .putInstruction(sessionId, SYSTEM_ENTRY_KEY, system)
@@ -1655,19 +1763,32 @@ async function runTurnServerV2(
         return h?.version === 2 ? h : null
     }
 
-    let profile: OpencodeProfile = 'default'
+    // The tier is chosen from the model's loaded window before anything is sent, so a small window
+    // starts lean instead of overflowing and compacting on its first request (opencodeBudget.ts).
+    const firstTurn = s.untitled === true
+    const parts = await turnSystemParts(s, text)
+    let tier = chooseTier(s, model, parts, text)
     let target = server
-    const key = compactKey(model)
-    if (compactModels.has(key)) {
+    if (tierProfile(tier) === 'compact') {
         const c = await compactServer()
-        if (c) {
-            target = c
-            profile = 'compact'
-        }
+        if (c) target = c
+        else tier = 'full'
     }
-    let att = await v2Attempt(s, text, images, target, profile, model, slash)
+    let profile = tierProfile(tier)
+    let system = joinSystem(parts, tier)
+    const key = compactKey(model)
+    let att = await v2Attempt(
+        s,
+        text,
+        images,
+        target,
+        profile,
+        system,
+        model,
+        slash,
+    )
     if (
-        profile === 'default' &&
+        tier !== 'lean' &&
         !att.emitted &&
         !s.aborting &&
         v2OverflowOf(att)
@@ -1675,15 +1796,26 @@ async function runTurnServerV2(
         const c = await compactServer()
         if (c) {
             compactModels.add(key)
+            tier = 'lean'
             profile = 'compact'
+            system = joinSystem(parts, tier)
             // Through the compact server: every server shares the store, and the default one may
             // have been replaced (and killed) while the compact one spawned.
             if (att.prompted) await dropFailedAttempt(c, s.sessionId)
-            att = await v2Attempt(s, text, images, c, profile, model, slash)
+            att = await v2Attempt(s, text, images, c, profile, system, model, slash)
         }
     } else if (v2OverflowOf(att)) {
         compactModels.add(key)
     }
+    s.tier = tier
+    if (!v2OverflowOf(att))
+        learnBase(
+            profile,
+            firstTurn,
+            att.state.firstInputTokens,
+            system,
+            text,
+        )
 
     const wasAborted = s.aborting
     s.aborting = false
@@ -1804,7 +1936,9 @@ async function runTurnLegacy(
             : s.model
     if (!retried) s.turnCount += 1
     const sessionBefore = s.sessionId
-    const compact = compactModels.has(compactKey(model))
+    // Run mode injects no Bismuth text, so the window decides only the opencode profile.
+    s.tier = chooseTier(s, model, { head: [], brain: '', recall: '' }, text)
+    const compact = tierProfile(s.tier) === 'compact'
     const major = await opencodeMajor(s.bin)
     // opencode 2 shell-quotes a message argument that contains whitespace before sending it, so the
     // model would read `"fix the bug"` with literal quotes; stdin reaches it verbatim.

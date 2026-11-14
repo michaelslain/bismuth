@@ -56,6 +56,19 @@ export function chatHistoryFixture(): ChatHistoryEntry[] {
         },
         {
             session: {
+                sessionId: 'ses_h1opencode',
+                summary: 'what tests or quizzes do i have tomorrow',
+                lastModified: minutesAgoToday(20),
+                origin: 'user',
+                provider: 'opencode',
+            },
+            frames: turn(
+                'what tests or quizzes do i have tomorrow',
+                'One: the **MATH 128A** quiz on Thursday, from `school/classes/MATH 128A`.',
+            ),
+        },
+        {
+            session: {
                 sessionId: 'h2',
                 summary: 'dream — nightly vault review',
                 lastModified: minutesAgoToday(40),

@@ -1583,6 +1583,20 @@ export function createChatSession(
     /** Resume a past session: clean reconnect FIRST (so no stray frame from the abandoned turn lands),
      *  then replay its history frames through onFrame; the new socket's onopen flushes the resume. */
     const resumeSession = async (sessionId: string) => {
+        // A chat from another backend's store resumes on that backend: switch first, so the resume
+        // and the replay below go to the store that holds it.
+        const owner =
+            sessions().find(s => s.sessionId === sessionId)?.provider ??
+            searchHits().find(h => h.sessionId === sessionId)?.provider
+        if (owner && owner !== provider()) {
+            const next = sanitizeChatProvider(owner, provider())
+            started = true
+            rememberProvider(next)
+            setModels([])
+            setAuthProviders(null)
+            setLastModel(readLastModel(storage, next, chatId))
+            forgetChatSession(chatId)
+        }
         setHistoryOpen(false)
         resetTranscript()
         emitFocusRequest()

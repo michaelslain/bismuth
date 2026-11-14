@@ -145,6 +145,13 @@ export function localSpawnFor(
                     CLAUDE_CODE_SUBAGENT_MODEL: model,
                     CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
                     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+                    // Claude Code assumes a window for a model it does not know and auto-compacts
+                    // within it; its own notice says to set this to the model's real window. The
+                    // loaded window, when the server reports one, keeps it from overflowing a small
+                    // load or compacting a large one early.
+                    ...(windows[model]
+                        ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(windows[model]) }
+                        : {}),
                 },
                 args: [],
                 model,

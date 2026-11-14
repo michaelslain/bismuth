@@ -19,6 +19,9 @@ export type ChatHistoryRowProps = {
     summary?: string
     lastModified: number
     origin?: ChatOrigin
+    /** The backend that holds the chat; a backend other than Claude Code is named before the
+     *  time, since opening the row switches the chat to it. */
+    provider?: string
     /** A search hit's matching excerpt; omitted for a plain resume-list row. */
     snippet?: string
     /** The search query behind `snippet`. The excerpt shows on one ellipsised line, so it is
@@ -48,10 +51,12 @@ const ChatHistoryRow: Component<ChatHistoryRowProps> = props => (
         detail={props.snippet && snippetFromMatch(props.snippet, props.query ?? '')}
         // Always passed, even when empty: the row reserves the badge slot so the time column
         // lines up between restricted and open chats.
-        // Always passed, even when empty: the row reserves the badge slot so the time column
-        // lines up between restricted and open chats.
         badge={<VisibilityBadge visibility={props.visibility} />}
-        sublabel={relTimeChat(props.lastModified)}
+        sublabel={
+            props.provider && props.provider !== 'claude'
+                ? `${props.provider} // ${relTimeChat(props.lastModified)}`
+                : relTimeChat(props.lastModified)
+        }
         onPick={() => props.onClick()}
         onContextMenu={e => props.onContextMenu?.(e)}
         actions={

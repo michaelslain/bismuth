@@ -202,7 +202,21 @@ describe('opencode 2 driver: windows, compact, agents', () => {
         oc.closeChat(c.id)
     })
 
+    test('a small window starts on the compact profile, before any overflow', async () => {
+        const defaultBefore = prompts(await journal('default')).length
+        const compactBefore = prompts(await journal('compact')).length
+        const c = await open(QWEN)
+        const frames = await turn(c, 'hello small')
+        expect(frames.find(f => f.type === 'error')).toBeUndefined()
+        expect(prompts(await journal('default')).length).toBe(defaultBefore)
+        expect(prompts(await journal('compact')).length).toBe(compactBefore + 1)
+        expect(await userTexts(c.sessionId)).toEqual(['hello small'])
+        oc.closeChat(c.id)
+    })
+
     test('an overflowing turn retries once on the compact profile, invisibly, and later turns skip the default', async () => {
+        // A window the estimate says holds the default prompt, which overflows anyway.
+        window = 65536
         const c = await open(QWEN)
         const frames = await turn(c, 'OVERFLOW please')
         expect(frames.find(f => f.type === 'error')).toBeUndefined()
@@ -246,6 +260,7 @@ describe('opencode 2 driver: windows, compact, agents', () => {
         )
         expect(instructions.length).toBeGreaterThan(0)
         oc.closeChat(c.id)
+        window = 8192
     })
 
     test('the default turn carries the brain block (vault map) and the compact turn drops it', async () => {

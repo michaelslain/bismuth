@@ -18,6 +18,9 @@ const OVERFLOW: RegExp[] = [
     // generic: "context window/length" phrased as exceeded or too small
     /context (?:window|length)[^.\n]{0,60}(?:exceed|too (?:small|long|large|short)|overflow)/i,
     /(?:exceed|overflow|too (?:long|large))[^.\n]{0,60}context (?:window|length)/i,
+    // opencode 2: the opening request alone is past its compaction threshold, so there is nothing
+    // to compact
+    /compaction request cannot be reduced further/i,
 ]
 
 /** True when `message` says the request did not fit the model's context window. */

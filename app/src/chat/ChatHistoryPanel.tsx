@@ -374,6 +374,7 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                                                             s.lastModified
                                                         }
                                                         origin={s.origin}
+                                                        provider={s.provider}
                                                         visibility={
                                                             s.visibility
                                                         }
@@ -426,6 +427,7 @@ const ChatHistoryPanel: Component<ChatHistoryPanelProps> = props => {
                                             summary={hit.summary}
                                             lastModified={hit.lastModified}
                                             origin={hit.origin}
+                                            provider={hit.provider}
                                             snippet={hit.snippet}
                                             query={props.history.query()}
                                             visibility={hit.visibility}

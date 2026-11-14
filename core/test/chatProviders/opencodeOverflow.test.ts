@@ -18,6 +18,8 @@ describe('isContextOverflow', () => {
             'Input exceeds the context window of this model',
             'The context length was exceeded',
             'prompt too long for the context window',
+            // opencode 2.3.0's compaction.failed, an opening request past its compaction threshold
+            'The compaction request cannot be reduced further without losing the latest exchange or checkpoint',
         ])
             expect(isContextOverflow(m)).toBe(true)
     })

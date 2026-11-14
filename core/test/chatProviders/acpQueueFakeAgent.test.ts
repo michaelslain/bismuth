@@ -168,11 +168,15 @@ function promptText(params: unknown): string {
             ? (params as Record<string, unknown>)
             : {}
     const blocks = Array.isArray(p.prompt) ? p.prompt : []
+    // The user's text: a session's first prompt leads with the chat instructions block.
     const first = blocks.find(
         b =>
             b &&
             typeof b === 'object' &&
-            (b as Record<string, unknown>).type === 'text',
+            (b as Record<string, unknown>).type === 'text' &&
+            !String((b as Record<string, unknown>).text).startsWith(
+                '<bismuth-chat-instructions>',
+            ),
     ) as Record<string, unknown> | undefined
     return typeof first?.text === 'string' ? first.text : ''
 }
@@ -412,6 +416,11 @@ describeOrSkipSlow(
                 'first message',
                 'second message',
             ])
+            // The chat instructions lead the session's first prompt only.
+            const leads = prompts.map(p =>
+                JSON.stringify(p.params).includes('<bismuth-chat-instructions>'),
+            )
+            expect(leads).toEqual([true, false])
             // Compared against an INDEPENDENTLY obtained expected value (the driver's own "session" frame),
             // not against each other — see this file's header on why sessionIds[1] === sessionIds[0] alone
             // would be a tautology.

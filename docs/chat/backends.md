@@ -62,7 +62,8 @@ The flags are separate where the behaviors differ:
 
 - `permissionPrompts` means the backend can raise a live approval request. `permissionModes` means a mode picker is drivable. An ACP backend can prompt but has no mode to switch, so the picker stays hidden.
 - `agents` means the backend has selectable primary agents (opencode's `build` and `plan`). The chat shows an agent word and Shift+Tab cycles it; the backend implements `setAgent` exactly when the flag is set, and `catalogParity.test.ts` pins the pair.
-- `sessionPicker` and `resume` are separate. opencode resumes a conversation per tab but exposes no cross-session list, so it gets resume without the picker.
+- `sessionPicker` and `resume` are separate. Codex resumes a conversation per tab but exposes no cross-session list, so it gets resume without the picker. A backend's `sessionPicker` is `true` exactly when `CHAT_HISTORY_SOURCES` (`core/src/chatProviders/chatHistorySources.ts`) lists its chats; Claude Code and opencode do.
+- Every chat backend sends the same standing instructions (`chatInstructions.ts`: the rendering note, the line-citation note, and in a vault the daemon's name and the `bismuth` CLI note), each through its own channel. `core/test/chatProviders/backendContract.test.ts` checks every backend in the catalog for those instructions, for Bismuth's MCP when it speaks MCP, for a history source matching `sessionPicker`, and for window sizing when it runs local models; a backend added to the catalog fails it until it is wired.
 - `midTurnMessages` decides where a message sent during a reply waits. Claude Code reads it into the running turn, so the client sends it at once; every other backend runs one turn per message, so the client holds it until the turn's `done`.
 - `computerUse` gates no control. `core/src/chat.ts` reads it only to pass `--chrome` when it spawns a Claude Code session.
 

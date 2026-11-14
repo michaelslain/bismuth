@@ -324,8 +324,9 @@ const OPENCODE: BackendDescriptor = {
         // Server mode replays via `GET /session/{id}/message` (typed, no export subprocess); run mode
         // still falls back to `opencode export <sessionID>` — either way a transcript replays.
         historyReplay: true,
-        // …but there is still no cross-session list, so the history picker stays Claude-only.
-        sessionPicker: false,
+        // opencode 2 lists a directory's sessions (`GET /api/session?directory=…`), so its chats join
+        // the history picker (opencodeHistory.ts); an opencode 1 install lists none.
+        sessionPicker: true,
         models: true,
         // opencode 2 models list their reasoning-effort levels as variants (`GET /api/model`), and a
         // turn runs the chosen level as its model's variant — verified live against 2.0.32. opencode 1

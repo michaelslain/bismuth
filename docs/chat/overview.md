@@ -154,12 +154,12 @@ Claude Code and opencode report their subagents. Codex and the ACP agents send n
 
 ## How do I resume a past conversation?
 
-Click `history` to open a dialog over the chat. It lists existing Claude Code sessions for the vault, terminal and in-app, newest first, grouped under `today`, `yesterday`, `past 7 days`, `past 30 days` and `older`. Type to search message text and titles instead.
-Enter or a click resumes the row, replaying the earlier turns; the next message continues that conversation.
+Click `history` to open a dialog over the chat. It lists the vault's past chats, newest first: Claude Code sessions (terminal and in-app) and in-app opencode chats, grouped under `today`, `yesterday`, `past 7 days`, `past 30 days` and `older`. Type to search message text and titles instead.
+Enter or a click resumes the row, replaying the earlier turns; the next message continues that conversation. An opencode chat's row names its backend before the time (`opencode // 2h ago`), and opening it from a chat on another backend switches that chat to opencode.
 
 A **you / daemon / all** toggle chooses whose chats to list; it resets to `you` each time the dialog opens. Chats the vault's daemon started carry a bot icon, and the same icon marks the tab once you resume one. `Mod+Shift+T` (reopen closed tab) on a closed chat resumes its same conversation.
 
-`history` appears only for backends that can list sessions. opencode and Codex conversations still resume per tab but are not in this list. From a shell, `bismuth chat list`, `bismuth chat read <id>` and `bismuth chat search <query>` read the same history ([CLI reference](../cli/reference.md)).
+`history` appears only for backends that can list sessions. Codex conversations resume per tab but are not in this list. From a shell, `bismuth chat list`, `bismuth chat read <id>` and `bismuth chat search <query>` read the same history ([CLI reference](../cli/reference.md)).
 
 ## How do I hide or delete past chats?
 
@@ -167,7 +167,7 @@ Hover a chat in the `history` dialog and press its `[x]` to delete it; an undo t
 Right-click a chat for its menu: **Visibility** keeps it away from the daemon or from both AI channels ([visibility](../vault/visibility.md#how-do-i-hide-a-past-chat)), and **Delete chat** deletes it the same way.
 **Manage chats** in the dialog's header sets **Default for all chats** and holds **Delete all your chats**, **Delete all daemon chats** or **Delete every chat**, following the you / daemon / all toggle.
 
-- A delete is immediate, with no confirmation; the undo toast is the way back. A deleted chat waits in a trash beside the agent CLI's session files for 10 minutes, so the undo (or `bismuth chat restore`) works until then; after that the chat is deleted for good. Its transcript note, if the daemon has not processed it yet, goes at once.
+- A delete is immediate, with no confirmation; the undo toast is the way back. A deleted chat waits in a trash beside the agent CLI's session files for 10 minutes, so the undo (or `bismuth chat restore`) works until then; after that the chat is deleted for good. Its transcript note, if the daemon has not processed it yet, goes at once. A deleted opencode chat is hidden for those 10 minutes and then deleted from opencode; if Bismuth quits before then, the chat stays.
 - `Delete` or `Backspace` on the arrow-key row deletes that chat; the keys are rebindable as `chat-history-delete` in [keybindings](../settings/keybindings.md). Typing in the search box never deletes.
 - A restricted chat shows the sidebar's visibility badge. Hiding never restricts you: you still resume and search it.
 
@@ -210,7 +210,7 @@ A table you type or paste in the message box renders as the same editable grid a
 
 The Claude driver in `core/src/chat.ts` keeps a registry of sessions keyed by a client chat id, mirroring `core/src/terminal.ts`.
 Each session holds one long-lived Agent SDK `query()`, an input mailbox that feeds it turns, the current output sink, the in-flight permission map and the always-allow set. A user turn pushes one `SDKUserMessage` onto the mailbox; `close()` ends the stream.
-`query()` runs `claude` from `whichClaude()` as `pathToClaudeCodeExecutable`, with `cwd` set to the vault and the `claude_code` system-prompt preset, so relative paths and `CLAUDE.md` behave as in the TUI. The preset's `append` is `CHAT_RENDERING_NOTE` (`core/src/chatRenderingNote.ts`), which tells the agent the transcript typesets `$…$` and `$$…$$` math; Codex and opencode carry the same text through their own channels ([providers](providers.md)).
+`query()` runs `claude` from `whichClaude()` as `pathToClaudeCodeExecutable`, with `cwd` set to the vault and the `claude_code` system-prompt preset, so relative paths and `CLAUDE.md` behave as in the TUI. The preset's `append` is `chatInstructions` (`core/src/chatInstructions.ts`): `CHAT_RENDERING_NOTE`, which tells the agent the transcript typesets `$…$` and `$$…$$` math, the line-citation note when line numbers are on, and in a vault the daemon's name (`chatPersonaNote.ts`) and the `bismuth` CLI note. Every other backend carries the same text through its own channel ([providers](providers.md)).
 With `editor.lineNumbers` on, `CHAT_LINE_REF_NOTE` (`core/src/chatLineRefNote.ts`) follows the rendering note: it tells the agent to cite lines as `[[Note#L12]]` links, counted from 1 over the whole stored file. `createSession` reads the setting once per session (`chatLineRefNoteFor`); with it off the note is an empty string and is left out.
 When the chat's `cwd` sits in a vault, the `append` continues with `AGENT_CLI_NOTE` (`core/src/agentCliNote.ts`). The note says the `bismuth` CLI does everything Bismuth does, that no `--vault` is needed inside the vault, that the shell already starts in the vault folder so commands run there without a `cd`, where `bismuth --help` and `bismuth docs search` lead, and never to run anything inside Bismuth.app.
 

@@ -238,3 +238,38 @@ describe('saved servers from .settings', () => {
         }
     })
 })
+
+describe('the Bismuth MCP', () => {
+    const mcp = {
+        command: ['/x/bismuth-mcp'],
+        environment: { BISMUTH_CLI: '/x/bismuth', BISMUTH_VAULT: '/v' },
+    }
+    const input = (profile: 'default' | 'compact') => ({
+        local: null,
+        servers: [],
+        limits: [],
+        profile,
+        mcp,
+    })
+
+    test('the default profile declares it as a local MCP with its tools called directly', () => {
+        expect(buildOpencodeConfig(input('default'))?.mcp).toEqual({
+            bismuth: {
+                type: 'local',
+                command: ['/x/bismuth-mcp'],
+                environment: { BISMUTH_CLI: '/x/bismuth', BISMUTH_VAULT: '/v' },
+                codemode: false,
+            },
+        })
+    })
+
+    test('the compact profile leaves it out', () => {
+        expect(buildOpencodeConfig(input('compact'))?.mcp).toBeUndefined()
+    })
+
+    test('no installed MCP, no entry', () => {
+        expect(
+            buildOpencodeConfig({ ...input('default'), mcp: null }),
+        ).toBeNull()
+    })
+})

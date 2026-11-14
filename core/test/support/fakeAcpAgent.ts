@@ -555,11 +555,15 @@ function extractPromptText(params: unknown): string {
             ? (params as Record<string, unknown>)
             : {}
     const blocks = Array.isArray(p.prompt) ? p.prompt : []
+    // The user's text: a session's first prompt leads with the chat instructions block.
     const firstText = blocks.find(
         b =>
             b &&
             typeof b === 'object' &&
-            (b as Record<string, unknown>).type === 'text',
+            (b as Record<string, unknown>).type === 'text' &&
+            !String((b as Record<string, unknown>).text).startsWith(
+                '<bismuth-chat-instructions>',
+            ),
     ) as Record<string, unknown> | undefined
     return typeof firstText?.text === 'string' ? firstText.text : ''
 }

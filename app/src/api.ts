@@ -177,7 +177,12 @@ export type ChatVisibilityFields = {
     ownVisibility?: ChatVisibility
 }
 
-export type ChatSearchHit = CoreChatSearchHit & ChatVisibilityFields
+export type ChatSearchHit = CoreChatSearchHit &
+    ChatVisibilityFields & {
+        /** The backend whose store holds the chat (`claude`, `opencode`); opening it switches the
+         *  chat to that backend. */
+        provider?: string
+    }
 export type { ChatOrigin, ChatScope }
 
 /** Wire shapes of the owner-only `/opencode/*` provider routes (core/src/chatProviders/opencode/
@@ -227,8 +232,8 @@ const opencodeCall = <T>(run: () => Promise<T>): Promise<T> =>
         throw new Error(opencodeErrorMessage(e))
     })
 
-/** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
- *  vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
+/** One row in the chat history picker — a past Claude Code session (terminal OR in-app) or an
+ *  in-app opencode chat for the vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
 export interface ChatSessionInfo extends ChatVisibilityFields {
     sessionId: string
     summary: string
@@ -236,6 +241,9 @@ export interface ChatSessionInfo extends ChatVisibilityFields {
     /** Who minted it — the vault's daemon (a cron chat) or the user (see core/src/chat.ts
      *  resolveChatOrigin). Lets the History picker mark the daemon's rows visibly. */
     origin: ChatOrigin
+    /** The backend whose store holds the chat (`claude`, `opencode`); opening it switches the chat
+     *  to that backend. */
+    provider?: string
 }
 
 // --- Transport seam -------------------------------------------------------

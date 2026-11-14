@@ -59,6 +59,17 @@ export const DaemonOrigin: Story = {
     },
 }
 
+/** An opencode chat: the backend is named before the time, since opening it switches the chat. */
+export const OpencodeChat: Story = {
+    args: {
+        summary: 'what tests or quizzes do i have tomorrow',
+        lastModified: Date.now() - 25 * MIN,
+        origin: 'user',
+        provider: 'opencode',
+        onClick: () => {},
+    },
+}
+
 export const LongTitle: Story = {
     args: {
         summary:

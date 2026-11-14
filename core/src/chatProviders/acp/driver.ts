@@ -37,6 +37,8 @@
 //      so a well-behaved agent falls back to its own tools instead of calling them.
 //   4. The subprocess is killed on closeChat/abort-timeout/an unexpected exit, and on process
 //      "exit" (shutdownAll below) — never left running past its chat.
+import { chatInstructions } from '../../chatInstructions'
+import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import { existsSync } from 'node:fs'
 import { bismuthHome } from '../../bismuthHome'
 import type { ChatFrame, ChatImage, ChatSink } from '../../chat'
@@ -114,11 +116,28 @@ function bismuthMcpBin(): string | null {
  *  through when it spawns the `bismuth` binary, so whatever channel this MCP server's own process
  *  sees is exactly what a `bismuth_cli` call (or a direct CLI invocation shelled out from this MCP
  *  server's own process, however unlikely) will be gated as. */
-function buildMcpServers(
+/** The leading blocks of an ACP prompt: on a session's first prompt from this process, the chat
+ *  instructions (chatInstructions.ts) in a `<bismuth-chat-instructions>` block, since ACP has no
+ *  system-prompt field; on every later prompt, none. */
+export function acpInstructionBlocks(
+    cwd: string,
+    first: boolean,
+    lineRefNote = '',
+): AcpOutboundContentBlock[] {
+    if (!first) return []
+    return [
+        {
+            type: 'text',
+            text: `<bismuth-chat-instructions>\n${chatInstructions(cwd, lineRefNote)}\n</bismuth-chat-instructions>`,
+        },
+    ]
+}
+
+export function buildMcpServers(
     vaultRoot: string,
     memoryDir?: string,
+    bin: string | null = bismuthMcpBin(),
 ): AcpMcpServerStdio[] {
-    const bin = bismuthMcpBin()
     if (!bin) return []
     const env: { name: string; value: string }[] = [
         { name: 'BISMUTH_VAULT', value: vaultRoot },
@@ -284,6 +303,9 @@ interface AcpSession {
     modelShape: AcpModelShapeInfo
     translateState: AcpTranslateState
     turnActive: boolean
+    /** Whether this process already sent the chat instructions (chatInstructions.ts) into the
+     *  session. ACP has no system-prompt field, so they lead the first prompt it sends. */
+    instructed?: boolean
     /** Set by abortTurn right before session/cancel — cleared once session/prompt settles (its
      *  stopReason:"cancelled" is then NOT reported as an error), mirroring opencode.ts's `aborting`. */
     aborting: boolean
@@ -775,7 +797,12 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
     ): Promise<void> {
         s.turnActive = true
         s.lastActivityAt = Date.now()
-        const prompt: AcpOutboundContentBlock[] = []
+        const prompt: AcpOutboundContentBlock[] = acpInstructionBlocks(
+            s.cwd,
+            !s.instructed,
+            await chatLineRefNoteFor(s.cwd),
+        )
+        s.instructed = true
         if (text) prompt.push({ type: 'text', text })
         for (const im of images ?? [])
             prompt.push({

@@ -53,20 +53,19 @@ describe('header gating + options', () => {
         expect(providerCan('claude', 'effort')).toBe(true)
     })
     test('opencode hides exactly the controls neither server nor run mode can drive', () => {
-        // permissionModes/computerUse/sessionPicker/effort stay hidden either way (no drivable mode
-        // switch, no --chrome equivalent, no cross-session list, no effort levels reported). images
+        // permissionModes/computerUse stay hidden either way (no drivable mode switch, no --chrome
+        // equivalent). opencode 2 lists its sessions, so the history picker shows. images
         // flipped to true once server mode's real FilePartInput attachment path was verified live —
         // see catalog.ts's OPENCODE descriptor.
         expect(providerCan('opencode', 'permissionModes')).toBe(false)
         expect(providerCan('opencode', 'computerUse')).toBe(false)
-        expect(providerCan('opencode', 'sessionPicker')).toBe(false)
+        expect(providerCan('opencode', 'sessionPicker')).toBe(true)
         expect(providerCan('opencode', 'effort')).toBe(true)
         expect(providerCan('opencode', 'images')).toBe(true)
     })
-    test('resume and sessionPicker are distinct: opencode resumes per tab with no cross-session list', () => {
-        expect(providerCan('opencode', 'resume')).toBe(true)
-        expect(providerCan('opencode', 'historyReplay')).toBe(true)
-        expect(providerCan('opencode', 'sessionPicker')).toBe(false)
+    test('resume and sessionPicker are distinct: codex resumes per tab with no cross-session list', () => {
+        expect(providerCan('codex', 'resume')).toBe(true)
+        expect(providerCan('codex', 'sessionPicker')).toBe(false)
     })
     test('permission PROMPTS and permission MODES are separate capabilities', () => {
         // These were one flag. An ACP backend can park a session/request_permission as a live

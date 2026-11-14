@@ -58,6 +58,13 @@ const SESSIONS: ChatSessionInfo[] = [
         origin: 'user',
     },
     {
+        sessionId: 'ses_s1opencode',
+        summary: 'what tests or quizzes do i have tomorrow',
+        lastModified: today(12),
+        origin: 'user',
+        provider: 'opencode',
+    },
+    {
         sessionId: 's2',
         summary: 'dream — nightly vault review',
         lastModified: today(20),

@@ -164,7 +164,7 @@ describe.skipIf(!LIVE)('live: opencode chat driver on LM Studio', () => {
         expect(left).toEqual([])
     })
 
-    test('context size: an overflowing first turn compacts invisibly and answers; the second turn skips the default profile', async () => {
+    test('context size: a small window starts on the compact profile, so no request overflows and the chat holds one user message per turn', async () => {
         const c = await open(vaultA)
         // The agents frame goes out before `auth`, with the local model on as without it.
         const agents = c.frames.find(f => f.type === 'agents') as
@@ -181,20 +181,16 @@ describe.skipIf(!LIVE)('live: opencode chat driver on LM Studio', () => {
         expect(results[0].isError, dump(first)).toBe(false)
         expect(assistantText(first).trim().length, dump(first)).toBeGreaterThan(0)
 
+        // The window is read before the first request, so the turn never sends the default prompt
+        // and never overflows (opencodeBudget.ts).
         const reqs = chatRequests()
-        const failing = reqs.findIndex(failed)
-        expect(failing, dumpReqs(reqs)).toBeGreaterThanOrEqual(0)
-        const after = reqs.slice(failing + 1)
-        const ok = after.filter(r => !failed(r))
-        expect(ok.length, dumpReqs(reqs)).toBeGreaterThan(0)
-        for (const r of ok)
+        expect(reqs.length, dumpReqs(reqs)).toBeGreaterThan(0)
+        for (const r of reqs) {
+            expect(failed(r), dumpReqs(reqs)).toBe(false)
             expect(estimate(r.body), dumpReqs(reqs)).toBeLessThan(WINDOW)
-        expect(estimate(reqs[failing].body), dumpReqs(reqs)).toBeGreaterThan(
-            Math.max(...ok.map(r => estimate(r.body))),
-        )
+        }
 
-        // The compact retry continues the same session (every server shares opencode's store) with the
-        // failed default attempt dropped: it holds exactly one user message for the turn.
+        // The turn runs on the compact server, in a session that holds exactly one user message.
         const sessions = c.frames.filter(f => f.type === 'session') as {
             sessionId: string
         }[]

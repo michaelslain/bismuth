@@ -61,7 +61,7 @@ import {
 } from '../sessionSink'
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import type { ChatBackend, ChatTurnContext } from '../backends'
-import { CHAT_RENDERING_NOTE } from '../../chatRenderingNote'
+import { chatInstructions } from '../../chatInstructions'
 import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import { readCodexOptIns } from '../../settings'
 import {
@@ -197,7 +197,7 @@ interface CodexExecArgsInput {
      *  `--skip-git-repo-check`. Absent = the user's own codex config decides. */
     localArgs?: string[]
     /** CHAT_LINE_REF_NOTE when the vault's editor shows line numbers, else '' or absent
-     *  (chatLineRefNote.ts); joined after CHAT_RENDERING_NOTE in `developer_instructions`. */
+     *  (chatLineRefNote.ts); joined into chatInstructions for `developer_instructions`. */
     lineRefNote?: string
 }
 
@@ -227,12 +227,12 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     // event in the ThreadEvent union) — explicit for determinism, matching opencode.ts's `--auto`
     // posture (the same effective "never park on an approval this run mode can't answer" stance).
     args.push('--config', 'approval_policy="never"')
-    // How the chat transcript renders the reply (KaTeX math), on every call, new and resume: codex
-    // exec has no system-prompt flag, and `developer_instructions` is the string key it reads instead.
+    // The instructions every backend shares (chatInstructions.ts), on every call, new and resume:
+    // codex exec has no system-prompt flag, and `developer_instructions` is the string key it reads.
     args.push(
         '--config',
         `developer_instructions=${tomlBasicString(
-            [CHAT_RENDERING_NOTE, a.lineRefNote].filter(Boolean).join('\n\n'),
+            chatInstructions(a.cwd, a.lineRefNote),
         )}`,
     )
     if (a.threadId) args.push('resume', a.threadId)

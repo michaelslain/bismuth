@@ -56,6 +56,9 @@ export interface OpencodeV2TurnState {
     subagents: SubagentRoster
     /** Summed `session.step.ended` cost (USD); null until a step reports a positive one. */
     costUsd: number | null
+    /** The input tokens (cache reads included) the turn's first model step reported: its whole
+     *  opening request. Null until a step reports them. */
+    firstInputTokens: number | null
     /** Set once a `session.execution.*` end event arrives. */
     outcome: OpencodeV2Outcome | null
     /** A tool call the user declined. opencode 2 ends the turn after a declined call (it reports
@@ -71,6 +74,7 @@ export function newOpencodeV2TurnState(): OpencodeV2TurnState {
         toolsFinished: new Set(),
         subagents: newSubagentRoster(),
         costUsd: null,
+        firstInputTokens: null,
         outcome: null,
         declined: false,
     }
@@ -209,6 +213,8 @@ export function translateOpencodeV2Event(
         case 'session.step.ended': {
             if (typeof d.cost === 'number' && d.cost > 0)
                 state.costUsd = (state.costUsd ?? 0) + d.cost
+            if (state.firstInputTokens === null)
+                state.firstInputTokens = stepInputTokens(d.tokens)
             return []
         }
         case 'session.execution.succeeded':
@@ -226,6 +232,16 @@ export function translateOpencodeV2Event(
         default:
             return []
     }
+}
+
+/** The input tokens a `session.step.ended` reports, cache reads included; null when absent. */
+export function stepInputTokens(tokens: unknown): number | null {
+    if (!tokens || typeof tokens !== 'object') return null
+    const t = tokens as { input?: unknown; cache?: { read?: unknown } }
+    if (typeof t.input !== 'number') return null
+    const read = typeof t.cache?.read === 'number' ? t.cache.read : 0
+    const total = t.input + read
+    return total > 0 ? total : null
 }
 
 /** How many failed provider attempts a turn tolerates before Bismuth stops it. opencode 2 retries

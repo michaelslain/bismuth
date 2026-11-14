@@ -41,7 +41,7 @@ Four backends honor `localModel`: the ones whose catalog entry has the `localMod
 
 Each backend is wired at spawn time:
 
-- Claude Code gets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and every model-role variable (`ANTHROPIC_MODEL`, the `ANTHROPIC_DEFAULT_*_MODEL` family, `CLAUDE_CODE_SUBAGENT_MODEL`) set to the chosen model, so background and subagent calls never name a Claude model the server has never heard of.
+- Claude Code gets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and every model-role variable (`ANTHROPIC_MODEL`, the `ANTHROPIC_DEFAULT_*_MODEL` family, `CLAUDE_CODE_SUBAGENT_MODEL`) set to the chosen model, so background and subagent calls never name a Claude model the server has never heard of. When the server reports the model's loaded window, `CLAUDE_CODE_MAX_CONTEXT_TOKENS` carries it, so Claude Code auto-compacts within that window instead of the larger one it assumes for a model it does not know.
 - Codex gets `--config` overrides that define a custom `bismuth_local` provider with `wire_api="responses"` and the chosen `--model`; the key rides `BISMUTH_LOCAL_MODEL_KEY`. Codex prints a "Model metadata not found" warning for any model outside its catalog; a local turn does not show it as an error.
 - opencode gets an inline `OPENCODE_CONFIG_CONTENT` declaring a `local` provider, which outranks your own opencode config without replacing it.
 - Goose gets `GOOSE_PROVIDER=openai` plus `OPENAI_HOST`, `OPENAI_BASE_PATH`, `GOOSE_MODEL` and `OPENAI_API_KEY`.
@@ -63,7 +63,19 @@ The injected limit is `{context: window, output: min(the model's own output limi
 
 ## What happens when the prompt does not fit the context window?
 
-opencode's default prompt carries many tool descriptions, which an 8,192-token window cannot hold. When a turn fails because the loaded window is too small, Bismuth runs it again on a compact prompt: a short agent description, and only the tools that read, search and edit files. The failed attempt shows nothing, and the reply arrives as one normal turn. The failed attempt is removed from the conversation, so a reopened chat shows your message once. Later turns on that model start with the compact prompt. The compact prompt keeps the chat rendering note and the recalled memory and drops the session-start brain block.
+Bismuth sizes each opencode chat's opening request to the model's loaded context window before it sends anything, so a model loaded with a small window chats without compacting on its first message. The window comes from the server (see the section on how Bismuth knows the context window); a model with no reported window, such as a cloud model, gets the full prompt.
+
+Each turn runs on the richest of three tiers that leaves room for a chat's first exchange:
+
+| Tier | opencode prompt | Brain block (profile, vault map, memory index) |
+|------|-----------------|-----------------------------------------------|
+| full | the default prompt: opencode's own agent description and every tool | yes |
+| brain | a compact prompt: a short agent description, and only the tools that read, search and edit files | yes |
+| lean | the compact prompt | no |
+
+Every tier keeps the chat rendering note and the memory recalled for the message. The room a tier must leave is the median a chat grows over its first message, measured on real in-app chats, and it must fit inside the part of the window opencode fills before it compacts the chat: the window less 15%, and at least 16,000 tokens less from a 32k window up. When no tier leaves it, the turn runs lean. On a vault whose brain block is about 2,700 tokens, a 64k window runs full, 16k and 32k windows run brain, and 8k and 10k windows run lean. Your own MCP servers or agents in opencode make its prompt larger; the input tokens opencode reports for a chat's first turn correct the estimate. A chat never moves to a richer tier mid-conversation.
+
+When a turn still fails because the loaded window is too small, Bismuth runs it again on the lean tier. The failed attempt shows nothing, and the reply arrives as one normal turn. The failed attempt is removed from the conversation, so a reopened chat shows your message once. Later turns on that model run lean.
 
 A model whose window is too small even for the compact prompt ends the turn with an error that names the window:
 
@@ -129,4 +141,6 @@ For opencode, a change to the local config replaces the shared `opencode serve` 
 
 For opencode, `opencodeConfigContent` (`opencodeConfig.ts`) builds the injected config from the local model, the saved servers and the detected limits, and `windowLimit` computes each limit. `probeLocalServer` and `detectWindow` (`contextWindowProbe.ts`) read the windows. The compact retry, `contextOverflowMessage` and `isContextOverflow` (`opencodeOverflow.ts`) are driven from `opencode.ts`.
 
-Source: `core/src/agentBackends/localModel.ts`, `core/src/agentBackends/contextWindowProbe.ts`, `core/src/chatProviders/opencode/opencodeConfig.ts`, `core/src/chatProviders/opencode/opencodeOverflow.ts`, `core/src/agentBackends/localModelProbe.ts`, `core/src/agentBackends/catalog.ts` (`localModel` capability), `core/src/schema/settingsSchema.ts`
+The tier comes from `pickTier` (`opencodeBudget.ts`), which weighs `OPENCODE_BASE_TOKENS` (opencode's own share of an opening request per profile), Bismuth's text at `CHARS_PER_TOKEN`, the message and `CHAT_GROWTH_TOKENS` against the window. `chooseTier` in `opencode.ts` applies it before each turn, never richer than the session's `tier`, and `lean` for a model that overflowed. `learnBase` replaces a profile's base with what a fresh chat's first step reported (`firstInputTokens`, from `session.step.ended`).
+
+Source: `core/src/agentBackends/localModel.ts`, `core/src/agentBackends/contextWindowProbe.ts`, `core/src/chatProviders/opencode/opencodeConfig.ts`, `core/src/chatProviders/opencode/opencodeBudget.ts`, `core/src/chatProviders/opencode/opencodeOverflow.ts`, `core/src/agentBackends/localModelProbe.ts`, `core/src/agentBackends/catalog.ts` (`localModel` capability), `core/src/schema/settingsSchema.ts`

@@ -48,9 +48,8 @@ import {
     type ResolvedLocal,
 } from './agentBackends/localModelProbe'
 import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
-import { CHAT_RENDERING_NOTE } from './chatRenderingNote'
 import { agentShellEnv } from './agentEnvFile'
-import { AGENT_CLI_NOTE } from './agentCliNote'
+import { chatInstructions } from './chatInstructions'
 import { chatLineRefNoteFor } from './chatLineRefNote'
 import { findVaultRoot } from './findVaultRoot'
 import {
@@ -1517,19 +1516,12 @@ function spawnChatQuery(
                 // relative paths resolve against $HOME instead of `cwd`. The append says how the chat
                 // transcript renders the reply (KaTeX math), which a terminal tab's TUI never gets,
                 // then how to cite a note's lines when the editor shows line numbers
-                // (chatLineRefNote.ts), and, in a vault, that the `bismuth` CLI is the way into
-                // Bismuth (agentCliNote.ts).
-                systemPrompt: {
-                    type: 'preset',
-                    preset: 'claude_code',
-                    append: [
-                        CHAT_RENDERING_NOTE,
-                        session.lineRefNote,
-                        findVaultRoot(session.cwd) ? AGENT_CLI_NOTE : '',
-                    ]
-                        .filter(Boolean)
-                        .join('\n\n'),
-                },
+                // (chatLineRefNote.ts), and, in a vault, who the agent is and that the `bismuth` CLI
+                // is the way into Bismuth: chatInstructions.ts, which every backend shares.
+                systemPrompt: claudeChatSystemPrompt(
+                    session.cwd,
+                    session.lineRefNote,
+                ),
                 // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
                 // closure to it. (canUseTool ALSO carries the AskUserQuestion interactive-question flow — see
                 // the ASK_USER_QUESTION_TOOL branch above.)
@@ -1950,6 +1942,19 @@ async function listScopedSessions(
  * both. Each row carries its `origin` so a mixed list can mark the daemon's visibly. Tolerant:
  * returns [] if the SDK can't read the store.
  */
+/** A Claude chat's system prompt: Claude Code's own preset with the instructions every backend
+ *  shares (chatInstructions.ts) appended. */
+export function claudeChatSystemPrompt(
+    cwd: string,
+    lineRefNote = '',
+): { type: 'preset'; preset: 'claude_code'; append: string } {
+    return {
+        type: 'preset',
+        preset: 'claude_code',
+        append: chatInstructions(cwd, lineRefNote),
+    }
+}
+
 export async function listChatSessions(
     cwd: string,
     limit = 50,

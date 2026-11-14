@@ -27,13 +27,16 @@ import {
     OpencodeBadRequest,
     setProviderKey,
 } from '../chatProviders/opencode/opencodeProviders'
-import { listChatSessions, searchChatSessions, parseChatScope } from '../chat'
+import { parseChatScope } from '../chat'
 import {
-    deleteChats,
-    deleteChatsInScope,
-    restoreChats,
-    setChatVisibility,
-} from '../chatLogs'
+    historyOwner,
+    listAllChats,
+    removeChats,
+    removeChatsInScope,
+    restoreAllChats,
+    searchAllChats,
+} from '../chatProviders/chatHistorySources'
+import { setChatVisibility } from '../chatLogs'
 import {
     chatVisibilityFields,
     isChatVisibility,
@@ -149,10 +152,11 @@ export default function agentsRoutes(
         // picker UI) to read arbitrary past session content over HTTP at all. Refuse outright.
         'GET /chat/sessions': async (req, url) => {
             if (requestChannel(req) !== 'owner') return error('forbidden', 403)
+            // Every backend's chats (chatHistorySources.ts), each row naming the backend that
+            // resumes it.
             const [sessions, rules] = await Promise.all([
-                listChatSessions(
+                listAllChats(
                     cfg.vault,
-                    undefined,
                     parseChatScope(url.searchParams.get('scope')),
                 ),
                 chatRules(),
@@ -175,8 +179,11 @@ export default function agentsRoutes(
         'GET /chat/session-messages': async (req, url) => {
             if (requestChannel(req) !== 'owner') return error('forbidden', 403)
             const id = url.searchParams.get('id')
+            // An id replays from the backend that owns it, whichever backend the asking chat runs on.
             const provider = resolveBackendId(
-                url.searchParams.get('provider') ?? undefined,
+                (id ? historyOwner(id) : null) ??
+                    url.searchParams.get('provider') ??
+                    undefined,
                 (ctx.appConfig.chat as Record<string, unknown> | undefined)
                     ?.provider,
                 installedBackendIds,
@@ -205,12 +212,7 @@ export default function agentsRoutes(
                 scope?: string
             }
             const [hits, rules] = await Promise.all([
-                searchChatSessions(
-                    cfg.vault,
-                    query ?? '',
-                    undefined,
-                    parseChatScope(scope),
-                ),
+                searchAllChats(cfg.vault, query ?? '', parseChatScope(scope)),
                 chatRules(),
             ])
             return ok({
@@ -277,7 +279,7 @@ export default function agentsRoutes(
             if (Array.isArray(body.sessionIds)) {
                 if (!body.sessionIds.every(id => typeof id === 'string' && id))
                     return error('invalid sessionIds', 400)
-                const ids = await deleteChats(
+                const ids = await removeChats(
                     cfg.vault,
                     body.sessionIds as string[],
                 )
@@ -291,7 +293,7 @@ export default function agentsRoutes(
                 body.scope !== 'all'
             )
                 return error('missing sessionIds or a valid scope', 400)
-            const ids = await deleteChatsInScope(
+            const ids = await removeChatsInScope(
                 cfg.vault,
                 parseChatScope(body.scope),
             )
@@ -310,7 +312,7 @@ export default function agentsRoutes(
             )
                 return error('missing sessionIds', 400)
             return ok({
-                restored: await restoreChats(
+                restored: await restoreAllChats(
                     cfg.vault,
                     body.sessionIds as string[],
                 ),

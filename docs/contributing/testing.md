@@ -323,8 +323,10 @@ The default `bun test` never calls a real model API or spends anyone's quota. Tw
 **Live tests are opt-in.** The live block in `core/test/chat.test.ts` drives the real `claude` binary against the real API. It runs only when `BISMUTH_LIVE_TESTS=1` and the binary exists (`core/test/liveGate.ts`).
 
 **The opencode chat benchmark is opt-in too.** `OPENCODE_CHAT_LIVE=1 bun test bench/opencodeChat.test.ts` drives the real opencode chat driver against LM Studio on `127.0.0.1:1234` with `qwen/qwen3.5-9b` loaded at 8192 tokens, through a logging proxy.
-It checks four things: a first turn that overflows the window retries on the compact prompt and leaves one user message, the agent list and an agent switch, the model list's names, groups and detected window, and thinking turned off and on.
+It checks four things: a first turn that starts on the compact prompt, sends no request over the window and leaves one user message, the agent list and an agent switch, the model list's names, groups and detected window, and thinking turned off and on.
 With the variable set, a missing prerequisite fails the run instead of skipping it.
+
+**The backend contract runs by default.** `core/test/chatProviders/backendContract.test.ts` walks every chat backend in the catalog and checks the instructions it sends (the daemon's name and the `bismuth` CLI note), the Bismuth MCP it wires, a history source matching its `sessionPicker`, and window sizing when it runs local models. A backend with no probe in its tables fails, and a local-model backend that sizes nothing must be named in its `UNSIZED` list with the reason.
 
 **Mocked-CLI tests run by default.** Each `core/test/chatProviders/<backend>Mocked.test.ts` (`claude`, `opencode`, `codex`, `goose`, `gemini`, `cline`, `openclaw`) drives a real agent binary through Bismuth's production chat driver, with the binary's base URL pointed at a local mock LLM server.
 The test asserts that the fixture's exact reply text arrives, which no real model would produce verbatim.

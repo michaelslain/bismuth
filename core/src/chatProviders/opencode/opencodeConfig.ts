@@ -1,8 +1,8 @@
 // core/src/chatProviders/opencode/opencodeConfig.ts
 // Pure: the `OPENCODE_CONFIG_CONTENT` Bismuth injects into the opencode processes it spawns. It never
-// edits opencode's own config files. Four things ride it: the vault's `localModel` provider, saved
-// local servers as providers of their own, context limits for providers Bismuth did not declare, and
-// the compact profile (a small prompt for small windows).
+// edits opencode's own config files. Five things ride it: the vault's `localModel` provider, saved
+// local servers as providers of their own, context limits for providers Bismuth did not declare, the
+// Bismuth MCP server, and the compact profile (a small prompt for small windows).
 import {
     LOCAL_PROVIDER_ID,
     THINKING_VARIANTS,
@@ -43,6 +43,9 @@ export type OpencodeConfigInput = {
     servers: OpencodeInjectedServer[]
     limits: OpencodeModelLimit[]
     profile: 'default' | 'compact'
+    /** The installed Bismuth MCP server, declared as opencode's `bismuth` MCP on the default
+     *  profile; the compact profile reaches Bismuth through the shell and the CLI note instead. */
+    mcp?: { command: string[]; environment: Record<string, string> } | null
 }
 
 /** Tools the compact profile removes from the schema (`r/d3.json`): read, edit, write, shell, grep
@@ -105,6 +108,16 @@ export function buildOpencodeConfig(
         }
     }
     if (Object.keys(provider).length > 0) out.provider = provider
+    if (input.mcp && input.profile === 'default')
+        // Code Mode off: the tools are called directly, as a Claude chat calls them.
+        out.mcp = {
+            bismuth: {
+                type: 'local',
+                command: [...input.mcp.command],
+                environment: { ...input.mcp.environment },
+                codemode: false,
+            },
+        }
     if (input.profile === 'compact') {
         out.permissions = COMPACT_PERMISSIONS.map(p => ({ ...p }))
         out.agents = {

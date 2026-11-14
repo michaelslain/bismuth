@@ -296,6 +296,19 @@ export function claudeMcpAddArgs(): string[] {
     ]
 }
 
+/** How another agent CLI launches the installed Bismuth MCP server: the same binary and env
+ *  `claudeMcpAddArgs` registers with Claude Code. Null when the MCP binary is not installed. */
+export function installedMcpLaunch(): {
+    command: string[]
+    environment: Record<string, string>
+} | null {
+    if (!existsSync(MCP_DEST)) return null
+    return {
+        command: [MCP_DEST],
+        environment: { BISMUTH_DOCS_DIR: DOCS_DIR, BISMUTH_CLI: CLI_DEST },
+    }
+}
+
 /** The real, default IO — does the actual fs + claude work. */
 export const defaultIO: InstallIO = {
     async hashSrc(src) {
