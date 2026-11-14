@@ -57,7 +57,17 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /** An editable board's header at rest: dot, title, padded count. */
-export const Default: Story = { args: base }
+export const Default: Story = {
+    args: base,
+    play: async ({ canvasElement }) => {
+        const header = canvasElement.querySelector<HTMLElement>(
+            '[data-kbcol] > div',
+        )!
+        expect(getComputedStyle(header).borderBottomStyle).toBe('none')
+        // The typed `=` underline: an AsciiCellEdges overlay drawing a heavy bottom edge.
+        expect(header.querySelector('[data-heavy~="bottom"]')).not.toBeNull()
+    },
+}
 
 /** A column is named by the user and keeps the spelling they typed — the header does not
  *  re-case it (the card chips and the stored value say `ios sprint 3` too). */
@@ -66,6 +76,43 @@ export const UserCasedName: Story = {
     play: async ({ canvasElement }) => {
         const title = within(canvasElement).getByText('ios sprint 3')
         expect(getComputedStyle(title).textTransform).toBe('none')
+    },
+}
+
+/** A very long single word and a long multi-word name stay on the one typed row: each title clips
+ *  inside its header, and every header is as tall as the short-named one beside them. */
+export const LongLaneName: Story = {
+    args: base,
+    render: args => (
+        <div style={{ display: 'grid', gap: '16px' }}>
+            <KanbanColumnHeader {...args} columnKey="Doing" />
+            <KanbanColumnHeader
+                {...args}
+                columnKey="Supercalifragilisticexpialidocious-in-review"
+            />
+            <KanbanColumnHeader
+                {...args}
+                columnKey="Waiting on the design team to review the final mockups"
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const names = [
+            'Doing',
+            'Supercalifragilisticexpialidocious-in-review',
+            'Waiting on the design team to review the final mockups',
+        ]
+        const headers = names.map(
+            n => canvas.getByText(n).closest('div') as HTMLElement,
+        )
+        const height = headers[0].getBoundingClientRect().height
+        names.forEach((n, i) => {
+            const title = canvas.getByText(n).getBoundingClientRect()
+            const header = headers[i].getBoundingClientRect()
+            expect(title.right).toBeLessThanOrEqual(header.right)
+            expect(header.height).toBe(height)
+        })
     },
 }
 

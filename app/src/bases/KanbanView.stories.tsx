@@ -188,10 +188,15 @@ export const HeaderActionsOnHover: Story = {
         const count = within(header).getByText('00')
         const rect = (el: Element) => el.getBoundingClientRect()
 
-        // At rest: hidden, and the count sits flush right (no gap reserved for the bar).
+        // At rest: hidden, and the count sits flush right of the header's content box (its 2ch
+        // inset, level with the card text), no gap reserved for the bar.
         expect(getComputedStyle(bar).opacity).toBe('0')
         expect(
-            Math.abs(rect(header).right - rect(count).right),
+            Math.abs(
+                rect(header).right -
+                    parseFloat(getComputedStyle(header).paddingRight) -
+                    rect(count).right,
+            ),
         ).toBeLessThanOrEqual(1)
         const countLeft = rect(count).left
 
@@ -430,5 +435,39 @@ export const ManyCardsInOneColumn: Story = {
         expect(canvas.getAllByTestId('kanban-card').length).toBe(
             MANY_CARDS_ROWS.length,
         )
+    },
+}
+
+/** A tasks-mode board (`mode: tasks`) grouped by status: each card's face is a TaskRow with no
+ *  checkbox, since the lane already names the status, and the card is the same typed box as a
+ *  note card. Run through the real BaseView with a stored tasks base. */
+export const TasksBoard: Story = {
+    render: () => {
+        const path = 'boards/tasks-board.md'
+        const body =
+            '---\ntype: base\nmode: tasks\nview: kanban\ngroupBy: status\n' +
+            'order:\n  - description\n  - status\n---\n\n' +
+            '- description: ship the parser\n  status: todo\n' +
+            '- description: fix the flake\n  status: todo\n' +
+            '- description: write the docs\n  status: in-progress\n'
+        setTransport(fakeTransport({ files: { [path]: body } }))
+        return <BaseView path={path} body={body} />
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelectorAll('[data-testid="kanban-card"]'),
+            ).toHaveLength(3),
+        )
+        for (const card of canvasElement.querySelectorAll<HTMLElement>(
+            '[data-testid="kanban-card"]',
+        )) {
+            expect(getComputedStyle(card).borderTopStyle).toBe('none')
+            expect(
+                card.querySelector('[data-edges="top right bottom left"]'),
+            ).not.toBeNull()
+            // A kanban card's status is its lane: no checkbox.
+            expect(card.querySelector('[role="checkbox"]')).toBeNull()
+        }
     },
 }

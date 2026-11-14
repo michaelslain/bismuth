@@ -4,40 +4,26 @@
 // the menu only ever offers the OTHER modes (per the spec).
 import { ContextMenu, type MenuItem } from './ui/ContextMenu'
 import { mountModal } from './ui/mountModal'
+import TaskMark from './ui/TaskMark'
+import {
+    TASK_STATUS_OPTIONS,
+    isCurrentStatus,
+    otherStatuses,
+    type TaskStatusOption,
+} from './taskStatusOptions'
 
-export interface TaskStatusOption {
-    char: string
-    label: string
-    icon: string
-}
-
-export const TASK_STATUS_OPTIONS: TaskStatusOption[] = [
-    { char: ' ', label: 'To do', icon: 'Square' },
-    { char: '/', label: 'In progress', icon: 'SquareSlash' },
-    { char: 'x', label: 'Done', icon: 'SquareCheck' },
-    { char: '-', label: 'Cancelled', icon: 'SquareX' },
-]
-
-/** True if option `optChar` is the task's current status (so it should be hidden from the menu).
- *  Folds the case/alias variants: `x`/`X` (done), `/`/`\` (in progress). */
-export function isCurrentStatus(optChar: string, cur: string): boolean {
-    if (optChar === 'x') return cur === 'x' || cur === 'X'
-    if (optChar === '/') return cur === '/' || cur === '\\'
-    return optChar === cur
-}
+export { TASK_STATUS_OPTIONS, isCurrentStatus, type TaskStatusOption }
 
 /** The menu items for a task whose current box char is `cur`, each invoking `onPick(char)`. */
 export function taskStatusItems(
     cur: string,
     onPick: (char: string) => void,
 ): MenuItem[] {
-    return TASK_STATUS_OPTIONS.filter(o => !isCurrentStatus(o.char, cur)).map(
-        o => ({
-            label: o.label,
-            icon: o.icon,
-            onSelect: () => onPick(o.char),
-        }),
-    )
+    return otherStatuses(cur).map(o => ({
+        label: o.label,
+        prefix: <TaskMark char={o.char} />,
+        onSelect: () => onPick(o.char),
+    }))
 }
 
 /**

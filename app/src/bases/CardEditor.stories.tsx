@@ -98,7 +98,7 @@ export const TasksMode: Story = {
         )
 
         // Right-click still opens the shared status menu (portals to document.body), with the
-        // now-current status ("Done") filtered out of the offered options.
+        // now-current status ("done") filtered out of the offered options.
         box.dispatchEvent(
             new MouseEvent('contextmenu', {
                 bubbles: true,
@@ -108,8 +108,8 @@ export const TasksMode: Story = {
             }),
         )
         const body = within(document.body)
-        const inProgress = await waitFor(() => body.getByText('In progress'))
-        expect(body.queryByText('Done')).not.toBeInTheDocument()
+        const inProgress = await waitFor(() => body.getByText('in progress'))
+        expect(body.queryByText('done')).not.toBeInTheDocument()
 
         // Picking a status from the menu still writes the chosen char through.
         inProgress.click()

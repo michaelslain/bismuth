@@ -1,0 +1,9 @@
+/* The task status mark shown beside a label (the status menu's rows): ui/BracketToggle driven through
+   its custom properties, with the same inks as bases/TaskCheck.module.css and the editor's own
+   checkbox: `[x]` and `[/]` take the accent, `[ ]` the muted ink, `[-]` the faint one. Display only. */
+.mark {
+  display: inline-flex;
+  --bracket-height: auto;
+  --bracket-off: var(--text-muted);
+}
+.cancelled { --bracket-off: var(--faint); }

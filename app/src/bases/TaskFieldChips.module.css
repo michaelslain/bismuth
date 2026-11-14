@@ -1,7 +1,9 @@
 /* Unboxed inline muted text, matching TaskChip's field register: no border, no chip frame.
-   Fields flow after the description and wrap as whole units via `white-space: nowrap`. */
+   Fields flow after the description and wrap as whole units via `white-space: nowrap`. The gap
+   before each is a real space (TaskFieldChips.tsx), not a margin: a space is where the line may
+   break, and it collapses at the start of a wrapped line, so a field that wraps sits flush on the
+   description's left edge. */
 .field {
-    margin-left: var(--sp-2);
     color: var(--text-muted);
     white-space: nowrap;
 }

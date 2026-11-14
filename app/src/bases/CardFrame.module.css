@@ -46,3 +46,21 @@
 /* Image-drop target: an OS image file dragged over this card. The accent border here plus the
    `DropCue` laid over it (ui/DropCue, --rule-drop) say "drop the image here to attach it". */
 .dropTarget { border-color: var(--accent); }
+
+/* `typed` (KanbanView's card): a box typed with `+ - | ` by AsciiCellEdges, not drawn. The edge
+   overlay is a child that overhangs the frame by half a glyph tile on every side, so the frame
+   must not clip (`overflow: visible`) and carries no CSS border or fill: the pane shows through
+   and `--hover-bg` washes the box on hover. The ink is set here, not inherited from the column, so
+   the drag ghost (cloned onto <body>) keeps it. Content sits one tile (1ch) in from the `|`, the typed grid rule, and an equal
+   `--sp-3` from the top and bottom dashes. */
+.typed.note,
+.typed.task {
+  --ascii-edge: var(--table-edge);
+  padding: var(--sp-3) var(--ascii-tile-w, 1ch);
+  border: none;
+  background: none;
+  overflow: visible;
+}
+.typed.draggable:hover { background: var(--hover-bg); }
+/* The ghost floats over other cards, so it needs the pane ground back under its text. */
+.typed[data-kbghost] { background: var(--editor, var(--bg)); }

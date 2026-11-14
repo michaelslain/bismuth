@@ -96,7 +96,7 @@ A task line shows a checkbox, the description, and a chip for each field the tas
 | `start`, `scheduled`, `due` | A chip such as `[due 2026-10-07]`. |
 | `recurrence` | A chip with the rule, such as `[every month]`. |
 
-The `due` chip takes the danger colour when the task is overdue: its date is before today and the task is neither done nor cancelled. No field uses an emoji. The line syntax that these fields come from is in [task syntax](../../tasks/syntax.md).
+Each chip follows a plain space and never breaks inside itself, so a long line wraps before a chip rather than inside the description, and a wrapped chip starts flush with the description. The `due` chip takes the danger colour when the task is overdue: its date is before today and the task is neither done nor cancelled. No field uses an emoji. The line syntax that these fields come from is in [task syntax](../../tasks/syntax.md).
 
 Task descriptions render this inline Markdown:
 

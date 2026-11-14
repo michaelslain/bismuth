@@ -1,3 +1,6 @@
 {
-  "accepted": []
+  "accepted": [
+    { "check": "shapeSource", "path": "app/src/chat/ChatComposerBar.tsx", "count": 1 },
+    { "check": "shapeSource", "path": "app/src/graph/EmbeddedGraph.tsx", "count": 1 }
+  ]
 }

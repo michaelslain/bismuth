@@ -1,17 +1,17 @@
 /* ---- KanbanColumnHeader ---- */
 .header {
   display: flex; align-items: center; gap: var(--sp-3); font-weight: var(--fw-medium); font-size: var(--fs-ui); color: var(--fg);
-  margin: 0 var(--sp-5);
-  padding: 0 0 var(--sp-3);
+  /* One typed row, `--ascii-tile-h` plus two dash pitches tall, so the `=` underline's run
+     lands on whole pitches. It runs the lane's width less the one-tile inset (`margin-inline`) that
+     holds the glyph overhang inside the lane. Dot and title sit 2ch in, the card text's own inset.
+     The underline is AsciiCellEdges in `--table-edge` — it does not take the lane's colour; the hue
+     appears ONLY on the dot. `--kb-col-color` is set inline on the column (KanbanColumn.tsx). */
+  --ascii-edge: var(--table-edge);
+  margin: 0 var(--ascii-tile-w, 1ch);
+  padding: 0 var(--ascii-tile-w, 1ch);
+  height: calc(var(--ascii-tile-h, var(--row-h, 18px)) + 2 * var(--ascii-pitch, 2ch));
   box-sizing: border-box;
-  /* Pins the header to the hover-revealed `[✎][🗑]` IconBar's own control size (--h-control,
-     global.css) so the header height matches boards whose columns carry the bar, read-only or
-     not (the bar itself is absolutely positioned and never sizes the header). */
-  min-height: calc(var(--h-control) + var(--sp-3));
   position: relative;
-  /* The column hue appears ONLY here (the underline) and on the dot — no header background tint.
-     `--kb-col-color` is set inline on the column (KanbanColumn.tsx). */
-  border-bottom: 1px solid var(--kb-col-color, var(--border-soft));
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
@@ -21,7 +21,12 @@
   flex: none;
 }
 .header:active { cursor: grabbing; }
-.title { color: var(--fg); }
+.title { color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The rename field (KanbanColumnNameInput's `className`) keeps the header one typed row: it may
+   shrink, and its inline error (the field's only span) hangs just below the row instead of
+   growing the field, so the `=` underline and the first card never move or get overdrawn. */
+.nameField { position: relative; min-width: 0; flex: 1 1 auto; }
+.nameField > span { position: absolute; top: 100%; left: 0; white-space: nowrap; z-index: 1; }
 .dotSlot { display: inline-flex; align-items: center; flex: 0 0 auto; }
 /* The header's trailing group: the count, flush right, plus the rename/delete IconBar hung off
    its LEFT edge. Only the count is in flow, so at rest the count sits against the header's right
@@ -38,16 +43,37 @@
 .actions {
   position: absolute;
   right: 100%;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
+  bottom: 0;
   margin-right: var(--sp-4);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur) var(--ease);
 }
+/* The delete label takes the bar's line-height (the count's), not the button's own fractional
+   16.1px: both lines then share one box centre and Chrome rounds their baselines the same way. */
+.actions button,
+.actions button > span { line-height: inherit; }
 [data-kbcol]:hover .actions,
 [data-kbcol][data-hover] .actions,
 .header:focus-within .actions {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* The typed `=` underline (AsciiCellEdges takes this as its `class`). With only a bottom edge the
+   overlay's two corner tiles are blank, so its run of `=` would start one pitch inside the lane's
+   `+` columns. The overlay is widened by one dash pitch each side so its first and last `=` sit
+   flush over the cards' left and right `+` columns (the run stays a whole number of pitches).
+   The lane does not clip, so the blank corner tiles reach past it (transparent, `pointer-events: none`).
+   Engines without the nine-slice mask (Firefox) cut the run from a `::before` over the whole
+   overlay width, which would also type an `=` one pitch outside each `+` column; insetting that
+   box by the same pitch leaves exactly the card edge's width and dash phase, so the run is the
+   cards' own `-` run typed as `=`. */
+.header .underline {
+  left: calc(var(--ascii-corner-w, 1ch) / -2 - var(--ascii-pitch, 2ch));
+  right: calc(var(--ascii-corner-w, 1ch) / -2 - var(--ascii-pitch, 2ch));
+}
+@supports not (-webkit-mask-box-image-source: none) {
+  .header .underline::before { inset: 0 var(--ascii-pitch, 2ch); }
 }

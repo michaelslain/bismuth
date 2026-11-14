@@ -651,7 +651,7 @@ export function KanbanView(props: {
                     folds in the optimistic reorder so columns settle instantly instead of snapping back
                     during the write round-trip. */}
                 <For each={columnKeys()}>
-                    {(key, colIndex) => {
+                    {key => {
                         const group = () => groupByKey(key)
                         return (
                             <>
@@ -710,9 +710,6 @@ export function KanbanView(props: {
                                         drag.colDrag() !== key
                                     }
                                     dragging={drag.colDrag() === key}
-                                    last={
-                                        colIndex() === columnKeys().length - 1
-                                    }
                                     ids={visibleIds(group())}
                                     rowById={id => rowById().get(id)}
                                     overIndex={

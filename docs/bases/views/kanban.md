@@ -41,7 +41,7 @@ Every key below is a top-level frontmatter key beside `view: kanban`. The base's
 | `groupBy` | object or string | `{ property, direction? }`; a bare string is the property | required | The property whose value picks a card's column |
 | `groupBy.direction` | string | `ASC`, `DESC` | `ASC` | Order of columns not listed in `columns`, by value |
 | `columns` | list of strings | any group values | none | Column order; every listed value shows as a column even with no cards |
-| `groupColors` | map of value → colour | hex (`"#e5484d"`) or `var(--token)` | auto | Colour of a column's header dot and underline |
+| `groupColors` | map of value → colour | hex (`"#e5484d"`) or `var(--token)` | auto | Colour of a column's header dot |
 | `order` | list of property ids | `note.x`, bare `x`, `file.x`, `formula.x` | see below | Properties shown under each card's title |
 | `hideLabels` | boolean | `true`, `false` | `false` | Show property values only, without the key column |
 | `mode` | string | `normal`, `tasks` | `normal` | `tasks` turns each card into a task line |
@@ -53,6 +53,8 @@ Columns declared in `columns` come first, in the listed order. A value that appe
 Without `order`, a base that declares its own property list (list-form `properties:`, see [Base properties](../properties.md)) shows the declared properties, minus the `groupBy` property. A base with neither shows the title alone.
 
 ## What a card shows
+
+Each card is its own typed box, `+` at the corners, `- - -` along the top and bottom and `|` down the sides, in the ink a table's grid uses. Cards in a column sit one dash apart, and a column's name sits over a typed `=` underline. The column colour reaches only the header dot.
 
 A card in `mode: normal` shows the note's title, then one line per property from `order`: the property's key, then its value. The value renders through the property's type: a `markdown` property as formatted text on its own line with no key, a boolean as `[ ]` or `[x]`, a number in its format. Tags render on their own line with no key.
 
@@ -141,7 +143,7 @@ groupBy:
 ---
 ```
 
-- Clicking the checkbox toggles done; right-clicking opens the status menu. The write goes to the task's source line or stored row.
+- Cards show no checkbox. A task's status changes by dragging its card to another column (with `groupBy: status`, as above) or in its edit window; the write goes to the task's source line or stored row.
 - A task card has no edit modal, so no rename, property editing or delete.
 - Columns, dragging, colours and the composers work as on any board. **Add a card** adds a note or a stored row, as on a normal board, not a task line inside a note.
 - The mode is a declaration. A `source: tasks` board without `mode: tasks` keeps ordinary note cards.

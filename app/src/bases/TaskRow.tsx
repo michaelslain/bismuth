@@ -21,6 +21,10 @@ export type TaskRowProps = {
     /** `list` keeps the list view's gutter; `card` drops it, because a kanban or masonry
      *  card already supplies its own padding. Variants are props, not extra files. */
     variant?: 'list' | 'card'
+    /** A typed kanban card: the frame pads top and bottom, so the row adds none. */
+    flush?: boolean
+    /** No checkbox: a kanban card, whose status changes by dragging it to another lane or in its edit window. */
+    hideMark?: boolean
     /** Merged onto the root so one caller can adjust one instance without forking this. */
     class?: string
     /** Which `note.*` key a STORED row's category lives under — passed through to the edit
@@ -62,18 +66,20 @@ const TaskRow: Component<TaskRowProps> = props => {
 
     return (
         <div
-            class={`${styles.taskItem} ${props.variant === 'card' ? styles.inCard : ''} ${props.class ?? ''}`}
+            class={`${styles.taskItem} ${props.variant === 'card' ? styles.inCard : ''} ${props.flush ? styles.flush : ''} ${props.class ?? ''}`}
         >
             <ListRow
                 baseline
                 reveal
                 class={styles.line}
                 leading={
-                    <TaskCheck
-                        status={status()}
-                        onToggle={e => props.onToggle(props.row, e)}
-                        onSetStatus={e => props.onSetStatus(props.row, e)}
-                    />
+                    props.hideMark ? undefined : (
+                        <TaskCheck
+                            status={status()}
+                            onToggle={e => props.onToggle(props.row, e)}
+                            onSetStatus={e => props.onSetStatus(props.row, e)}
+                        />
+                    )
                 }
                 trailing={
                     <Show when={isEditableTask(props.row)}>

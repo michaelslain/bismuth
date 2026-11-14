@@ -30,8 +30,6 @@ export type KanbanColumnProps = KanbanColumnHeaderProps & {
     reorderTarget: boolean
     /** This column is the one being dragged. */
     dragging: boolean
-    /** The last real column drops its right-hand rule. */
-    last: boolean
     /** The visible card ids, in order (the list is keyed by these strings so a reorder MOVES
      *  card DOM rather than remounting it). */
     ids: string[]
@@ -74,7 +72,6 @@ const KanbanColumn: Component<KanbanColumnProps> = props => (
         data-kbcol={props.columnKey}
         classList={{
             [styles.kanbanColDragging]: props.dragging,
-            [styles.kanbanColumnLast]: props.last,
         }}
         style={{ '--kb-col-color': props.color }}
         data-hover={props.hovered ? '' : undefined}
@@ -105,11 +102,7 @@ const KanbanColumn: Component<KanbanColumnProps> = props => (
                                 {r => (
                                     <CardFrame
                                         kind={props.tasks ? 'task' : 'note'}
-                                        class={
-                                            props.tasks
-                                                ? undefined
-                                                : styles.kanbanCardPad
-                                        }
+                                        typed
                                         draggable
                                         dropTarget={props.dropCardId === id}
                                         data-kbcard=""
@@ -174,6 +167,8 @@ const KanbanColumn: Component<KanbanColumnProps> = props => (
                                             <TaskRow
                                                 row={r()}
                                                 variant="card"
+                                                flush
+                                                hideMark
                                                 onToggle={(taskRow, e) =>
                                                     props.onToggle?.(taskRow, e)
                                                 }

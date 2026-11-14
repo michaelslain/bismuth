@@ -209,7 +209,7 @@ The commit gate runs it only when a staged path is a stylesheet; run it by hand 
 
 The commit gate runs both whenever a staged path touches `app/src/`, `DESIGN.md`, `design/` or `scripts/designSystem/`.
 
-**The design-system gate** (`node scripts/designSystem/gate.mjs --root .`, also run by `bun test scripts/designSystem.test.ts`) reads the `governance:` block in `DESIGN.md` and scans `app/src/` for these checks:
+**The design-system gate** (`node scripts/designSystem/gate.mjs --root .`, also run by `bun test scripts/designSystem.test.ts`; `scripts/designSystem.shapeRules.test.ts` pins each shape rule against an old and a typed sample) reads the `governance:` block in `DESIGN.md` and scans `app/src/` for these checks:
 
 | Check | Finds |
 |---|---|
@@ -221,6 +221,9 @@ The commit gate runs both whenever a staged path touches `app/src/`, `DESIGN.md`
 | `globalReach` | A component stylesheet reaching a class it does not own through `:global()` |
 | `oneGlobalFile` | A global layer that spans more than one stylesheet; `@import` does not count |
 | `ignoreReason` | A `design-system-ignore` comment with no reason, or naming no known check |
+| `shapeStyle`, `shapeSource` | A stylesheet (`shapeStyle`) or a source file (`shapeSource`) matching a rule in the `governance` block's `shape:` map |
+
+The `shape:` rules state what a surface must look like, which no token or structure check can see. Each names the files it covers (`files`, `exclude`), a `pattern` that breaks it and a `reason`. `typedGridBox` flags a CSS `border` or `outline` in a kanban stylesheet, where The Typed Grid Rule draws edges as glyphs; `typedKanbanCard` flags a kanban `<CardFrame>` opened without `typed`; `bracketCheckbox` flags a Lucide square icon name in app source, where a task status is a bracket glyph.
 
 Accepted debt lives in `design/baseline.json` as `{ "accepted": [{ "check", "path", "count" }] }`.
 The count caps how many findings of one check one file may carry, never a line number.

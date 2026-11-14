@@ -1014,10 +1014,10 @@ export const TasksCardsDense: Story = {
  * opening — which is also why the fix (`rowIdentity.ts` + the re-key across drag, drop, reorder,
  * add, delete and image-drop in `KanbanView.tsx`) is not tasks-mode-specific either.
  *
- * `play()` asserts the two cards differ BEFORE ticking anything — the regression this guards
- * against is exactly "both cards read the same", which a toggle-only assertion could pass even
- * while the collapse were back — then reuses `expectStoredToggle` to confirm a tick still writes
- * to the INDEX of the row whose own box was clicked.
+ * `play()` asserts the two cards differ — the regression this guards against is exactly "both
+ * cards read the same" — and that no card carries a checkbox: a kanban card's status changes by
+ * dragging it to another lane, so the box would only repeat its lane. The list, bullets and cards
+ * stories above prove a tick writes to the INDEX of the row whose box was clicked.
  */
 export const TasksKanbanStored: Story = {
     render: () => storedBase('kanban', 'groupBy: status\n'),
@@ -1029,12 +1029,28 @@ export const TasksKanbanStored: Story = {
         // The whole bug in one line: before re-keying, both cards resolved to the last row
         // and this was ['fix the flake', 'fix the flake'].
         expect(new Set(texts).size).toBe(2)
-        await expectStoredToggle({ canvasElement })
+        expectNoKanbanCheckbox(canvasElement)
     },
 }
 export const TasksKanbanQuery: Story = {
     render: () => queryBase('kanban', 'groupBy: status\n'),
-    play: expectQueryToggle,
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelectorAll('[data-testid="kanban-card"]'),
+            ).toHaveLength(2),
+        )
+        expectNoKanbanCheckbox(canvasElement)
+    },
+}
+
+/** A tasks kanban card shows no checkbox: its lane names the status, a drag changes it. */
+function expectNoKanbanCheckbox(canvasElement: HTMLElement) {
+    for (const card of canvasElement.querySelectorAll(
+        '[data-testid="kanban-card"]',
+    )) {
+        expect(card.querySelector('[role="checkbox"]')).toBeNull()
+    }
 }
 
 /**

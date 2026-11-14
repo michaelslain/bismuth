@@ -24,3 +24,10 @@
 /* Inside a kanban card or a masonry card the row supplies its own padding, so drop the
    list's gutter — the card already has one. */
 .inCard { padding-left: 0; padding-right: 0; }
+/* `flush` (a typed kanban card): the card frame already pads the top and bottom, so the row adds
+   none of its own. The row's min-height and the trailing pencil's 24px box are also dropped from
+   the line's height, so the description's first and last lines sit as close to the dashes as a
+   note card's text does. */
+.flush { padding-top: 0; padding-bottom: 0; }
+.flush .line { min-height: 0; }
+.flush .line button { margin-block: calc(-1 * var(--sp-4)); }

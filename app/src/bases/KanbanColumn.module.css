@@ -1,10 +1,11 @@
 /* ---- KanbanColumn ---- */
-/* No box: no background fill, no border, no radius on a column (Acceptance 1). Adjacent
-   columns are divided by one hairline vertical rule instead — `.kanbanColumnLast` (the last
-   REAL column, set from the `<For>` index in KanbanView.tsx, not a CSS :last-child — the
-   add-column ghost and the trailing drop-gap placeholder are later DOM siblings so a
-   structural selector would land on the wrong element) drops it.
-   `position: relative` is the containing block for the `ui/DropCue` laid over the lane. */
+/* No box: no fill, no border, no radius on a column, and no rule between columns — lanes are
+   separated by empty space only (KanbanView's `gap`). The header's typed `=` underline and each
+   card's typed box are drawn by AsciiCellEdges, whose glyphs overhang their host by half a tile;
+   the header's `margin-inline` and the card list's `padding-inline` (both one tile) keep that
+   overhang inside the lane. The lane does not clip: the card list scrolls its own cards, and the
+   header underline's blank corner tiles reach past the lane by a pitch. `position: relative` is the containing block for
+   the `ui/DropCue` laid over the lane. */
 .kanbanColumn {
   position: relative;
   display: flex;
@@ -16,26 +17,25 @@
   padding: 0;
   background: none;
   border: none;
-  border-right: 1px solid var(--border-soft);
   border-radius: var(--r-0);
-  overflow: hidden;
   transition: background var(--dur) var(--ease);
 }
-.kanbanColumnLast { border-right: none; }
 /* "A card (or another column) is over this lane" is `ui/DropCue` laid over it by KanbanColumn.tsx —
-   the same dashed `--rule-drop` ring and wash every drop host in the app draws; this file no longer
-   paints a second recipe for it. The cue hugs the lane's own edge (`inset: 0`) — DropCue's default
-   inset would run its ring through the header's dot and title, which sit inside the lane's gutter. */
+   the same dashed `--rule-drop` ring and wash every drop host in the app draws. The cue hugs the
+   lane's own edge (`inset: 0`) — DropCue's default inset would run its ring through the header's
+   dot and title, which sit inside the lane's gutter. */
 .kanbanDropCue.kanbanDropCue { inset: 0; }
 /* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
    cards when the column is taller than the board — the header above stays put (it's a separate,
-   non-scrolling flex sibling, not `position: sticky`, so there's no double-scroll to coordinate). */
-.kanbanCards { display: flex; flex-direction: column; padding: var(--sp-3) var(--sp-5) var(--sp-5); gap: var(--sp-3); flex: 1; min-height: 0; overflow-y: auto; }
-/* Kanban's own card padding (Acceptance 5), passed to <CardFrame class=…> in KanbanView.tsx
-   instead of CardBodyInner's — CardBodyInner's own sp-5/sp-5 padding is CardsView's register,
-   not kanban's, and stacking both would double it. KanbanCard's own root (`.kbCardFace`) already
-   owns its internal title-to-meta rhythm, so nothing here duplicates CardBodyInner's `gap`. */
-.kanbanCardPad { padding: var(--sp-3) var(--sp-5); }
+   non-scrolling flex sibling, not `position: sticky`, so there's no double-scroll to coordinate).
+   `--kb-gap` is the empty space between two cards, header to first card included: one
+   `--ascii-pitch`, the dash pitch the typed edges repeat at. */
+.kanbanCards {
+  --kb-gap: var(--ascii-pitch, 2ch);
+  display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto;
+  padding: var(--kb-gap) var(--ascii-tile-w, 1ch) var(--sp-5);
+  gap: var(--kb-gap);
+}
 /* Cards (and the drop-gap placeholders / "add card" affordance) must keep their natural height.
    `.kanbanCards` is a COLUMN flex container, so its children default to `flex-shrink: 1` — without
    this they compress to fit the now height-capped column instead of overflowing it, which both
@@ -66,7 +66,7 @@
    instantly (a card's own layout, not this component's); only the outline colour eases. */
 .kanbanPlaceholder {
   height: 0;
-  margin-top: calc(-1 * var(--sp-3));
+  margin-top: calc(-1 * var(--kb-gap));
   outline: var(--rule-drop);
   outline-color: transparent;
   border-radius: var(--r-0);
@@ -86,7 +86,7 @@
    right after the cards (the trailing placeholder above it, both plain `.kanbanCards` flex
    children), so its spacing off the last card is the same `--sp-3` flex `gap` every card uses —
    never pinned to the column's bottom edge. The look (colour/hover) is Button's own. */
-.kbAddBtn { align-self: flex-start; }
+.kbAddBtn { align-self: flex-start; margin-left: calc(var(--ascii-tile-w, 1ch) - var(--sp-3)); }
 /* The composer is `ui/TextInput`'s own underline field — the chrome every other field in the app
    wears. This file adds only what a card's lane needs: a text caret + real text selection back (a
    dragged card sets user-select:none via CardFrame's `draggable` variant), full lane width, no

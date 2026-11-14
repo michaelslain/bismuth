@@ -46,7 +46,6 @@ const base: KanbanColumnProps = {
     over: false,
     reorderTarget: false,
     dragging: false,
-    last: false,
     ids: [...rowsById.keys()],
     rowById: id => rowsById.get(id),
     overIndex: null,

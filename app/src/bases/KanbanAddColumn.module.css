@@ -11,8 +11,7 @@
    scrolls the whole board sideways (measured: scrollLeft 111px). The `+` therefore sits at the
    LEFT edge of that far-right slot, not flush with the board's right edge — the two cannot
    coexist with the no-move swap below.
-   The ghost's own height is pinned to `.kanbanColHeader`'s (KanbanView.module.css:
-   --h-control) so `align-self: flex-start` on the board's flex row (`.kanban` is now
+   The ghost's own height is pinned to the lane header's (KanbanColumnHeader.module.css `.header`) so `align-self: flex-start` on the board's flex row (`.kanban` is now
    `align-items: stretch`, so every OTHER child fills the row's height — the ghost opts back out
    with its own `flex-start` since it's a fixed-height control, not a lane) lines the two up at
    the same top edge, and centring the 24px square inside that band sits the `+` glyph level
@@ -25,7 +24,9 @@
   flex: 0 0 auto;
   align-self: flex-start;
   height: 0;
-  height: var(--h-control);
+  /* The lane header's own height (KanbanColumnHeader.module.css `.header`): one typed row plus two
+     dash pitches, so the `+` sits level with a lane title. */
+  height: calc(var(--ascii-tile-h, var(--row-h, 18px)) + 2 * var(--ascii-pitch, 2ch));
   padding-left: var(--sp-7);
   box-sizing: border-box;
   min-width: calc(var(--sp-7) + var(--kb-add-field-w));

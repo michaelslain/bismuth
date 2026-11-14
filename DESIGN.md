@@ -190,6 +190,34 @@ governance:
       - app/src/editor/openQueryBuilder.tsx  # same, covered by QueryBuilder stories
       - app/src/editor/datePickerExtension.tsx  # a CodeMirror widget, plain-DOM library territory
       - app/src/editor/noteTitleWidget.tsx      # a CodeMirror widget
+  # Shape rules: what the surfaces must look like, which no token or structure check can see.
+  # Schema in ~/.claude/skills/design-system/reference/manifest.md (`shape:`).
+  shape:
+    typedGridBox:
+      # The typed grid draws a box with glyphs (`+ - |`), never with a CSS border or outline.
+      # CardFrame.module.css is not listed: its default variant is CardsView's drawn card. The drop
+      # cue `var(--rule-drop)` is the app's one drop outline, not a grid box, so it does not match.
+      files: ["app/src/bases/Kanban*.module.css"]
+      exclude: ["**/*.stories.*"]
+      pattern: "(?<![\w-])(?:border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?|outline)\s*:(?!\s*(?:none|0)\s*(?:;|}|$))(?!\s*var\(--rule-drop\))\s*[^;}\n]+"
+      flags: "m"
+      reason: "the typed grid draws edges as glyphs, not a CSS border or outline (DESIGN.md, The Typed Grid Rule)"
+    typedKanbanCard:
+      # A kanban card is a typed box: every <CardFrame> a kanban component opens passes `typed`.
+      # Matches an opening tag that closes on its own `>` line with no `typed` prop before it.
+      files: ["app/src/bases/Kanban*.tsx"]
+      exclude: ["**/*.stories.*"]
+      pattern: "<CardFrame\b(?:(?!\btyped\b)[^<])*?\n\s*>"
+      reason: "a kanban card is a typed + - - + box, so its CardFrame passes `typed` (DESIGN.md, The Typed Grid Rule)"
+    bracketCheckbox:
+      # A task status is a bracket glyph (`[ ]` `[/]` `[x]` `[-]`), never a Lucide square icon.
+      # Not task status, so left out of the globs: the icon registries and manifest (app/src/icons,
+      # app/src/assets), stories and tests. ChatComposerBar and EmbeddedGraph use `Square` as a
+      # stop button and are baselined.
+      files: ["app/src/**/*.ts", "app/src/**/*.tsx"]
+      exclude: ["**/*.stories.*", "**/*.test.*", "app/src/icons/**"]
+      pattern: "([\x27\x22\x60])Square(?:Check\w*|X|Slash|Minus|Dot|Dashed\w*)?\1"
+      reason: "a task status is a bracket glyph, not a Lucide square checkbox icon (DESIGN.md, brackets mean on)"
   checks: {}
 ---
 

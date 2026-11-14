@@ -1,6 +1,7 @@
 import type { Component, JSX } from 'solid-js'
-import { splitProps } from 'solid-js'
+import { Show, splitProps } from 'solid-js'
 import Card from '../ui/Card'
+import AsciiCellEdges from '../ui/ascii/AsciiCellEdges'
 import DropCue from '../ui/DropCue'
 import styles from './CardFrame.module.css'
 
@@ -18,6 +19,10 @@ export type CardFrameProps = {
      *  needs. 'visible' lets a child overflow it — a body card hosts a CodeMirror editor whose
      *  completion popup would otherwise be cut off at the card's edge. */
     overflow?: 'visible' | 'hidden'
+    /** KanbanView's own look: the card is a typed `+ - | ` box (AsciiCellEdges in `--table-edge`
+     *  ink) on the pane ground — no fill, no drawn border, content 2ch in from the `|`. Default
+     *  off, so CardsView and BodyCard keep the surface card. */
+    typed?: boolean
     class?: string
     classList?: Record<string, boolean | undefined>
     children?: JSX.Element
@@ -37,6 +42,7 @@ const CardFrame: Component<CardFrameProps> = props => {
         'draggable',
         'dropTarget',
         'overflow',
+        'typed',
         'class',
         'classList',
         'children',
@@ -48,6 +54,7 @@ const CardFrame: Component<CardFrameProps> = props => {
     const cls = () =>
         [
             local.kind === 'task' ? styles.task : styles.note,
+            local.typed ? styles.typed : '',
             local.overflow === 'visible' ? styles.overflowVisible : '',
             local.interactive ? styles.interactive : '',
             local.draggable ? styles.draggable : '',
@@ -61,6 +68,9 @@ const CardFrame: Component<CardFrameProps> = props => {
         <Card {...rest} class={cls()}>
             {local.children}
             <DropCue active={!!local.dropTarget} />
+            <Show when={local.typed}>
+                <AsciiCellEdges edges={['top', 'right', 'bottom', 'left']} />
+            </Show>
         </Card>
     )
 }

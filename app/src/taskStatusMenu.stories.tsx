@@ -61,11 +61,43 @@ export const CurrentlyTodo: Story = {
     play: async () => {
         const body = within(document.body)
         await waitFor(() =>
-            expect(body.getByText('In progress')).toBeInTheDocument(),
+            expect(body.getByText('in progress')).toBeInTheDocument(),
         )
-        await expect(body.getByText('Done')).toBeInTheDocument()
-        await expect(body.getByText('Cancelled')).toBeInTheDocument()
-        await expect(body.queryByText('To do')).not.toBeInTheDocument()
+        await expect(body.getByText('done')).toBeInTheDocument()
+        await expect(body.getByText('cancelled')).toBeInTheDocument()
+        await expect(body.queryByText('to do')).not.toBeInTheDocument()
+    },
+}
+
+/** A done task (`x`): the other three statuses, each with its typed bracket mark. */
+export const CurrentlyDone: Story = {
+    render: () => <OpenTaskStatusMenu x={120} y={100} cur="x" onPick={noop} />,
+    play: async () => {
+        const body = within(document.body)
+        await waitFor(() => expect(body.getByText('to do')).toBeInTheDocument())
+        await expect(body.getByText('in progress')).toBeInTheDocument()
+        await expect(body.getByText('cancelled')).toBeInTheDocument()
+        await expect(body.queryByText('done')).not.toBeInTheDocument()
+    },
+}
+
+/** An in-progress task (`/`). */
+export const CurrentlyInProgress: Story = {
+    render: () => <OpenTaskStatusMenu x={120} y={100} cur="/" onPick={noop} />,
+    play: async () => {
+        const body = within(document.body)
+        await waitFor(() => expect(body.getByText('to do')).toBeInTheDocument())
+        await expect(body.queryByText('in progress')).not.toBeInTheDocument()
+    },
+}
+
+/** A cancelled task (`-`). */
+export const CurrentlyCancelled: Story = {
+    render: () => <OpenTaskStatusMenu x={120} y={100} cur="-" onPick={noop} />,
+    play: async () => {
+        const body = within(document.body)
+        await waitFor(() => expect(body.getByText('to do')).toBeInTheDocument())
+        await expect(body.queryByText('cancelled')).not.toBeInTheDocument()
     },
 }
 
@@ -75,8 +107,8 @@ export const CurrentlyDoneUppercaseAlias: Story = {
     render: () => <OpenTaskStatusMenu x={120} y={100} cur="X" onPick={noop} />,
     play: async () => {
         const body = within(document.body)
-        await waitFor(() => expect(body.getByText('To do')).toBeInTheDocument())
-        await expect(body.queryByText('Done')).not.toBeInTheDocument()
+        await waitFor(() => expect(body.getByText('to do')).toBeInTheDocument())
+        await expect(body.queryByText('done')).not.toBeInTheDocument()
     },
 }
 
@@ -88,8 +120,8 @@ export const CurrentlyInProgressBackslashAlias: Story = {
     ),
     play: async () => {
         const body = within(document.body)
-        await waitFor(() => expect(body.getByText('To do')).toBeInTheDocument())
-        await expect(body.queryByText('In progress')).not.toBeInTheDocument()
+        await waitFor(() => expect(body.getByText('to do')).toBeInTheDocument())
+        await expect(body.queryByText('in progress')).not.toBeInTheDocument()
     },
 }
 
@@ -111,10 +143,10 @@ export const PickClosesMenu: Story = {
     },
     play: async () => {
         const body = within(document.body)
-        const done = await waitFor(() => body.getByText('Done'))
+        const done = await waitFor(() => body.getByText('done'))
         done.click()
         await waitFor(() =>
-            expect(body.queryByText('Done')).not.toBeInTheDocument(),
+            expect(body.queryByText('done')).not.toBeInTheDocument(),
         )
         await expect(
             (window as unknown as { __picked: string[] }).__picked,

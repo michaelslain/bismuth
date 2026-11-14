@@ -119,3 +119,43 @@ export const OverflowVisible: Story = {
         )
     },
 }
+
+/** `typed` beside the default: the surface card draws a fill and a CSS border; the typed card is a
+ *  `+ - | ` box on the pane ground (AsciiCellEdges, `--table-edge` ink) with no fill or border of its
+ *  own, text 2ch in from the `|`. The edges are a child overlay, so the frame must not clip. */
+export const TypedBesideDefault: Story = {
+    render: () => (
+        <div style={{ display: 'flex', gap: '4ch', 'align-items': 'flex-start', padding: '2ch' }}>
+            <div style={{ width: '24ch' }}>
+                <CardFrame kind="task">
+                    <div>default task card</div>
+                </CardFrame>
+            </div>
+            <div style={{ width: '24ch' }}>
+                <CardFrame typed kind="task">
+                    <div>typed task card</div>
+                </CardFrame>
+            </div>
+            <div style={{ width: '24ch' }}>
+                <CardFrame typed draggable>
+                    <div>typed note card (hover me)</div>
+                </CardFrame>
+            </div>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const [plain, typedTask, typedNote] = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[style*="24ch"] > *'),
+        ]
+        expect(getComputedStyle(plain).borderTopStyle).not.toBe('none')
+        for (const el of [typedTask, typedNote]) {
+            const cs = getComputedStyle(el)
+            expect(cs.borderTopStyle).toBe('none')
+            expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+            expect(cs.overflow).toBe('visible')
+            // the four typed edges are one overlay child
+            expect(el.querySelector('[data-edges="top right bottom left"]')).not.toBeNull()
+        }
+        expect(plain.querySelector('[data-edges]')).toBeNull()
+    },
+}

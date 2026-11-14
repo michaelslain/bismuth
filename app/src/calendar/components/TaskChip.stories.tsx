@@ -601,9 +601,9 @@ export const RightClickOpensStatusMenu: Story = {
             }),
         )
         const body = within(document.body)
-        const done = await waitFor(() => body.getByText('Done'))
+        const done = await waitFor(() => body.getByText('done'))
         // "To do" (the CURRENT status, ' ') must be filtered out of the menu.
-        expect(body.queryByText('To do')).not.toBeInTheDocument()
+        expect(body.queryByText('to do')).not.toBeInTheDocument()
         done.click()
         await waitFor(() =>
             expect(
@@ -699,7 +699,7 @@ export const MarkerNotInteractiveForSelfOwnedRow: Story = {
             new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
         )
         await new Promise(resolve => setTimeout(resolve, 60))
-        expect(within(document.body).queryByText('Done')).not.toBeInTheDocument()
+        expect(within(document.body).queryByText('done')).not.toBeInTheDocument()
         expect(calls).toEqual([])
     },
 }

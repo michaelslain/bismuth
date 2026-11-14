@@ -19,8 +19,9 @@ export type TaskFieldChipsProps = {
 
 /**
  * The parsed signifiers of a task, as plain muted inline text: priority mark, start, scheduled,
- * due and recurrence. Each renders only when its field is present. A fragment of inline spans, so
- * the parent decides where they flow (TaskRow puts them right after the description).
+ * due and recurrence. Each renders only when its field is present, after a plain space: the line
+ * may break there, and the space collapses where a field starts a wrapped line. A fragment of inline
+ * spans, so the parent decides where they flow (TaskRow puts them right after the description).
  */
 const TaskFieldChips: Component<TaskFieldChipsProps> = props => {
     const cls = (extra = '') =>
@@ -28,6 +29,7 @@ const TaskFieldChips: Component<TaskFieldChipsProps> = props => {
     return (
         <>
             <Show when={props.priority && props.priority !== 'none'}>
+                {' '}
                 <Text
                     as="span"
                     inherit
@@ -38,16 +40,19 @@ const TaskFieldChips: Component<TaskFieldChipsProps> = props => {
                 </Text>
             </Show>
             <Show when={props.start}>
+                {' '}
                 <Text as="span" inherit class={cls()}>
                     {formatDateField('start', props.start!)}
                 </Text>
             </Show>
             <Show when={props.scheduled}>
+                {' '}
                 <Text as="span" inherit class={cls()}>
                     {formatDateField('scheduled', props.scheduled!)}
                 </Text>
             </Show>
             <Show when={props.due}>
+                {' '}
                 <Text
                     as="span"
                     inherit
@@ -57,6 +62,7 @@ const TaskFieldChips: Component<TaskFieldChipsProps> = props => {
                 </Text>
             </Show>
             <Show when={props.recurrence}>
+                {' '}
                 <Text as="span" inherit class={cls()}>
                     [{props.recurrence}]
                 </Text>

@@ -3,17 +3,16 @@
    .baseKanban, which is itself capped to the pane's height) instead of growing as tall as its
    tallest column. `overflow-x` is this element's own — so its scrollbar renders at the very
    bottom of the (height-capped) board, i.e. the bottom of the window, not below the fold.
-   `align-items: stretch` makes every column (and the column rule it draws via `border-right`)
-   run the board's full height, even a short/empty column next to a tall one — a board with only
-   short columns now reads as a row of full-height lanes rather than content-height cards;
+   `align-items: stretch` makes every column run the board's full height, even a short/empty
+   column next to a tall one (the drag engine resolves a drop by column rect);
    `.kanbanColumn`'s `max-height: 100%` still guards against a column ever growing taller than the
    board. `overflow-y: hidden` guards against the board itself ever growing a second (vertical)
    scrollbar — tall columns scroll their own `.kanbanCards` instead (column header stays put). No
-   `gap` — the column rule (`.kanbanColumn`'s `border-right`) sits flush between columns, whose own
-   inner padding supplies the visual gutter on each side (Task 1 fix, even gutters). */
+   rule between columns: lanes are separated by empty space only — this `gap` plus each lane's own
+   one-tile inset (header margin, card-list padding), 3ch from one card box to the next lane's. */
 .kanban {
   display: flex;
-  gap: 0;
+  gap: var(--ascii-tile-w, 1ch);
   overflow-x: auto;
   overflow-y: hidden;
   align-items: stretch;

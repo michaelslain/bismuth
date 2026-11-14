@@ -1,4 +1,4 @@
-// design-system skill scripts v5 (2026-10-06) — copied into repos by install-gate; compare this line to detect a stale copy
+// design-system skill scripts v6 (2026-11-13) — copied into repos by install-gate; compare this line to detect a stale copy
 // Pure logic for the design-system skill. No filesystem access — every input arrives as a
 // string or an array of { path, content }. This file is copied into user repos alongside its
 // lib/ siblings, so it (and they) must stay dependency-free (plain Node ESM, node:path/posix
@@ -26,7 +26,7 @@ export function parseGovernance(designMdText) {
 export const CHECK_NAMES = [
     'storyCoverage', 'oneImporter', 'hardcodedColor', 'hardcodedFont',
     'hardcodedFontSize', 'hardcodedRadius', 'bareElement', 'propsDestructure',
-    'ignoreReason', 'globalReach', 'oneGlobalFile',
+    'ignoreReason', 'globalReach', 'oneGlobalFile', 'shapeStyle', 'shapeSource',
 ]
 
 // ---------------------------------------------------------------------------
@@ -40,6 +40,7 @@ export const CHECK_SEVERITY = {
     storyCoverage: 'error', oneImporter: 'error', hardcodedColor: 'error', hardcodedFont: 'error',
     hardcodedFontSize: 'error', hardcodedRadius: 'error', bareElement: 'error',
     propsDestructure: 'error', ignoreReason: 'error', globalReach: 'error', oneGlobalFile: 'error',
+    shapeStyle: 'error', shapeSource: 'error',
 }
 
 export function severityOf(check) {
@@ -139,6 +140,30 @@ function toArr(v, fallback = []) {
     return Array.isArray(v) ? v : [v]
 }
 
+// `shape:` — rules a project declares about the SHAPE of its UI, which no token or structure
+// check can see. A map of rule-name → { files, exclude?, pattern, flags?, reason }. `files` are
+// globs; `pattern` is a JS regex source matched against the file with comments blanked (so prose
+// never trips it). A stylesheet match is a `shapeStyle` finding, a source-file match `shapeSource`.
+function parseShapeRules(shape) {
+    if (Array.isArray(shape)) return shape // already parsed: withDefaults runs twice on the audit path
+    if (!shape || typeof shape !== 'object') return []
+    const rules = []
+    for (const [name, r] of Object.entries(shape)) {
+        if (!r || typeof r !== 'object') continue
+        const files = toArr(r.files)
+        if (!files.length || typeof r.pattern !== 'string' || !r.pattern) {
+            throw new Error(`governance.shape.${name} needs \`files\` and \`pattern\``)
+        }
+        const flags = String(r.flags || '').replace(/[^imsu]/g, '')
+        let re
+        try { re = new RegExp(r.pattern, 'g' + flags.replace('g', '')) } catch (e) {
+            throw new Error(`governance.shape.${name}.pattern is not a valid regex: ${e.message}`)
+        }
+        rules.push({ name, files, exclude: toArr(r.exclude), re, reason: r.reason || '' })
+    }
+    return rules
+}
+
 export function withDefaults(governance) {
     const g = governance || {}
     const out = {}
@@ -166,6 +191,7 @@ export function withDefaults(governance) {
         sibling: (g.stories && g.stories.sibling) || DEFAULT_STORIES_SIBLING,
         exempt: toArr(g.stories && g.stories.exempt),
     }
+    out.shape = parseShapeRules(g.shape)
     out.checks = {}
     for (const name of CHECK_NAMES) {
         const v = g.checks && g.checks[name]
@@ -855,6 +881,34 @@ function checkIgnoreReasons(files, ignoreIndex) {
     return findings
 }
 
+// Shape rules: each declared rule scans the files its globs cover. CSS/SCSS → `shapeStyle`,
+// JS/TS family → `shapeSource`. The per-line `design-system-ignore shapeStyle|shapeSource: <why>`
+// exemption applies like any other check.
+function checkShapeRules(g, files) {
+    const findings = []
+    for (const rule of g.shape) {
+        for (const f of files) {
+            if (!rule.files.some(p => matchGlob(p, f.path)) || rule.exclude.some(p => matchGlob(p, f.path))) continue
+            const ext = extname(f.path)
+            const check = CSS_EXTS.has(ext) ? 'shapeStyle' : SOURCE_EXTS.has(ext) ? 'shapeSource' : null
+            if (!check || !g.checks[check]) continue
+            const clean = check === 'shapeStyle' ? blankCssComments(f.content) : blankJsComments(f.content)
+            const find = makeLineFinder(clean)
+            rule.re.lastIndex = 0
+            let m
+            while ((m = rule.re.exec(clean))) {
+                if (m[0] === '') { rule.re.lastIndex++; continue }
+                findings.push({
+                    check, path: f.path, line: find(m.index),
+                    message: `${rule.name}: \`${m[0].trim().replace(/\s+/g, ' ').slice(0, 80)}\`${rule.reason ? ' — ' + rule.reason : ''}`,
+                    suggestion: `remove it, or \`design-system-ignore ${check}: <why this line is exempt>\``,
+                })
+            }
+        }
+    }
+    return findings
+}
+
 export function runChecks(manifest, files) {
     const g = withDefaults(manifest)
     const fileSet = new Set(files.map(f => f.path))
@@ -888,6 +942,7 @@ export function runChecks(manifest, files) {
     if (g.checks.propsDestructure) findings.push(...checkPropsDestructure(g, files, isComponentFile))
     if (g.checks.globalReach) findings.push(...checkGlobalReach(g, files, isStylesheetFile, isGlobal, isTokenFile))
     if (g.checks.oneGlobalFile) findings.push(...checkOneGlobalFile(g, files, isGlobal))
+    findings.push(...checkShapeRules(g, files))
 
     const ignoreIndex = buildIgnoreIndex(files)
     let out = filterExempt(findings, ignoreIndex)

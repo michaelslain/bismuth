@@ -4,6 +4,7 @@
 // caller owns which column is renaming / which picker is open and what each action writes. The
 // whole header is the column-drag handle, so the controls inside claim their own gestures.
 import { Show, type Component } from 'solid-js'
+import AsciiCellEdges from '../ui/ascii/AsciiCellEdges'
 import ColorChip from '../ui/ColorChip'
 import IconBar from '../ui/IconBar'
 import IconButton from '../ui/IconButton'
@@ -86,6 +87,7 @@ const KanbanColumnHeader: Component<KanbanColumnHeaderProps> = props => {
                     initial={props.columnKey}
                     existing={props.existing}
                     selectOnMount
+                    className={styles.nameField}
                     onSubmit={props.onRename}
                     onCancel={props.onCancelRename}
                 />
@@ -117,6 +119,11 @@ const KanbanColumnHeader: Component<KanbanColumnHeaderProps> = props => {
                     {padCount(props.count)}
                 </Text>
             </div>
+            <AsciiCellEdges
+                edges={['bottom']}
+                edgeWeight={{ bottom: 'heavy' }}
+                class={styles.underline}
+            />
         </div>
     )
 }
