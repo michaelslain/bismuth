@@ -5,6 +5,7 @@ import { isIconName } from '../icons/registry'
 import { warnBadIcon, warnLabelCase } from './devWarn'
 import type { ButtonState } from './buttonClass'
 import type { KeybindingId } from '../../../core/src/keybindings'
+import type { TooltipSide } from './tooltipPlacement'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
 export type IconTextButtonVariant = ButtonState
@@ -22,6 +23,9 @@ export type IconTextButtonProps = {
     primary?: boolean
     /** The catalog keybinding that does what this button does; TooltipHost shows its live combo. */
     keybinding?: KeybindingId
+    /** Where the `title` bubble opens: below (default), or `right` when the row below holds a
+     *  heading the bubble would cover. */
+    tooltipSide?: TooltipSide
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
@@ -40,6 +44,7 @@ function IconTextButton(props: IconTextButtonProps) {
         'children',
         'keybinding',
         'title',
+        'tooltipSide',
     ])
     if (import.meta.env?.DEV && !isIconName(local.icon)) {
         warnBadIcon('IconTextButton', local.icon)
@@ -53,6 +58,7 @@ function IconTextButton(props: IconTextButtonProps) {
             state={local.variant ?? 'normal'}
             data-tooltip={local.title}
             data-tooltip-keybinding={local.keybinding}
+            data-tooltip-side={local.tooltipSide}
             {...rest}
         >
             <Icon value={local.icon} size={local.iconSize} />

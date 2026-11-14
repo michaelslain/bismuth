@@ -54,4 +54,25 @@ describe('placeTooltip', () => {
         expect(p.side).toBe('below')
         expect(p.top).toBe(128)
     })
+
+    test('prefer right sits gap right of the anchor, centred on its row', () => {
+        const anchor = { top: 100, bottom: 124, left: 300, width: 24 }
+        const p = placeTooltip({ anchor, size, viewport, gap, prefer: 'right' })
+        expect(p.side).toBe('right')
+        expect(p.left).toBe(324 + gap)
+        expect(p.top).toBe(112 - 11)
+    })
+
+    test('prefer right never reaches the rows below the anchor', () => {
+        const anchor = { top: 100, bottom: 124, left: 300, width: 24 }
+        const p = placeTooltip({ anchor, size, viewport, gap, prefer: 'right' })
+        expect(p.top + size.h).toBeLessThanOrEqual(anchor.bottom)
+    })
+
+    test('prefer right falls back to below when the right has no room', () => {
+        const anchor = { top: 100, bottom: 124, left: 700, width: 24 }
+        const p = placeTooltip({ anchor, size, viewport, gap, prefer: 'right' })
+        expect(p.side).toBe('below')
+        expect(p.top).toBe(128)
+    })
 })

@@ -568,7 +568,7 @@ the accent. An outline appears only when it means something.
 
 ### Tooltip
 - **One bubble names an icon-only control:** `TooltipHost`, mounted once per document, reads `data-tooltip="<text>"` from the element under the pointer or holding keyboard focus-visible. The text is the control's name as written: no case change, no tracking.
-- **Recipe:** `--fs-ui` text in `--fg` on `--bg`, a `--rule` hairline, square, `--lift`, padding `--sp-1` block and `--sp-3` inline, one line. Centred `--sp-2` under the control, above it when there is no room below, clamped inside the window.
+- **Recipe:** `--fs-ui` text in `--fg` on `--bg`, a `--rule` hairline, square, `--lift`, padding `--sp-1` block and `--sp-3` inline, one line. Centred `--sp-2` under the control, above it when there is no room below, clamped inside the window. A control whose next row is a section heading (the model dialog's `[+ save]` over `connectors`) sets `tooltipSide="right"` (`data-tooltip-side`): the bubble opens `--sp-2` to its right, centred on its row, and falls back to below when the window has no room there.
 - **Timing:** `--dur-tooltip` after the pointer settles; moving straight onto another named control swaps the text with no new delay. Keyboard focus-visible shows it at once; mouse focus does not. It hides on leave, blur, Escape, press and scroll.
 - **Inert:** fixed-positioned, `pointer-events: none`, `aria-hidden` (the control's `aria-label` already names it), so it never shifts layout, takes focus or intercepts a click. A disabled control shows it too.
 

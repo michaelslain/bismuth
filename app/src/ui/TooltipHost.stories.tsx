@@ -8,6 +8,7 @@ import { expect, userEvent, waitFor } from 'storybook/test'
 import TooltipHost from './TooltipHost'
 import { IconButton } from './IconButton'
 import { IconTextButton } from './IconTextButton'
+import SectionLabel from './SectionLabel'
 import { settings, setSettings } from '../settings'
 import type { KeybindingId } from '../../../core/src/keybindings'
 
@@ -295,6 +296,47 @@ export const UnwiredUnchanged: Story = {
         const { tip } = await hover(canvasElement)
         expect(bubble()!.textContent).toBe('Zoom out')
         expect(kbd()).toBeNull()
+        insideViewport(tip)
+    },
+}
+
+/** A control with a section heading right under it (the model dialog's `[+ save]` over
+ *  `connectors`): `tooltipSide="right"` opens the bubble beside it, on its own row, so the heading
+ *  stays readable. */
+export const BesideAHeading: Story = {
+    render: () => (
+        <div
+            style={{
+                position: 'fixed',
+                top: '40%',
+                left: '30%',
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: 'var(--sp-2)',
+            }}
+        >
+            <div>
+                <IconTextButton
+                    icon="Plus"
+                    title="save the current connector, model and effort as a preset"
+                    tooltipSide="right"
+                >
+                    save
+                </IconTextButton>
+            </div>
+            <SectionLabel>connectors</SectionLabel>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const { btn, tip } = await hover(canvasElement)
+        expect(bubble()!.textContent).toBe('save the current connector, model and effort as a preset')
+        expect(bubble()!.getAttribute('data-side')).toBe('right')
+        expect(tip.left - btn.right).toBeGreaterThan(2)
+        expect(tip.left - btn.right).toBeLessThan(6)
+        const head = [...canvasElement.querySelectorAll('*')].find(
+            e => e.children.length === 0 && e.textContent === 'connectors',
+        )!.getBoundingClientRect()
+        expect(tip.bottom).toBeLessThanOrEqual(head.top)
         insideViewport(tip)
     },
 }

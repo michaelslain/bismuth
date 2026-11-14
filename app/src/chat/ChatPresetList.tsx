@@ -82,7 +82,10 @@ const ChatPresetList: Component<ChatPresetListProps> = props => {
                     fallback={
                         <IconTextButton
                             icon="Plus"
-                            title="Save the current connector, model and effort as a preset"
+                            title="save the current connector, model and effort as a preset"
+                            // The connectors heading sits right under this row: a bubble below
+                            // would cover it, so it opens beside the button.
+                            tooltipSide="right"
                             onClick={() => setSaving(true)}
                         >
                             save

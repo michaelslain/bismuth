@@ -3,7 +3,9 @@
 // `data-tooltip="<text>"` from whatever is under the pointer, or holds keyboard focus-visible,
 // and shows that text in a small label under the element (above it when there is no room). A holder
 // may also carry `data-tooltip-keybinding="<catalog id>"`: the bubble then adds that binding's live
-// combo (settings.keybindings, read on every open) as a muted Kbd beside the name.
+// combo (settings.keybindings, read on every open) as a muted Kbd beside the name. A holder whose
+// row below is taken (a section heading under it) carries `data-tooltip-side="right"`, and the
+// bubble opens beside it instead, centred on its row.
 //
 // Hover is found by hit-testing the pointer position on document-level pointermove, never by an
 // event targeted at the element itself: a DISABLED button gets no pointer events in some engines
@@ -11,7 +13,7 @@
 import { createSignal, onCleanup, onMount, Show, createEffect, type Component } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import styles from './TooltipHost.module.css'
-import { placeTooltip } from './tooltipPlacement'
+import { placeTooltip, type TooltipSide } from './tooltipPlacement'
 import { isDismissKey } from './widgetKeys'
 import Kbd from './ascii/Kbd'
 import { tooltipContent, type TooltipContent } from './tooltipContent'
@@ -187,6 +189,7 @@ const TooltipHost: Component<TooltipHostProps> = props => {
             size: { w: node.offsetWidth, h: node.offsetHeight },
             viewport: { w: window.innerWidth, h: window.innerHeight },
             gap: gapPx(),
+            prefer: (el.getAttribute('data-tooltip-side') ?? undefined) as TooltipSide | undefined,
         })
         node.style.top = `${placed.top}px`
         node.style.left = `${placed.left}px`
