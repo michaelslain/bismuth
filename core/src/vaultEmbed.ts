@@ -404,6 +404,15 @@ async function scan(vault: string, st: VaultState): Promise<void> {
     st.notes = fresh
 }
 
+/** Every entry the index embeds for a vault, read fresh, each with the vault file it belongs to (a
+ *  PDF's page entries name the PDF). `embedTexts(note)` gives the exact texts the store embeds. The
+ *  embedder fine-tune bench (bench/finetuneEmbed.ts) trains on these. */
+export async function vaultEntries(vault: string): Promise<{ file: string; note: MemoryNote }[]> {
+    const st = { notes: new Map<string, MemoryNote>() } as VaultState
+    await scan(vault, st)
+    return [...st.notes.values()].map(note => ({ file: baseOf(note.name), note }))
+}
+
 function stateFor(vault: string, emb: NonNullable<ReturnType<SemanticChannel['embedder']>>): VaultState {
     let st = states.get(vault)
     if (!st) {

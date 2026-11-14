@@ -34,7 +34,20 @@ export const EMBED_SPECS: Record<string, EmbedSpec> = {
     },
 }
 
-/** `BISMUTH_EMBED_MODEL` names a catalog entry for a bench run; anything else is the shipped model.
- *  The store keys its vectors by model id, so a switch re-embeds instead of mixing spaces. */
-export const EMBED_SPEC: EmbedSpec = EMBED_SPECS[process.env.BISMUTH_EMBED_MODEL ?? ''] ?? EMBED_SPECS.default!
+/** Where `bench/finetuneEmbed.ts` exports a fine-tuned copy of the default model, under the model
+ *  cache (`~/.bismuth/models`), which transformers.js reads before the network. */
+export const FINETUNE_PREFIX = 'bismuth-ft/'
+
+/** The spec a `BISMUTH_EMBED_MODEL` value names: a catalog entry, or `ft:<name>` for a fine-tuned copy
+ *  of the default model at `<model cache>/bismuth-ft/<name>` (same pooling and prefixes). Anything else
+ *  is the shipped model. */
+export function embedSpecFor(name: string | undefined): EmbedSpec {
+    const ft = /^ft:([\w.-]+)$/.exec(name ?? '')
+    if (ft) return { ...EMBED_SPECS.default!, id: FINETUNE_PREFIX + ft[1] }
+    return EMBED_SPECS[name ?? ''] ?? EMBED_SPECS.default!
+}
+
+/** `BISMUTH_EMBED_MODEL` picks the model for a bench run. The store keys its vectors by model id, so a
+ *  switch re-embeds instead of mixing spaces. */
+export const EMBED_SPEC: EmbedSpec = embedSpecFor(process.env.BISMUTH_EMBED_MODEL)
 export const EMBED_MODEL = EMBED_SPEC.id
