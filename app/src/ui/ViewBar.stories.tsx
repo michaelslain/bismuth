@@ -388,7 +388,7 @@ export const BelowFloor: Story = {
 
 /**
  * Below the floor tier, but the lead FITS: no fade. The shape of the sidebar mini graph — a 266px
- * bar whose lead is one button and a few icons, with two bracket buttons trailing. The floor tier's
+ * bar whose lead is one button and a few icons, with two icon toggles trailing. The floor tier's
  * scroller is on, yet nothing is past the edge, so the lead's last control must not be masked (an
  * unconditional mask read as a dark band between the icons and the trailing [clusters]).
  */
@@ -405,8 +405,8 @@ export const BelowFloorLeadFits: Story = {
                 }
                 config={
                     <>
-                        <TextButton variant="selected">clusters</TextButton>
-                        <TextButton variant="unselected">local</TextButton>
+                        <IconButton icon="CirclesThree" label="clusters" variant="selected" />
+                        <IconButton icon="Crosshair" label="local" variant="unselected" />
                     </>
                 }
             />

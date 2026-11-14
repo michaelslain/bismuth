@@ -32,6 +32,8 @@ The graph's toolbar holds these controls.
 | `clusters` | On: notes read as named community groups. Off: every note, with names growing as you zoom |
 | `find` | Search the graph's nodes and fly the camera to one |
 
+The mini graph in the sidebar draws the brain modes, `clusters` and `local` as icons to keep its bar short: three bubbles for `clusters`, a crosshair for `local`. Hover an icon to see what it does.
+
 The `3rd` and `both` modes exist only while the daemon is enabled (`daemon.enabled` in `.settings`). With the daemon off the mode switcher is hidden and the graph shows the vault alone.
 
 The `2d`/`3d` choice and the `clusters` toggle are remembered per browser, not written to `.settings`, so flipping them never rewrites your settings file.
@@ -51,7 +53,7 @@ Each brain mode has its own layout, so a memory linked to a vault note does not 
 
 ## Show only the open note's neighbourhood
 
-The `local` mode narrows the 2nd-brain graph to the note you have open and every note one link away, in either direction. It is a lens over the mini graph in the sidebar, not a fourth switcher segment. Click `local` at the top of the mini graph to turn it on and click it again to return to the mode you were in.
+The `local` mode narrows the 2nd-brain graph to the note you have open and every note one link away, in either direction. It is a lens over the mini graph in the sidebar, not a fourth switcher segment. Click the crosshair icon (`local`) at the top of the mini graph to turn it on and click it again to return to the mode you were in.
 
 The `graph-local` command (**Graph: Local (open note)**) switches to the same lens. If you promote the mini graph to a full pane while `local` is on, the pane returns to the mode you were in. With no note open, `local` shows an empty graph.
 

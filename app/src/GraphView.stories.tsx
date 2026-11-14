@@ -137,7 +137,7 @@ export const FindPanelOpen: Story = {
 }
 
 /** The mini graph's contract: its ViewBar header holds EXACTLY ONE 2d/3d TextButton plus
- *  [clusters] and [local], and no bottom bar renders any of them (the bar, when present at all,
+ *  the [clusters] and [local] icon toggles, and no bottom bar renders any of them (the bar, when present at all,
  *  carries only the fps badge). `localSelected` is whether [local] must read as showing. Returns
  *  the 2d/3d button. */
 const assertMiniHeaderControls = (root: HTMLElement, mode: GraphMode) => {
@@ -148,12 +148,18 @@ const assertMiniHeaderControls = (root: HTMLElement, mode: GraphMode) => {
         buttons.filter(b => re.test(b.textContent?.trim() ?? ''))
     const toggle = named(/^(2d|3d)$/)
     expect(toggle).toHaveLength(1)
-    expect(named(/^clusters$/)).toHaveLength(1)
-    const local = named(/^local$/)
+    // [clusters] and [local] are icon toggles: found by accessible name, never by text.
+    const iconNamed = (name: string) =>
+        buttons.filter(b => b.getAttribute('aria-label') === name)
+    const clusters = iconNamed('clusters')
+    expect(clusters).toHaveLength(1)
+    expect(/[a-z]/i.test(clusters[0]!.textContent ?? '')).toBe(false)
+    const local = iconNamed('local')
     expect(local).toHaveLength(1)
+    expect(local[0]!.getAttribute('aria-pressed')).toBe(String(mode === 'local'))
     expect(
         /^Showing the open note's neighbourhood/.test(
-            local[0]!.getAttribute('title') ?? '',
+            local[0]!.getAttribute('data-tooltip') ?? '',
         ),
     ).toBe(mode === 'local')
     // Nothing the header owns may also render at the floor.
@@ -584,3 +590,4 @@ export const GradientOff: Story = {
         )
     },
 }
+

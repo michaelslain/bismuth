@@ -613,28 +613,31 @@ export function GraphView(props: {
                 }
                 config={
                     /* Mini graph only: the two lenses on what the field shows. They answer "which
-                       settings govern this view?" — a config, trailing. Moved up from the old bottom
-                       bar so the docked graph has no empty band and no bar of controls at its floor.
-                       [clusters] is the same shared toggle as the full pane's layer toggles
-                       (graph/graphLayers.ts), so flipping it here flips it there too. LOCAL is a WORD,
-                       not an icon (an icon-only version read as a mystery button); it is separate from
-                       the brain-mode switcher because it is a different kind of choice: those pick
-                       WHICH graph, this picks whether to narrow the current one to the open note. */
+                       settings govern this view?" — a config, trailing. [clusters] is the same shared
+                       toggle as the full pane's layer toggles (graph/graphLayers.ts), so flipping it
+                       here flips it there too. Both are ICONS so the 266px bar holds no words but the
+                       one [3d] switch (DESIGN.md, "A view bar stays short"): three bubbles for named
+                       groups, a crosshair for narrowing to the open note. The accessible names stay
+                       "clusters" and "local"; the tooltip carries the explanation. LOCAL stays apart
+                       from the brain-mode icons because it is a different kind of choice: those pick
+                       WHICH graph, this narrows the current one to the open note. Lone on/off
+                       toggles, not pickOne: an off one keeps its bracket room so nothing shifts. */
                     props.mini ? (
                         <>
-                            <TextButton
+                            <IconButton
+                                icon="CirclesThree"
+                                label="clusters"
                                 variant={graphClusters() ? 'selected' : 'unselected'}
-                                aria-pressed={graphClusters()}
                                 title={
                                     graphClusters()
                                         ? 'Clusters — notes read as named groups. Click to show every note'
                                         : 'Every note — the biggest hubs named, more names as you zoom in. Click to group into clusters'
                                 }
                                 onClick={() => setGraphClusters(!graphClusters())}
-                            >
-                                clusters
-                            </TextButton>
-                            <TextButton
+                            />
+                            <IconButton
+                                icon="Crosshair"
+                                label="local"
                                 variant={localOn() ? 'selected' : 'unselected'}
                                 title={
                                     localOn()
@@ -642,9 +645,7 @@ export function GraphView(props: {
                                         : 'Show only the open note and what it connects to'
                                 }
                                 onClick={toggleLocal}
-                            >
-                                local
-                            </TextButton>
+                            />
                         </>
                     ) : undefined
                 }

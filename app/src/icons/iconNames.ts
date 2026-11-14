@@ -1,6 +1,6 @@
 // app/src/icons/iconNames.ts
 //
-// The 144 canonical icon names every icon set must resolve — the NAME seam registry.ts:3 refers
+// The 146 canonical icon names every icon set must resolve — the NAME seam registry.ts:3 refers
 // to. This list is SET-INDEPENDENT: it does not change when the art behind a name does (Nerd Font
 // -> Phosphor -> whatever comes next), which is what keeps the ~100 real call sites (FileTree,
 // toolbar, palette, command catalog...) stable across a set swap. Only the MAPPING from these
@@ -50,6 +50,7 @@ export const ICON_NAMES: string[] = [
     'CircleCheck',
     'CircleHelp',
     'CircleX',
+    'CirclesThree',
     'Clipboard',
     'ClipboardList',
     'Code',
@@ -57,6 +58,7 @@ export const ICON_NAMES: string[] = [
     'Columns3',
     'Combine',
     'Copy',
+    'Crosshair',
     'Crown',
     'Database',
     'Download',
@@ -111,8 +113,8 @@ export const ICON_NAMES: string[] = [
     'PanelLeft',
     'PanelRight',
     'Pen',
-    'Pencil',
     'PenTool',
+    'Pencil',
     'Pin',
     'PinOff',
     'Play',
