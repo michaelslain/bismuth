@@ -79,10 +79,11 @@ export const Conversation: Story = {
         await noteProseReady(canvasElement)
         const canvas = within(canvasElement)
         // Right-click the assistant's prose bubble → Reply, and confirm onReply fires with its
-        // exact text (not just "was called").
+        // exact text (not just "was called"). The menu renders through <Portal> into
+        // document.body, outside the canvas, so it is found from the body.
         const bubble = canvas.getByText(/A few things landed/)
         await fireEvent.contextMenu(bubble)
-        const replyRow = await canvas.findByText('Reply')
+        const replyRow = await within(document.body).findByText('Reply')
         await userEvent.click(replyRow)
         await expect(noop.onReply).toHaveBeenCalledWith(
             conversationAssistantText,
