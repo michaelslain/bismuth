@@ -145,8 +145,8 @@ test('opencode 2 events carry the session in data.sessionID', () => {
 })
 
 // ---- profile slots, against a fake `opencode serve` (test/support/fakeOpencodeServe.ts) ----------
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, writeFileSync } from 'node:fs'
+import { tempDir } from '../tempDirs'
 import { join } from 'node:path'
 import {
     ensureOpencodeServer,
@@ -154,7 +154,7 @@ import {
     registerOpencodeServerListener,
 } from '../../src/chatProviders/opencode/opencodeServer'
 
-const fakeDir = mkdtempSync(join(tmpdir(), 'fake-opencode-'))
+const fakeDir = tempDir('fake-opencode-')
 const fakeBin = join(fakeDir, 'opencode')
 writeFileSync(
     fakeBin,
