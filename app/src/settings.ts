@@ -167,6 +167,7 @@ export interface Settings {
         provider: string // default provider for NEW chats: "claude" | "opencode"
         presets: ChatPreset[] // saved provider + model + effort combos (chat/chatPresets.ts)
         mutedMcpServers: string[] // MCP servers the header's down warning ignores (chat/mcpWarning.ts)
+        opencodeServers: { id: string; name: string; url: string; apiKey: string }[] // local model servers saved from the provider manager
     }
     transcription: {
         auto: boolean // the reader transcribes every page with no text on its own

@@ -14,6 +14,7 @@ import {
     sendMessage,
     setModel,
 } from '../../src/chat'
+import { isEmbeddingModelId } from '../../src/agentBackends/contextWindow'
 import { localUnreachableMessage } from '../../src/agentBackends/localModelProbe'
 import { whichClaude } from '../../src/claudeWhich'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
@@ -106,12 +107,14 @@ describeLive(
             expect(first.length).toBeGreaterThan(0)
             expect(new Set(first)).toEqual(new Set(['mock-local']))
 
-            // The picker lists exactly the server's ids, not Claude's.
+            // The picker lists the server's chat model ids (embedding models excluded), not Claude's.
             const served = (
                 (await fetch(`${mock.url}/v1/models`).then(r => r.json())) as {
                     data: { id: string }[]
                 }
-            ).data.map(m => m.id)
+            ).data
+                .map(m => m.id)
+                .filter(id => !isEmbeddingModelId(id))
             const models = await waitFor(f => f.type === 'models')
             expect(
                 models.type === 'models' && models.models.map(m => m.value),

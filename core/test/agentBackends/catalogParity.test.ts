@@ -52,11 +52,12 @@ describe('agent backend catalog <-> CHAT_BACKENDS parity', () => {
      *  flag/verb pair. Returns human-readable strings (not booleans) so a failure names exactly
      *  which backend(s) disagree and how, rather than failing silently on the first mismatch found. */
     function disagreements(
-        flag: 'permissionPrompts' | 'permissionModes' | 'effort',
+        flag: 'permissionPrompts' | 'permissionModes' | 'effort' | 'agents',
         verb:
             | 'respondPermission'
             | 'setPermissionMode'
             | 'setEffort'
+            | 'setAgent'
             | 'respondQuestion',
     ): string[] {
         const out: string[] = []
@@ -102,6 +103,10 @@ describe('agent backend catalog <-> CHAT_BACKENDS parity', () => {
 
     test('effort <-> setEffort', () => {
         expect(disagreements('effort', 'setEffort')).toEqual([])
+    })
+
+    test('agents <-> setAgent', () => {
+        expect(disagreements('agents', 'setAgent')).toEqual([])
     })
 
     test('permissionModes <-> respondQuestion', () => {

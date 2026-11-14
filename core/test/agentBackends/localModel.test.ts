@@ -7,6 +7,7 @@ import {
     CLOUD_ENV,
     LOCAL_PROVIDER_ID,
     localSpawnFor,
+    opencodeLocalProviderBlock,
     parseLocalModel,
     withoutCloudEnv,
     type LocalModel,
@@ -128,6 +129,32 @@ describe('localSpawnFor', () => {
         expect(c.provider.local.options.apiKey).toBeUndefined()
     })
 
+    test('opencode models carry the thinking variants and a known window as limit', () => {
+        const cfg = JSON.parse(
+            localSpawnFor('opencode', LM, 'a', ['a', 'b'], { b: 8192 })!.env
+                .OPENCODE_CONFIG_CONTENT!,
+        )
+        for (const id of ['a', 'b']) {
+            expect(cfg.provider.local.models[id].variants.none.reasoningEffort).toBe(
+                'none',
+            )
+            expect(cfg.provider.local.models[id].variants.high.reasoningEffort).toBe(
+                'high',
+            )
+        }
+        expect(cfg.provider.local.models.a.limit).toBeUndefined()
+        expect(cfg.provider.local.models.b.limit.context).toBe(8192)
+        expect(opencodeLocalProviderBlock(LM, 'a', ['a'], {}).name).toBe('Local model')
+    })
+
+    test('an injected model is named by its id after the publisher', () => {
+        const block = opencodeLocalProviderBlock(LM, 'qwen/qwen3.5-9b', ['qwen/qwen3.5-9b', 'plain'], {}) as {
+            models: Record<string, { name: string }>
+        }
+        expect(block.models['qwen/qwen3.5-9b'].name).toBe('qwen3.5-9b')
+        expect(block.models.plain.name).toBe('plain')
+    })
+
     test('goose uses its openai provider via env', () => {
         expect(localSpawnFor('goose', LM, 'qwen3')!.env).toEqual({
             GOOSE_PROVIDER: 'openai',
@@ -241,6 +268,50 @@ describe('probe', () => {
             `localModel:\n  enabled: false\n  url: ${url}\n`,
         )
         expect((await resolveLocalSpawn('claude', off)).kind).toBe('off')
+    })
+
+    test('an LM Studio server: embeddings dropped, loaded windows reach the opencode config', async () => {
+        const lm = Bun.serve({
+            port: 0,
+            fetch(req) {
+                const path = new URL(req.url).pathname
+                if (path === '/api/v0/models')
+                    return Response.json({
+                        data: [
+                            {
+                                id: 'qwen/qwen3.5-9b',
+                                type: 'vlm',
+                                state: 'loaded',
+                                max_context_length: 262144,
+                                loaded_context_length: 8192,
+                            },
+                            {
+                                id: 'text-embedding-nomic-embed-text-v1.5',
+                                type: 'embeddings',
+                                state: 'not-loaded',
+                            },
+                        ],
+                    })
+                return new Response('no', { status: 404 })
+            },
+        })
+        try {
+            const u = `http://localhost:${lm.port}`
+            expect(await listLocalModels({ url: u, model: '', apiKey: '' })).toEqual([
+                'qwen/qwen3.5-9b',
+            ])
+            const v = await vault(`localModel:\n  enabled: true\n  url: ${u}\n`)
+            const r = await resolveLocalSpawn('opencode', v)
+            if (r.kind !== 'ready') throw new Error('expected ready')
+            expect(r.local.kind).toBe('lmstudio')
+            expect(r.local.models).toEqual(['qwen/qwen3.5-9b'])
+            expect(r.local.windows).toEqual({ 'qwen/qwen3.5-9b': 8192 })
+            const cfg = JSON.parse(r.local.env.OPENCODE_CONFIG_CONTENT!)
+            expect(Object.keys(cfg.provider.local.models)).toEqual(['qwen/qwen3.5-9b'])
+            expect(cfg.provider.local.models['qwen/qwen3.5-9b'].limit.context).toBe(8192)
+        } finally {
+            lm.stop(true)
+        }
     })
 
     test('a down server is unreachable, never a silent fallback', async () => {

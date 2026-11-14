@@ -209,6 +209,8 @@ export interface BackendCapabilities {
      * goose (its `openai` provider via env); `false` for every other entry.
      */
     localModel: boolean
+    /** The backend has selectable primary agents (opencode's build/plan): the chat shows an agent word and Shift+Tab cycles it. */
+    agents: boolean
 }
 
 /** A backend's static identity + capabilities. Effectful wiring lives in chatProviders/index.ts, mcpRegistrars.ts and doctor.ts. */
@@ -283,6 +285,7 @@ const CLAUDE: BackendDescriptor = {
         mcp: 'cli',
         memory: 'hooks',
         localModel: true,
+        agents: false,
     },
 }
 
@@ -412,6 +415,7 @@ const OPENCODE: BackendDescriptor = {
         // MCP-tool-only for memory.
         memory: 'systemPrompt',
         localModel: true,
+        agents: true,
     },
 }
 
@@ -518,6 +522,7 @@ const CODEX: BackendDescriptor = {
         mcp: 'cli',
         memory: 'agentsMd',
         localModel: true,
+        agents: false,
     },
 }
 
@@ -594,6 +599,7 @@ const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
     memory: 'mcpOnly',
     // goose overrides to true (its `openai` provider reads OPENAI_HOST/GOOSE_MODEL from env).
     localModel: false,
+    agents: false,
 }
 
 /** Cline — native ACP support (`cline --acp`), verified directly from the compiled binary. */

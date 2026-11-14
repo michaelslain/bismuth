@@ -10,6 +10,16 @@ import {
     installedBackendIds,
     startFreeAgentInstall,
 } from '../freeAgent'
+import type { OpencodeV2Client } from '../chatProviders/opencode/opencodeV2Client'
+import { probeLocalServer } from '../agentBackends/contextWindowProbe'
+import { serverKindName } from '../agentBackends/contextWindow'
+import { normalizeUrl } from '../agentBackends/localModel'
+import { setSettingInFile, unsetSettingInFile } from '../settings'
+import {
+    opencodeServerId,
+} from '../chatProviders/opencode/opencodeConfig'
+import { readOpencodeServers } from '../chatProviders/opencode/opencodeLocalServers'
+import { providerInfosFromV2 } from '../chatProviders/opencode/opencodeV2Translate'
 import {
     listProviders,
     oauthAuthorize,
@@ -33,10 +43,26 @@ import {
 } from '@bismuth/memory'
 import { ok, error, type Handler, type RouteContext } from './context'
 
+/** The address two spellings of one server share: `host:port` with `localhost` read as loopback. */
+function sameServer(url: string): string {
+    try {
+        const u = new URL(normalizeUrl(url))
+        const host = u.hostname === 'localhost' ? '127.0.0.1' : u.hostname
+        return `${host}:${u.port || (u.protocol === 'https:' ? '443' : '80')}`
+    } catch {
+        return url
+    }
+}
+
+function isV2Client(c: unknown): c is OpencodeV2Client {
+    return (c as { version?: unknown } | null)?.version === 2
+}
+
 export default function agentsRoutes(
     ctx: RouteContext,
 ): Record<string, Handler> {
     const { cfg, requestChannel } = ctx
+    const refresh = cfg.refreshOpencodeFrames ?? refreshOpencodeFrames
     /** The vault's chat rules for the history list; an invalid `.settings` shows every chat as
      *  inheriting `all` here, while the deny list (which fails closed) refuses agents. */
     async function chatRules(): Promise<ChatVisibilityRules> {
@@ -87,7 +113,7 @@ export default function agentsRoutes(
         }
         try {
             const result = await run(client, body)
-            if (opts.connected) void refreshOpencodeFrames().catch(() => {})
+            if (opts.connected) void refresh().catch(() => {})
             return Response.json(result)
         } catch (e) {
             if (e instanceof OpencodeBadRequest)
@@ -296,7 +322,116 @@ export default function agentsRoutes(
         // serve`. Owner-only; keys go straight to opencode's own store and are never logged or
         // echoed. Reads + credential writes, no vault change, so they sit in the read table.
         'GET /opencode/providers': req =>
-            opencodeRoute(req, client => listProviders(client)),
+            opencodeRoute(req, client =>
+                listProviders(client, process.env, { vault: cfg.vault }),
+            ),
+        // Re-sends the models and auth frames to live opencode chats (the manager calls it after
+        // `.settings` changes the chat does not see on its own).
+        'POST /opencode/refresh': req =>
+            opencodeRoute(req, async () => {
+                await refresh(cfg.vault)
+                return { ok: true }
+            }),
+        // Local model servers saved in `.settings` (`chat.opencodeServers`), never in opencode's own
+        // config. `add` probes the address first; `remove` drops a saved id. The write is left
+        // unmarked so the app's settings store reconciles from the watcher.
+        'POST /opencode/local-servers': req =>
+            opencodeRoute(
+                req,
+                async (client, b) => {
+                    const saved = await readOpencodeServers(cfg.vault)
+                    const write = async (
+                        next: typeof saved,
+                    ): Promise<void> => {
+                        // Sparse settings: an empty list is the default, so the key goes.
+                        if (next.length)
+                            await setSettingInFile(
+                                cfg.vault,
+                                ['chat', 'opencodeServers'],
+                                next,
+                            )
+                        else
+                            await unsetSettingInFile(cfg.vault, [
+                                'chat',
+                                'opencodeServers',
+                            ])
+                        // Detached: the refresh waits for any running opencode turn, and the
+                        // answer below must not.
+                        void refresh(cfg.vault).catch(() => {})
+                    }
+                    const list = async () => {
+                        const opts = { vault: cfg.vault }
+                        try {
+                            return await listProviders(client, process.env, opts)
+                        } catch {
+                            // The detached refresh replaced the shared server mid-list: list once
+                            // more through the live one.
+                            const live = await (
+                                cfg.opencodeClient ?? opencodeClient
+                            )().catch(() => null)
+                            if (!live)
+                                throw new OpencodeBadRequest(
+                                    'opencode could not list providers',
+                                )
+                            return listProviders(live, process.env, opts)
+                        }
+                    }
+                    if (typeof b.remove === 'string') {
+                        await write(saved.filter(s => s.id !== b.remove))
+                        return await list()
+                    }
+                    const add = b.add as
+                        | { url?: unknown; apiKey?: unknown }
+                        | undefined
+                    const raw =
+                        typeof add?.url === 'string' ? add.url.trim() : ''
+                    if (!raw)
+                        throw new OpencodeBadRequest('A server address is required.')
+                    const url = normalizeUrl(
+                        /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)
+                            ? raw
+                            : `http://${raw}`,
+                    )
+                    if (!/^https?:\/\/[^\s/]+/.test(url))
+                        throw new OpencodeBadRequest('That is not a server address.')
+                    const apiKey =
+                        typeof add?.apiKey === 'string' ? add.apiKey.trim() : ''
+                    const probe = await probeLocalServer(url, apiKey)
+                    if (!probe) return { outcome: 'nothing', url }
+                    const key = sameServer(probe.url)
+                    const reached = isV2Client(client)
+                        ? providerInfosFromV2(
+                              await client
+                                  .providers(cfg.vault)
+                                  .catch(() => [] as unknown[]),
+                          ).filter(p => p.baseURL)
+                        : []
+                    const hit =
+                        saved.find(s => sameServer(s.url) === key) ??
+                        reached.find(p => sameServer(p.baseURL ?? '') === key)
+                    if (hit) return { outcome: 'existing', name: hit.name }
+                    const name = serverKindName(probe.kind)
+                    const id = opencodeServerId(name, [
+                        ...saved.map(s => s.id),
+                        ...reached.map(p => p.id),
+                    ])
+                    await write([...saved, { id, name, url: probe.url, apiKey }])
+                    const next = await list()
+                    return {
+                        outcome: 'saved',
+                        server: next.local?.find(l => l.id === id) ?? {
+                            id,
+                            name,
+                            url: new URL(probe.url).host,
+                            models: probe.models.filter(m => !m.embedding)
+                                .length,
+                            source: 'saved',
+                        },
+                        list: next,
+                    }
+                },
+                { body: true },
+            ),
         'POST /opencode/auth': req =>
             opencodeRoute(
                 req,

@@ -17,6 +17,8 @@ import RowList from '../ui/RowList'
 import ListRow from '../ui/ListRow'
 import ErrorText from '../ui/ErrorText'
 import OpencodeProviderRow from './OpencodeProviderRow'
+import OpencodeLocalServerRow from './OpencodeLocalServerRow'
+import RemoveRowButton from '../ui/RemoveRowButton'
 import { filterAvailable } from './opencodeProviderFilter'
 import { api, type OpencodeProviderList } from '../api'
 import { OPENCODE_LOGIN_COMMAND } from './chatProvider'
@@ -56,6 +58,16 @@ const OpencodeProviderManager: Component<
         pushToast(`Connected ${name}`)
         void load()
     }
+    // The saved server whose `[x]` was pressed, awaiting `[remove]` / `[cancel]` on its row.
+    const [asking, setAsking] = createSignal<string | null>(null)
+    const remove = async (id: string) => {
+        setAsking(null)
+        try {
+            setList(await api.opencodeRemoveServer(id))
+        } catch (e) {
+            pushToast(e instanceof Error ? e.message : String(e))
+        }
+    }
     const filtered = () => filterAvailable(list()?.available ?? [], query())
 
     const openTerminal = () => {
@@ -83,22 +95,93 @@ const OpencodeProviderManager: Component<
                 <Show
                     when={list()}
                     fallback={
-                        <Text as="div" tone="muted" class={styles.state}>
+                        <Text as="div" size="ui" tone="muted" class={styles.state}>
                             checking providers…
                         </Text>
                     }
                 >
                     {l => (
                         <>
+                            <Show when={(l().local ?? []).length > 0}>
+                                <RowList class={styles.list}>
+                                    <For each={l().local}>
+                                        {p => (
+                                            <ListRow
+                                                reveal={asking() !== p.id}
+                                                trailing={
+                                                    <Show when={p.source === 'saved'}>
+                                                        <Show
+                                                            when={asking() === p.id}
+                                                            fallback={
+                                                                <RemoveRowButton
+                                                                    label="remove server"
+                                                                    onClick={() => setAsking(p.id)}
+                                                                />
+                                                            }
+                                                        >
+                                                            <div class={styles.actions}>
+                                                                <TextButton onClick={() => void remove(p.id)}>
+                                                                    remove
+                                                                </TextButton>
+                                                                <TextButton onClick={() => setAsking(null)}>
+                                                                    cancel
+                                                                </TextButton>
+                                                            </div>
+                                                        </Show>
+                                                    </Show>
+                                                }
+                                            >
+                                                <Text
+                                                    as="span"
+                                                    inherit
+                                                    tone="default"
+                                                    class={styles.name}
+                                                >
+                                                    <Show when={asking() === p.id}>remove </Show>
+                                                    {p.name.toLowerCase()}
+                                                    {/* While the row asks it reads `remove <name> // <url>?` before its buttons. */}
+                                                    <Show
+                                                        when={asking() !== p.id}
+                                                        fallback={
+                                                            <>
+                                                                {' '}
+                                                                <Text
+                                                                    as="span"
+                                                                    inherit
+                                                                    tone="muted"
+                                                                    class={styles['ask-url']}
+                                                                >
+                                                                    // {p.url}?
+                                                                </Text>
+                                                            </>
+                                                        }
+                                                    >
+                                                        <Text as="span" inherit tone="muted">
+                                                            {' // '}
+                                                            {p.url}
+                                                            {' // '}
+                                                            {p.models} {p.models === 1 ? 'model' : 'models'}
+                                                        </Text>
+                                                    </Show>
+                                                </Text>
+                                            </ListRow>
+                                        )}
+                                    </For>
+                                </RowList>
+                            </Show>
+                            <OpencodeLocalServerRow onSaved={setList} />
                             <Show
                                 when={l().connected.length > 0}
                                 fallback={
                                     <Text
                                         as="div"
+                                        size="ui"
                                         tone="muted"
                                         class={styles.state}
                                     >
-                                        no providers connected yet
+                                        {(l().local ?? []).length > 0
+                                            ? 'no cloud providers connected'
+                                            : 'no providers connected yet'}
                                     </Text>
                                 }
                             >

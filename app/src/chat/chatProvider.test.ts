@@ -200,3 +200,10 @@ describe('resolveChatProvider', () => {
         })
     })
 })
+
+describe('agents capability', () => {
+    test('opencode has selectable agents, Claude Code does not', () => {
+        expect(providerCan('opencode', 'agents')).toBe(true)
+        expect(providerCan('claude', 'agents')).toBe(false)
+    })
+})

@@ -1,11 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
+    LAST_AGENT_KEY,
     LAST_EFFORT_KEY,
     LAST_MODE_KEY,
+    forgetModel,
+    readLastAgent,
     readLastEffort,
     readLastMode,
     readLastModel,
     readProviderChoice,
+    rememberAgent,
     rememberEffort,
     rememberMode,
     rememberModel,
@@ -176,5 +180,42 @@ describe('forgetProvider', () => {
         expect(entries.has(providerStorageKey('c2'))).toBe(true)
         expect(() => forgetProvider(throwingStorage, 'c1')).not.toThrow()
         expect(() => forgetProvider(null, 'c1')).not.toThrow()
+    })
+})
+
+describe('agent prefs', () => {
+    test('round trip, empty by default, empty name never written', () => {
+        const { storage, entries } = memoryStorage()
+        expect(readLastAgent(storage)).toBe('')
+        rememberAgent(storage, 'plan')
+        expect(readLastAgent(storage)).toBe('plan')
+        expect(entries.get(LAST_AGENT_KEY)).toBe('plan')
+        rememberAgent(storage, '')
+        expect(readLastAgent(storage)).toBe('plan')
+        expect(() => rememberAgent(throwingStorage, 'plan')).not.toThrow()
+        expect(readLastAgent(throwingStorage)).toBe('')
+    })
+})
+
+describe('forgetModel', () => {
+    test('clears the per-chat and global keys holding exactly the model', () => {
+        const { storage } = memoryStorage()
+        rememberModel(storage, 'opencode', 'c1', 'lmstudio/bad')
+        rememberModel(storage, 'opencode', 'c2', 'lmstudio/good', {
+            global: false,
+        })
+        forgetModel(storage, 'opencode', 'c1', 'lmstudio/bad')
+        expect(readLastModel(storage, 'opencode', 'c1')).toBe('')
+        expect(readLastModel(storage, 'opencode', 'c2')).toBe('lmstudio/good')
+    })
+    test('leaves a different value alone and tolerates bad storage', () => {
+        const { storage } = memoryStorage()
+        rememberModel(storage, 'opencode', 'c1', 'lmstudio/good')
+        forgetModel(storage, 'opencode', 'c1', 'lmstudio/bad')
+        expect(readLastModel(storage, 'opencode', 'c1')).toBe('lmstudio/good')
+        expect(() =>
+            forgetModel(throwingStorage, 'opencode', 'c1', 'x'),
+        ).not.toThrow()
+        expect(() => forgetModel(null, 'opencode', 'c1', 'x')).not.toThrow()
     })
 })

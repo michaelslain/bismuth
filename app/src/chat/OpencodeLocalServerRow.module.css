@@ -1,0 +1,36 @@
+/* app/src/chat/OpencodeLocalServerRow.module.css — the provider manager's connect-a-server row (ONE
+   importer: OpencodeLocalServerRow.tsx). Padded to the dialog gutter like the rows around it. */
+.root {
+    display: flex;
+    flex-direction: column;
+    padding: var(--sp-3) var(--sp-5);
+    gap: var(--sp-2);
+    min-width: 0;
+}
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3) var(--bar-icon-gap);
+    min-width: 0;
+    flex-wrap: wrap;
+}
+/* The url field holds its whole placeholder on a line of its own when the host is narrow; the key
+   and `[connect]` wrap under it. A wide host keeps all three on one row. */
+.url {
+    flex: 1 1 22em;
+    min-width: 0;
+}
+.key {
+    flex: 1 1 8em;
+    min-width: 0;
+}
+/* Notes are left-aligned at row text size; Text supplies the muted tone and ErrorText the danger one. */
+.note {
+    text-align: left;
+}
+/* `[connect]` and `[connecting]` share one box (12ch: the longer word plus both brackets), so the
+   key field beside it does not jump while the request is out. */
+.connect {
+    min-width: 12ch;
+    justify-content: center;
+}

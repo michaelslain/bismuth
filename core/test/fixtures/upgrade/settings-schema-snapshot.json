@@ -2340,6 +2340,18 @@
     "max": null,
     "required": false
   },
+  "chat.opencodeServers": {
+    "type": {
+      "kind": "list",
+      "item": {
+        "kind": "object"
+      }
+    },
+    "default": [],
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "chat.presets": {
     "type": {
       "kind": "list",
@@ -2928,6 +2940,13 @@
   "keybindings.book-prev-page": {
     "type": "keybind",
     "default": "ArrowLeft",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.chat-cycle-agent": {
+    "type": "keybind",
+    "default": "Shift+Tab",
     "min": null,
     "max": null,
     "required": false

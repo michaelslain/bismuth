@@ -19,6 +19,7 @@ describe('effortLabel (friendly names)', () => {
         expect(effortLabel('high')).toBe('High')
         expect(effortLabel('xhigh')).toBe('Extra high')
         expect(effortLabel('max')).toBe('Max')
+        expect(effortLabel('none')).toBe('Off')
         // The label map stays the single source for these.
         for (const [k, v] of Object.entries(EFFORT_LABELS))
             expect(effortLabel(k)).toBe(v)

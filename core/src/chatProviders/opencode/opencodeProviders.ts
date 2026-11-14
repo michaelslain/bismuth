@@ -8,11 +8,15 @@
 // message that leaves this module is run through `redact`.
 import { homedir } from 'node:os'
 import type { OpencodeClient } from '@opencode-ai/sdk'
-import { LOCAL_PROVIDER_ID } from '../../agentBackends/localModel'
+import { probeLocalServer } from '../../agentBackends/contextWindowProbe'
+import { LOCAL_PROVIDER_ID, parseLocalModel } from '../../agentBackends/localModel'
+import { readSettings } from '../../settings'
+import { readOpencodeServers } from './opencodeLocalServers'
 import type { OpencodeV2Client } from './opencodeV2Client'
 import {
     opencodeV2AttemptStatus,
     opencodeV2Methods,
+    providerInfosFromV2,
     providerListFromV2,
 } from './opencodeV2Translate'
 
@@ -67,6 +71,18 @@ export type OpencodeAuthMethod = { type: 'api' | 'oauth'; label: string }
 export type OpencodeProviderList = {
     connected: { id: string; name: string; kind: 'api' | 'oauth' | 'env' }[]
     available: { id: string; name: string; methods: OpencodeAuthMethod[] }[]
+    /** Local model servers opencode reaches, one row per provider id. Absent when there are none. */
+    local?: OpencodeLocalProvider[]
+    /** The saved servers (`chat.opencodeServers`), never with their key. Absent when there are none. */
+    saved?: { id: string; name: string; url: string }[]
+}
+export type OpencodeLocalProvider = {
+    id: string
+    name: string
+    /** `host:port`, as shown. */
+    url: string
+    models: number
+    source: 'opencode' | 'setting' | 'saved'
 }
 export type OpencodeAuthorization = {
     url: string
@@ -148,14 +164,24 @@ async function call<T>(
 export async function listProviders(
     client: OpencodeProviderClient,
     env: Record<string, string | undefined> = process.env,
+    opts: { vault?: string } = {},
 ): Promise<OpencodeProviderList> {
-    if (isV2(client))
-        return providerListFromV2(
+    if (isV2(client)) {
+        const base = providerListFromV2(
             await callV2(
                 () => client.integrations(homedir()),
                 'opencode could not list providers',
             ),
         )
+        const { local, saved } = await localProviders(client, opts.vault)
+        const ids = new Set(local.map(l => l.id))
+        return {
+            ...base,
+            available: base.available.filter(p => !ids.has(p.id)),
+            ...(local.length ? { local } : {}),
+            ...(saved.length ? { saved } : {}),
+        }
+    }
     const list = await call(
         () => client.provider.list() as never,
         'opencode could not list providers',
@@ -335,4 +361,85 @@ export async function oauthCallback(
     )
     if (res === false)
         throw new OpencodeBadRequest('opencode did not accept the sign-in.')
+}
+
+/** `host:port` of a URL as the manager shows it; `localhost` is spelled as given. */
+export function hostPort(url: string): string {
+    try {
+        return new URL(url).host
+    } catch {
+        return url
+    }
+}
+
+/**
+ * The local rows: loopback providers opencode reports (model counts from its model list), the
+ * `local` provider when the vault's local model is on, and the vault's saved servers. One row per
+ * provider id; a saved server wins its id, so it is the removable one. Never throws: a catalog that
+ * will not answer is no rows.
+ */
+async function localProviders(
+    client: OpencodeV2Client,
+    vault: string | undefined,
+): Promise<{
+    local: OpencodeLocalProvider[]
+    saved: { id: string; name: string; url: string }[]
+}> {
+    const dir = vault ?? homedir()
+    const [infos, models] = await Promise.all([
+        (async () => client.providers(dir))().then(providerInfosFromV2, () => []),
+        (async () => client.models(dir))().catch(() => [] as unknown[]),
+    ])
+    const counts = new Map<string, number>()
+    for (const m of models) {
+        const id = (m as { providerID?: unknown } | null)?.providerID
+        if (typeof id === 'string') counts.set(id, (counts.get(id) ?? 0) + 1)
+    }
+    const rows = new Map<string, OpencodeLocalProvider>()
+    for (const p of infos)
+        if (p.loopback && p.baseURL)
+            rows.set(p.id, {
+                id: p.id,
+                name: p.name,
+                url: hostPort(p.baseURL),
+                models: counts.get(p.id) ?? 0,
+                source: p.id === LOCAL_PROVIDER_ID ? 'setting' : 'opencode',
+            })
+    if (vault) {
+        const settings = await readSettings(vault).catch(() => null)
+        const lm = parseLocalModel(
+            (settings?.data as { localModel?: unknown } | undefined)?.localModel,
+        )
+        if (lm)
+            rows.set(LOCAL_PROVIDER_ID, {
+                id: LOCAL_PROVIDER_ID,
+                name: rows.get(LOCAL_PROVIDER_ID)?.name ?? 'local model',
+                url: hostPort(lm.url),
+                models: counts.get(LOCAL_PROVIDER_ID) ?? 0,
+                source: 'setting',
+            })
+    }
+    const saved = vault ? await readOpencodeServers(vault) : []
+    await Promise.all(
+        saved.map(async s => {
+            let n = counts.get(s.id) ?? 0
+            // opencode may not carry a server saved a moment ago yet; ask the server itself.
+            if (n === 0)
+                n =
+                    (await probeLocalServer(s.url, s.apiKey))?.models.filter(
+                        m => !m.embedding,
+                    ).length ?? 0
+            rows.set(s.id, {
+                id: s.id,
+                name: s.name,
+                url: hostPort(s.url),
+                models: n,
+                source: 'saved',
+            })
+        }),
+    )
+    return {
+        local: [...rows.values()],
+        saved: saved.map(s => ({ id: s.id, name: s.name, url: s.url })),
+    }
 }

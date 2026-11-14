@@ -508,21 +508,23 @@ Frames replay in order in the same shape the live socket streams.
 
 ### OpenCode provider manager (`/opencode/*`)
 
-Four owner-only routes manage provider credentials over the running `opencode serve`. They change no vault file. Keys go straight to opencode's own store and are never logged or echoed. The guide is [opencode providers](../chat/opencode-providers.md).
+Owner-only routes manage provider credentials and local model servers over the running `opencode serve`. They change no vault file except `POST /opencode/local-servers`, which writes `chat.opencodeServers` in `.settings`. Keys go straight to opencode's own store and are never logged or echoed. The guide is [opencode providers](../chat/opencode-providers.md).
 
 | Route | Request | Response |
 |---|---|---|
-| `GET /opencode/providers` | none | `{connected: [{id, name, kind}], available: [{id, name, methods}]}` |
+| `GET /opencode/providers` | none | `{connected: [{id, name, kind}], available: [{id, name, methods}], local?: [{id, name, url, models, source}], saved?: [{id, name, url}]}` |
 | `POST /opencode/auth` | `{id, key}` | `{ok: true}`. Re-sends the models and auth frames to live opencode chats. |
 | `POST /opencode/oauth/authorize` | `{id, method}` | `{url, method: "auto"\|"code", instructions}` |
 | `POST /opencode/oauth/callback` | `{id, method, code?}` | `{ok: true}`. Re-sends the models and auth frames. |
+| `POST /opencode/refresh` | none | `{ok: true}`. Re-sends the models and auth frames to live opencode chats. |
+| `POST /opencode/local-servers` | `{add: {url, apiKey?}}` or `{remove: id}` | `add`: `{outcome: "saved", server, list}`, `{outcome: "nothing", url}` or `{outcome: "existing", name}`; `remove`: the provider list. Both write `chat.opencodeServers` in `.settings`. |
 
 `kind` is `api`, `oauth` or `env`; `env` means one of the provider's environment variables is set.
 `available` lists every provider not connected, sorted by name, and each entry's `methods` is never empty.
 `method` is the index into the provider's methods.
 `code` is the pasted code for a `code` method and is omitted for `auto`.
 
-All four share these errors, as JSON:
+These routes share these errors, as JSON:
 
 | Status | Body | When |
 |---|---|---|

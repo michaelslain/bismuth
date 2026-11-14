@@ -3,12 +3,15 @@
 An opencode chat runs on whichever provider you have connected to opencode (Anthropic, OpenAI, OpenRouter, GitHub Copilot, and others). The provider manager shows what is connected and lets you connect more without leaving the app.
 
 To open it, click the model word in the chat's controls row under the composer, then choose the `opencode` connector. The manager fills the model dialog's right column beneath the model list (see [the controls row and model dialog](overview.md#what-does-the-controls-row-do)).
-It drives the same `opencode serve` process every opencode chat shares ([Chat providers](providers.md)), through four owner-only core routes.
+It drives the same `opencode serve` process every opencode chat shares ([Chat providers](providers.md)), through owner-only core routes.
 
 ## What can the manager do?
 
+- Local servers. The top of the manager lists every local model server opencode reaches, one row each: `lm studio // 127.0.0.1:1234 // 5 models`. A server opencode finds by itself, the [local model](local-models.md) from `.settings` and the servers you connect here all appear. Without a cloud provider the list reads `no cloud providers connected`.
+- Connect a server. Under the local rows, type a server address (and a key if it wants one) and press `[connect]`. Bismuth asks the address which server it is (LM Studio, Ollama, llama.cpp, vLLM, or any OpenAI-compatible one). If it answers, it is saved in `.settings` as `chat.opencodeServers` and the row appears with a note `found 4 models // saved`. If nothing answers the note reads `nothing answered at <url>`; an address opencode already reaches reads `already connected as <name>`. Nothing is written to opencode's own config.
+- Remove a server. A saved row shows `[x]` on hover; pressing it asks `[remove] [cancel]` on the row, and `[remove]` deletes the entry from `.settings`. Servers opencode finds by itself have no `[x]`.
 - Connected. One row per provider opencode reports as connected, with how: `api key`, `oauth` or `env` (an environment variable the server inherited).
-- Add a provider. A filterable list of every provider that is not connected yet. An API-key provider takes a pasted key; an OAuth provider opens its sign-in page.
+- Add a provider. A filterable list of every provider that is not connected yet. With nothing typed it leads with the popular providers (anthropic, openai, openrouter, github copilot, google, groq, xai, deepseek), then the rest by name. An API-key provider takes a pasted key; an OAuth provider opens its sign-in page.
 - API key. The key goes to `POST /opencode/auth`, core hands it to opencode (`auth.set` on opencode 1, the integration's key connect on opencode 2), and opencode writes it to its own credential store. Bismuth never persists it, logs it, or echoes it back: an error from opencode is scrubbed of the key before it reaches the response.
 - OAuth: `POST /opencode/oauth/authorize` returns the URL to open and whether the flow is `auto` (opencode finishes when the browser callback lands) or `code` (you paste a code); `POST /opencode/oauth/callback` finishes it.
 - New models appear at once. After a successful connect, core re-sends the model list and credential state to every live opencode chat, so the new provider's models show in the model dialog (grouped under the provider's name) without reopening the chat.
@@ -29,22 +32,25 @@ The routes answer `409 { error: "opencode-missing" }` when the `opencode` binary
 
 ## How do I disconnect a provider?
 
-The manager has no disconnect button. Disconnecting, custom providers, and any provider that needs several prompts go through `opencode auth login` and `opencode auth logout` in a terminal; the manager's footer opens a terminal tab or copies the command.
+The manager has no disconnect button for cloud providers (a local server has its own `[x]`). Disconnecting, custom providers, and any provider that needs several prompts go through `opencode auth login` and `opencode auth logout` in a terminal; the manager's footer opens a terminal tab or copies the command.
 On opencode 2 that includes a sign-in that asks a question first (an enterprise URL, a cloud project or profile): the manager offers only the methods it can start without one, and a provider with none is not listed.
 Credentials written that way show up the next time the manager opens.
 
 ## Where is the local model?
 
-A local model is configured in `.settings`, not connected here. When [`localModel`](local-models.md) is on, opencode carries a `local` provider that Bismuth injects at spawn time, and the manager filters it out of both lists.
+A local model is configured in `.settings`, not connected here. When [`localModel`](local-models.md) is on, opencode carries a `local` provider that Bismuth injects at spawn time; it shows among the local rows and never in the add list.
 
 ## How it works
 
 The manager is `OpencodeProviderManager`, hosted by `ChatModelPicker`.
-It calls `GET /opencode/providers`, `POST /opencode/auth`, `POST /opencode/oauth/authorize` and `POST /opencode/oauth/callback`, each served over the shared `opencode serve` client and refused to non-owner callers. opencode's SDK has no auth-remove call and `opencode auth logout` is an interactive wizard, which is why disconnecting is terminal-only.
+It calls `GET /opencode/providers`, `POST /opencode/refresh`, `POST /opencode/local-servers` (`{ add: { url, apiKey? } }` or `{ remove: id }`), `POST /opencode/auth`, `POST /opencode/oauth/authorize` and `POST /opencode/oauth/callback`, each served over the shared `opencode serve` client and refused to non-owner callers. opencode's SDK has no auth-remove call and `opencode auth logout` is an interactive wizard, which is why disconnecting is terminal-only.
 
 On opencode 2 the same four routes drive `/api/integration`. `opencodeV2Methods` builds each provider's method list (a key, or an OAuth method whose form fields all have defaults), and the routes' `method` index points into it.
 An OAuth start keeps the attempt id per provider; the callback completes a `code` attempt with the pasted code, and polls an `auto` attempt's status until it completes, fails or ten minutes pass.
 
 The injected `local` provider rides `OPENCODE_CONFIG_CONTENT`. When the local config changes, the shared server is replaced: immediately when no opencode turn is running, otherwise once the running turn settles, so a turn is never cut off mid-answer.
 
-Source: `app/src/chat/OpencodeProviderManager.tsx`, `app/src/chat/opencodeProviderFilter.ts`, `core/src/routes/agents.ts`, `core/src/chatProviders/opencode/opencodeProviders.ts`, `core/src/chatProviders/opencode/opencodeV2Translate.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/freeAgent.ts`
+`listProviders` builds the local rows from the loopback providers opencode reports (model counts from its model list), the `local` provider and the saved servers, one row per provider id; the saved entries are listed without their key.
+`OpencodeLocalServerRow` is the connect row and `opencodeProviderFilter.ts` orders the add list.
+
+Source: `app/src/chat/OpencodeProviderManager.tsx`, `app/src/chat/OpencodeLocalServerRow.tsx`, `app/src/chat/opencodeProviderFilter.ts`, `core/src/routes/agents.ts`, `core/src/chatProviders/opencode/opencodeProviders.ts`, `core/src/chatProviders/opencode/opencodeV2Translate.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/freeAgent.ts`

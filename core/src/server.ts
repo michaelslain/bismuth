@@ -50,6 +50,7 @@ import {
     setPermissionMode as chatSetPermissionMode,
     setModel as chatSetModel,
     setEffort as chatSetEffort,
+    setAgent as chatSetAgent,
     setPrivate as chatSetPrivate,
     resumeSession as chatResume,
     openSession as chatOpen,
@@ -158,6 +159,8 @@ export interface CoreConfig {
     /** Test seam for the /opencode/* routes: resolves the shared opencode server's client, or null
      *  when opencode is absent. Defaults to the real lookup. A rejection counts as null. */
     opencodeClient?: () => Promise<Awaited<ReturnType<typeof opencodeClient>>>
+    /** Re-sends the opencode frames after a provider or local-server change; tests pass a recorder. */
+    refreshOpencodeFrames?: (vault?: string) => Promise<void>
     /** Test seam: awaited after the tree build settles and before the boot task-migration scan
      *  starts, so a test can write a note while the scan is held and release it afterwards. */
     beforeTaskMigration?: () => Promise<void>
@@ -1520,6 +1523,7 @@ export function createServer(cfg: CoreConfig) {
                         mode?: string
                         model?: string
                         effort?: string
+                        agent?: string
                         private?: unknown
                         answers?: Record<string, unknown>
                         cancelled?: boolean
@@ -1661,6 +1665,12 @@ export function createServer(cfg: CoreConfig) {
                     ) {
                         // Switch the reasoning-effort level live (FEATURE #63) — mirrors set_model.
                         chatSetEffort(chatId, parsed.effort)
+                    } else if (
+                        parsed.type === 'set_agent' &&
+                        typeof parsed.agent === 'string'
+                    ) {
+                        // Switch the session's primary agent live (opencode's build/plan).
+                        chatSetAgent(chatId, parsed.agent)
                     } else if (
                         parsed.type === 'set_private' &&
                         typeof parsed.private === 'boolean'

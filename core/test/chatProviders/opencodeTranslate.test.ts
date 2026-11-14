@@ -29,6 +29,7 @@ import {
     withZenFreeRotate,
     zenFreeModelIds,
     ZEN_FREE_ROTATE_ID,
+    agentEntriesFromV1,
 } from '../../src/chatProviders/opencode/opencodeTranslate'
 import { resolveBackendId } from '../../src/agentBackends/catalog'
 import { titleFromPrompt } from '../../src/chatProviders/titleFromPrompt'
@@ -776,6 +777,11 @@ describe('Zen free-model rotation', () => {
         expect(out[0].value).toBe(ZEN_FREE_ROTATE_ID)
         expect(out[0].free).toBe(true)
         expect(out[0].label).toContain('Zen Free')
+        expect(out[0].group).toEqual({
+            id: 'opencode',
+            label: 'opencode zen',
+            kind: 'zen',
+        })
         expect(out.slice(1)).toEqual(MODELS)
     })
 
@@ -1489,5 +1495,21 @@ describe("reconcileOpencodeFinalParts (server mode's lost-reply backfill)", () =
         expect(
             reconcileOpencodeFinalParts([null, 7, {}, { type: 'text' }], state),
         ).toEqual([])
+    })
+})
+
+describe('agentEntriesFromV1', () => {
+    test('everything but subagents, name as value and label', () => {
+        const out = agentEntriesFromV1([
+            { name: 'build', mode: 'primary', builtIn: true, description: 'default' },
+            { name: 'plan', mode: 'primary', builtIn: true, color: '#0f0' },
+            { name: 'general', mode: 'subagent', builtIn: true },
+            { name: 'mine', mode: 'all', builtIn: false },
+        ])
+        expect(out).toEqual([
+            { value: 'build', label: 'build', description: 'default' },
+            { value: 'plan', label: 'plan', description: '', color: '#0f0' },
+            { value: 'mine', label: 'mine', description: '' },
+        ])
     })
 })

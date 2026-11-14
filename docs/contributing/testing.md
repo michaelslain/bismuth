@@ -41,13 +41,14 @@ Drop the `core`/`app` argument and pass an exact path or a bare pattern instead.
 
 ### Tests that skip themselves
 
-Three kinds of test skip without failing.
+These tests skip without failing.
 
 | Skipped when | Why | Applies to |
 |---|---|---|
 | `BISMUTH_FAST_TESTS=1` | The suite is slow: it spawns real agent binaries, PTYs or websockets, or runs the layout benchmark | The pre-commit gate sets it; plain `bun test` and CI leave it unset, so everything runs |
 | The agent binary is not installed | A mocked-CLI test has nothing to drive | `claude`, `opencode`, `codex`, `goose`, `gemini`, `cline`, `openclaw` |
 | `BISMUTH_LIVE_TESTS` is not `1` | The test spends a real account's quota | The live block in `core/test/chat.test.ts` |
+| `OPENCODE_CHAT_LIVE` is not `1` | The benchmark needs opencode 2 and LM Studio serving `qwen/qwen3.5-9b` at an 8192-token window, and takes minutes | `bench/opencodeChat.test.ts` |
 
 A skipped test is not a pass. Read the `skip` count in the summary when you expect a suite to run.
 
@@ -320,6 +321,10 @@ To let a fixture's own writes drain before a server boots, call `waitForFsQuiet(
 The default `bun test` never calls a real model API or spends anyone's quota. Two mechanisms provide that.
 
 **Live tests are opt-in.** The live block in `core/test/chat.test.ts` drives the real `claude` binary against the real API. It runs only when `BISMUTH_LIVE_TESTS=1` and the binary exists (`core/test/liveGate.ts`).
+
+**The opencode chat benchmark is opt-in too.** `OPENCODE_CHAT_LIVE=1 bun test bench/opencodeChat.test.ts` drives the real opencode chat driver against LM Studio on `127.0.0.1:1234` with `qwen/qwen3.5-9b` loaded at 8192 tokens, through a logging proxy.
+It checks four things: a first turn that overflows the window retries on the compact prompt and leaves one user message, the agent list and an agent switch, the model list's names, groups and detected window, and thinking turned off and on.
+With the variable set, a missing prerequisite fails the run instead of skipping it.
 
 **Mocked-CLI tests run by default.** Each `core/test/chatProviders/<backend>Mocked.test.ts` (`claude`, `opencode`, `codex`, `goose`, `gemini`, `cline`, `openclaw`) drives a real agent binary through Bismuth's production chat driver, with the binary's base URL pointed at a local mock LLM server.
 The test asserts that the fixture's exact reply text arrives, which no real model would produce verbatim.

@@ -6,7 +6,10 @@
 // its pure protocol.ts does; chatProviders/opencode.ts itself is likewise untested beyond its pure
 // opencodeTranslate.ts). Fixtures below mirror shapes captured live against opencode 1.18.4.
 import { describe, expect, test } from 'bun:test'
-import { opencodeServerEventSessionId } from '../../src/chatProviders/opencode/opencodeServer'
+import {
+    opencodeServerEventSessionId,
+    stopAllOpencodeServers,
+} from '../../src/chatProviders/opencode/opencodeServer'
 
 const SID = 'ses_05009a939ffetx8dxiZyL3yO6d'
 
@@ -139,4 +142,102 @@ test('opencode 2 events carry the session in data.sessionID', () => {
             data: {},
         }),
     ).toBeNull()
+})
+
+// ---- profile slots, against a fake `opencode serve` (test/support/fakeOpencodeServe.ts) ----------
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+    ensureOpencodeServer,
+    OPENCODE_STREAM_CLOSED,
+    registerOpencodeServerListener,
+} from '../../src/chatProviders/opencode/opencodeServer'
+
+const fakeDir = mkdtempSync(join(tmpdir(), 'fake-opencode-'))
+const fakeBin = join(fakeDir, 'opencode')
+writeFileSync(
+    fakeBin,
+    `#!/bin/sh\nexec "${process.execPath}" "${join(import.meta.dir, '../support/fakeOpencodeServe.ts')}" "$@"\n`,
+)
+chmodSync(fakeBin, 0o755)
+
+const cfg = (n: string) => ({ env: { OPENCODE_CONFIG_CONTENT: n } })
+const whoami = async (url: string) =>
+    (await (await fetch(url + '/whoami')).json()) as {
+        config: string | null
+        pid: number
+    }
+
+describe('profile slots', () => {
+    test('two profiles hold two live servers with different configs', async () => {
+        const a = await ensureOpencodeServer(fakeBin, cfg('A'), 'default')
+        const b = await ensureOpencodeServer(fakeBin, cfg('B'), 'compact')
+        expect(a && b).toBeTruthy()
+        expect(a!.url).not.toBe(b!.url)
+        expect((await whoami(a!.url)).config).toBe('A')
+        expect((await whoami(b!.url)).config).toBe('B')
+    })
+
+    test('a config change on one profile leaves the other running', async () => {
+        const b0 = await ensureOpencodeServer(fakeBin, undefined, 'compact')
+        const a1 = await ensureOpencodeServer(fakeBin, cfg('A2'), 'default')
+        expect((await whoami(a1!.url)).config).toBe('A2')
+        const b1 = await ensureOpencodeServer(fakeBin, undefined, 'compact')
+        expect(b1!.url).toBe(b0!.url)
+        expect((await whoami(b1!.url)).config).toBe('B')
+    })
+
+    test('a turn on compact does not delay replacing default', async () => {
+        const unregister = registerOpencodeServerListener(
+            'ses_c',
+            () => {},
+            'compact',
+        )
+        try {
+            const a = await Promise.race([
+                ensureOpencodeServer(fakeBin, cfg('A3'), 'default'),
+                new Promise<'late'>(r => setTimeout(() => r('late'), 5000)),
+            ])
+            expect(a).not.toBe('late')
+            expect((await whoami((a as { url: string }).url)).config).toBe('A3')
+        } finally {
+            unregister()
+        }
+    })
+
+    test('a stream close on one slot reaches only its listeners', async () => {
+        const got: Record<string, unknown[]> = { d: [], c: [] }
+        const un1 = registerOpencodeServerListener(
+            'ses_d',
+            ev => got.d.push(ev),
+            'default',
+        )
+        const un2 = registerOpencodeServerListener(
+            'ses_c2',
+            ev => got.c.push(ev),
+            'compact',
+        )
+        try {
+            const b = await ensureOpencodeServer(fakeBin, undefined, 'compact')
+            await fetch(b!.url + '/end-stream')
+            const until = Date.now() + 3000
+            while (!got.c.length && Date.now() < until)
+                await new Promise(r => setTimeout(r, 25))
+            expect(got.c).toEqual([{ type: OPENCODE_STREAM_CLOSED }])
+            expect(got.d).toEqual([])
+        } finally {
+            un1()
+            un2()
+        }
+    })
+})
+
+describe('stopAllOpencodeServers', () => {
+    test('with no server started it is a no-op, and safe to call twice', () => {
+        expect(() => {
+            stopAllOpencodeServers()
+            stopAllOpencodeServers()
+        }).not.toThrow()
+    })
 })

@@ -274,6 +274,8 @@ export function applyChatFrame(
         case 'done': // → streaming flag + queued-turn dispatch
         case 'models': // → header model picker
         case 'auth': // → header auth pill (opencode credentials)
+        case 'agents': // → the chat's agent word
+        case 'model-refused': // → header model revert
         case 'title': // → publishChatTitle (names the TAB, not a transcript item)
         case 'session': // → rememberChatSession / publishChatOrigin
         case 'context': // → header context-usage pill

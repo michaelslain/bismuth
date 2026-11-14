@@ -6,7 +6,7 @@
 import { createFakeHistoryData } from './_chatHistoryState'
 import { createSignal } from 'solid-js'
 import type { TurnItem } from './chatTranscriptLogic'
-import type { ChatManifest } from '../../../core/src/chat'
+import type { ChatAgentOption, ChatManifest } from '../../../core/src/chat'
 import type {
     ChatAttachment,
     ChatContextUsage,
@@ -42,6 +42,9 @@ export type StubChatSessionInit = Partial<{
     displayModelValue: string
     effortOptions: ChatSelectOption[]
     effortValue: string
+    /** opencode's primary agents and the one running (the `agents` frame). */
+    agents: ChatAgentOption[]
+    agentValue: string
     context: ChatContextUsage | null
     mcpConnected: number
     fileCandidates: FileCandidate[]
@@ -124,6 +127,8 @@ export function makeStubChatSession(
         init.effortOptions ?? [],
     )
     const [effortValue] = createSignal(init.effortValue ?? '')
+    const [agents] = createSignal<ChatAgentOption[]>(init.agents ?? [])
+    const [agentValue, setAgentValue] = createSignal(init.agentValue ?? '')
     const [context] = createSignal<ChatContextUsage | null>(
         init.context ?? null,
     )
@@ -254,6 +259,20 @@ export function makeStubChatSession(
         setPermissionMode: mode => log('setPermissionMode')(mode),
         setPermissionModeLocal: mode => log('setPermissionModeLocal')(mode),
         switchModel: model => log('switchModel')(model),
+        agents,
+        agentValue,
+        switchAgent: name => {
+            setAgentValue(name)
+            log('switchAgent')(name)
+        },
+        cycleAgent: () => {
+            const list = agents()
+            if (list.length < 2) return
+            const at = list.findIndex(a => a.value === agentValue())
+            const next = list[(at + 1) % list.length].value
+            setAgentValue(next)
+            log('cycleAgent')()
+        },
         switchEffort: level => log('switchEffort')(level),
         isPrivate,
         setPrivate: on => {

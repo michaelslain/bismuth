@@ -3,6 +3,8 @@
 // models it has, and resolve one backend's spawn. The pure mapping is ./localModel.ts.
 import { readSettings } from '../settings'
 import { can, type BackendId } from './catalog'
+import type { LocalServerKind } from './contextWindow'
+import { probeLocalServer } from './contextWindowProbe'
 import {
     localSpawnFor,
     parseLocalModel,
@@ -23,35 +25,25 @@ export async function readLocalModel(
 }
 
 /**
- * The model ids the server lists at `GET <url>/v1/models` (the OpenAI shape `{data:[{id}]}`, which
- * LM Studio and Ollama both serve). `[]` on any failure — a down server, a timeout, a body in some
- * other shape — so callers can treat "nothing listed" and "unreachable" alike.
+ * The model ids the server serves, embedding models dropped (they cannot chat). `[]` on any failure
+ * — a down server, a timeout, a body in some other shape — so callers can treat "nothing listed" and
+ * "unreachable" alike.
  */
 export async function listLocalModels(
     lm: LocalModel,
     timeoutMs = 1500,
 ): Promise<string[]> {
-    try {
-        const res = await fetch(`${lm.url}/v1/models`, {
-            headers: lm.apiKey ? { Authorization: `Bearer ${lm.apiKey}` } : {},
-            signal: AbortSignal.timeout(timeoutMs),
-        })
-        if (!res.ok) return []
-        const body = (await res.json()) as { data?: unknown }
-        if (!Array.isArray(body.data)) return []
-        return body.data
-            .map(m =>
-                m && typeof (m as { id?: unknown }).id === 'string'
-                    ? (m as { id: string }).id
-                    : '',
-            )
-            .filter(Boolean)
-    } catch {
-        return []
-    }
+    const probe = await probeLocalServer(lm.url, lm.apiKey, timeoutMs)
+    return (probe?.models ?? []).filter(m => !m.embedding).map(m => m.id)
 }
 
-export type ResolvedLocal = LocalSpawn & { lm: LocalModel; models: string[] }
+export type ResolvedLocal = LocalSpawn & {
+    lm: LocalModel
+    models: string[]
+    /** Loaded context window per model id, only for ids the server reported one for. */
+    windows: Record<string, number>
+    kind: LocalServerKind | null
+}
 
 export type LocalResolution =
     | { kind: 'off' }
@@ -73,7 +65,11 @@ export async function resolveLocalSpawn(
     if (!can(id, 'localModel')) return { kind: 'off' }
     const lm = await readLocalModel(vault)
     if (!lm) return { kind: 'off' }
-    const models = await listLocalModels(lm)
+    const probe = await probeLocalServer(lm.url, lm.apiKey)
+    const listed = (probe?.models ?? []).filter(m => !m.embedding)
+    const models = listed.map(m => m.id)
+    const windows: Record<string, number> = {}
+    for (const m of listed) if (m.window) windows[m.id] = m.window
     // Every server this targets (LM Studio, Ollama, llama.cpp, vLLM) serves /v1/models, so an empty
     // list means down or nothing loaded — surface it before spawning rather than letting the CLI
     // fail mid-turn with a connection error that never names the setting.
@@ -85,9 +81,18 @@ export async function resolveLocalSpawn(
     const requested = requestedModel?.replace(/^local\//, '') || ''
     const model =
         (models.includes(requested) && requested) || lm.model || models[0]
-    const spawn = localSpawnFor(id, lm, model, models)
+    const spawn = localSpawnFor(id, lm, model, models, windows)
     if (!spawn) return { kind: 'off' }
-    return { kind: 'ready', local: { ...spawn, lm, models } }
+    return {
+        kind: 'ready',
+        local: {
+            ...spawn,
+            lm,
+            models,
+            windows,
+            kind: probe?.kind ?? null,
+        },
+    }
 }
 
 /** The error a driver shows when the setting is on but the server is down or lists no models. */

@@ -158,6 +158,7 @@ Each id below is a key under `keybindings:`, with its default combo and the acti
 | `chat-history-prev` | `ArrowUp` | Recall previous chat message |
 | `chat-history-next` | `ArrowDown` | Recall next chat message |
 | `chat-history-delete` | `Delete, Backspace` | Delete chat from history |
+| `chat-cycle-agent` | `Shift+Tab` | Cycle chat agent |
 
 ### File tree
 

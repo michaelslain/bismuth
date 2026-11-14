@@ -382,6 +382,7 @@ Chat tabs. There is no `chat.computerUse` setting; whether a backend can drive C
 | `provider` | enum | `auto` | `auto`, or a backend id | Default agent backend for a new chat tab. |
 | `presets` | list of object | `[]` | | Saved provider, model and effort combinations for the model dialog. |
 | `mutedMcpServers` | list of string | `[]` | MCP server names | Servers the chat's `N mcp servers down` warning ignores. |
+| `opencodeServers` | list of object | `[]` | | Local model servers saved from the chat's provider manager, added to opencode chats as providers. Never written to opencode's own config. |
 
 `auto` runs the first agent whose CLI is installed on this machine, in the catalog's auto order. With none installed, the chat shows its setup screen. A named backend is never swapped for another. The chat header's picker overrides `provider` for that tab, and the pick is remembered per tab.
 
@@ -397,6 +398,8 @@ Each `presets` item has four string fields:
 | `effort` | Reasoning effort the model supports, such as `low` or `high`. Empty uses the model's default. |
 
 The dialog's `[+ save]` appends a preset and `[x]` removes one. Applying a preset on another backend starts a new conversation, as any backend switch does.
+
+Each `opencodeServers` entry has `id` (the provider id, `local-<name>`), `name` (LM Studio, Ollama…), `url` (for example `http://192.168.1.20:1234`) and `apiKey` (empty when the server ignores one). The manager's `[connect]` adds an entry and the row's `[x]` removes it; see [opencode providers](../chat/opencode-providers.md).
 
 The MCP warning's `[never show again]` adds every server that is down at that moment to `mutedMcpServers`. A muted server never raises the warning; any server not in the list still does when it goes down. Remove a name to be warned about it again.
 

@@ -10,6 +10,7 @@ import ChatComposerBar from './ChatComposerBar'
 import { makeStubChatSession, type StubChatSession } from './_stubChatSession'
 import type { ChatSession } from './chatSession'
 import { settings, setSettings } from '../settings'
+import Text from '../ui/Text'
 import styles from './ChatComposerBar.module.css'
 
 const meta = {
@@ -673,5 +674,83 @@ export const ShiftEnterStillInsertsNewline: Story = {
         await waitFor(() =>
             expect(canvasElement.querySelectorAll('.cm-line').length).toBe(2),
         )
+    },
+}
+
+const AGENTS = [
+    { value: 'build', label: 'build', description: 'default' },
+    { value: 'plan', label: 'plan', description: 'read only' },
+]
+
+/** Shift+Tab in an opencode composer moves to the next agent, wrapping: build, plan, build. The
+ *  probe beside the bar prints the session's live agent. */
+export const ShiftTabCyclesAgent: Story = {
+    render: () => {
+        const session = makeStubChatSession({
+            provider: 'opencode',
+            agents: AGENTS,
+            agentValue: 'build',
+        })
+        return (
+            <>
+                <ChatComposerBar
+                    session={session}
+                    placeholder="Message opencode"
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+                <Text as="div" size="ui" tone="faint" data-testid="agent-probe">
+                    agent: {session.agentValue()}
+                </Text>
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const probe = within(canvasElement).getByTestId('agent-probe')
+        const content = cmContent(canvasElement)
+        await userEvent.click(content)
+        expect(probe.textContent).toBe('agent: build')
+        const press = () => {
+            const ev = new KeyboardEvent('keydown', {
+                key: 'Tab',
+                code: 'Tab',
+                shiftKey: true,
+                bubbles: true,
+                cancelable: true,
+            })
+            content.dispatchEvent(ev)
+            return ev
+        }
+        expect(press().defaultPrevented).toBe(true)
+        await waitFor(() => expect(probe.textContent).toBe('agent: plan'))
+        expect(press().defaultPrevented).toBe(true)
+        await waitFor(() => expect(probe.textContent).toBe('agent: build'))
+    },
+}
+
+/** A backend without agents (Claude Code): Shift+Tab is not taken, so focus moves as it does today. */
+export const ShiftTabWithoutAgentsPasses: Story = {
+    render: () => (
+        <ChatComposerBar
+            session={makeStubChatSession({ provider: 'claude' })}
+            placeholder="Message agent"
+            noteNames={noNames}
+            memoryNames={noNames}
+            tagNames={noNames}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const content = cmContent(canvasElement)
+        await userEvent.click(content)
+        const ev = new KeyboardEvent('keydown', {
+            key: 'Tab',
+            code: 'Tab',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+        })
+        content.dispatchEvent(ev)
+        expect(ev.defaultPrevented).toBe(false)
     },
 }

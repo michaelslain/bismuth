@@ -34,7 +34,7 @@ const CODEX_KEY_ENV = 'BISMUTH_LOCAL_MODEL_KEY'
 const PLACEHOLDER_KEY = 'local'
 
 /** Strip trailing slashes and a trailing `/v1` — every mapping appends its own path. */
-function normalizeUrl(raw: string): string {
+export function normalizeUrl(raw: string): string {
     let url = raw.trim()
     while (url.endsWith('/')) url = url.slice(0, -1)
     if (url.endsWith('/v1')) url = url.slice(0, -3)
@@ -59,42 +59,71 @@ export function parseLocalModel(section: unknown): LocalModel | null {
     }
 }
 
-/** The opencode inline config declaring the local server as an OpenAI-compatible provider. */
-function opencodeConfig(
+/**
+ * The context limit opencode is given for a model whose loaded window is `window`: `context` is the
+ * window; `output` is the model's known output limit (the window when unknown), capped at the window.
+ * Measured, not chosen: with `limit {context: 8192, output: 8192}` opencode compacted before sending
+ * an over-window request and the turn still answered, so no fraction or margin is applied. See
+ * `.claude/bust/opencode-chat/limit-verdict.md`.
+ */
+export function windowLimit(
+    window: number,
+    knownOutput: number | null,
+): { context: number; output: number } {
+    return { context: window, output: Math.min(knownOutput ?? window, window) }
+}
+
+/** The thinking switch Bismuth offers on a model it injects: `off` and `high` reasoning effort. */
+export const THINKING_VARIANTS = {
+    none: { reasoningEffort: 'none' },
+    high: { reasoningEffort: 'high' },
+}
+
+/**
+ * The opencode `provider.local` block declaring the local server as an OpenAI-compatible provider.
+ * Every model carries the thinking variants and, when its loaded window is known, its `limit`.
+ */
+export function opencodeLocalProviderBlock(
     lm: LocalModel,
     model: string,
     models: string[],
-): string {
+    windows: Record<string, number> = {},
+): Record<string, unknown> {
     const ids = models.includes(model) ? models : [model, ...models]
-    const modelEntries: Record<string, { name: string }> = {}
-    for (const id of ids) modelEntries[id] = { name: id }
-    return JSON.stringify({
-        provider: {
-            [LOCAL_PROVIDER_ID]: {
-                npm: '@ai-sdk/openai-compatible',
-                name: 'Local model',
-                options: {
-                    baseURL: `${lm.url}/v1`,
-                    ...(lm.apiKey ? { apiKey: lm.apiKey } : {}),
-                },
-                models: modelEntries,
-            },
+    const modelEntries: Record<string, unknown> = {}
+    for (const id of ids) {
+        const window = windows[id]
+        modelEntries[id] = {
+            // The server's id after its publisher (`qwen/qwen3.5-9b` → `qwen3.5-9b`): the chat's model
+            // word and the dialog row show this name, and the publisher repeats the provider.
+            name: id.slice(id.lastIndexOf('/') + 1),
+            variants: structuredClone(THINKING_VARIANTS),
+            ...(window ? { limit: windowLimit(window, null) } : {}),
+        }
+    }
+    return {
+        npm: '@ai-sdk/openai-compatible',
+        name: 'Local model',
+        options: {
+            baseURL: `${lm.url}/v1`,
+            ...(lm.apiKey ? { apiKey: lm.apiKey } : {}),
         },
-        model: `${LOCAL_PROVIDER_ID}/${model}`,
-    })
+        models: modelEntries,
+    }
 }
 
 /**
  * The spawn-time env/argv that points one backend at the local server, or null when that backend
  * has no such mechanism (the catalog's `localModel: false`). `model` is the already-resolved id;
  * `models` (opencode only) is every id to declare in its provider block so the header picker can
- * switch between them — defaults to just `model`.
+ * switch between them — defaults to just `model`; `windows` maps an id to its loaded context window.
  */
 export function localSpawnFor(
     id: BackendId,
     lm: LocalModel,
     model: string,
     models: string[] = [model],
+    windows: Record<string, number> = {},
 ): LocalSpawn | null {
     const key = lm.apiKey || PLACEHOLDER_KEY
     switch (id) {
@@ -141,7 +170,17 @@ export function localSpawnFor(
         case 'opencode':
             return {
                 env: {
-                    OPENCODE_CONFIG_CONTENT: opencodeConfig(lm, model, models),
+                    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+                        provider: {
+                            [LOCAL_PROVIDER_ID]: opencodeLocalProviderBlock(
+                                lm,
+                                model,
+                                models,
+                                windows,
+                            ),
+                        },
+                        model: `${LOCAL_PROVIDER_ID}/${model}`,
+                    }),
                 },
                 args: [],
                 model,

@@ -8,6 +8,7 @@ import OpencodeProviderManager from './OpencodeProviderManager'
 import { setTransport } from '../api'
 import {
     fakeTransport,
+    sampleOpencodeLocal,
     sampleOpencodeProviders,
     type FakeTransportSeed,
 } from '../ui/_fakeTransport'
@@ -74,9 +75,10 @@ export const SomeConnected: Story = {
         await expect(c.getByText('opencode zen')).not.toBeNull()
         await expect(c.getByText('oauth')).not.toBeNull()
         await expect(c.getByText('api key')).not.toBeNull()
-        // 4 API-key providers get `[ connect ]`, the one OAuth provider (github copilot) `[ sign in ]`
+        // 4 API-key providers get `[ connect ]` (the connect-a-server row has one more), the one
+        // OAuth provider (github copilot) `[ sign in ]`
         await expect(c.getAllByRole('button', { name: 'connect' }).length).toBe(
-            4,
+            5,
         )
         await expect(c.getAllByRole('button', { name: 'sign in' }).length).toBe(
             1,
@@ -131,5 +133,43 @@ export const OpencodeMissing: Story = {
         await expect(
             c.getByRole('button', { name: 'copy command' }),
         ).not.toBeNull()
+    },
+}
+
+/** The user's setup: LM Studio and Ollama found by opencode, one more LM Studio saved from here. */
+export const LocalServers: Story = {
+    render: hosted({
+        opencodeProviders: {
+            connected: sample.connected,
+            available: sample.available,
+            ...sampleOpencodeLocal(),
+        },
+    }),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await expect(await c.findByText(/127\.0\.0\.1:1234/)).not.toBeNull()
+        await expect(c.getByText(/127\.0\.0\.1:11434/)).not.toBeNull()
+        await expect(c.getByText(/192\.168\.1\.20:1234/)).not.toBeNull()
+        await expect(c.getByPlaceholderText('key (optional)')).not.toBeNull()
+        // only the saved row can be removed
+        await expect(c.getAllByRole('button', { name: /^remove / }).length).toBe(1)
+        // the add list leads with the popular providers
+        await expect(c.getByText('openai')).not.toBeNull()
+    },
+}
+
+/** Local servers and no cloud provider: the empty state names that. */
+export const LocalOnly: Story = {
+    render: hosted({
+        opencodeProviders: {
+            connected: [],
+            available: sample.available.slice(0, 6),
+            ...sampleOpencodeLocal(),
+        },
+    }),
+    play: async ({ canvasElement }) => {
+        const c = within(canvasElement)
+        await expect(await c.findByText('no cloud providers connected')).not.toBeNull()
+        await expect(c.queryByText('no providers connected yet')).toBeNull()
     },
 }

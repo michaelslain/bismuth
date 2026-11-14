@@ -28,6 +28,7 @@ import { installedBackendIds, loadAgentAvailability } from './agentAvailability'
 import { PERMISSION_MODE_OPTIONS } from './chatPermissionMode'
 import {
     browserStorage,
+    readLastAgent,
     readLastEffort,
     readLastMode,
     readLastModel,
@@ -54,7 +55,10 @@ export type ChatControlsView = Pick<
     | 'startNewChat'
     | 'isPrivate'
     | 'setPrivate'
-> & { history: Pick<ChatSession['history'], 'open' | 'toggle'> }
+> &
+    Partial<Pick<ChatSession, 'agents' | 'agentValue' | 'switchAgent'>> & {
+        history: Pick<ChatSession['history'], 'open' | 'toggle'>
+    }
 
 /** A command for the row's actions (history/new chat), drawn as a `BarTwin` (ui/BarTwin.tsx): the
  *  worded `[⟲ history]` while there is room, the bare icon below the row's own `@container chatrow`
@@ -98,41 +102,82 @@ const RowAction: Component<RowActionProps> = props => {
  *  props.session` alias reads the prop ONCE at setup and keeps that value forever even if a later
  *  render hands the component a different session (switching the active chat). */
 const Config: Component<{ session: ChatControlsView }> = props => {
+    const agentOptions = () =>
+        (props.session.agents?.() ?? []).map(a => ({
+            value: a.value,
+            label: a.label.toLowerCase(),
+        }))
     return (
-        <Show when={providerCan(props.session.provider(), 'permissionModes')}>
-            {/* Permission mode: rendered from the START (not gated on the manifest) so the
-                header is populated the instant the chat opens (BUG #14). Seeded to the app
-                default and updated live. NEVER DROPPED — its armed tint is the only signal that
-                the agent is writing to the vault unconfirmed. */}
-            <Text
-                as="span"
-                inherit
-                class={styles['bar-item']}
-                data-testid="chat-perm-mode"
+        <>
+            {/* The agent word (opencode's build, plan, the user's own): the slot the permission mode
+                takes for Claude Code, in the model word's tone (never the armed tint). Shift+Tab in
+                the composer cycles it (`chat-cycle-agent`, named by the tooltip). */}
+            <Show
+                when={
+                    providerCan(props.session.provider(), 'agents') &&
+                    agentOptions().length > 0
+                }
             >
-                <Select
-                    caretClass={styles['mode-caret']}
-                    class={
-                        styles['mode-select'] +
-                        // ARMED STATE. `bypassPermissions` lets the agent write to the vault
-                        // with no per-action confirmation, and it is the app DEFAULT — so the
-                        // most consequential runtime setting in the product used to render in
-                        // exactly the same weight, size and colour as the model picker beside
-                        // it, with no indication once active. A user who forgets it is on has
-                        // no way to find out. The warning tone is the indicator; it is
-                        // deliberately the ONLY tinted control here so it cannot be mistaken
-                        // for decoration (Acceptance, for the quiet row: "a dangerous mode
-                        // (Bypass) is signalled by text tone only — no box, no border").
-                        (props.session.permMode() === 'bypassPermissions'
-                            ? ' ' + styles['mode-select--armed']
-                            : '')
-                    }
-                    value={props.session.permMode()}
-                    options={PERMISSION_MODE_OPTIONS}
-                    onChange={props.session.setPermissionMode}
-                />
-            </Text>
-        </Show>
+                <Text
+                    as="span"
+                    inherit
+                    class={styles['bar-item']}
+                    data-testid="chat-agent"
+                >
+                    {/* The tooltip holder is the word alone, so the bubble centers on it and not on
+                        the row item that also holds the leading `//`. */}
+                    <Text
+                        as="span"
+                        inherit
+                        data-tooltip-keybinding="chat-cycle-agent"
+                    >
+                        <Select
+                            caretClass={styles['mode-caret']}
+                            class={styles['mode-select']}
+                            value={props.session.agentValue?.() ?? ''}
+                            options={agentOptions()}
+                            onChange={name => props.session.switchAgent?.(name)}
+                        />
+                    </Text>
+                </Text>
+            </Show>
+            <Show
+                when={providerCan(props.session.provider(), 'permissionModes')}
+            >
+                {/* Permission mode: rendered from the START (not gated on the manifest) so the
+                    header is populated the instant the chat opens (BUG #14). Seeded to the app
+                    default and updated live. NEVER DROPPED — its armed tint is the only signal that
+                    the agent is writing to the vault unconfirmed. */}
+                <Text
+                    as="span"
+                    inherit
+                    class={styles['bar-item']}
+                    data-testid="chat-perm-mode"
+                >
+                    <Select
+                        caretClass={styles['mode-caret']}
+                        class={
+                            styles['mode-select'] +
+                            // ARMED STATE. `bypassPermissions` lets the agent write to the vault
+                            // with no per-action confirmation, and it is the app DEFAULT — so the
+                            // most consequential runtime setting in the product used to render in
+                            // exactly the same weight, size and colour as the model picker beside
+                            // it, with no indication once active. A user who forgets it is on has
+                            // no way to find out. The warning tone is the indicator; it is
+                            // deliberately the ONLY tinted control here so it cannot be mistaken
+                            // for decoration (Acceptance, for the quiet row: "a dangerous mode
+                            // (Bypass) is signalled by text tone only — no box, no border").
+                            (props.session.permMode() === 'bypassPermissions'
+                                ? ' ' + styles['mode-select--armed']
+                                : '')
+                        }
+                        value={props.session.permMode()}
+                        options={PERMISSION_MODE_OPTIONS}
+                        onChange={props.session.setPermissionMode}
+                    />
+                </Text>
+            </Show>
+        </>
     )
 }
 
@@ -148,7 +193,17 @@ const Actions: Component<{
     /** The private toggle's last toast, replaced by the next click. */
     let privateToast: number | undefined
     return (
-        <div class={styles.actions}>
+        <div
+            class={styles.actions}
+            // With no session picker and no open-in-chat, the cluster opens on the private-toggle
+            // icon, so the row's `//` before it is dropped on every backend without a session picker.
+            data-bare-lead={
+                !props.openInChat &&
+                !providerCan(props.session.provider(), 'sessionPicker')
+                    ? ''
+                    : undefined
+            }
+        >
             {/* The daemon page's hand-off: its conversation moves to its own chat tab. Icon only
                 (`[↗]`, named by its tooltip) — a secondary action beside the two worded ones. Only a
                 host that passes `onOpenInChat` gets it, and only once there is a conversation to
@@ -287,6 +342,13 @@ function buildDisabledSession(chatId?: string): ChatControlsView {
         effortOptions: () => [],
         effortValue: () => readLastEffort(storage),
         permMode: () => readLastMode(storage),
+        // The remembered agent stands in for the live list, so arming changes nothing on screen.
+        agents: () => {
+            const name = provider === 'opencode' ? readLastAgent(storage) : ''
+            return name ? [{ value: name, label: name, description: '' }] : []
+        },
+        agentValue: () => readLastAgent(storage),
+        switchAgent: () => {},
         switchProvider: () => {},
         switchModel: () => {},
         switchEffort: () => {},

@@ -27,6 +27,7 @@ import { IconButton } from '../ui/IconButton'
 import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { createMenuNav } from '../ui/popover/createMenuNav'
 import { classifyComposerKey } from './chatComposerKeys'
+import { providerCan } from './chatProvider'
 import { matchSlashCommands, slashArgHint } from './chatSlashCommands'
 import { settings } from '../settings'
 import {
@@ -166,6 +167,10 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                 {
                     slashOpen: slashOpen(),
                     streaming: streaming(),
+                    canCycleAgent:
+                        !!props.session &&
+                        providerCan(props.session.provider(), 'agents') &&
+                        props.session.agents().length > 1,
                     ...boundary,
                 },
                 {
@@ -175,6 +180,7 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                         settings.keybindings['chat-history-prev'],
                     'chat-history-next':
                         settings.keybindings['chat-history-next'],
+                    'chat-cycle-agent': settings.keybindings['chat-cycle-agent'],
                 },
             )
         ) {
@@ -188,6 +194,10 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
             case 'stop':
                 e.preventDefault()
                 props.session?.stop()
+                return true
+            case 'cycle-agent':
+                e.preventDefault()
+                props.session?.cycleAgent()
                 return true
             case 'send':
                 e.preventDefault()

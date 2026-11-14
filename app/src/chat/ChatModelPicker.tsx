@@ -11,7 +11,7 @@
 // the `model // <connector>` header. There is no footer — nothing to confirm, a pick applies at once.
 // The columns have a fixed height so switching connector never resizes the dialog; the right column
 // scrolls on its own and the connector column stays put.
-import { For, Show, type Component } from 'solid-js'
+import { createEffect, createSignal, For, Show, untrack, type Component } from 'solid-js'
 import styles from './ChatModelPicker.module.css'
 import type { ChatControlsView } from './ChatControls'
 import type { ChatModelOption } from './chatSession'
@@ -22,6 +22,9 @@ import PickRow from '../ui/PickRow'
 import SegmentedToggle from '../ui/SegmentedToggle'
 import SectionLabel from '../ui/SectionLabel'
 import EmptyState from '../ui/EmptyState'
+import TextButton from '../ui/TextButton'
+import ModelGroupHead from './ModelGroupHead'
+import { api } from '../api'
 import OpencodeProviderManager from './OpencodeProviderManager'
 import ChatPresetList from './ChatPresetList'
 import { CHAT_PROVIDER_OPTIONS, modelPriceBadge } from './chatProvider'
@@ -39,6 +42,8 @@ import { settings, setSettings } from '../settings'
 export type ChatModelPickerProps = {
     session: ChatControlsView
     onClose: () => void
+    /** Refetches the connector's models (opencode only); defaults to `api.opencodeRefresh`. */
+    onRefresh?: () => Promise<void>
     class?: string
 }
 
@@ -52,6 +57,26 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
     const groups = () =>
         groupModels(props.session.models(), props.session.provider())
     const currentModel = () => props.session.displayModelValue()
+
+    // ── [refresh] (opencode): once on the dialog's first opencode view, and on every press ──
+    const [refreshing, setRefreshing] = createSignal(false)
+    const refresh = async () => {
+        if (refreshing()) return
+        setRefreshing(true)
+        try {
+            await (props.onRefresh ?? api.opencodeRefresh)()
+        } catch {
+            // a failed refetch leaves the list as it was and the button back at [refresh]
+        } finally {
+            setRefreshing(false)
+        }
+    }
+    let refreshedOnOpen = false
+    createEffect(() => {
+        if (props.session.provider() !== 'opencode' || refreshedOnOpen) return
+        refreshedOnOpen = true
+        untrack(() => void refresh())
+    })
 
     const pickModel = (m: ChatModelOption) => props.session.switchModel(m.value)
 
@@ -103,105 +128,121 @@ const ChatModelPicker: Component<ChatModelPickerProps> = props => {
                 onClose={props.onClose}
             />
             <ModalBody class={styles.body}>
-                <div class={styles.connectors}>
-                    <ChatPresetList
-                        presets={settings.chat.presets}
-                        current={current()}
-                        suggestedName={suggestPresetName(
-                            presetModelWord(
-                                props.session.provider(),
-                                currentModel(),
-                            ),
-                            currentEffort(),
-                        )}
-                        {...{ describe }}
-                        onApply={props.session.applyPreset}
-                        onSave={savePresetNamed}
-                        onDelete={i =>
-                            setSettings(
-                                'chat',
-                                'presets',
-                                deletePreset(settings.chat.presets, i),
-                            )
-                        }
-                    />
-                    <SectionLabel class={styles['connectors-head']}>
-                        connectors
-                    </SectionLabel>
-                    <For each={CHAT_PROVIDER_OPTIONS}>
-                        {o => {
-                            const current = () =>
-                                o.value === props.session.provider()
-                            return (
-                                <PickRow
-                                    marked={current()}
-                                    label={o.label.toLowerCase()}
-                                    onPick={() =>
-                                        props.session.switchProvider(o.value)
-                                    }
-                                />
-                            )
-                        }}
-                    </For>
-                </div>
-                <div class={styles.detail}>
-                    <Show
-                        when={props.session.models().length > 0}
-                        fallback={
-                            <EmptyState compact class={styles.empty}>
-                                no models reported
-                            </EmptyState>
-                        }
-                    >
-                        <For each={groups()}>
-                            {g => (
-                                <div class={styles.group}>
-                                    <Show when={g.name}>
-                                        <SectionLabel
-                                            class={styles['group-head']}
-                                        >
-                                            {g.name}
-                                        </SectionLabel>
-                                    </Show>
-                                    <For each={g.models}>
-                                        {m => (
-                                            <PickRow
-                                                marked={
-                                                    m.value === currentModel()
-                                                }
-                                                label={m.shortLabel}
-                                                detail={modelPriceBadge(
-                                                    m.free,
-                                                )?.toLowerCase()}
-                                                onPick={() => pickModel(m)}
-                                            />
-                                        )}
-                                    </For>
-                                </div>
+                <div class={styles.cols}>
+                    <div class={styles.connectors}>
+                        <ChatPresetList
+                            presets={settings.chat.presets}
+                            current={current()}
+                            suggestedName={suggestPresetName(
+                                presetModelWord(
+                                    props.session.provider(),
+                                    currentModel(),
+                                ),
+                                currentEffort(),
                             )}
-                        </For>
-                    </Show>
-                    <Show when={props.session.effortOptions().length > 1}>
-                        <div class={styles.effort}>
-                            <SectionLabel as="span">effort</SectionLabel>
-                            <SegmentedToggle
-                                options={props.session
-                                    .effortOptions()
-                                    .map(o => ({
-                                        id: o.value,
-                                        label: o.label.toLowerCase(),
-                                    }))}
-                                value={props.session.effortValue()}
-                                onChange={props.session.switchEffort}
-                            />
-                        </div>
-                    </Show>
-                    <Show when={props.session.provider() === 'opencode'}>
-                        <OpencodeProviderManager
-                            class={styles.manager}
-                            onClose={props.onClose}
+                            {...{ describe }}
+                            onApply={props.session.applyPreset}
+                            onSave={savePresetNamed}
+                            onDelete={i =>
+                                setSettings(
+                                    'chat',
+                                    'presets',
+                                    deletePreset(settings.chat.presets, i),
+                                )
+                            }
                         />
-                    </Show>
+                        <SectionLabel class={styles['connectors-head']}>
+                            connectors
+                        </SectionLabel>
+                        <For each={CHAT_PROVIDER_OPTIONS}>
+                            {o => {
+                                const current = () =>
+                                    o.value === props.session.provider()
+                                return (
+                                    <PickRow
+                                        marked={current()}
+                                        label={o.label.toLowerCase()}
+                                        onPick={() =>
+                                            props.session.switchProvider(o.value)
+                                        }
+                                    />
+                                )
+                            }}
+                        </For>
+                    </div>
+                    <div class={styles.detail}>
+                        <Show when={props.session.provider() === 'opencode'}>
+                            <div class={styles['models-head']}>
+                                <SectionLabel as="span">models</SectionLabel>
+                                <TextButton
+                                    disabled={refreshing()}
+                                    onClick={() => void refresh()}
+                                >
+                                    {refreshing() ? 'refreshing' : 'refresh'}
+                                </TextButton>
+                            </div>
+                        </Show>
+                        <Show
+                            when={props.session.models().length > 0}
+                            fallback={
+                                <EmptyState compact class={styles.empty}>
+                                    no models reported
+                                </EmptyState>
+                            }
+                        >
+                            <For each={groups()}>
+                                {g => (
+                                    <div class={styles.group}>
+                                        <Show when={g.name}>
+                                            <ModelGroupHead
+                                                label={g.name}
+                                                detail={g.free ? 'free' : undefined}
+                                            />
+                                        </Show>
+                                        <For each={g.models}>
+                                            {m => (
+                                                <PickRow
+                                                    marked={
+                                                        m.value === currentModel()
+                                                    }
+                                                    label={m.shortLabel}
+                                                    detail={
+                                                        g.free
+                                                            ? undefined
+                                                            : modelPriceBadge(
+                                                                  m.free,
+                                                              )?.toLowerCase()
+                                                    }
+                                                    onPick={() => pickModel(m)}
+                                                />
+                                            )}
+                                        </For>
+                                    </div>
+                                )}
+                            </For>
+                        </Show>
+                        <Show when={props.session.effortOptions().length > 1}>
+                            <div class={styles.effort}>
+                                <SectionLabel as="span">effort</SectionLabel>
+                                <SegmentedToggle
+                                    options={props.session
+                                        .effortOptions()
+                                        .map(o => ({
+                                            id: o.value,
+                                            label: o.label.toLowerCase(),
+                                        }))}
+                                    value={props.session.effortValue()}
+                                    onChange={props.session.switchEffort}
+                                />
+                            </div>
+                        </Show>
+                        <Show when={props.session.provider() === 'opencode'}>
+                            <OpencodeProviderManager
+                                class={styles.manager}
+                                onClose={props.onClose}
+                            />
+                        </Show>
+                    </div>
                 </div>
             </ModalBody>
         </FormModal>

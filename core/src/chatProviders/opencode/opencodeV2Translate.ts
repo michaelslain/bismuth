@@ -17,7 +17,11 @@
 //   session.execution.succeeded | failed {error} | interrupted {reason}   the turn's end
 // A `*.ended` event carries the part's whole text, so a part that never streamed (or whose deltas
 // were partly missed) still renders exactly once through the suffix rule below.
-import type { ChatFrame } from '../../chat'
+import type {
+    ChatAgentOption,
+    ChatFrame,
+    ChatModelGroup,
+} from '../../chat'
 import {
     newSubagentRoster,
     observeSubagentFrame,
@@ -468,4 +472,100 @@ export function opencodeV2AttemptStatus(
                 ? `The sign-in ${str(s.status)}.`
                 : 'The sign-in failed.'),
     }
+}
+
+/** `GET /api/agent` → the agents a chat can pick: primaries (`mode` `primary` or `all`) that are not
+ *  hidden, in opencode's order. `value` is the agent id, `label` its lowercased name. Pure. */
+export function agentEntriesFromV2(raw: unknown[]): ChatAgentOption[] {
+    const out: ChatAgentOption[] = []
+    for (const r of raw) {
+        const a = obj(r)
+        const id = str(a.id)
+        if (!id || a.mode === 'subagent' || a.hidden === true) continue
+        out.push({
+            value: id,
+            label: (str(a.name) || id).toLowerCase(),
+            description: str(a.description),
+            ...(typeof a.color === 'string' ? { color: a.color } : {}),
+        })
+    }
+    return out
+}
+
+/** One provider off `GET /api/provider`: its name and where it talks to. `loopback` is true when
+ *  that address is this machine (a local model server). */
+export type OpencodeProviderInfo = {
+    id: string
+    name: string
+    baseURL: string | null
+    loopback: boolean
+}
+
+/** Whether `url` points at this machine: `localhost`, `127.0.0.0/8`, `::1` or `0.0.0.0`. Pure. */
+export function isLoopbackUrl(url: string): boolean {
+    let host: string
+    try {
+        host = new URL(url).hostname.toLowerCase()
+    } catch {
+        return false
+    }
+    if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1)
+    return (
+        host === 'localhost' ||
+        host === '::1' ||
+        host === '0.0.0.0' ||
+        /^127(?:\.\d{1,3}){3}$/.test(host)
+    )
+}
+
+/** `GET /api/provider` → each provider's id, name and base URL. The URL is read from
+ *  `settings.baseURL`, then `options.baseURL`, then `baseURL` (the schema leaves a provider's
+ *  settings open-ended) and kept as sent, a trailing `/v1` included. Pure. */
+export function providerInfosFromV2(raw: unknown[]): OpencodeProviderInfo[] {
+    const out: OpencodeProviderInfo[] = []
+    for (const r of raw) {
+        const p = obj(r)
+        const id = str(p.id)
+        if (!id) continue
+        const baseURL =
+            str(obj(p.settings).baseURL) ||
+            str(obj(p.options).baseURL) ||
+            str(p.baseURL) ||
+            null
+        out.push({
+            id,
+            name: str(p.name).trim() || id,
+            baseURL,
+            loopback: baseURL ? isLoopbackUrl(baseURL) : false,
+        })
+    }
+    return out
+}
+
+/** The model dialog group of a provider's models. `opencode` and `bismuth` (the rotate entry) are
+ *  the Zen group; a provider Bismuth injected (its id is in `names`) or one on a loopback address is
+ *  local; anything else is cloud. The label is `names[id]`, else the provider's name, else its id,
+ *  lowercased. Pure. */
+export function modelGroupFor(
+    providerID: string,
+    infos: readonly OpencodeProviderInfo[],
+    names: Record<string, string>,
+): ChatModelGroup {
+    if (providerID === 'opencode' || providerID === 'bismuth')
+        return { id: 'opencode', label: 'opencode zen', kind: 'zen' }
+    const info = infos.find(i => i.id === providerID)
+    const injected = Object.hasOwn(names, providerID)
+    return {
+        id: providerID,
+        label: (names[providerID] ?? info?.name ?? providerID).toLowerCase(),
+        kind: injected || info?.loopback ? 'local' : 'cloud',
+    }
+}
+
+/** `GET /api/model/default` (a `Model.Info`) → `provider/model`, or null for none. Pure. */
+export function defaultModelFromV2(raw: unknown): string | null {
+    const m = obj(raw)
+    const provider = str(m.providerID)
+    const id = str(m.id)
+    return provider && id ? `${provider}/${id}` : null
 }

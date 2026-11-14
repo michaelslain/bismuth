@@ -280,8 +280,8 @@ test('DEFAULTS.keybindings materializes every catalog combo', () => {
 
 // --- Task 2: the 25 new rebindable-keys ids, on top of the original 24. ---
 
-test('KEYBINDING_CATALOG has exactly 56 entries (24 original + 25 rebindable-keys + 3 file-menu + quick-ask + chat-history-delete + 2 book)', () => {
-    expect(KEYBINDING_CATALOG.length).toBe(56)
+test('KEYBINDING_CATALOG has exactly 57 entries (24 original + 25 rebindable-keys + 3 file-menu + quick-ask + chat-history-delete + 2 book + chat-cycle-agent)', () => {
+    expect(KEYBINDING_CATALOG.length).toBe(57)
 })
 
 test('every KEYBINDING_CATALOG id is unique', () => {

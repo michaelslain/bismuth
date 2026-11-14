@@ -94,6 +94,8 @@ export interface ChatBackend {
     setPermissionMode?(chatId: string, mode: string): void
     /** Switch reasoning effort live. Present iff capabilities.effort. */
     setEffort?(chatId: string, effort: string): void
+    /** Switch the session's primary agent live. Present iff capabilities.agents. */
+    setAgent?(chatId: string, agent: string): void
     /** Mark the conversation private (or not). A private conversation is erased from the agent's own
      *  store when it ends and never captured to memory (privateErase.ts). Every backend has it. */
     setPrivate(chatId: string, on: boolean): void
@@ -136,7 +138,11 @@ type BackendModule = {
 
 type BackendExtras = Pick<
     ChatBackend,
-    'respondPermission' | 'respondQuestion' | 'setPermissionMode' | 'setEffort'
+    | 'respondPermission'
+    | 'respondQuestion'
+    | 'setPermissionMode'
+    | 'setEffort'
+    | 'setAgent'
 >
 
 /** Build a ChatBackend from a module exposing the shared positional signatures: the open, send and
@@ -198,6 +204,7 @@ const claudeBackend = moduleBackend('claude', claude, {
 const opencodeBackend = moduleBackend('opencode', opencode, {
     respondPermission: opencode.respondPermission,
     setEffort: opencode.setEffort,
+    setAgent: opencode.setAgent,
 })
 
 /**

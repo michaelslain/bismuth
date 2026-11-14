@@ -87,6 +87,68 @@ describe('requests', () => {
         )
     })
 
+    test('agent and provider routes: method, path, query and body', async () => {
+        const { calls, client } = recorder(c => {
+            if (c.url.includes('/api/agent'))
+                return Response.json({ data: [{ id: 'build' }] })
+            if (c.url.includes('/api/provider'))
+                return Response.json({ data: [{ id: 'lmstudio' }] })
+            if (c.url.includes('/api/model/default'))
+                return Response.json({ data: { id: 'm', providerID: 'p' } })
+            if (c.method === 'GET')
+                return Response.json({ data: { id: 'ses_1', agent: 'plan' } })
+            return Response.json({ data: {} })
+        })
+        expect(await client.agents('/a b')).toEqual([{ id: 'build' }])
+        await client.switchAgent('ses_1', 'plan')
+        expect(await client.session('ses_1')).toEqual({ agent: 'plan' })
+        expect(await client.defaultModel('/v')).toEqual({
+            id: 'm',
+            providerID: 'p',
+        })
+        expect(await client.providers('/v')).toEqual([{ id: 'lmstudio' }])
+        expect(calls.map(c => [c.method, c.url, c.body])).toEqual([
+            [
+                'GET',
+                'http://h:1/api/agent?location[directory]=%2Fa%20b',
+                undefined,
+            ],
+            ['POST', 'http://h:1/api/session/ses_1/agent', { agent: 'plan' }],
+            ['GET', 'http://h:1/api/session/ses_1', undefined],
+            [
+                'GET',
+                'http://h:1/api/model/default?location[directory]=%2Fv',
+                undefined,
+            ],
+            [
+                'GET',
+                'http://h:1/api/provider?location[directory]=%2Fv',
+                undefined,
+            ],
+        ])
+    })
+
+    test('session without an agent, and a null default model', async () => {
+        const { client } = recorder(() => Response.json({ data: null }))
+        expect(await client.session('ses_1')).toEqual({})
+        expect(await client.defaultModel('/v')).toBeNull()
+    })
+
+    test('createSession sends agent only when set', async () => {
+        const { calls, client } = recorder(() =>
+            Response.json({ data: { id: 'ses_1' } }),
+        )
+        await client.createSession('/v', null, 'plan')
+        await client.createSession('/v', null, null)
+        await client.createSession('/v')
+        expect(calls[0].body).toEqual({
+            location: { directory: '/v' },
+            agent: 'plan',
+        })
+        expect(calls[1].body).toEqual({ location: { directory: '/v' } })
+        expect('agent' in (calls[2].body as object)).toBe(false)
+    })
+
     test('messages follow the next cursor until a page is empty', async () => {
         const pages = [
             { data: [{ id: 1 }, { id: 2 }], cursor: { next: 'c2' } },

@@ -187,7 +187,24 @@ export type OpencodeProviderList = {
     connected: { id: string; name: string; kind: 'api' | 'oauth' | 'env' }[]
     /** NOT connected; sorted by name; `methods` is never empty. */
     available: { id: string; name: string; methods: OpencodeAuthMethod[] }[]
+    local?: OpencodeLocalProvider[]
+    saved?: OpencodeSavedServer[]
 }
+/** A local server opencode can reach: its own config or discovery (`opencode`), the vault's
+ *  localModel setting (`setting`), or one saved from the provider manager (`saved`, removable). */
+export type OpencodeLocalProvider = {
+    id: string
+    name: string
+    url: string // host:port as shown, e.g. 127.0.0.1:1234
+    models: number
+    source: 'opencode' | 'setting' | 'saved'
+}
+/** A saved server as the routes report it: never its key. */
+export type OpencodeSavedServer = { id: string; name: string; url: string }
+export type OpencodeAddServerResult =
+    | { outcome: 'saved'; server: OpencodeLocalProvider; list: OpencodeProviderList }
+    | { outcome: 'nothing'; url: string }
+    | { outcome: 'existing'; name: string }
 
 /** The message a failed `/opencode/*` route carries. The transport throws `Error(<response
  *  text>)` and the routes answer `{ error, message }` JSON, so pull `message` out; anything
@@ -996,6 +1013,18 @@ export const api = {
         opencodeCall(() =>
             postJson('/opencode/oauth/callback', { id, method, code }),
         ).then(() => {}),
+    opencodeRefresh: () =>
+        opencodeCall(() => postJson('/opencode/refresh', {})).then(() => {}),
+    opencodeAddServer: (url: string, apiKey: string) =>
+        opencodeCall(() =>
+            postJson<OpencodeAddServerResult>('/opencode/local-servers', {
+                add: { url, apiKey },
+            }),
+        ),
+    opencodeRemoveServer: (id: string) =>
+        opencodeCall(() =>
+            postJson<OpencodeProviderList>('/opencode/local-servers', { remove: id }),
+        ),
 }
 
 /** Concise one-line summary of a sync result for a toast. */

@@ -62,6 +62,7 @@ import { homedir } from 'node:os'
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk'
 import { claudeSpawnEnv } from '../../claudeWhich'
 import { opencodeMajor, usesBackgroundService } from './opencodeCli'
+import { withInjectedConfig } from './opencodeConfig'
 import {
     createOpencodeV2Client,
     type OpencodeV2Client,
@@ -74,12 +75,13 @@ export type OpencodeLocalEnv = { env: Record<string, string> }
 /** The env `opencode serve` is spawned with: the base env (claudeSpawnEnv's) with PWD pinned to the
  *  server's own cwd, plus — when the local model is on — the inline config that declares the `local`
  *  provider. `OPENCODE_CONFIG_CONTENT` outranks the user's own opencode config and merges into it,
- *  so nothing the user configured is lost and nothing of theirs is written. Pure. */
+ *  and deep-merges over an inherited `OPENCODE_CONFIG_CONTENT` (`withInjectedConfig`), so nothing
+ *  the user configured is lost and nothing of theirs is written. Pure. */
 export function serverSpawnEnv(
     base: Record<string, string>,
     local?: OpencodeLocalEnv | null,
 ): Record<string, string> {
-    return { ...base, PWD: homedir(), ...(local?.env ?? {}) }
+    return withInjectedConfig({ ...base, PWD: homedir() }, local?.env)
 }
 
 /** Identity of a server's config: the inline config content, or null for none. Two servers with
@@ -124,39 +126,76 @@ type LiveServer = OpencodeServerHandle & {
  *  `session.execution.*` end event fails instead of waiting forever. */
 export const OPENCODE_STREAM_CLOSED = 'bismuth.opencode.stream-closed'
 
-/** The one shared server for this core process, once started. */
-let live: LiveServer | null = null
-/** In-flight or settled startup attempt. Deliberately NOT cleared after a startup FAILURE (an old
- *  opencode's inability to `serve` is a static fact about the installed binary — no point retrying
- *  every chat open) — only cleared after a live server later crashes (see watchExit), so a genuine
- *  mid-life crash gets one fresh retry on the next call. */
-let starting: Promise<OpencodeServerHandle | null> | null = null
+/** Which server a caller wants. `default` is the chat's server; `compact` is a second one so a
+ *  caller can run it under a different config without disturbing the first. */
+export type OpencodeProfile = 'default' | 'compact'
 
-/** sessionId -> the current turn's event handler. Registered by chatProviders/opencode.ts right
- *  before it sends a prompt/command, unregistered once that call settles — a session with no turn in
- *  flight has no listener, which is fine: permission asks and streaming deltas only happen mid-turn. */
-const listeners = new Map<string, (ev: unknown) => void>()
+/** Everything one profile's server owns. Each profile is its own slot with the lifecycle above:
+ *  lazy start, replacement on a config change once the slot has no turn in flight, one retry after
+ *  a crash. */
+type Slot = {
+    /** The slot's server, once started. */
+    live: LiveServer | null
+    /** In-flight or settled startup attempt. Deliberately NOT cleared after a startup FAILURE (an
+     *  old opencode's inability to `serve` is a static fact about the installed binary — no point
+     *  retrying every chat open) — only cleared after a live server later crashes (see watchExit),
+     *  so a genuine mid-life crash gets one fresh retry on the next call. */
+    starting: Promise<OpencodeServerHandle | null> | null
+    /** sessionId -> the current turn's event handler. Registered by chatProviders/opencode.ts right
+     *  before it sends a prompt/command, unregistered once that call settles — a session with no
+     *  turn in flight has no listener, which is fine: permission asks and streaming deltas only
+     *  happen mid-turn. */
+    listeners: Map<string, (ev: unknown) => void>
+    /** Resolvers parked by a pending replacement until no turn is in flight (see replaceServer). A
+     *  turn is "in flight" exactly while its listener is registered. */
+    idleWaiters: (() => void)[]
+    /** The config key + env the live (or in-flight) server was started with — kept past a crash so
+     *  a bare `ensureOpencodeServer(bin)` after one restarts it with the same local model. */
+    liveKey: string | null
+    lastLocal: OpencodeLocalEnv | null
+    /** A replacement waiting on running turns; every caller that wants a different config queues
+     *  on it. */
+    replacing: Promise<void> | null
+}
+
+const slots = new Map<OpencodeProfile, Slot>()
+function slotFor(profile: OpencodeProfile): Slot {
+    let slot = slots.get(profile)
+    if (!slot) {
+        slot = {
+            live: null,
+            starting: null,
+            listeners: new Map(),
+            idleWaiters: [],
+            liveKey: null,
+            lastLocal: null,
+            replacing: null,
+        }
+        slots.set(profile, slot)
+    }
+    return slot
+}
 
 export function registerOpencodeServerListener(
     sessionId: string,
     handler: (ev: unknown) => void,
+    profile: OpencodeProfile = 'default',
 ): () => void {
-    listeners.set(sessionId, handler)
+    const slot = slotFor(profile)
+    slot.listeners.set(sessionId, handler)
     return () => {
-        if (listeners.get(sessionId) === handler) listeners.delete(sessionId)
-        if (listeners.size === 0) {
-            const waiting = idleWaiters.splice(0)
+        if (slot.listeners.get(sessionId) === handler)
+            slot.listeners.delete(sessionId)
+        if (slot.listeners.size === 0) {
+            const waiting = slot.idleWaiters.splice(0)
             for (const wake of waiting) wake()
         }
     }
 }
 
-/** Resolvers parked by a pending server replacement until no turn is in flight (see
- *  replaceServer). A turn is "in flight" exactly while its listener is registered above. */
-const idleWaiters: (() => void)[] = []
-function whenNoTurnActive(): Promise<void> {
-    if (listeners.size === 0) return Promise.resolve()
-    return new Promise(resolve => idleWaiters.push(resolve))
+function whenNoTurnActive(slot: Slot): Promise<void> {
+    if (slot.listeners.size === 0) return Promise.resolve()
+    return new Promise(resolve => slot.idleWaiters.push(resolve))
 }
 
 /** Pull the opencode session id out of one raw event, whatever shape it turns out to carry — the
@@ -206,6 +245,7 @@ export function opencodeServerEventSessionId(raw: unknown): string | null {
  *  the handle, and is never awaited by ensureOpencodeServer — see subscribeToEvents below for why the
  *  SUBSCRIBE step (not this consume loop) is what callers actually need to wait for. */
 async function consumeEvents(
+    slot: Slot,
     handle: LiveServer,
     stream: AsyncGenerator<unknown>,
     already: unknown[] = [],
@@ -215,12 +255,12 @@ async function consumeEvents(
         const payload =
             g && typeof g === 'object' && 'payload' in g ? g.payload : gev
         const sid = opencodeServerEventSessionId(payload)
-        if (sid) listeners.get(sid)?.(payload)
+        if (sid) slot.listeners.get(sid)?.(payload)
     }
     try {
         for (const ev of already) dispatch(ev)
         for await (const gev of stream) {
-            if (live !== handle) return // superseded by a restart
+            if (slot.live !== handle) return // superseded by a restart
             dispatch(gev)
         }
     } catch {
@@ -228,7 +268,7 @@ async function consumeEvents(
     }
     // An opencode 2 turn ends only on an event, so every turn in flight is told the stream is gone.
     if (handle.version === 2)
-        for (const handler of [...listeners.values()])
+        for (const handler of [...slot.listeners.values()])
             handler({ type: OPENCODE_STREAM_CLOSED })
 }
 
@@ -239,29 +279,32 @@ async function consumeEvents(
  *  near-zero-cost concern in practice, but cheap to close outright rather than rely on timing). The
  *  actual event consumption then runs detached (consumeEvents, fire-and-forget) for the rest of the
  *  server's life. */
-async function subscribeToEvents(handle: LiveServer): Promise<void> {
+async function subscribeToEvents(
+    slot: Slot,
+    handle: LiveServer,
+): Promise<void> {
     if (handle.version === 2) {
         const stream = handle.client.events()
         // opencode 2 sends `server.connected` the moment the stream opens, so the first event is
         // the subscription's proof of life.
         const first = await stream.next()
-        void consumeEvents(handle, stream, first.done ? [] : [first.value])
+        void consumeEvents(slot, handle, stream, first.done ? [] : [first.value])
         return
     }
     const { stream } = await handle.client.global.event()
-    void consumeEvents(handle, stream)
+    void consumeEvents(slot, handle, stream)
 }
 
 /** If the live server process exits on its own (crash, killed out-of-band), drop the cached handle
  *  so the NEXT ensureOpencodeServer() call spawns a fresh one rather than returning a dead client
  *  forever. A deliberate stop() (process shutdown) also exits the child, but by then nothing calls
  *  ensureOpencodeServer() again, so this is harmless either way. */
-function watchExit(handle: LiveServer): void {
+function watchExit(slot: Slot, handle: LiveServer): void {
     handle.proc.exited
         .then(() => {
-            if (live === handle) {
-                live = null
-                starting = null
+            if (slot.live === handle) {
+                slot.live = null
+                slot.starting = null
             }
         })
         .catch(() => {})
@@ -373,19 +416,13 @@ function spawnAndWaitForBanner(
     })
 }
 
-/** The config key + env the live (or in-flight) server was started with — kept past a crash so a
- *  bare `ensureOpencodeServer(bin)` after one restarts it with the same local model, not without. */
-let liveKey: string | null = null
-let lastLocal: OpencodeLocalEnv | null = null
-/** A replacement waiting on running turns; every caller that wants a different config queues on it. */
-let replacing: Promise<void> | null = null
-
 function startServer(
+    slot: Slot,
     bin: string,
     local: OpencodeLocalEnv | null,
 ): Promise<OpencodeServerHandle | null> {
-    liveKey = opencodeServerConfigKey(local)
-    lastLocal = local
+    slot.liveKey = opencodeServerConfigKey(local)
+    slot.lastLocal = local
     const env = serverSpawnEnv(
         claudeSpawnEnv(process.env, 'chat') as Record<string, string>,
         local,
@@ -394,8 +431,8 @@ function startServer(
         const version = usesBackgroundService(await opencodeMajor(bin)) ? 2 : 1
         const handle = await spawnAndWaitForBanner(bin, env, version)
         if (!handle) return null
-        live = handle
-        watchExit(handle)
+        slot.live = handle
+        watchExit(slot, handle)
         // Awaited: see subscribeToEvents's note on why the SUBSCRIBE step (not the consume loop) must
         // land before any caller gets to send a turn. Best-effort: a subscribe failure doesn't fail
         // server startup itself (session.prompt's own response is still authoritative for turn
@@ -403,27 +440,28 @@ function startServer(
         // for whatever's in flight until a later successful subscribe (there is no retry loop here;
         // this is judged good-enough for a same-machine localhost connection that just proved itself
         // reachable by printing its own listening banner moments ago).
-        await subscribeToEvents(handle).catch(() => {})
+        await subscribeToEvents(slot, handle).catch(() => {})
         const { proc: _proc, ...rest } = handle
         return rest as OpencodeServerHandle
     })()
-    starting = attempt
+    slot.starting = attempt
     return attempt
 }
 
 /** Replace the shared server with one carrying `local`. Waits for any in-flight turn on the old
  *  server to settle first (the old server keeps serving that turn), then kills it and starts anew. */
 function replaceServer(
+    slot: Slot,
     bin: string,
     local: OpencodeLocalEnv | null,
 ): Promise<OpencodeServerHandle | null> {
-    const prior = starting
+    const prior = slot.starting
     const swap = (async () => {
         await prior?.catch(() => null)
-        await whenNoTurnActive()
-        const old = live
-        live = null
-        starting = null
+        await whenNoTurnActive(slot)
+        const old = slot.live
+        slot.live = null
+        slot.starting = null
         if (old) {
             try {
                 old.proc.kill()
@@ -433,10 +471,10 @@ function replaceServer(
         }
     })()
     const pending: Promise<void> = swap.finally(() => {
-        if (replacing === pending) replacing = null
+        if (slot.replacing === pending) slot.replacing = null
     })
-    replacing = pending
-    return swap.then(() => startServer(bin, local))
+    slot.replacing = pending
+    return swap.then(() => startServer(slot, bin, local))
 }
 
 /**
@@ -453,25 +491,48 @@ function replaceServer(
 export function ensureOpencodeServer(
     bin: string,
     local?: OpencodeLocalEnv | null,
+    profile: OpencodeProfile = 'default',
 ): Promise<OpencodeServerHandle | null> {
+    const slot = slotFor(profile)
     if (
-        replacing &&
+        slot.replacing &&
         local !== undefined &&
-        opencodeServerConfigKey(local) !== liveKey
+        opencodeServerConfigKey(local) !== slot.liveKey
     ) {
         // A replacement is pending: queue behind it, then re-evaluate against the server it leaves.
-        return replacing.then(() => ensureOpencodeServer(bin, local))
+        return slot.replacing.then(() =>
+            ensureOpencodeServer(bin, local, profile),
+        )
     }
     const plan = planServerChange({
-        live: !!starting,
-        liveKey,
+        live: !!slot.starting,
+        liveKey: slot.liveKey,
         want: local === undefined ? undefined : opencodeServerConfigKey(local),
-        turns: listeners.size,
+        turns: slot.listeners.size,
     })
-    if (plan === 'keep') return starting as Promise<OpencodeServerHandle | null>
-    if (!starting)
-        return startServer(bin, local === undefined ? lastLocal : local)
-    return replaceServer(bin, local ?? null)
+    if (plan === 'keep')
+        return slot.starting as Promise<OpencodeServerHandle | null>
+    if (!slot.starting)
+        return startServer(
+            slot,
+            bin,
+            local === undefined ? slot.lastLocal : local,
+        )
+    return replaceServer(slot, bin, local ?? null)
+}
+
+/** Kill every slot's `opencode serve` and forget it, so the next ensure starts afresh. `bun test`
+ *  never fires `process.on('exit')`, so a test that starts real servers calls this in `afterAll`. */
+export function stopAllOpencodeServers(): void {
+    for (const slot of slots.values()) {
+        try {
+            slot.live?.proc.kill()
+        } catch {
+            /* already exited */
+        }
+        slot.live = null
+        slot.starting = null
+    }
 }
 
 // Never leave an orphaned `opencode serve` running past this core process's own life.
@@ -479,12 +540,6 @@ let shuttingDown = false
 function shutdownAll(): void {
     if (shuttingDown) return
     shuttingDown = true
-    if (live) {
-        try {
-            live.proc.kill()
-        } catch {
-            /* already exited */
-        }
-    }
+    stopAllOpencodeServers()
 }
 process.on('exit', shutdownAll)

@@ -59,7 +59,13 @@ export interface OpencodeV2Client {
     createSession(
         directory: string,
         model?: OpencodeV2ModelRef | null,
+        agent?: string | null,
+        /** A session created with a title skips opencode's own title generation (a model call). */
+        title?: string | null,
     ): Promise<string>
+    /** `PATCH /api/session/{id}`: set the title. Set before the first prompt, it skips opencode's
+     *  own title generation, as a title given at creation does. */
+    setTitle(sessionId: string, title: string): Promise<void>
     prompt(
         sessionId: string,
         body: { text: string; files?: OpencodeV2File[] },
@@ -77,7 +83,20 @@ export interface OpencodeV2Client {
     /** Every message of a session, oldest first (all pages). */
     messages(sessionId: string): Promise<unknown[]>
     deleteSession(sessionId: string): Promise<void>
+    /** `POST /api/session/{id}/revert/stage` then `…/revert/commit`: drop `messageId` and every
+     *  message after it from the session, leaving the files on disk as they are. */
+    revertFrom(sessionId: string, messageId: string): Promise<void>
     models(directory: string): Promise<unknown[]>
+    /** `GET /api/agent`: every agent opencode knows, primary and subagent, hidden ones included. */
+    agents(directory: string): Promise<unknown[]>
+    /** `POST /api/session/{id}/agent`: the session's agent from the next turn on. */
+    switchAgent(sessionId: string, agent: string): Promise<void>
+    /** `GET /api/session/{id}`: the session's own record (`agent` is the one it runs). */
+    session(sessionId: string): Promise<{ agent?: string }>
+    /** `GET /api/model/default`: opencode's default `Model.Info`, or null when it has none. */
+    defaultModel(directory: string): Promise<unknown>
+    /** `GET /api/provider`: every provider opencode lists, with its settings. */
+    providers(directory: string): Promise<unknown[]>
     commands(directory: string): Promise<unknown[]>
     integrations(directory: string): Promise<unknown[]>
     connectKey(integrationId: string, key: string): Promise<void>
@@ -194,10 +213,12 @@ export function createOpencodeV2Client(
     return {
         version: 2,
         url,
-        async createSession(directory, model) {
+        async createSession(directory, model, agent, title) {
             const j = await call('POST', '/api/session', {
                 location: { directory },
                 ...(model ? { model } : {}),
+                ...(agent ? { agent } : {}),
+                ...(title ? { title } : {}),
             })
             const id = (dataOf(j) as { id?: unknown } | undefined)?.id
             if (typeof id !== 'string' || !id)
@@ -268,12 +289,52 @@ export function createOpencodeV2Client(
             }
             return out
         },
+        async setTitle(sessionId, title) {
+            await call('PATCH', `/api/session/${sid(sessionId)}`, { title })
+        },
         async deleteSession(sessionId) {
             await call('DELETE', `/api/session/${sid(sessionId)}`)
+        },
+        async revertFrom(sessionId, messageId) {
+            await call('POST', `/api/session/${sid(sessionId)}/revert/stage`, {
+                messageID: messageId,
+                files: false,
+            })
+            await call('POST', `/api/session/${sid(sessionId)}/revert/commit`)
         },
         async models(directory) {
             return listOf(
                 await call('GET', `/api/model?${locationQuery(directory)}`),
+            )
+        },
+        async agents(directory) {
+            return listOf(
+                await call('GET', `/api/agent?${locationQuery(directory)}`),
+            )
+        },
+        async switchAgent(sessionId, agent) {
+            await call('POST', `/api/session/${sid(sessionId)}/agent`, {
+                agent,
+            })
+        },
+        async session(sessionId) {
+            const d = dataOf(await call('GET', `/api/session/${sid(sessionId)}`))
+            const agent = (d as { agent?: unknown } | undefined)?.agent
+            return typeof agent === 'string' && agent ? { agent } : {}
+        },
+        async defaultModel(directory) {
+            return (
+                dataOf(
+                    await call(
+                        'GET',
+                        `/api/model/default?${locationQuery(directory)}`,
+                    ),
+                ) ?? null
+            )
+        },
+        async providers(directory) {
+            return listOf(
+                await call('GET', `/api/provider?${locationQuery(directory)}`),
             )
         },
         async commands(directory) {

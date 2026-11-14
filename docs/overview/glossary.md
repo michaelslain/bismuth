@@ -106,6 +106,7 @@ The table lists every term in alphabetical order, with a one-line definition and
 | mini graph | The graph docked at the bottom of the sidebar. | [Graph overview](../graph/overview.md) |
 | mode | A base's `mode:` key: `normal`, or `tasks`, which draws every row as a task in any layout. | [Bases overview](../bases/overview.md) |
 | note | A markdown (`.md`) file in the vault. | [Vault structure](../vault/structure.md) |
+| opencode agent | A primary agent opencode runs a conversation under: `build`, `plan` or one of your own; the chat shows it as a word in its controls row and `Shift+Tab` cycles it. Not the same as a backend. | [Chat overview](../chat/overview.md) |
 | owner token | A random per-launch secret sent as `X-Bismuth-Token` that marks a request as the vault's own app or CLI, exempt from visibility filtering. | [Visibility](../vault/visibility.md) |
 | page | What a pane shows when no file sits behind it: the graph, a terminal, a chat, the daemon page, export or feedback. | [Getting started](getting-started.md#step-7-use-tabs-and-split-panes) |
 | pane | One region of a tab's split layout; it shows one file or one page under its toolbar. | [Getting started](getting-started.md#step-7-use-tabs-and-split-panes) |

@@ -15,6 +15,11 @@ import {
     parseOpencodeV2PermissionAsk,
     providerListFromV2,
     translateOpencodeV2Event,
+    agentEntriesFromV2,
+    defaultModelFromV2,
+    isLoopbackUrl,
+    modelGroupFor,
+    providerInfosFromV2,
 } from '../../src/chatProviders/opencode/opencodeV2Translate'
 import { translateOpencodeSessionMessages } from '../../src/chatProviders/opencode/opencodeTranslate'
 
@@ -553,4 +558,85 @@ test('a turn model carries the effort as its variant only when the model lists i
         id: 'big-pickle',
     })
     expect(opencodeV2TurnModel('nope', 'high', ['high'])).toBeNull()
+})
+
+describe('agents', () => {
+    // research-agents.md §2, live opencode 2 `GET /api/agent`
+    const live = [
+        {
+            id: 'build',
+            name: 'Build',
+            description: 'The default agent.',
+            mode: 'primary',
+            hidden: false,
+            color: '#fff',
+        },
+        { id: 'plan', name: 'Plan', description: 'Plan mode.', mode: 'primary', hidden: false },
+        { id: 'explore', name: 'Explore', mode: 'subagent', hidden: false },
+        { id: 'general', name: 'General', mode: 'subagent', hidden: false },
+        { id: 'compaction', name: 'compaction', mode: 'primary', hidden: true },
+        { id: 'summary', name: 'summary', mode: 'primary', hidden: true },
+        { id: 'title', name: 'title', mode: 'primary', hidden: true },
+    ]
+
+    test('only visible primaries, in opencode order, lowercased labels', () => {
+        const out = agentEntriesFromV2(live)
+        expect(out.map(a => a.value)).toEqual(['build', 'plan'])
+        expect(out[0]).toEqual({
+            value: 'build',
+            label: 'build',
+            description: 'The default agent.',
+            color: '#fff',
+        })
+        expect('color' in out[1]).toBe(false)
+    })
+
+    test('a mode of all is selectable', () => {
+        expect(
+            agentEntriesFromV2([{ id: 'Mine', name: 'Mine', mode: 'all' }]).map(
+                a => [a.value, a.label],
+            ),
+        ).toEqual([['Mine', 'mine']])
+    })
+})
+
+describe('providers and groups', () => {
+    const infos = providerInfosFromV2([
+        { id: 'lmstudio', name: 'LM Studio', settings: { baseURL: 'http://127.0.0.1:1234/v1' } },
+        { id: 'ollama', name: 'Ollama', options: { baseURL: 'http://localhost:11434/v1' } },
+        { id: 'anthropic', name: 'Anthropic', baseURL: 'https://api.anthropic.com' },
+        { id: 'opencode', name: 'OpenCode Zen' },
+    ])
+
+    test('base urls are read defensively and loopback is flagged', () => {
+        expect(infos.map(i => [i.id, i.baseURL, i.loopback])).toEqual([
+            ['lmstudio', 'http://127.0.0.1:1234/v1', true],
+            ['ollama', 'http://localhost:11434/v1', true],
+            ['anthropic', 'https://api.anthropic.com', false],
+            ['opencode', null, false],
+        ])
+    })
+
+    test('loopback hosts', () => {
+        for (const u of ['http://localhost:1', 'http://127.4.5.6/v1', 'http://[::1]:9/', 'http://0.0.0.0:8'])
+            expect(isLoopbackUrl(u)).toBe(true)
+        for (const u of ['https://api.openai.com/v1', 'http://192.168.1.2:1234', 'nonsense'])
+            expect(isLoopbackUrl(u)).toBe(false)
+    })
+
+    test('model groups: zen, injected names, loopback, cloud, bismuth', () => {
+        const names = { local: 'Local Model' }
+        expect(modelGroupFor('opencode', infos, names)).toEqual({ id: 'opencode', label: 'opencode zen', kind: 'zen' })
+        expect(modelGroupFor('bismuth', infos, names)).toEqual({ id: 'opencode', label: 'opencode zen', kind: 'zen' })
+        expect(modelGroupFor('local', infos, names)).toEqual({ id: 'local', label: 'local model', kind: 'local' })
+        expect(modelGroupFor('lmstudio', infos, names)).toEqual({ id: 'lmstudio', label: 'lm studio', kind: 'local' })
+        expect(modelGroupFor('anthropic', infos, names)).toEqual({ id: 'anthropic', label: 'anthropic', kind: 'cloud' })
+        expect(modelGroupFor('mystery', infos, names)).toEqual({ id: 'mystery', label: 'mystery', kind: 'cloud' })
+    })
+
+    test('default model is provider/model or null', () => {
+        expect(defaultModelFromV2({ providerID: 'lmstudio', id: 'qwen/qwen3.5-9b' })).toBe('lmstudio/qwen/qwen3.5-9b')
+        expect(defaultModelFromV2(null)).toBeNull()
+        expect(defaultModelFromV2({ id: 'x' })).toBeNull()
+    })
 })

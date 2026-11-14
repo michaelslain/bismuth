@@ -268,6 +268,12 @@ export const KEYBINDING_CATALOG = [
         doc: 'In the chat history dialog, ask to delete the chat the arrow keys have reached (a confirmation always follows).',
     },
     {
+        id: 'chat-cycle-agent',
+        label: 'Cycle chat agent',
+        default: 'Shift+Tab',
+        doc: "In the chat composer, switch to the backend's next agent (opencode's build, plan and your own primary agents), wrapping. With a backend that has no agents, Shift+Tab moves focus as usual.",
+    },
+    {
         id: 'undo-delete',
         label: 'Undo file-tree delete',
         default: 'Mod+Z',

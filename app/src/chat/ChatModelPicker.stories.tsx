@@ -15,6 +15,7 @@ import { settings, setSettings } from '../settings'
 import type { ChatPreset } from './chatPresets'
 import type { ChatControlsView } from './ChatControls'
 import type { ChatModelOption } from './chatSession'
+import type { ChatModelGroup } from '../../../core/src/chat'
 import type { ChatProviderChoice } from './chatProvider'
 
 const meta = {
@@ -26,12 +27,18 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const model = (value: string, label = value, free?: boolean) => ({
+const model = (
+    value: string,
+    label = value,
+    free?: boolean,
+    group?: ChatModelGroup,
+) => ({
     value,
     label,
     description: '',
-    effortLevels: [],
+    effortLevels: [] as string[],
     free,
+    group,
 })
 
 const CLAUDE_MODELS = [
@@ -40,12 +47,56 @@ const CLAUDE_MODELS = [
     model('haiku', 'Haiku 4.5'),
 ]
 
+const G_CLOUD: ChatModelGroup = { id: 'anthropic', label: 'anthropic', kind: 'cloud' }
+const G_ZEN: ChatModelGroup = { id: 'opencode', label: 'opencode zen', kind: 'zen' }
+const G_LM: ChatModelGroup = { id: 'lmstudio', label: 'lm studio', kind: 'local' }
+const G_OLLAMA: ChatModelGroup = { id: 'ollama', label: 'ollama', kind: 'local' }
+const G_LOCAL: ChatModelGroup = { id: 'local', label: 'local model', kind: 'local' }
+
 const OPENCODE_MODELS = [
-    model('anthropic/claude-sonnet-4-5'),
-    model('anthropic/claude-opus-4-8'),
-    model('opencode/kimi-k2', 'opencode/kimi-k2', true),
-    model('opencode/big-pickle', 'opencode/big-pickle', true),
-    model('local/qwen3-coder-30b'),
+    model('anthropic/claude-sonnet-4-5', 'Claude Sonnet 4.5', undefined, G_CLOUD),
+    model('anthropic/claude-opus-4-8', 'Claude Opus 4.8', undefined, G_CLOUD),
+    model('opencode/kimi-k2', 'Kimi K2', true, G_ZEN),
+    model('opencode/big-pickle', 'Big Pickle', true, G_ZEN),
+    model('local/qwen3-coder-30b', 'Qwen3 Coder 30B', undefined, G_LOCAL),
+]
+
+/** The user's real opencode list: the rotating entry, 12 Zen, 5 LM Studio, 2 Ollama. */
+const REAL_ZEN = [
+    ['beam-free', 'Beam Free'],
+    ['big-pickle', 'Big Pickle'],
+    ['deepseek-v4.1-flash-free', 'DeepSeek V4.1 Flash Free'],
+    ['flint-40b-free', 'Flint 40B Free'],
+    ['glm-5.3-flash-free', 'GLM-5.3-Flash Free'],
+    ['iceman-free', 'Iceman Free'],
+    ['inkling-2-small-free', 'Inkling 2 Small Free'],
+    ['longcat-2.5-free', 'LongCat 2.5 Free'],
+    ['mimo-v2.6-flash-free', 'MiMo-V2.6-Flash Free'],
+    ['minimax-m3.1-flash-free', 'MiniMax M3.1 Flash Free'],
+    ['nemotron-3.5-lightning-free', 'Nemotron 3.5 Lightning Free'],
+    ['nemotron-3.5-super-vl-free', 'Nemotron 3.5 Super VL Free'],
+]
+const REAL_MODELS: ChatModelOption[] = [
+    model('bismuth/zen-free-rotate', 'Zen Free (rotating)', true, G_ZEN),
+    ...REAL_ZEN.map(([id, label]) =>
+        model(`opencode/${id}`, label, true, G_ZEN),
+    ),
+    model('lmstudio/openai/gpt-oss-20b', 'GPT-OSS 20B', undefined, G_LM),
+    model('lmstudio/qwen/qwen3.5-9b', 'Qwen3.5 9B (local)', undefined, G_LM),
+    model('lmstudio/qwen/qwen3.8-27b', 'Qwen3.8 27B', undefined, G_LM),
+    model(
+        'lmstudio/qwen3-coder-30b-a3b-instruct-mlx',
+        'Qwen3 Coder 30B A3B Instruct',
+        undefined,
+        G_LM,
+    ),
+    model('lmstudio/gpt-oss-20b', 'gpt-oss 20B (local)', undefined, G_LM),
+    model('ollama/gemma4:e2b-it-qat', 'gemma4:e2b-it-qat', undefined, G_OLLAMA),
+    model('ollama/qwen3.5:9b-q4_K_M', 'qwen3.5:9b-q4_K_M', undefined, G_OLLAMA),
+    {
+        ...model('local/qwen3.5-9b', 'Qwen3.5 9B (local)', undefined, G_LOCAL),
+        effortLevels: ['none', 'high'],
+    },
 ]
 
 const EFFORT = [
@@ -57,7 +108,11 @@ const EFFORT = [
 /** The dialog over its scrim. `narrow` clamps the panel to 328px — a 360px viewport's
  *  `max-width: calc(100vw - 32px)` — since a story cannot resize the viewport itself. */
 const hosted =
-    (init: StubChatSessionInit, narrow?: boolean): (() => JSX.Element) =>
+    (
+        init: StubChatSessionInit,
+        narrow?: boolean,
+        onRefresh: () => Promise<void> = async () => {},
+    ): (() => JSX.Element) =>
     () => {
         const session = makeStubChatSession(init)
         return (
@@ -65,7 +120,7 @@ const hosted =
                 <Show when={narrow}>
                     <style>{`[role="dialog"][data-modal-panel] { width: 328px; max-width: 328px; }`}</style>
                 </Show>
-                <ChatModelPicker {...{ session }} onClose={() => {}} />
+                <ChatModelPicker {...{ session, onRefresh }} onClose={() => {}} />
             </>
         )
     }
@@ -131,9 +186,59 @@ export const OpencodeGrouped: Story = {
         const panel = await findPanel(canvasElement)
         const c = within(panel)
         await expect(c.getAllByText('anthropic').length).toBe(2)
-        await expect(c.getByText('kimi-k2')).not.toBeNull()
-        await expect(c.getAllByText('free').length).toBe(2)
+        await expect(c.getByText('kimi k2')).not.toBeNull()
+        // both Zen rows are free: `free` sits once on the heading, no row repeats it
+        await expect(c.getAllByText('free').length).toBe(1)
         await c.findByPlaceholderText('add a provider…')
+    },
+}
+
+let releaseRefresh: () => void = () => {}
+
+/** The user's real setup: LM Studio (current `qwen3.5 9b (local)`), Ollama, then Zen last with
+ *  `free` on its heading. The injected `local/*` row lists `none` and `high`, so the effort row
+ *  reads `off` `high` with nothing lit. `onRefresh` stays pending until the play function releases it. */
+export const OpencodeRealSetup: Story = {
+    render: hosted(
+        {
+            provider: 'opencode',
+            models: REAL_MODELS,
+            displayModel: 'qwen3.5 9b (local)',
+            displayModelValue: 'lmstudio/qwen/qwen3.5-9b',
+            effortOptions: [
+                { value: 'none', label: 'Off' },
+                { value: 'high', label: 'High' },
+            ],
+            effortValue: '',
+        },
+        false,
+        () => new Promise<void>(r => (releaseRefresh = r)),
+    ),
+    play: async ({ canvasElement }) => {
+        const panel = await findPanel(canvasElement)
+        const c = within(panel)
+        await expect(panel.querySelectorAll('[data-model-group-head]').length).toBe(4)
+        await expect(c.getAllByText('lm studio').length).toBeGreaterThan(0)
+        await expect(c.getAllByText('opencode zen').length).toBeGreaterThan(0)
+        await expect(c.getAllByText('free').length).toBe(1)
+        await expect(c.queryByText('zen-free-rotate')).toBeNull()
+        await expect(c.getByText('zen free (rotating)')).not.toBeNull()
+        const marked = [...panel.querySelectorAll('[aria-current]')].map(
+            el => el.textContent?.trim() ?? '',
+        )
+        await expect(marked).toContain('▸qwen3.5 9b (local)')
+        await expect(c.getByText('off')).not.toBeNull()
+        await expect(c.getByText('high')).not.toBeNull()
+        // the dialog refreshes once on open: pending → [refreshing], disabled
+        const pending = await c.findByRole('button', { name: /refreshing/ })
+        await expect((pending as HTMLButtonElement).disabled).toBe(true)
+        releaseRefresh()
+        const idle = await c.findByRole('button', { name: /^\[?\s*refresh\s*\]?$/ })
+        await expect((idle as HTMLButtonElement).disabled).toBe(false)
+        await userEvent.click(idle)
+        await c.findByRole('button', { name: /refreshing/ })
+        releaseRefresh()
+        await c.findByRole('button', { name: /^\[?\s*refresh\s*\]?$/ })
     },
 }
 

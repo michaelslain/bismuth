@@ -12,7 +12,11 @@
 // the effects below have an owner and are torn down on release. The wire contract is
 // core/src/chat.ts; the behaviour here is ChatView's, copied rather than redesigned.
 import type { Accessor } from 'solid-js'
-import type { ChatManifest } from '../../../core/src/chat'
+import type {
+    ChatAgentOption,
+    ChatManifest,
+    ChatModelGroup,
+} from '../../../core/src/chat'
 import type {
     ChatSessionInfo,
     ChatSearchHit,
@@ -98,6 +102,7 @@ import {
     reconcilePermissionMode,
     type PermissionMode,
 } from './chatPermissionMode'
+import { nextAgent, rememberedAgentToPush } from './chatAgents'
 import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from './chatEffort'
 import {
     basename,
@@ -123,10 +128,13 @@ import {
 } from './chatImageIntake'
 import {
     browserStorage,
+    forgetModel,
+    readLastAgent,
     readLastEffort,
     readLastMode,
     readLastModel,
     readProviderChoice,
+    rememberAgent as persistAgent,
     rememberEffort as persistEffort,
     rememberMode as persistMode,
     rememberModel as persistModel,
@@ -141,6 +149,7 @@ export type ChatModelOption = {
     description: string
     effortLevels: string[]
     free?: boolean
+    group?: ChatModelGroup
 }
 
 export type ChatContextUsage = {
@@ -254,6 +263,15 @@ export type ChatSession = {
     /** Set this session's permission mode WITHOUT persisting it as the user's default (quick ask). */
     setPermissionModeLocal: (mode: PermissionMode) => void
     switchModel: (model: string) => void
+    /** The backend's selectable primary agents in its own order (opencode's build, plan, the user's
+     *  own); empty for a backend without the `agents` capability. */
+    agents: Accessor<ChatAgentOption[]>
+    /** The agent the session runs ('' until the backend names one). */
+    agentValue: Accessor<string>
+    /** Switch the session's agent; sends `set_agent` and remembers it for the next chat. */
+    switchAgent: (name: string) => void
+    /** Move to the next agent, wrapping; a no-op under two entries (Shift+Tab). */
+    cycleAgent: () => void
     switchEffort: (level: string) => void
     /** The conversation's private toggle: when on as the conversation ends (tab closed, new chat,
      *  another conversation opened), the agent's record of it is erased and it never reaches memory.
@@ -398,6 +416,9 @@ export function createChatSession(
     }
     // The last model used in THIS chat (per-chat, provider-scoped) — the header's warm-up value and
     // the default a FRESH session is enforced to. A resumed conversation's model is adopted instead.
+    const [agents, setAgents] = createSignal<ChatAgentOption[]>([])
+    const [agentValue, setAgentValue] = createSignal('')
+    const [lastAgent, setLastAgent] = createSignal(readLastAgent(storage))
     const [lastModel, setLastModel] = createSignal(
         readLastModel(storage, provider(), chatId),
     )
@@ -549,6 +570,29 @@ export function createChatSession(
     // Latched false at each new/resumed session: the desired mode/effort/model are pushed on the
     // session's FIRST manifest; later manifests are reconciled instead (BUG #14).
     let modeEnforced = false
+    // The remembered agent is pushed once per session, when both the first manifest and the agent
+    // list have arrived (either can come first).
+    let agentEnforced = false
+    // True while the current binding RESUMES a conversation: the `agents` frame's `current` is that
+    // conversation's own agent and is kept, never replaced by the last-picked one.
+    let agentResumed = false
+    const enforceRememberedAgent = () => {
+        if (agentEnforced || !modeEnforced) return
+        const list = agents()
+        if (!list.length) return
+        agentEnforced = true
+        const want = rememberedAgentToPush({
+            resumed: agentResumed,
+            can: providerCan(provider(), 'agents'),
+            list,
+            want: lastAgent(),
+            current: agentValue(),
+        })
+        if (want) {
+            sendJson({ type: 'set_agent', agent: want })
+            setAgentValue(want)
+        }
+    }
     // A resume requested before the socket was OPEN — flushed on the next onopen.
     let pendingResume: string | null = null
     // True while the current binding RESUMES a conversation: its first manifest's model is adopted,
@@ -596,6 +640,7 @@ export function createChatSession(
                     // capabilities), then resolve the model — enforce a fresh session's persisted
                     // choice, adopt a resumed session's own (Bug #89).
                     modeEnforced = true
+                    enforceRememberedAgent()
                     if (
                         providerCan(provider(), 'permissionModes') &&
                         frame.manifest.permissionMode !== permMode()
@@ -701,6 +746,20 @@ export function createChatSession(
                 break
             case 'models':
                 setModels(frame.models)
+                break
+            case 'agents':
+                setAgents(frame.agents)
+                setAgentValue(frame.current)
+                enforceRememberedAgent()
+                break
+            case 'model-refused':
+                // The backend would not run `model`: show what it kept and stop sending the id.
+                forgetModel(storage, provider(), chatId, frame.model)
+                setLastModel(frame.current)
+                {
+                    const m = manifest()
+                    if (m) setManifest({ ...m, model: frame.current })
+                }
                 break
             case 'auth':
                 setAuthProviders(frame.providers)
@@ -1326,6 +1385,18 @@ export function createChatSession(
         if (m) setManifest({ ...m, model })
     }
 
+    const switchAgent = (name: string) => {
+        if (!name) return
+        sendJson({ type: 'set_agent', agent: name })
+        setAgentValue(name)
+        setLastAgent(name)
+        persistAgent(storage, name)
+    }
+    const cycleAgent = () => {
+        const next = nextAgent(agents(), agentValue())
+        if (next) switchAgent(next)
+    }
+
     const switchEffort = (level: string) => {
         rememberEffort(level)
         sendJson({ type: 'set_effort', effort: level })
@@ -1388,6 +1459,10 @@ export function createChatSession(
         clearTimeout(reconnectTimer)
         reconnectAttempt = 0
         modeEnforced = false
+        agentEnforced = false
+        agentResumed = false
+        setAgents([])
+        setAgentValue('')
         pendingResume = null
         pendingPermissions = []
         pendingQuestionResponses = []
@@ -1514,6 +1589,7 @@ export function createChatSession(
         reconnectOn(activeChatId())
         pendingResume = sessionId // set AFTER reconnectOn — the new socket's onopen flushes it
         resumedSession = true
+        agentResumed = true
         const gen = bindGen
         let frames: ChatFrame[] = []
         try {
@@ -1602,6 +1678,8 @@ export function createChatSession(
         const opts = effortOptions()
         const cur = effort()
         if (cur && opts.some(o => o.value === cur)) return cur
+        // opencode has no documented default level: nothing is lit until the user picks one.
+        if (provider() === 'opencode') return ''
         if (opts.some(o => o.value === DEFAULT_EFFORT_DISPLAY))
             return DEFAULT_EFFORT_DISPLAY
         return opts[0]?.value ?? ''
@@ -1742,6 +1820,10 @@ export function createChatSession(
         setPermissionMode,
         setPermissionModeLocal,
         switchModel,
+        agents,
+        agentValue,
+        switchAgent,
+        cycleAgent,
         switchEffort,
         isPrivate,
         setPrivate,

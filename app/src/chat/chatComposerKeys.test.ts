@@ -281,3 +281,36 @@ describe('classifyComposerKey', () => {
         })
     })
 })
+
+describe('chat-cycle-agent', () => {
+    const shiftTab = { key: 'Tab', shiftKey: true }
+
+    it('Shift+Tab cycles the agent only when the backend can', () => {
+        expect(
+            classifyComposerKey(shiftTab, { ...idle, canCycleAgent: true }),
+        ).toBe('cycle-agent')
+        expect(classifyComposerKey(shiftTab, idle)).toBe('pass')
+        expect(
+            classifyComposerKey(shiftTab, { ...idle, canCycleAgent: false }),
+        ).toBe('pass')
+    })
+
+    it('passes with the slash popover open', () => {
+        expect(
+            classifyComposerKey(shiftTab, {
+                slashOpen: true,
+                streaming: false,
+                canCycleAgent: true,
+            }),
+        ).toBe('pass')
+    })
+
+    it('a plain Tab never cycles', () => {
+        expect(
+            classifyComposerKey(
+                { key: 'Tab', shiftKey: false },
+                { ...idle, canCycleAgent: true },
+            ),
+        ).toBe('pass')
+    })
+})

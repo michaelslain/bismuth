@@ -37,6 +37,7 @@ The controls row sits under the composer as one line of quiet text. At narrow wi
 |---------|--------------|
 | Model word | A lowercase word for what is answering, such as `opus (1m)`, or `default model`. Click it to open the model dialog |
 | Permission mode | Default, Plan, Accept edits or Bypass. Shown only for backends with a mode picker |
+| Agent word | opencode only: the primary agent the conversation runs under, such as `build`, `plan` or one of your own, in the slot the permission mode takes. Click it to pick one from opencode's list, or press `Shift+Tab` in the composer |
 | `history` | Opens past conversations. Shown only for backends that can list sessions |
 | Eye-slash icon | Toggles this conversation private: it is erased when it ends. Bracketed while on. See [private conversations](#how-do-i-keep-a-conversation-private) |
 | `new chat` | Starts a fresh conversation in this tab |
@@ -79,7 +80,8 @@ Closing the conversation is what erases it. A force-quit while a conversation is
 The composer is a small markdown editor: live preview, `[[wikilink]]`, `#tag` and `:emoji:` autocomplete, and bold and italic toggles, the same as a note. What you send is the raw markdown source.
 
 - Send and stop: `Enter` (or `Mod+Enter`) sends, `Shift+Enter` adds a newline, and `Escape` stops a streaming reply. `Up` and `Down` at the draft's first or last line recall earlier messages, like a shell.
-  The keys are rebindable as `chat-send`, `chat-stop`, `chat-history-prev` and `chat-history-next` in [keybindings](../settings/keybindings.md).
+  `Shift+Tab` (`chat-cycle-agent`) switches an opencode chat to its next agent, wrapping from the last back to the first; with one agent, or a backend without agents, it moves focus as usual. The last agent you picked is sent to the next chat.
+  The keys are rebindable as `chat-send`, `chat-stop`, `chat-history-prev`, `chat-history-next` and `chat-cycle-agent` in [keybindings](../settings/keybindings.md).
 - Slash commands. Type `/` for the commands and skills the backend reports. Each row shows the command, its arguments greyed beside it (a skill's `argument-hint`, such as `[deep] [K] <goal>`), and its description, cut off at the edge of the box. Typing filters by name: names that start with what you typed come first, then names with a later part that does (`/brain` finds `/superpowers:brainstorming`), then names that contain it.
   `Enter` or `Tab` fills the highlighted one, and its arguments stay greyed after the caret until you type the first one; they are never part of the message and never add a row to the box, ending in an ellipsis when the pane is too narrow. The agent runs the command as it would in its own TUI. `/mcp` is answered by Bismuth itself and lists connected, failed and needs-auth MCP servers.
   `/rename <name>` titles the tab (empty reverts to the automatic title), and `/color <swatch|hex|clear>` tints the pane (the tab's right-click Color menu does the same): a light wash of that colour over the pane, its cards and its borders, with text left in the theme's colours. Both commands stay in the app and never reach the model.

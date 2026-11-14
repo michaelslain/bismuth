@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { filterAvailable, type AvailableProvider } from './opencodeProviderFilter'
+import {
+    filterAvailable,
+    POPULAR_PROVIDER_IDS,
+    type AvailableProvider,
+} from './opencodeProviderFilter'
 
 const p = (name: string): AvailableProvider => ({
     id: name,
@@ -10,15 +14,34 @@ const p = (name: string): AvailableProvider => ({
 describe('filterAvailable', () => {
     test('sorts by name and matches case-insensitively on a substring', () => {
         const all = [p('xai'), p('Groq'), p('openai'), p('azure')]
-        expect(filterAvailable(all, '').shown.map(x => x.name)).toEqual([
+        expect(filterAvailable(all, 'a').shown.map(x => x.name)).toEqual([
             'azure',
-            'Groq',
             'openai',
             'xai',
         ])
         expect(filterAvailable(all, ' AI ').shown.map(x => x.name)).toEqual([
             'openai',
             'xai',
+        ])
+    })
+    test('an empty query leads with the popular providers in their order, then the rest by name', () => {
+        const all = ['zed', 'xai', 'azure', 'deepseek', 'anthropic', 'openai', 'mistral'].map(p)
+        expect(filterAvailable(all, '').shown.map(x => x.id)).toEqual([
+            'anthropic',
+            'openai',
+            'xai',
+            'deepseek',
+            'azure',
+            'mistral',
+            'zed',
+        ])
+        expect(POPULAR_PROVIDER_IDS).toHaveLength(8)
+        // a typed query is a plain name search again
+        expect(filterAvailable(all, 'e').shown.map(x => x.id)).toEqual([
+            'azure',
+            'deepseek',
+            'openai',
+            'zed',
         ])
     })
     test('caps at 8 and reports how many were left out', () => {

@@ -158,15 +158,27 @@
     margin: 0 var(--sp-2);
     color: var(--faint);
 }
+/* An actions cluster that opens on an icon (no `[history]`) gets no `//` before it: a separator
+   introduces a worded readout group, and nothing worded follows. Spacing stays. */
+.row > .actions[data-bare-lead]::before {
+    content: none;
+}
+.row > .actions[data-bare-lead] {
+    margin-left: var(--sp-4);
+}
 .row .mode-select {
     background: transparent;
     border-color: transparent;
     color: inherit;
     width: auto;
     min-width: 0;
-    padding: 0;
+    /* The trigger keeps its 1px bottom rule (transparent here, a rule on hover), so its content box
+       centres half a pixel above the row's centre line and the word sat above the `//` beside it.
+       A top pad of the same pixel puts the content box's centre back on the button's. */
+    padding: var(--optical-nudge) 0 0;
     gap: 0;
     font-size: var(--fs-ui);
+    line-height: inherit;
     text-transform: lowercase;
 }
 .row .mode-select:hover:not(:focus) {

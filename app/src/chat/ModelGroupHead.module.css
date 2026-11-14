@@ -1,0 +1,12 @@
+/* ModelGroupHead.module.css — ModelGroupHead.tsx is the ONLY importer. The same gutters as a PickRow
+   (--sp-5 either side) so the detail lands in the rows' detail column; the gap after `//` is one
+   space of mono ink. */
+.head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 1ch;
+    padding: var(--sp-3) var(--sp-5) var(--sp-1);
+}
+.label { min-width: 0; overflow-wrap: anywhere; }
+.detail { padding-left: var(--sp-3); text-align: right; white-space: nowrap; }

@@ -8,11 +8,17 @@
    order. The height is FIXED (never content-sized) so switching connector does not resize the
    dialog; the whole dialog stays under 80vh (this + the header row) and only `.detail` scrolls. */
 .body.body {
-    flex-direction: row;
     gap: 0;
     padding: 0;
     overflow: hidden;
     height: min(440px, calc(80vh - var(--row-h)));
+    /* The dialog's own width (not the viewport's) decides when the columns stack, below. */
+    container-type: inline-size;
+}
+.cols {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
 }
 
 /* ── left: presets (ChatPresetList, its own stylesheet), then connectors ── */
@@ -37,7 +43,11 @@
     flex: 1;
     min-width: 0;
     overflow-y: auto;
-    padding: var(--sp-3) 0;
+    padding: var(--sp-3) 0 0;
+    /* Leaves the dialog frame's right and bottom hairlines (drawn behind the body) uncovered by the
+       sticky effort row's opaque fill. */
+    border-right: 1px solid transparent;
+    border-bottom: 1px solid transparent;
 }
 .empty {
     padding: var(--sp-3) var(--sp-5);
@@ -46,8 +56,11 @@
     display: flex;
     flex-direction: column;
 }
-.group-head {
-    padding: var(--sp-3) var(--sp-5) var(--sp-2);
+.models-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: var(--sp-1) var(--sp-5);
 }
 .effort {
     display: flex;
@@ -57,8 +70,36 @@
     padding: var(--sp-3) var(--sp-5);
     margin-top: var(--sp-2);
     border-top: var(--rule-soft);
+    /* Pinned to the bottom of the scrolling column so it stays in view over a long model list; the
+       panel's own two background layers (Modal.module.css) keep rows from showing through. */
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background-color: var(--bg);
+    background-image: linear-gradient(var(--pop-bg-strong), var(--pop-bg-strong));
 }
 .manager {
     margin-top: var(--sp-2);
     border-top: var(--rule-soft);
+}
+
+/* A narrow dialog stacks: the connectors become a strip above the detail column, so the server url
+   field keeps the full width instead of the 30% the side-by-side layout leaves it. The strip is
+   never its own hidden scroller (a normal install lists presets plus every connector, taller than
+   any fixed cap): the whole stack scrolls as one column, and the strip shows in full at its top. */
+@container (max-width: 480px) {
+    .cols {
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .connectors {
+        flex: 0 0 auto;
+        overflow-y: visible;
+        border-right: none;
+        border-bottom: var(--rule-soft);
+    }
+    .detail {
+        flex: 0 0 auto;
+        overflow-y: visible;
+    }
 }

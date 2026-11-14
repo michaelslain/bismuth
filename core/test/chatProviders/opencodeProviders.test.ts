@@ -1,6 +1,7 @@
 // The provider-connect functions against a hand-written fake opencode client (no binary), plus the
 // four /opencode/* routes' owner gate and missing-binary answer.
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import type { OpencodeClient } from '@opencode-ai/sdk'
 import {
     listProviders,
@@ -10,6 +11,7 @@ import {
     setProviderKey,
 } from '../../src/chatProviders/opencode/opencodeProviders'
 import { createServer } from '../../src/server'
+import { readSettings } from '../../src/settings'
 import { makeSampleVault } from '../helpers'
 
 type Fake = {
@@ -297,6 +299,10 @@ describe('oauth', () => {
 describe('routes', () => {
     const TOKEN = 'opencode-routes-test-token'
     const prev = process.env.BISMUTH_OWNER_TOKEN
+    const refreshed: string[] = []
+    beforeEach(() => {
+        refreshed.length = 0
+    })
     afterEach(() => {
         if (prev === undefined) delete process.env.BISMUTH_OWNER_TOKEN
         else process.env.BISMUTH_OWNER_TOKEN = prev
@@ -307,6 +313,8 @@ describe('routes', () => {
         ['POST', '/opencode/auth', { id: 'openai', key: 'sk-x' }],
         ['POST', '/opencode/oauth/authorize', { id: 'anthropic', method: 0 }],
         ['POST', '/opencode/oauth/callback', { id: 'anthropic', method: 0 }],
+        ['POST', '/opencode/refresh', {}],
+        ['POST', '/opencode/local-servers', { remove: 'local-x' }],
     ]
 
     async function withServer(
@@ -327,6 +335,9 @@ describe('routes', () => {
             memory,
             port: 0,
             opencodeClient: opencodeClient ?? (async () => null),
+            refreshOpencodeFrames: async v => {
+                refreshed.push(v ?? '')
+            },
         })
         try {
             await run((method, path, body, owner) =>
@@ -526,5 +537,246 @@ describe('opencode 2 (integrations)', () => {
         ).catch(e => e)
         expect(err).toBeInstanceOf(OpencodeBadRequest)
         expect(err.message).toBe('denied by user')
+    })
+})
+
+describe('local servers', () => {
+    const TOKEN = 'opencode-local-test-token'
+    const prev = process.env.BISMUTH_OWNER_TOKEN
+    afterEach(() => {
+        if (prev === undefined) delete process.env.BISMUTH_OWNER_TOKEN
+        else process.env.BISMUTH_OWNER_TOKEN = prev
+    })
+
+    const provider = (id: string, name: string, baseURL: string) => ({
+        id,
+        name,
+        settings: { baseURL },
+    })
+    const model = (providerID: string, id: string) => ({ providerID, id })
+    /** A fake opencode 2 client: lmstudio (5 models) and ollama (2) on loopback, one cloud integration. */
+    function fakeV2(extra: unknown[] = []) {
+        return {
+            version: 2 as const,
+            url: 'http://fake',
+            integrations: async () => [
+                { id: 'openai', name: 'OpenAI', methods: [{ type: 'key' }], connections: [] },
+                { id: 'lmstudio', name: 'LM Studio', methods: [{ type: 'key' }], connections: [] },
+            ],
+            providers: async () => [
+                provider('lmstudio', 'LM Studio', 'http://127.0.0.1:1234/v1'),
+                provider('ollama', 'Ollama', 'http://localhost:11434/v1'),
+                provider('openai', 'OpenAI', 'https://api.openai.com/v1'),
+                ...extra,
+            ],
+            models: async () => [
+                ...Array.from({ length: 5 }, (_, i) => model('lmstudio', `m${i}`)),
+                model('ollama', 'a'),
+                model('ollama', 'b'),
+                model('openai', 'gpt'),
+            ],
+        } as never
+    }
+
+    /** A fake LM Studio answering `/api/v0/models` with `n` models. */
+    function fakeLmStudio(n: number) {
+        return Bun.serve({
+            port: 0,
+            fetch: req =>
+                new URL(req.url).pathname === '/api/v0/models'
+                    ? Response.json({
+                          data: Array.from({ length: n }, (_, i) => ({
+                              id: `model-${i}`,
+                              state: 'loaded',
+                              loaded_context_length: 8192,
+                          })),
+                      })
+                    : new Response('no', { status: 404 }),
+        })
+    }
+
+    async function withServer(
+        client: unknown,
+        run: (
+            call: (path: string, body: unknown, owner?: boolean) => Promise<Response>,
+            vault: string,
+            refreshed: string[],
+        ) => Promise<void>,
+    ) {
+        const refreshed: string[] = []
+        process.env.BISMUTH_OWNER_TOKEN = TOKEN
+        const { vault, memory } = await makeSampleVault()
+        const server = createServer({
+            vault,
+            memory,
+            port: 0,
+            opencodeClient: async () =>
+                (typeof client === 'function' ? client() : client) as OpencodeClient,
+            refreshOpencodeFrames: async v => {
+                refreshed.push(v ?? '')
+            },
+        })
+        try {
+            await run(
+                (path, body, owner = true) =>
+                    fetch(`http://localhost:${server.port}${path}`, {
+                        method: 'POST',
+                        headers: {
+                            'content-type': 'application/json',
+                            ...(owner ? { 'X-Bismuth-Token': TOKEN } : {}),
+                        },
+                        body: JSON.stringify(body),
+                    }),
+                vault,
+                refreshed,
+            )
+        } finally {
+            server.stop(true)
+        }
+    }
+
+    const savedOf = async (vault: string) =>
+        (
+            (await readSettings(vault))?.data.chat as
+                | {
+                      opencodeServers?: { id: string; name: string; url: string; apiKey: string }[]
+                  }
+                | undefined
+        )?.opencodeServers ?? []
+
+    test('listProviders: loopback providers with model counts, none of them in available', async () => {
+        const list = await listProviders(fakeV2())
+        expect(list.local).toEqual([
+            { id: 'lmstudio', name: 'LM Studio', url: '127.0.0.1:1234', models: 5, source: 'opencode' },
+            { id: 'ollama', name: 'Ollama', url: 'localhost:11434', models: 2, source: 'opencode' },
+        ])
+        expect(list.available.map(p => p.id)).toEqual(['openai'])
+        expect(list.saved).toBeUndefined()
+    })
+
+    test('a saved server is a local row and listed without its key', async () => {
+        const lm = fakeLmStudio(3)
+        try {
+            await withServer(fakeV2(), async (call, vault, refreshed) => {
+                const res = await call('/opencode/local-servers', {
+                    add: { url: `http://127.0.0.1:${lm.port}/v1`, apiKey: 'sk-secret' },
+                })
+                const body = (await res.json()) as {
+                    outcome: string
+                    server: { id: string; name: string; models: number; source: string }
+                    list: { local: unknown[]; saved: { id: string }[] }
+                }
+                expect(body.outcome).toBe('saved')
+                expect(body.server).toMatchObject({
+                    id: 'local-lm-studio',
+                    name: 'LM Studio',
+                    models: 3,
+                    source: 'saved',
+                })
+                expect(body.list.saved.map(s => s.id)).toEqual(['local-lm-studio'])
+                expect(JSON.stringify(body)).not.toContain('sk-secret')
+                expect(await savedOf(vault)).toEqual([
+                    {
+                        id: 'local-lm-studio',
+                        name: 'LM Studio',
+                        url: `http://127.0.0.1:${lm.port}`,
+                        apiKey: 'sk-secret',
+                    },
+                ])
+                // the same address again: already saved
+                const again = await call('/opencode/local-servers', {
+                    add: { url: `http://localhost:${lm.port}` },
+                })
+                expect(await again.json()).toEqual({ outcome: 'existing', name: 'LM Studio' })
+                expect(refreshed).toEqual([vault])
+                // remove drops it
+                const rm = await call('/opencode/local-servers', { remove: 'local-lm-studio' })
+                const list = (await rm.json()) as { saved?: unknown[] }
+                expect(list.saved).toBeUndefined()
+                expect(await savedOf(vault)).toEqual([])
+                // sparse: the emptied list drops its key (and the empty `chat` map)
+                expect(await Bun.file(join(vault, '.settings')).text()).not.toContain('opencodeServers')
+                expect(refreshed).toEqual([vault, vault])
+            })
+        } finally {
+            lm.stop(true)
+        }
+    })
+
+    test('saving lists through the live server, not the one the write replaced', async () => {
+        const lm = fakeLmStudio(3)
+        try {
+            let vaultDir = ''
+            let dead = false
+            const dying = fakeV2() as unknown as {
+                integrations: () => Promise<unknown>
+            }
+            const liveFake = fakeV2()
+            const alive = dying.integrations
+            // The shared server answers until the settings name a saved server, then dies once
+            // (the detached refresh replaced it); later acquisitions get the live one.
+            dying.integrations = async () => {
+                const saved = vaultDir ? await savedOf(vaultDir) : []
+                if (saved.length > 0) {
+                    dead = true
+                    throw new Error('the replaced server is gone')
+                }
+                return alive()
+            }
+            await withServer(
+                () => (dead ? liveFake : dying),
+                async (call, vault) => {
+                    vaultDir = vault
+                    const res = await call('/opencode/local-servers', {
+                        add: { url: `http://127.0.0.1:${lm.port}/v1` },
+                    })
+                    const body = (await res.json()) as { outcome: string; server: { models: number } }
+                    expect(body.outcome).toBe('saved')
+                    expect(body.server.models).toBe(3)
+                    expect(dead).toBe(true)
+                },
+            )
+        } finally {
+            lm.stop(true)
+        }
+    })
+
+    test('an address nothing answers is outcome nothing and saves nothing', async () => {
+        const dead = Bun.serve({ port: 0, fetch: () => new Response('x') })
+        const port = dead.port
+        dead.stop(true)
+        await withServer(fakeV2(), async (call, vault) => {
+            const res = await call('/opencode/local-servers', { add: { url: `http://127.0.0.1:${port}` } })
+            expect(await res.json()).toEqual({ outcome: 'nothing', url: `http://127.0.0.1:${port}` })
+            expect(await savedOf(vault)).toEqual([])
+        })
+    })
+
+    test('an address opencode already reaches is outcome existing', async () => {
+        const lm = fakeLmStudio(1)
+        try {
+            const client = fakeV2([provider('mine', 'Mine', `http://127.0.0.1:${lm.port}/v1`)])
+            await withServer(client, async (call, vault) => {
+                const res = await call('/opencode/local-servers', {
+                    add: { url: `http://127.0.0.1:${lm.port}` },
+                })
+                expect(await res.json()).toEqual({ outcome: 'existing', name: 'Mine' })
+                expect(await savedOf(vault)).toEqual([])
+            })
+        } finally {
+            lm.stop(true)
+        }
+    })
+
+    test('refresh answers ok; a non-owner is refused', async () => {
+        await withServer(fakeV2(), async (call, vault, refreshed) => {
+            expect(await (await call('/opencode/refresh', {})).json()).toEqual({ ok: true })
+            expect(refreshed).toEqual([vault])
+            const res = await call('/opencode/refresh', {}, false)
+            expect(res.status).toBe(403)
+            const res2 = await call('/opencode/local-servers', { remove: 'x' }, false)
+            expect(res2.status).toBe(403)
+            expect(refreshed).toEqual([vault])
+        })
     })
 })

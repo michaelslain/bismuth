@@ -36,6 +36,7 @@ export type ComposerKeyAction =
     | 'slash-nav' // Arrow/Escape while the slash-command popover is open → move/close the menu
     | 'slash-select' // Enter or Tab while the slash popover is open → fill the highlighted command
     | 'stop' // chat-stop while a turn streams → interrupt it (TUI parity)
+    | 'cycle-agent' // chat-cycle-agent when the backend has 2+ agents → next agent (wraps)
     | 'send' // chat-send → send or stage the message
     | 'history-up' // chat-history-prev at the composer's top boundary → recall an older sent message
     | 'history-down' // chat-history-next at the composer's bottom boundary → move toward the newest / draft
@@ -66,6 +67,9 @@ export interface ComposerKeyState {
     /** Same idea for chat-history-next: the caret is on the composer's last visual line. Irrelevant
      *  unless the key matches chat-history-next. */
     atBottom?: boolean
+    /** The backend has selectable agents and at least two of them: chat-cycle-agent then means
+     *  "next agent"; otherwise the key falls through (Shift+Tab moves focus as before). */
+    canCycleAgent?: boolean
 }
 
 /** The resolved `.settings.keybindings` combos this module matches against. Every field is
@@ -78,6 +82,7 @@ export interface ComposerKeyCombos {
     'chat-stop'?: string
     'chat-history-prev'?: string
     'chat-history-next'?: string
+    'chat-cycle-agent'?: string
 }
 
 /** The catalog defaults (core/src/keybindings.ts). Used when a caller doesn't (yet) pass live
@@ -88,6 +93,7 @@ export const DEFAULT_COMPOSER_KEY_COMBOS: ComposerKeyCombos = {
     'chat-stop': 'Escape',
     'chat-history-prev': 'ArrowUp',
     'chat-history-next': 'ArrowDown',
+    'chat-cycle-agent': 'Shift+Tab',
 }
 
 // matchesKeybinding reads a real KeyboardEvent's modifier flags; ComposerKeyEvent only requires
@@ -128,6 +134,14 @@ export function classifyComposerKey(
     // chat-stop interrupts an in-flight turn (only when the slash popover isn't open — handled above).
     if (matchesKeybinding(evt, combos['chat-stop']) && state.streaming)
         return 'stop'
+    // chat-cycle-agent (opencode's build/plan) — only when there is another agent to move to.
+    // The open slash popover owns Tab, shifted or not.
+    if (
+        matchesKeybinding(evt, combos['chat-cycle-agent']) &&
+        state.canCycleAgent &&
+        !state.slashOpen
+    )
+        return 'cycle-agent'
     // chat-send sends/stages. Whatever key ISN'T chat-send (the default Shift+Enter, or anything
     // else once rebound) is left to CodeMirror as a plain newline — see the header comment for why
     // chat-newline has no branch of its own here.

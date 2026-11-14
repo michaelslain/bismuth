@@ -31,6 +31,9 @@ export const LAST_MODE_KEY = 'bismuth.chat.lastPermissionMode'
 // which leaves the model/CLI's own default untouched.
 export const LAST_EFFORT_KEY = 'bismuth.chat.lastEffort'
 
+// The last opencode agent (build, plan, a user's own) picked in ANY chat; "" = never chosen.
+export const LAST_AGENT_KEY = 'bismuth.chat.lastAgent'
+
 export function readLastMode(storage: StorageLike | null): string {
     try {
         return sanitizePermissionMode(storage?.getItem(LAST_MODE_KEY) ?? null)
@@ -84,6 +87,42 @@ export function rememberModel(
         if (opts?.global !== false) storage?.setItem(keys.global, model)
     } catch {
         /* storage unavailable — the in-memory signal still updates the header */
+    }
+}
+
+/** Drop `model` from the per-chat and global model keys when they hold exactly it, so a model the
+ *  backend refused is not sent again by the next fresh chat. Other values stay. */
+export function forgetModel(
+    storage: StorageLike | null,
+    provider: ChatProviderChoice,
+    chatId: string,
+    model: string,
+): void {
+    if (!model) return
+    try {
+        if (!storage?.removeItem) return
+        const keys = modelStorageKeys(provider, chatId)
+        for (const key of [keys.perChat, keys.global])
+            if (storage.getItem(key) === model) storage.removeItem(key)
+    } catch {
+        /* storage unavailable — nothing to forget */
+    }
+}
+
+export function readLastAgent(storage: StorageLike | null): string {
+    try {
+        return storage?.getItem(LAST_AGENT_KEY) ?? ''
+    } catch {
+        return ''
+    }
+}
+
+export function rememberAgent(storage: StorageLike | null, name: string): void {
+    if (!name) return
+    try {
+        storage?.setItem(LAST_AGENT_KEY, name)
+    } catch {
+        /* storage unavailable — the in-memory signal still drives the header */
     }
 }
 

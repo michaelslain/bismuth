@@ -200,6 +200,10 @@ export function setEffort(chatId: string, effort: string): void {
     fallbackBackend(chatId).setEffort?.(chatId, effort)
 }
 
+export function setAgent(chatId: string, agent: string): void {
+    fallbackBackend(chatId).setAgent?.(chatId, agent)
+}
+
 export function setPrivate(chatId: string, on: boolean): void {
     fallbackBackend(chatId).setPrivate(chatId, on)
 }

@@ -21,7 +21,12 @@
 //     `permission.asked`/`permission.replied`. Verified LIVE against opencode 1.18.4 to differ from
 //     @opencode-ai/sdk@1.18.9's generated types.gen.d.ts in real ways — see the "opencode SERVER
 //     mode" section below and opencodeServer.ts's top-of-file note for exactly what was checked.
-import type { ChatFrame, ChatImage } from '../../chat'
+import type {
+    ChatAgentOption,
+    ChatFrame,
+    ChatImage,
+    ChatModelGroup,
+} from '../../chat'
 import { stripEditorContext } from '../../chat'
 import {
     newSubagentRoster,
@@ -409,6 +414,7 @@ export interface OpencodeModelEntry {
     description: string
     effortLevels: string[]
     free?: boolean
+    group?: ChatModelGroup
 }
 
 /** A model id is `provider/model` — one slash-separated token, no spaces (anything else is
@@ -785,6 +791,7 @@ export function withZenFreeRotate(
             description: `Rotates each turn among opencode Zen's ${free.length} currently-free models`,
             effortLevels: [],
             free: true,
+            group: { id: 'opencode', label: 'opencode zen', kind: 'zen' },
         },
         ...models,
     ]
@@ -1085,4 +1092,26 @@ export function buildOpencodePromptParts(
         })
     }
     return parts
+}
+
+/** opencode 1's `GET /agent` (`Agent[]`) → the agents a chat can pick: everything but subagents,
+ *  with the name as both value and label. Pure. */
+export function agentEntriesFromV1(raw: unknown[]): ChatAgentOption[] {
+    const out: ChatAgentOption[] = []
+    for (const r of raw) {
+        const a = (r && typeof r === 'object' ? r : {}) as Record<
+            string,
+            unknown
+        >
+        const name = typeof a.name === 'string' ? a.name : ''
+        if (!name || a.mode === 'subagent') continue
+        out.push({
+            value: name,
+            label: name,
+            description:
+                typeof a.description === 'string' ? a.description : '',
+            ...(typeof a.color === 'string' ? { color: a.color } : {}),
+        })
+    }
+    return out
 }

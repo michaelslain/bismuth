@@ -80,6 +80,19 @@ export function sampleOpencodeProviders(): OpencodeProviderList {
     }
 }
 
+/** The local rows a story seeds beside `sampleOpencodeProviders()`: the user's two servers opencode
+ *  finds itself plus one saved server (the removable one). */
+export function sampleOpencodeLocal(): Pick<OpencodeProviderList, 'local' | 'saved'> {
+    return {
+        local: [
+            { id: 'lmstudio', name: 'lm studio', url: '127.0.0.1:1234', models: 5, source: 'opencode' },
+            { id: 'ollama', name: 'ollama', url: '127.0.0.1:11434', models: 2, source: 'opencode' },
+            { id: 'local-lm-studio', name: 'lm studio', url: '192.168.1.20:1234', models: 3, source: 'saved' },
+        ],
+        saved: [{ id: 'local-lm-studio', name: 'lm studio', url: 'http://192.168.1.20:1234' }],
+    }
+}
+
 export interface FakeTransportSeed {
     /** GET /chat/sessions, GET /chat/session-messages, POST /chat/search — the chat history panel's
      *  past conversations, each with the frames a resume replays into the transcript. Unseeded: no
@@ -842,6 +855,31 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             }
             if (pathname.startsWith('/opencode/')) {
                 opencodeGuard()
+                if (pathname === '/opencode/refresh')
+                    return { ok: true } as unknown as T
+                if (pathname === '/opencode/local-servers') {
+                    const lb = body as { add?: { url: string }; remove?: string }
+                    if (lb.remove) {
+                        opencode.local = (opencode.local ?? []).filter(l => l.id !== lb.remove)
+                        opencode.saved = (opencode.saved ?? []).filter(l => l.id !== lb.remove)
+                        return structuredClone(opencode) as unknown as T
+                    }
+                    const url = (lb.add?.url ?? '').trim()
+                    // `nothing…` answers nothing; `existing…` is an address opencode already reaches.
+                    if (/nothing/.test(url)) return { outcome: 'nothing', url } as unknown as T
+                    if (/existing/.test(url))
+                        return { outcome: 'existing', name: 'lm studio' } as unknown as T
+                    const server = {
+                        id: `local-server-${(opencode.saved ?? []).length + 1}`,
+                        name: 'ollama',
+                        url: url.replace(/^https?:\/\//, ''),
+                        models: 4,
+                        source: 'saved' as const,
+                    }
+                    opencode.local = [...(opencode.local ?? []), server]
+                    opencode.saved = [...(opencode.saved ?? []), { id: server.id, name: server.name, url }]
+                    return { outcome: 'saved', server, list: structuredClone(opencode) } as unknown as T
+                }
                 const b = body as {
                     id: string
                     key?: string

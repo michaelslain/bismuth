@@ -22,6 +22,7 @@ export interface EffortOption {
 /** Human labels for the SDK's discrete effort levels (EffortLevel = low|medium|high|xhigh|max).
  *  A level not listed here falls back to a capitalized form, so a future level still renders. */
 export const EFFORT_LABELS: Record<string, string> = {
+    none: 'Off',
     low: 'Low',
     medium: 'Medium',
     high: 'High',

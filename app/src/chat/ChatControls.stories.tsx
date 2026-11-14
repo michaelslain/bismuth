@@ -122,6 +122,79 @@ export const Row: Story = {
     },
 }
 
+/** opencode: the agent word takes the permission mode's slot (`qwen3.5 9b (local) // build // …`),
+ *  in the model word's tone. Picking `plan` in its Select reports the switch. */
+export const OpencodeAgent: Story = {
+    render: () => {
+        const session = makeStubChatSession({
+            provider: 'opencode',
+            manifest: { ...MANIFEST, model: 'lmstudio/qwen/qwen3.5-9b' },
+            models: [
+                {
+                    value: 'lmstudio/qwen/qwen3.5-9b',
+                    label: 'Qwen3.5 9B (local)',
+                    description: '',
+                    effortLevels: [],
+                },
+            ],
+            displayModel: 'lmstudio/qwen/qwen3.5-9b',
+            displayModelValue: 'lmstudio/qwen/qwen3.5-9b',
+            agents: [
+                { value: 'build', label: 'build', description: 'default' },
+                { value: 'plan', label: 'plan', description: 'read only' },
+            ],
+            agentValue: 'build',
+        })
+        return (
+            <ChatControls session={session} />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const slot = within(canvasElement).getByTestId('chat-agent')
+        // The tooltip holder is the word alone, not the slot that also carries the leading `//`.
+        expect(slot.getAttribute('data-tooltip-keybinding')).toBeNull()
+        expect(
+            slot
+                .querySelector('[data-tooltip-keybinding]')
+                ?.getAttribute('data-tooltip-keybinding'),
+        ).toBe('chat-cycle-agent')
+        // Permission mode has no place on opencode's row.
+        expect(
+            canvasElement.querySelector('[data-testid="chat-perm-mode"]'),
+        ).toBeNull()
+        const trigger = slot.querySelector<HTMLElement>(
+            '[data-select-trigger]',
+        )!
+        // The trigger's text carries the (CSS-hidden) caret glyph after the word.
+        const word = () => trigger.textContent?.replace('▾', '').trim()
+        expect(word()).toBe('build')
+        // The same tone as the model word, never the armed tint.
+        const modelWord = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="chat-model"] button, [data-testid="chat-model"] span',
+        )!
+        expect(getComputedStyle(trigger).color).toBe(
+            getComputedStyle(modelWord).color,
+        )
+        trigger.click()
+        const plan = await waitFor(() => {
+            const row = [
+                ...document.querySelectorAll<HTMLElement>(
+                    '.bismuth-popover-label',
+                ),
+            ].find(l => l.textContent?.trim() === 'plan')
+            expect(row).toBeDefined()
+            return row!
+        })
+        plan.click()
+        await waitFor(() => expect(word()).toBe('plan'))
+        // End at rest: no focused control, no open popover.
+        await waitFor(() =>
+            expect(document.querySelector('.bismuth-popover-label')).toBeNull(),
+        )
+        ;(document.activeElement as HTMLElement | null)?.blur()
+    },
+}
+
 /** The private toggle, off: a bare eye-slash between `history` and `new chat`. */
 export const PrivateOff: Story = {
     render: () => (
@@ -382,6 +455,46 @@ export const Narrow320: Story = overflowProof(320)
  *  icon; it must still fit on one line at the column's widths. */
 export const Narrow360OpenInChat: Story = overflowProof(360, true)
 export const Narrow260OpenInChat: Story = overflowProof(260, true)
+
+/** opencode at the column's floor (260px): the agent word, `[history]` and `[new chat]` share the
+ *  row; it must stay one line with the agent word still laid out. */
+export const OpencodeNarrow260: Story = {
+    render: () => (
+        <div style={{ width: '260px' }}>
+            <ChatControls
+                session={makeStubChatSession({
+                    provider: 'opencode',
+                    manifest: { ...MANIFEST, model: 'lmstudio/qwen/qwen3.5-9b' },
+                    models: [
+                        {
+                            value: 'lmstudio/qwen/qwen3.5-9b',
+                            label: 'Qwen3.5 9B (local)',
+                            description: '',
+                            effortLevels: [],
+                        },
+                    ],
+                    displayModel: 'lmstudio/qwen/qwen3.5-9b',
+                    displayModelValue: 'lmstudio/qwen/qwen3.5-9b',
+                    agents: [
+                        { value: 'build', label: 'build', description: 'default' },
+                        { value: 'plan', label: 'plan', description: 'read only' },
+                    ],
+                    agentValue: 'build',
+                })}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const row = canvasElement.querySelector<HTMLElement>(`.${styles.row}`)!
+        expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+        const agent = within(canvasElement).getByTestId('chat-agent')
+        expect(agent.getClientRects().length).toBeGreaterThan(0)
+        expect(
+            within(canvasElement).getByTestId('chat-new-icon').getClientRects().length +
+                within(canvasElement).getByTestId('chat-new').getClientRects().length,
+        ).toBeGreaterThan(0)
+    },
+}
 
 /** `[↗]` open in chat — the daemon page's hand-off (only a host that passes `onOpenInChat` gets
  *  it). Three rows at one width: nothing said yet (absent, so the resting row is unchanged), a

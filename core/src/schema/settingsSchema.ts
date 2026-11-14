@@ -780,6 +780,34 @@ export const SETTINGS_SCHEMA: Schema = {
             default: [],
             doc: "MCP server names the chat's `N mcp servers down` warning ignores. The warning panel's `never show again` adds every server that is down at the time; a server not listed here still raises the warning when it goes down. Remove a name to be warned about it again.",
         },
+        opencodeServers: {
+            type: {
+                kind: 'list',
+                item: {
+                    kind: 'object',
+                    fields: {
+                        id: {
+                            type: 'string',
+                            doc: 'The provider id Bismuth gives the server (`local-<name>`), minted on connect.',
+                        },
+                        name: {
+                            type: 'string',
+                            doc: 'What the server is called in the chat (LM Studio, Ollama…), taken from the route that answered.',
+                        },
+                        url: {
+                            type: 'string',
+                            doc: 'The server address, for example http://192.168.1.20:1234.',
+                        },
+                        apiKey: {
+                            type: 'string',
+                            doc: 'Bearer token for the server. Empty for the many local servers that ignore one.',
+                        },
+                    },
+                },
+            },
+            default: [],
+            doc: "Local model servers saved from the chat's provider manager, added to opencode chats as providers (never written to opencode's own config). `connect` in the manager adds one, the row's `[x]` removes it.",
+        },
     }),
     // Open models through the EXISTING chat connectors (core/src/agentBackends/localModel.ts): any
     // OpenAI/Anthropic-compatible local server — LM Studio, Ollama, llama.cpp, vLLM. Applied at spawn

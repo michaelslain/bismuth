@@ -880,6 +880,35 @@ export async function setSettingInFile(
 }
 
 /**
+ * Remove the key at `path` from settings.yaml, and any parent map it empties (an emptied map is its
+ * default, so the sparse file drops it). A missing key or file is a no-op.
+ */
+export async function unsetSettingInFile(
+    vault: string,
+    path: string[],
+): Promise<void> {
+    if (!path.length) return
+    await withSettingsMutex(vault, async () => {
+        if (!(await Bun.file(join(vault, SETTINGS_FILE)).exists())) return
+        const raw = await readNote(vault, SETTINGS_FILE)
+        const doc = parseDocument(raw)
+        if (doc.errors.length || !doc.hasIn(path)) return
+        doc.deleteIn(path)
+        for (let n = path.length - 1; n > 0; n--) {
+            const parent = doc.getIn(path.slice(0, n))
+            if (isMap(parent) && !parent.items.length && !hasComment(parent))
+                doc.deleteIn(path.slice(0, n))
+            else break
+        }
+        await writeNote(
+            vault,
+            SETTINGS_FILE,
+            doc.toString({ flowCollectionPadding: false }),
+        )
+    })
+}
+
+/**
  * Merge the settings.yaml file over DEFAULTS via a per-key typeof check, so a
  * corrupt/partial file degrades to defaults. The `properties` registry is
  * delivered separately (GET /schema) and excluded here. The pure merge lives in

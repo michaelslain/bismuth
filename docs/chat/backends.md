@@ -61,6 +61,7 @@ The chat controls each ask for what they need: `permissionModes` for the permiss
 The flags are separate where the behaviors differ:
 
 - `permissionPrompts` means the backend can raise a live approval request. `permissionModes` means a mode picker is drivable. An ACP backend can prompt but has no mode to switch, so the picker stays hidden.
+- `agents` means the backend has selectable primary agents (opencode's `build` and `plan`). The chat shows an agent word and Shift+Tab cycles it; the backend implements `setAgent` exactly when the flag is set, and `catalogParity.test.ts` pins the pair.
 - `sessionPicker` and `resume` are separate. opencode resumes a conversation per tab but exposes no cross-session list, so it gets resume without the picker.
 - `midTurnMessages` decides where a message sent during a reply waits. Claude Code reads it into the running turn, so the client sends it at once; every other backend runs one turn per message, so the client holds it until the turn's `done`.
 - `computerUse` gates no control. `core/src/chat.ts` reads it only to pass `--chrome` when it spawns a Claude Code session.

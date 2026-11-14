@@ -88,6 +88,22 @@ import type { ChatSubagent } from './chatSubagentTypes'
 
 // --- The wire contract (server -> client). ChatView.tsx imports ChatFrame from here. ----------
 
+/** The model dialog group a model sits in (opencode): `id` keys it, `label` heads it, `kind`
+ *  orders it (local, then cloud, then zen). */
+export type ChatModelGroup = {
+    id: string
+    label: string
+    kind: 'local' | 'cloud' | 'zen'
+}
+
+/** One selectable primary agent of a backend (opencode's build, plan, or the user's own). */
+export type ChatAgentOption = {
+    value: string
+    label: string
+    description: string
+    color?: string
+}
+
 /** The self-updating per-turn manifest, sourced entirely from the SDK `system`/`init` event —
  *  NEVER hardcode any of these lists; they reflect the live CLI (commands, tools, model, …). */
 export interface ChatManifest {
@@ -173,8 +189,15 @@ export type ChatFrame =
               description: string
               effortLevels: string[]
               free?: boolean
+              group?: ChatModelGroup
           }[]
       }
+    /** The backend's selectable primary agents in its own order, and the one the session runs.
+     *  Only a backend with the `agents` capability emits it; an empty list hides the control. */
+    | { type: 'agents'; agents: ChatAgentOption[]; current: string }
+    /** A `set_model` the backend refused (a model it does not list, or a cloud id while the local
+     *  model pins the chat): `current` is the model the session keeps ('' = the backend default). */
+    | { type: 'model-refused'; model: string; current: string }
     /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
      *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
     | { type: 'title'; title: string }
