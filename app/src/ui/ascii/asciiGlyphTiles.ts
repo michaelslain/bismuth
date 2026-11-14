@@ -337,12 +337,30 @@ function install(retried = false): void {
     }
 
     const root = document.documentElement.style
+    const needsTiles = typeof CSS !== 'undefined' && !CSS.supports('-webkit-mask-box-image-source', 'none')
     for (const k of EDGE_KEYS) {
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         spriteGlyphs(k).forEach((glyph, i) => {
             if (glyph) draw(glyph, i % 3, Math.floor(i / 3))
         })
         root.setProperty(spriteVar(k), `url(${canvas.toDataURL('image/png')})`)
+        // Engines without `-webkit-mask-box-image` (Firefox) build the nine-slice from separate mask
+        // layers instead (AsciiCellEdges.module.css), so they need each glyph as its own tile: the
+        // `+` corner, the `-` and `=` runs and the `|` side, cut from the sprites that hold them.
+        if (needsTiles && (k === '1111' || k === '2020')) {
+            const cut = (name: string, x: number, y: number, w: number, h: number) => {
+                const t = document.createElement('canvas')
+                t.width = w
+                t.height = h
+                t.getContext('2d')?.putImageData(ctx.getImageData(x, y, w, h), 0, 0)
+                root.setProperty(`--ascii-tile-${name}`, `url(${t.toDataURL('image/png')})`)
+            }
+            if (k === '1111') {
+                cut('plus', 0, 0, cx, cy)
+                cut('dash', cx, 0, pitch, cy)
+                cut('pipe', 0, cy, cx, pitch)
+            } else cut('heavy', cx, 0, pitch, cy)
+        }
     }
     root.setProperty('--ascii-tile-w', `${g.cssW}px`)
     root.setProperty('--ascii-corner-w', `${g.cssCornerW}px`)

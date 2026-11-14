@@ -113,3 +113,65 @@
 .edges[data-edges='top right bottom left'][data-heavy='top'] { -webkit-mask-box-image-source: var(--ascii-edges-2111, linear-gradient(transparent, transparent)); }
 .edges[data-edges='top right bottom'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2120, linear-gradient(transparent, transparent)); }
 .edges[data-edges='top right bottom left'][data-heavy='top bottom'] { -webkit-mask-box-image-source: var(--ascii-edges-2121, linear-gradient(transparent, transparent)); }
+
+/* Engines without `-webkit-mask-box-image` (Firefox and its forks, where Storybook is reviewed): the
+   nine-slice mask above never applies, and the ink fill alone would paint the whole overhang as a
+   solid block. There the same nine-slice is two masked pseudo-boxes over the same ink, from glyph
+   tiles asciiGlyphTiles.ts cuts out of the sprite (`--ascii-tile-plus|dash|heavy|pipe`). The overlay
+   itself paints nothing and carries no mask (a mask would clip its pseudo-boxes too). `::before`
+   masks the four corners plus the top and bottom runs across its whole width: a run tile repeated
+   into a corner lays its dash on the `+` crossbar it shares a baseline with, so it adds no ink
+   there (a per-layer `mask-clip` to keep runs between the corners drops the corner layers in
+   Firefox). `::after` masks the sides between the corner rows. Every run repeats `round`. The ink stays a fill, so `--ascii-edge` (a
+   table's --table-edge) reaches these engines too. */
+@supports not (-webkit-mask-box-image-source: none) {
+    .edges,
+    .firm {
+        --none: linear-gradient(transparent, transparent);
+        --ink: var(--ascii-edge, var(--border-soft));
+        --tw: var(--ascii-corner-w, 1ch);
+        --th: var(--ascii-tile-h, var(--cell-h));
+        --p: var(--ascii-pitch, 2ch);
+        --tl: var(--none);
+        --tr: var(--none);
+        --bl: var(--none);
+        --br: var(--none);
+        --t: var(--none);
+        --b: var(--none);
+        --l: var(--none);
+        --r: var(--none);
+        background-color: transparent;
+    }
+    .firm { --ink: var(--ascii-edge-firm, var(--border)); }
+    .edges::before,
+    .edges::after {
+        content: '';
+        position: absolute;
+        box-sizing: border-box;
+        background-color: var(--ink);
+    }
+    .edges::before {
+        inset: 0;
+        mask-image: var(--tl), var(--tr), var(--bl), var(--br), var(--t), var(--b);
+        mask-size: var(--tw) var(--th), var(--tw) var(--th), var(--tw) var(--th), var(--tw) var(--th), var(--p) var(--th), var(--p) var(--th);
+        mask-repeat: no-repeat, no-repeat, no-repeat, no-repeat, round no-repeat, round no-repeat;
+        mask-position: left top, right top, left bottom, right bottom, left top, left bottom;
+    }
+    .edges::after {
+        inset: var(--th) 0;
+        mask-image: var(--l), var(--r);
+        mask-size: var(--tw) var(--p);
+        mask-repeat: no-repeat round;
+        mask-position: left top, right top;
+    }
+    .edges[data-edges~='top'] { --t: var(--ascii-tile-dash, var(--none)); }
+    .edges[data-edges~='bottom'] { --b: var(--ascii-tile-dash, var(--none)); }
+    .edges[data-heavy~='top'] { --t: var(--ascii-tile-heavy, var(--none)); }
+    .edges[data-heavy~='bottom'] { --b: var(--ascii-tile-heavy, var(--none)); }
+    .edges[data-edges~='left'] { --l: var(--ascii-tile-pipe, var(--none)); }
+    .edges[data-edges~='right'] { --r: var(--ascii-tile-pipe, var(--none)); }
+    .edges[data-edges~='top'][data-edges~='left'] { --tl: var(--ascii-tile-plus, var(--none)); }
+    .edges[data-edges~='top'][data-edges~='right'] { --tr: var(--ascii-tile-plus, var(--none)); }
+    .edges[data-edges~='bottom'][data-edges~='left'] { --bl: var(--ascii-tile-plus, var(--none)); }
+    .edges[data-edges~='bottom'][data-edges~='right'] { --br: var(--ascii-tile-plus, var(--none)); }
+}
