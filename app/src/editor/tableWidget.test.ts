@@ -41,6 +41,7 @@ import {
     reshapeVisual,
     hasActiveCellEdit,
     suppressRightClickWordSelect,
+    cellLinkHref,
     tableCellDropTargetAtPoint,
     TABLE_FIND_MATCH_CLASS,
     TABLE_FIND_ACTIVE_CLASS,
@@ -50,6 +51,7 @@ import { findExtension } from './findPanel'
 import { history, undo, redo } from '@codemirror/commands'
 import { externalReconcileSpec } from './reconcileDispatch'
 import { setGalleryOpen } from '../ui/gallery/galleryState'
+import { installExternalLinkGuard } from '../externalLinks'
 
 const DOM_GLOBALS = [
     'document',
@@ -1461,6 +1463,48 @@ describe('#71 merge/unmerge participates in undo history', () => {
         undo(view)
         expect(cell(1, 0).colSpan).toBe(2)
         expect(cell(1, 1).style.display).toBe('none')
+        view.destroy()
+    })
+})
+
+// ── a web link in a cell opens instead of entering edit mode ─────────────────────────────────
+// The display face renders `[text](url)`, a bare URL and `<url>` as `<a href>`. A mousedown on one
+// must not enter edit mode (that swaps the link out before its click lands); the click then reaches
+// the app's external-link guard, which opens it in the browser.
+describe('web links in a table cell', () => {
+    const linkIn = (view: EditorView, text: string): HTMLAnchorElement =>
+        [...view.dom.querySelectorAll<HTMLAnchorElement>('[data-cell] a')].find(a =>
+            (a.textContent ?? '').includes(text),
+        )!
+    const cellOf = (a: Element): HTMLElement => a.closest<HTMLElement>('[data-cell]')!
+
+    test('cellLinkHref reads a web link and skips a wikilink chip', () => {
+        const view = mount(
+            '| A | B |\n| - | - |\n| [site](https://example.com) | [[Other]] |\n| https://example.org/p | x |',
+        )
+        const site = linkIn(view, 'site')
+        const bare = linkIn(view, 'example.org')
+        const wiki = linkIn(view, 'Other')
+        expect(cellLinkHref(site, cellOf(site))).toBe('https://example.com')
+        expect(cellLinkHref(bare, cellOf(bare))).toBe('https://example.org/p')
+        expect(cellLinkHref(wiki, cellOf(wiki))).toBe(null)
+        view.destroy()
+    })
+
+    test('a click on a web link opens it once through the app guard, never entering edit mode', () => {
+        const opened: string[] = []
+        installExternalLinkGuard(url => opened.push(url))
+        const view = mount('| A |\n| - |\n| [site](https://example.com) |')
+        const a = linkIn(view, 'site')
+        const md = new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true })
+        a.dispatchEvent(md)
+        expect(md.defaultPrevented).toBe(true)
+        expect(cellOf(a).dataset.editing).not.toBe('1')
+        expect(a.isConnected).toBe(true) // still there for its click
+        const click = new MouseEvent('click', { button: 0, bubbles: true, cancelable: true })
+        a.dispatchEvent(click)
+        expect(click.defaultPrevented).toBe(true) // the app window never navigates
+        expect(opened).toEqual(['https://example.com/'])
         view.destroy()
     })
 })

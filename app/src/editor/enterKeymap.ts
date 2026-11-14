@@ -139,6 +139,10 @@ export const continueMarkupOutsideMath: Command = view => {
 // item; that branch has no option, so the blank `\n<indent>` chunk is cut out of the insert
 // here. Every continuation insert is `\n` + markers, and markers never hold a line break, so
 // an insert with a second line break is exactly that blank-line branch.
+//
+// The command also replaces the spaces and tabs before the caret along with its insert, so a
+// space typed at the end of an item vanished on Enter. A continuation whose replaced span is
+// only that whitespace starts its insert at the span's end instead, keeping what was typed.
 const continueMarkup = insertNewlineContinueMarkupCommand({
     nonTightLists: false,
 })
@@ -149,19 +153,28 @@ export const continueMarkupTight: StateCommand = ({ state, dispatch }) =>
         dispatch: tr => {
             const br = state.lineBreak
             const changes: ChangeSpec[] = []
-            let cut = false
+            let rewritten = false
             tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
                 let text = inserted.sliceString(0, inserted.length, br)
+                let from = fromA
                 const first = text.indexOf(br)
                 const second =
                     first < 0 ? -1 : text.indexOf(br, first + br.length)
                 if (second >= 0) {
                     text = text.slice(0, first) + text.slice(second)
-                    cut = true
+                    rewritten = true
                 }
-                changes.push({ from: fromA, to: toA, insert: text })
+                if (
+                    text.startsWith(br) &&
+                    toA > fromA &&
+                    /^[ \t]+$/.test(state.sliceDoc(fromA, toA))
+                ) {
+                    from = toA
+                    rewritten = true
+                }
+                changes.push({ from, to: toA, insert: text })
             })
-            if (!cut) return dispatch(tr)
+            if (!rewritten) return dispatch(tr)
             const next = state.changes(changes)
             dispatch(
                 state.update({

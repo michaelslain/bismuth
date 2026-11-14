@@ -87,6 +87,7 @@ import {
 // the gallery's deferred applyInsert has a live editor to write into + refocus (#49).
 import { isGalleryOpen } from '../ui/gallery/galleryState'
 import { openNote, revealFolder } from '../ui/openNote'
+import { isExternalHref } from '../externalLinks'
 import { emojiQuickAction, type QuickActionSpec } from './emojiQuickAction'
 import { blockHeightKey, estimateBlockHeight } from './blockHeights'
 // The nested in-cell CodeMirror editor (#15/#49) is imported DYNAMICALLY (see loadCellEditor below):
@@ -736,6 +737,19 @@ export function insertEmbedsInTableCell(
     return true
 }
 
+/** The external destination of a web link under `target` inside `cell`'s display face, or null.
+ *  Wikilink chips carry no external `href` and open through `openCellWikilink`. */
+export function cellLinkHref(
+    target: EventTarget | null,
+    cell: HTMLElement,
+): string | null {
+    const a = (target as HTMLElement | null)?.closest?.('a[href]')
+    if (!a || !cell.contains(a)) return null
+    const href = a.getAttribute('href') ?? ''
+    const origin = cell.ownerDocument.defaultView?.location.origin ?? ''
+    return isExternalHref(href, origin) ? href : null
+}
+
 /** Open a wikilink clicked inside a rendered table cell (#33). The cell is a contenteditable
  *  inside an atomic block widget whose mousedown stops propagation, so CM's own wikilink click
  *  handler never fires — we resolve + dispatch the SAME `bismuth-open` event it does. Note
@@ -1201,6 +1215,14 @@ export class TableWidget extends WidgetType {
                                 link.dataset.wikilink ??
                                 (link.dataset.href ?? '').replace(/\.md$/, '')
                             openCellWikilink(view, raw)
+                            return
+                        }
+                        // A web link (`[text](url)`, a bare URL, `<url>`) is left to its own click,
+                        // which the app's external-link guard (externalLinks.ts) opens in the
+                        // browser. Entering edit mode here would swap the link out from under it.
+                        if (cellLinkHref(me.target, cell)) {
+                            e.preventDefault()
+                            e.stopPropagation()
                             return
                         }
                     }

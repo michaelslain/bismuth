@@ -321,6 +321,29 @@ describe('continueMarkupOutsideMath keeps bullets tight', () => {
     test('a blockquote still continues', () => {
         expect(enter('> a')).toBe('> a\n> |')
     })
+
+    // The stock command deletes the whitespace before the caret as it continues the list, so a
+    // space typed at the end of an item vanished on Enter.
+    test('a space typed at the end of a bullet stays when Enter continues the list', () => {
+        expect(enter('- a ')).toBe('- a \n- |')
+        expect(enter('- a  ')).toBe('- a  \n- |')
+    })
+
+    test('a space typed at the end of a task, a numbered item or a quote stays too', () => {
+        expect(enter('- [ ] a ')).toBe('- [ ] a \n- [ ] |')
+        expect(enter('1. a ')).toBe('1. a \n2. |')
+        expect(enter('> a ')).toBe('> a \n> |')
+    })
+
+    test('a space before the caret mid-item stays and the rest rides down', () => {
+        const doc = '- a b'
+        const [out, caret] = run(doc, 4, continueMarkupOutsideMath)
+        expect(out.slice(0, caret) + '|' + out.slice(caret)).toBe('- a \n- |b')
+    })
+
+    test('a loose list keeps the typed space and still adds no blank line', () => {
+        expect(enter('- a\n\n- b ')).toBe('- a\n\n- b \n- |')
+    })
 })
 
 // markdown()'s own keymap binds the stock Enter at the same Prec.high as enterKeymap and sits
