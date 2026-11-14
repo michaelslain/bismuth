@@ -1,5 +1,5 @@
 /* EmptyPane.module.css — scoped chrome for EmptyPane.tsx (shown when a pane has no content yet: a
-   centered "new terminal" icon above a faint italic hint). Moved out of the global App.css (2026-08
+   centered row of icon buttons — open file, chat, terminal — above a faint italic hint). Moved out of the global App.css (2026-08
    CSS modularization, Task 11 — the "empty" tail family). Single owner.
 
    Class names here are HASHED at build time: reachable only through the imported `styles` object,
@@ -19,4 +19,5 @@
    any more. */
 
 .empty-pane { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-5); user-select: none; }
-.empty-pane .empty-hint { font-style: italic; font-size: var(--fs-body); color: var(--text-muted); max-width: 220px; padding: 0 var(--sp-6); text-align: center; text-wrap: balance; }
+.empty-pane .empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2) var(--sp-4); padding: 0 var(--sp-6); }
+.empty-pane .empty-hint { max-width: 220px; padding: 0 var(--sp-6); text-align: center; text-wrap: balance; }

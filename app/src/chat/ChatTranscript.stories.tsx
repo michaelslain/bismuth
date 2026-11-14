@@ -21,6 +21,8 @@ import {
     type TurnItem,
 } from './chatTranscriptLogic'
 import EmptyState from '../ui/EmptyState'
+import TextButton from '../ui/TextButton'
+import Text from '../ui/Text'
 import { foldArrows, noteProseReady } from '../ui/_noteProseReady'
 import {
     COMMAND_OUTPUT_ITEMS,
@@ -805,5 +807,47 @@ export const BottomKeptOnReturn: Story = {
         await expect(
             list.scrollHeight - list.scrollTop - list.clientHeight,
         ).toBeLessThan(2)
+    },
+}
+
+/** A pane whose chat gives way to a split while the transcript is still restoring its scroll — what
+ *  closing a chat tab does when the tab that becomes active is split. The transcript's chat id reads
+ *  through the pane, as in the app (PaneLeaf → PaneContent → ChatView), and a split has no content,
+ *  so a teardown that reads it throws mid-update: the chat stays on screen and the pane never
+ *  switches. Click `[ show split ]` within a second of the story loading to try it by hand. */
+export const UnmountWhileRestoring: Story = {
+    render: () => {
+        type Node = { kind: 'leaf'; content: string } | { kind: 'split' }
+        const [node, setNode] = createSignal<Node>({
+            kind: 'leaf',
+            content: '::chat:story-unmount',
+        })
+        const content = () => (node() as { content: string }).content
+        return (
+            <div style={{ width: '760px', height: '520px', display: 'flex', 'flex-direction': 'column' }}>
+                <TextButton onClick={() => setNode({ kind: 'split' })}>show split</TextButton>
+                <Show
+                    when={node().kind === 'leaf'}
+                    fallback={<Text data-testid="split-pane">the split tab is showing</Text>}
+                >
+                    <div data-testid="chat-pane" style={{ flex: '1', display: 'flex', 'min-height': '0' }}>
+                        <ChatTranscript
+                            items={CONVERSATION_ITEMS}
+                            persona="bismuth"
+                            awaitingReply={false}
+                            turnError={null}
+                            chatId={content().slice('::chat:'.length)}
+                            {...noop}
+                        />
+                    </div>
+                </Show>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(canvas.getByRole('button', { name: 'show split' }))
+        await expect(await canvas.findByTestId('split-pane')).toBeTruthy()
+        await expect(canvas.queryByTestId('chat-pane')).toBeNull()
     },
 }

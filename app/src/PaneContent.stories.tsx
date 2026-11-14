@@ -48,7 +48,7 @@ const noNames = () => []
 const baseProps = {
     onSaved: noop,
     onOpen: noop,
-    onNewTerminal: noop,
+    onEmptyPick: noop,
     noteNames: noNames,
     memoryNames: noNames,
     tagNames: noNames,

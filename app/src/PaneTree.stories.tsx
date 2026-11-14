@@ -66,7 +66,7 @@ const baseProps = {
     onStartPaneDrag: noop,
     onSaved: noop,
     onOpen: noop,
-    onNewTerminal: noop,
+    onEmptyPick: noop,
     noteNames: noopArr,
     memoryNames: noopArr,
     tagNames: noopArr,

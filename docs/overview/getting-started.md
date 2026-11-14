@@ -87,6 +87,8 @@ Every open item lives in a tab, and each tab holds one or more panes. A pane sho
 
 Opening anything from a split tab never replaces one of its panes. A note, a new chat, a terminal, the graph, the daemon page or the settings file opens in a tab of its own, and one already open in a pane or tab is focused there instead.
 
+An empty pane is the other way in. A fresh split shows three icon buttons, open file, chat and terminal (hover one for its name): each fills that pane, and open file opens the search with the picked file landing in the pane. Escape leaves the pane empty.
+
 A new tab is the one exception. While the focused tab is a new tab (one pane showing the graph, labelled `New tab`, and not pinned), whatever you open from it takes that tab over instead of opening beside it, and `Mod+[` (Back) returns to the graph. Something already open elsewhere is still focused there.
 
 Drag a sidebar row onto a note to insert a link to it, or onto a pane's edge to split ([draggables](draggables.md) lists every drop). `Alt+S` toggles the sidebar and `Alt+Shift+S` toggles the tab rail. Every shortcut is rebindable; the full list is in [keybindings](../settings/keybindings.md).

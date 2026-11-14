@@ -176,17 +176,24 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
         let stillSince = start
         let lastHeight = -1
         let frame = 0
-        const stop = () => {
-            if (!restoring) return
+        const teardown = () => {
+            if (!restoring) return false
             restoring = false
             cancelAnimationFrame(frame)
             for (const ev of INPUT_EVENTS) list.removeEventListener(ev, stop)
-            onListScroll()
+            return true
+        }
+        const stop = () => {
+            if (teardown()) onListScroll()
         }
         for (const ev of INPUT_EVENTS)
             list.addEventListener(ev, stop, { passive: true })
         endRestore = stop
-        onCleanup(stop)
+        // Unmounting only tears down; it never saves the spot. A cleanup runs while the pane's props
+        // already describe whatever replaced this chat (a closed tab's pane now reads the new active
+        // tab, a split with no content), so reading `props.chatId` here threw mid-update and froze
+        // the tab switch with the chat left on screen. The spot is unchanged while restoring anyway.
+        onCleanup(teardown)
         const tick = (now: number) => {
             if (!restoring) return
             if (list.clientHeight > 0) {

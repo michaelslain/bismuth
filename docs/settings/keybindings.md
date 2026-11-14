@@ -75,7 +75,7 @@ Hovering an icon button whose click does the same thing as a keybinding shows th
 The hint reads your current `keybindings:` value each time it opens, so a rebound shortcut shows its new combo, and an unbound one (`""`) shows the label alone.
 
 Buttons that carry a hint include the sidebar and tab-rail toolbar buttons and edge chevrons, the PDF bar's draw toggle, the chat composer's send and stop, and undo and redo in the ink toolbar of a note or PDF.
-A button whose action only resembles a shortcut's shows no hint. The empty pane's new-terminal button is one example: it fills its own pane, while `terminal` acts on the focused pane.
+A button whose action only resembles a shortcut's shows no hint. The empty pane's open file, chat and terminal icon buttons are examples: each fills its own pane, while `quick-switcher`, `new-chat` and `terminal` open elsewhere.
 
 ## Silent failures
 

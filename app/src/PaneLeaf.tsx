@@ -13,6 +13,7 @@ import { Show, type Accessor } from 'solid-js'
 import styles from './PaneLeaf.module.css'
 import type { PaneNode, Leaf } from './panes'
 import { PaneContent } from './PaneContent'
+import type { EmptyPaneAction } from './emptyPaneActions'
 import { PaneHeader } from './PaneHeader'
 import { createPaneChrome, PaneChromeContext } from './ui/paneChrome'
 import { PaneDropZone } from './PaneDropZone'
@@ -38,7 +39,8 @@ export type PaneTreeProps = {
     onStartPaneDrag: (e: PointerEvent, leafId: string, label: string) => void
     onSaved: () => void
     onOpen: (path: string) => void
-    onNewTerminal: (leafId: string) => void
+    /** An empty pane's action was picked: fill `leafId` with it (App.tsx fillEmptyLeaf). */
+    onEmptyPick: (leafId: string, action: EmptyPaneAction) => void
     noteNames: () => NoteCandidate[]
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
@@ -144,7 +146,7 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
                         path={props.node.content}
                         onSaved={props.onSaved}
                         onOpen={props.onOpen}
-                        onNewTerminal={() => props.onNewTerminal(props.node.id)}
+                        onEmptyPick={action => props.onEmptyPick(props.node.id, action)}
                         noteNames={props.noteNames}
                         memoryNames={props.memoryNames}
                         tagNames={props.tagNames}

@@ -173,6 +173,7 @@ import {
     equalize,
     focusNeighbor,
     setContent,
+    fillLeaf,
     setRatio,
     leaves,
     leafCount,
@@ -200,6 +201,7 @@ import {
     tabBarIcon,
 } from './panes'
 import { PaneTree } from './PaneTree'
+import type { EmptyPaneAction } from './emptyPaneActions'
 import { WindowControls } from './shell/WindowControls'
 import { TopStrip } from './shell/TopStrip'
 import { trackFullscreen } from './windowFullscreen'
@@ -1185,20 +1187,49 @@ export default function App() {
     }
     const openSettings = () => openTool(SETTINGS_FILE)
     const openTerminal = () => openTool(TERMINAL_PREFIX + crypto.randomUUID())
-    // Open a terminal in a SPECIFIC pane (the EmptyPane "new terminal" button). Unlike
-    // openTerminal, which loads into the focused pane, this targets `leafId` directly:
-    // the button stops mousedown propagation (so it doesn't focus its pane first), so
-    // routing through the focused pane would open the terminal in the wrong (previously
-    // focused) pane. Set the content on this leaf and focus it.
-    const openTerminalInLeaf = (leafId: string) => {
-        const content = TERMINAL_PREFIX + crypto.randomUUID()
-        updateActiveTab(t => ({
-            ...t,
-            root: setContent(t.root, leafId, content),
-            focusId: leafId,
-        }))
+    // An empty pane's picked action (EmptyPane) fills THAT pane, never the focused one or a new
+    // tab: its buttons stop mousedown propagation (so the pane is not focused first), so routing
+    // through the focused pane would land in the wrong (previously focused) pane. `file` opens the
+    // Cmd+O switcher with this pane as its target (switcherTarget, consumed by openFromSwitcher).
+    const [switcherTarget, setSwitcherTarget] = createSignal<{
+        tabId: string
+        leafId: string
+    } | null>(null)
+    const fillPane = (tabId: string, leafId: string, content: string) => {
+        const next = fillLeaf(tabs(), tabId, leafId, content)
+        if (!next) return false
+        batch(() => {
+            setTabs(next)
+            setActiveTabId(tabId)
+        })
         recordNav(leafId, content)
+        return true
     }
+    const fillEmptyLeaf = (leafId: string, action: EmptyPaneAction) => {
+        const tabId = activeTabId()
+        if (!tabId) return
+        if (action === 'file') {
+            setSwitcherTarget({ tabId, leafId })
+            openSwitcher()
+            return
+        }
+        const prefix = action === 'chat' ? CHAT_PREFIX : TERMINAL_PREFIX
+        fillPane(tabId, leafId, prefix + crypto.randomUUID())
+    }
+    // The switcher's pick: into the empty pane that opened it, else (no target, or that pane closed
+    // meanwhile) the ordinary open.
+    const openFromSwitcher = (path: string) => {
+        const target = switcherTarget()
+        setSwitcherTarget(null)
+        if (target && fillPane(target.tabId, target.leafId, resolveCompanionTarget(path)))
+            return
+        openFile(path)
+    }
+    // A switcher closed without a pick (Escape, a click away) drops its target, so the next open
+    // from anywhere else behaves as usual.
+    createEffect(() => {
+        if (!switcherOpen()) setSwitcherTarget(null)
+    })
     // "Search" (sidebar icon / palette command / native menu) opens the SAME Cmd+O switcher
     // takeover — there is no separate ::search tab anymore (#8: "the search tab and the cmd+o
     // should be the same thing. all of it should be how cmd+o works.").
@@ -3379,7 +3410,7 @@ export default function App() {
                         <Show when={switcherOpen()}>
                             <SwitcherBar
                                 onClose={closeSwitcher}
-                                openFile={openFile}
+                                openFile={openFromSwitcher}
                                 onResultsChange={setSwitcherResultPaths}
                             />
                         </Show>
@@ -3453,7 +3484,7 @@ export default function App() {
                                 // a save itself needs no client-side graph poke.
                                 onSaved={() => {}}
                                 onOpen={openFile}
-                                onNewTerminal={openTerminalInLeaf}
+                                onEmptyPick={fillEmptyLeaf}
                                 noteNames={noteCandidates}
                                 memoryNames={memoryCandidates}
                                 tagNames={tagCandidates}

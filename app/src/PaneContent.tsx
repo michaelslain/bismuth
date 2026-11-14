@@ -32,7 +32,7 @@ const ChatView = lazy(() =>
     import('./chat/ChatView').then(m => ({ default: m.ChatView })),
 )
 
-import { EmptyPane } from './EmptyPane'
+import { EmptyPane, type EmptyPaneAction } from './EmptyPane'
 import PaneSuspense from './PaneSuspense'
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() =>
@@ -60,7 +60,8 @@ export function PaneContent(props: {
     path: string
     onSaved: () => void
     onOpen: (path: string) => void
-    onNewTerminal: () => void
+    /** An empty pane's action was picked (EmptyPane): fill this pane with it. */
+    onEmptyPick: (action: EmptyPaneAction) => void
     noteNames: () => NoteCandidate[]
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
@@ -196,7 +197,7 @@ export function PaneContent(props: {
           Tasks page was removed) falls back to an empty pane rather than trying
           to load it as a note. */}
             <Match when={isSentinel(props.path)}>
-                <EmptyPane onNewTerminal={props.onNewTerminal} />
+                <EmptyPane onPick={props.onEmptyPick} />
             </Match>
         </Switch>
     )

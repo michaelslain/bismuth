@@ -217,6 +217,24 @@ export function equalize(root: PaneNode): PaneNode {
     return { ...root, ratio: ca / (ca + cb), a, b }
 }
 
+// Fill one pane of one tab with `content` and focus it — what an empty pane's picked action does
+// (App.tsx fillEmptyLeaf). Returns null when that tab or pane is gone (closed while the Cmd+O
+// switcher was open for it), so the caller can open the content the ordinary way instead.
+export function fillLeaf(
+    tabs: Tab[],
+    tabId: string,
+    leafId: string,
+    content: string,
+): Tab[] | null {
+    const tab = tabs.find(t => t.id === tabId)
+    if (!tab || !leaves(tab.root).some(l => l.id === leafId)) return null
+    return tabs.map(t =>
+        t.id === tabId
+            ? { ...t, root: setContent(t.root, leafId, content), focusId: leafId }
+            : t,
+    )
+}
+
 export function setContent(
     root: PaneNode,
     leafId: string,

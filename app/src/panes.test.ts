@@ -6,6 +6,7 @@ import {
     splitLeaf,
     closeLeaf,
     leaves,
+    fillLeaf,
     type Split,
     type Leaf,
     type PaneNode,
@@ -848,4 +849,22 @@ test('decideOpen: a tool surface already in a pane of the split is focused, not 
         tabId: 't1',
         leafId: newLeafId,
     })
+})
+
+test('fillLeaf fills one pane of one tab, focuses it and leaves the other tabs alone', () => {
+    const t1 = makeTab('a.md')
+    const { root, newLeafId } = splitLeaf(t1.root, t1.root.id, 'row')
+    const split = { ...t1, root }
+    const t2 = makeTab('b.md')
+    const next = fillLeaf([split, t2], split.id, newLeafId, '::chat:x')!
+    expect(next).not.toBeNull()
+    expect(leaves(next[0].root).map(l => l.content)).toEqual(['a.md', '::chat:x'])
+    expect(next[0].focusId).toBe(newLeafId)
+    expect(next[1]).toBe(t2)
+})
+
+test('fillLeaf returns null once the tab or the pane is gone', () => {
+    const t = makeTab('a.md')
+    expect(fillLeaf([t], 'gone', t.root.id, 'x.md')).toBeNull()
+    expect(fillLeaf([t], t.id, 'gone', 'x.md')).toBeNull()
 })
