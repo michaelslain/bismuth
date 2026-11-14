@@ -12,7 +12,7 @@
 // The composer adds only: a submit-on-Enter key handler (delegated back to ChatView so slash-command
 // nav / stop-on-Escape stay owned there), two-way binding to a `value`/`onInput` signal pair, and an
 // imperative `{ focus, scrollIntoView }` handle for the reply / mention / slash-pick flows.
-import { onMount, onCleanup, createEffect } from 'solid-js'
+import { batch, onMount, onCleanup, createEffect } from 'solid-js'
 import styles from './ChatComposer.module.css'
 import {
     Decoration,
@@ -51,6 +51,8 @@ import { cursor } from '../editor/cursorTheme'
 export interface ComposerHandle {
     focus: () => void
     scrollIntoView: () => void
+    /** Replace `from..to` with `insert` and park the caret just after it (a mid-message slash pick). */
+    replaceRange: (from: number, to: number, insert: string) => void
 }
 
 // Composer chrome: transparent (the .chat-composer-inner wrapper is the visible surface), inheriting
@@ -156,7 +158,7 @@ const argHintField = StateField.define<string | undefined>({
     },
 })
 const argHintDecorations = EditorView.decorations.compute(
-    ['doc', argHintField],
+    ['doc', 'selection', argHintField],
     state => {
         const hint = state.field(argHintField)
         if (!hint) return Decoration.none
@@ -164,7 +166,7 @@ const argHintDecorations = EditorView.decorations.compute(
             Decoration.widget({
                 widget: new ArgHintWidget(hint),
                 side: 1,
-            }).range(state.doc.length),
+            }).range(state.selection.main.head),
         ])
     },
 )
@@ -175,8 +177,10 @@ export interface ChatComposerProps {
     /** Called on every document change with the new raw source (ChatView `setDraft`). */
     onInput: (value: string) => void
     placeholder: () => string
-    /** A slash command's argument hint to draw greyed after the draft, or undefined for none. */
+    /** A slash command's argument hint to draw greyed at the caret, or undefined for none. */
     argHint?: () => string | undefined
+    /** Called with the caret offset whenever the document or the selection changes. */
+    onCaret?: (pos: number) => void
     getNotes: () => NoteCandidate[]
     getMemories: () => MemoryCandidate[]
     getTags: () => string[]
@@ -225,6 +229,9 @@ export function ChatComposer(props: ChatComposerProps) {
             parent: host,
             state: EditorState.create({
                 doc: props.value(),
+                // A draft already in the box (a restored chat) starts with the caret at its end, as
+                // every external draft change below parks it.
+                selection: { anchor: props.value().length },
                 extensions: [
                     history(),
                     cursor,
@@ -334,15 +341,27 @@ export function ChatComposer(props: ChatComposerProps) {
                     // Doc → signal. The external-sync effect below no-ops when value already equals the doc,
                     // so this can't loop.
                     EditorView.updateListener.of(u => {
-                        if (u.docChanged) props.onInput(u.state.doc.toString())
+                        if (!u.docChanged && !u.selectionSet) return
+                        // One batch, so the parent sees the new text and its caret together.
+                        batch(() => {
+                            if (u.docChanged) props.onInput(u.state.doc.toString())
+                            props.onCaret?.(u.state.selection.main.head)
+                        })
                     }),
                 ],
             }),
         })
         openCompletionKeymap.attach(view)
+        props.onCaret?.(view.state.selection.main.head)
         props.onReady({
             focus: () => view?.contentDOM.focus(),
             scrollIntoView: () => host?.scrollIntoView({ block: 'nearest' }),
+            replaceRange: (from, to, insert) =>
+                view?.dispatch({
+                    changes: { from, to, insert },
+                    selection: { anchor: from + insert.length },
+                    userEvent: 'input.complete',
+                }),
         })
     })
 
@@ -361,7 +380,7 @@ export function ChatComposer(props: ChatComposerProps) {
     })
 
     // The argument hint follows the parent's draft-derived hint. Runs after the value effect above,
-    // so the hint lands at the end of the doc that value just wrote.
+    // so the hint lands at the caret of the doc that value just wrote.
     createEffect(() => {
         const hint = props.argHint?.()
         if (view && view.state.field(argHintField) !== hint)

@@ -318,6 +318,61 @@ export const SlashArgumentHint: Story = (() => {
     }
 })()
 
+/** A `/` after a space anywhere in the message opens the same list as at the start, filtered by
+ *  what follows it. Picking fills that `/word` in place, keeps the text around it, and greys the
+ *  argument hint at the caret. `/rename` and `/color` act only as the whole message, so mid-message
+ *  they are not offered. A `/` inside a word (`and/or`) opens nothing. */
+export const SlashMidMessage: Story = (() => {
+    let session: StubChatSession
+    return {
+        decorators: SlashPopover.decorators,
+        render: () => {
+            session = makeStubChatSession({
+                ...COMMANDS,
+                slashCommands: [...COMMANDS.slashCommands, 'rename'],
+            })
+            return (
+                <ChatComposerBar
+                    session={session}
+                    placeholder="Message Claude"
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            )
+        },
+        play: async ({ canvasElement }) => {
+            const content = cmContent(canvasElement)
+            const hint = () =>
+                canvasElement.querySelector<HTMLElement>('[data-arg-hint]')
+            const popover = () =>
+                canvasElement.querySelector(`.${styles['slash-popover']}`)
+            await userEvent.click(content)
+            await userEvent.keyboard('this and/or')
+            expect(popover()).toBeNull()
+            await userEvent.keyboard(' then /')
+            await waitFor(() => expect(popover()).not.toBeNull())
+            expect(labels(canvasElement).some(l => l?.startsWith('/rename'))).toBe(
+                false,
+            )
+            await userEvent.keyboard('bu')
+            await waitFor(() =>
+                expect(labels(canvasElement)).toEqual([
+                    '/bust [deep] [K] <goal>',
+                ]),
+            )
+            await userEvent.keyboard('{Enter}')
+            await waitFor(() =>
+                expect(session.draft()).toBe('this and/or then /bust '),
+            )
+            await waitFor(() =>
+                expect(hint()?.textContent).toBe('[deep] [K] <goal>'),
+            )
+            expect(popover()).toBeNull()
+        },
+    }
+})()
+
 /** Ghost text is not the message, so it never adds a row. `/code-review ` carries a hint far wider
  *  than this column: the box stays the height it had empty, the hint ends in an ellipsis, and only
  *  real typed text wraps and grows the box. */

@@ -6,6 +6,7 @@ import {
     withClientSlashCommands,
     matchSlashCommands,
     slashArgHint,
+    slashTokenAt,
 } from './chatSlashCommands'
 
 describe('parseChatSlashCommand', () => {
@@ -166,5 +167,34 @@ describe('slashArgHint', () => {
     it('hides for a command with no hint and for prose', () => {
         expect(slashArgHint('/clear ', hintFor)).toBeUndefined()
         expect(slashArgHint('hello ', hintFor)).toBeUndefined()
+    })
+    it('shows mid-message, at the caret, when nothing follows on the line', () => {
+        expect(slashArgHint('then run /bust ', hintFor)).toBe('[deep] [K] <goal>')
+        expect(slashArgHint('then /bust ', hintFor, '\nmore')).toBe(
+            '[deep] [K] <goal>',
+        )
+        expect(slashArgHint('then /bust ', hintFor, 'the rest')).toBeUndefined()
+        expect(slashArgHint('a/bust ', hintFor)).toBeUndefined()
+    })
+})
+
+describe('slashTokenAt', () => {
+    it('matches a / at the start of the message', () => {
+        expect(slashTokenAt('/')).toEqual({ from: 0, query: '' })
+        expect(slashTokenAt('/Bu')).toEqual({ from: 0, query: 'bu' })
+    })
+    it('matches a / after whitespace in the middle of the message', () => {
+        expect(slashTokenAt('first do this then /')).toEqual({
+            from: 19,
+            query: '',
+        })
+        expect(slashTokenAt('hello /bu')).toEqual({ from: 6, query: 'bu' })
+        expect(slashTokenAt('line one\n/re')).toEqual({ from: 9, query: 're' })
+    })
+    it('does not match a / inside a word, a url or a finished command', () => {
+        expect(slashTokenAt('a/b')).toBeNull()
+        expect(slashTokenAt('see http://x')).toBeNull()
+        expect(slashTokenAt('/bust ')).toBeNull()
+        expect(slashTokenAt('hello')).toBeNull()
     })
 })

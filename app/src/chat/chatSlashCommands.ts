@@ -85,15 +85,30 @@ export function matchSlashCommands(
     return groups.flat().slice(0, limit)
 }
 
-/** The argument hint to show greyed after the caret, or undefined: the draft is a known command
- *  followed by whitespace and nothing else yet (`/bust ` → `[deep] [K] <goal>`). The hint goes away
- *  as soon as an argument is typed, and never shows for a bare `/bust` (the popover shows it there).
- *  Pure. */
+/** The `/command` token the caret sits in, or null: a `/` at the start of the draft or after
+ *  whitespace, then the non-space characters up to the caret (`textBefore` is the draft up to the
+ *  caret). `from` is the offset of the `/` itself, so a pick replaces the whole `/query` span; `query`
+ *  is what follows it, lowercased. A `/` inside a word (`a/b`, `http://`) is not a command. Pure. */
+export function slashTokenAt(
+    textBefore: string,
+): { from: number; query: string } | null {
+    const m = /(?:^|\s)\/(\S*)$/.exec(textBefore)
+    if (!m) return null
+    const from = textBefore.length - m[1].length - 1
+    return { from, query: m[1].toLowerCase() }
+}
+
+/** The argument hint to show greyed after the caret, or undefined: the text before the caret ends in
+ *  a known command (at the start or after whitespace) followed by spaces, and nothing but whitespace
+ *  follows the caret on its line (`/bust ` → `[deep] [K] <goal>`). The hint goes away as soon as an
+ *  argument is typed, and never shows for a bare `/bust` (the popover shows it there). Pure. */
 export function slashArgHint(
-    draft: string,
+    textBefore: string,
     hintFor: (name: string) => string | undefined,
+    textAfter = '',
 ): string | undefined {
-    const m = /^\/(\S+)[ \t]+$/.exec(draft)
+    if (/^[ \t]*\S/.test(textAfter.split('\n')[0])) return undefined
+    const m = /(?:^|\s)\/(\S+)[ \t]+$/.exec(textBefore)
     if (!m) return undefined
     return hintFor(m[1]) || undefined
 }

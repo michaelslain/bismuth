@@ -28,7 +28,12 @@ import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { createMenuNav } from '../ui/popover/createMenuNav'
 import { classifyComposerKey } from './chatComposerKeys'
 import { providerCan } from './chatProvider'
-import { matchSlashCommands, slashArgHint } from './chatSlashCommands'
+import {
+    CLIENT_SLASH_COMMANDS,
+    matchSlashCommands,
+    slashArgHint,
+    slashTokenAt,
+} from './chatSlashCommands'
 import { settings } from '../settings'
 import {
     HISTORY_BOTTOM,
@@ -101,18 +106,26 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
 
     // ── Slash-command popover ──────────────────────────────────────────────────────────────
     const [slashOpen, setSlashOpen] = createSignal(false)
-    const slashQuery = createMemo(() => {
-        const d = draftValue()
-        if (!d.startsWith('/')) return null
-        // Single-token only: once a space is typed it's an argument, not a command pick.
-        if (/\s/.test(d)) return null
-        return d.slice(1).toLowerCase()
-    })
+    // The caret, reported by the composer on every edit and caret move: the popover reads the
+    // `/command` token under it, so a `/` typed mid-message opens it too.
+    const [caret, setCaret] = createSignal(0)
+    const textBeforeCaret = () => draftValue().slice(0, caret())
+    // Single-token only: once a space follows the command it's an argument, not a command pick.
+    const slashToken = createMemo(() => slashTokenAt(textBeforeCaret()))
     const slashMatches = createMemo<string[]>(() => {
-        const q = slashQuery()
+        const token = slashToken()
         const session = props.session
-        if (q === null || !session) return []
-        return matchSlashCommands(session.slashCommands(), q)
+        if (!token || !session) return []
+        // `/rename` and `/color` act only as the whole message, so mid-message they are not offered.
+        const commands =
+            token.from === 0
+                ? session.slashCommands()
+                : session
+                      .slashCommands()
+                      .filter(
+                          c => !CLIENT_SLASH_COMMANDS.some(cc => cc.name === c),
+                      )
+        return matchSlashCommands(commands, token.query)
     })
     const slashRows = createMemo<PopoverRow[]>(() =>
         slashMatches().map(c => ({
@@ -125,15 +138,23 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
     const argHint = () => {
         const session = props.session
         if (!session) return undefined
-        return slashArgHint(draftValue(), name =>
-            session.slashCommandHint(name),
+        return slashArgHint(
+            textBeforeCaret(),
+            name => session.slashCommandHint(name),
+            draftValue().slice(caret()),
         )
     }
     const closeSlash = () => setSlashOpen(false)
     const chooseSlash = (i: number) => {
         const cmd = slashMatches()[i]
-        if (!cmd) return
-        setDraft(`/${cmd} `)
+        const token = slashToken()
+        if (!cmd || !token) return
+        const insert = `/${cmd} `
+        if (composerHandle) composerHandle.replaceRange(token.from, caret(), insert)
+        else {
+            const d = draftValue()
+            setDraft(d.slice(0, token.from) + insert + d.slice(caret()))
+        }
         closeSlash()
         composerHandle?.focus()
     }
@@ -143,7 +164,7 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
         onEscape: () => closeSlash(),
     })
     createEffect(() => {
-        const open = slashQuery() !== null && slashMatches().length > 0
+        const open = slashToken() !== null && slashMatches().length > 0
         setSlashOpen(open)
         if (open) slashNav.setActive(0)
     })
@@ -328,6 +349,7 @@ const ChatComposerBar: Component<ChatComposerBarProps> = props => {
                         <ChatComposer
                             value={draftValue}
                             argHint={argHint}
+                            onCaret={setCaret}
                             onInput={onComposerInput}
                             onKeyDown={onComposerKey}
                             onPaste={onPaste}
