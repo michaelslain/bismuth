@@ -223,6 +223,7 @@ They override framework habits, and most violations compile, render and pass tes
 | book bases and the PDF/image reader (pages, markdown text and side by side, scrolled or flipped, locating a passage on its page, highlights, bookmarks, the page sorter, dark pages), reading one image or PDF as a book, `bismuth book` | `docs/bases/views/book.md` |
 | transcribing an image, scan or PDF into its note, math as LaTeX (`bismuth transcribe`, on-device, marker and ai engines, the background job with per-page progress, cancel and the mid-run math question, the `transcription` settings, transcript marks), installing Marker (`bismuth transcribe setup`) | `docs/vault/transcription.md` |
 | ` ```button ` fences in notes and chat replies, `bismuth button`, `.daemon/buttons/` | `docs/editor/buttons.md` |
+| importing an Obsidian vault (`bismuth import obsidian`, its report, the app's first-run Obsidian import) | `docs/guides/converting-obsidian-to-bismuth.md` |
 | mobile | `docs/mobile/overview.md` |
 | on-disk layout | `docs/overview/storage.md` |
 

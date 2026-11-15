@@ -1,5 +1,5 @@
 import type { EvalContext } from './types'
-import { isLink, toNumber, truthy, type Link } from './values'
+import { isLink, looseEquals, toNumber, truthy, type Link } from './values'
 
 export function asString(v: unknown): string {
     if (v === null || v === undefined) return ''
@@ -120,6 +120,9 @@ export function callMethod(
     ) {
         return callFileMethod(receiver as FileMeta, name, args, ctx)
     }
+    // Methods every value has, as in Obsidian Bases: its text form and its truthiness.
+    if (name === 'toString') return receiver === null || receiver === undefined ? '' : asString(receiver)
+    if (name === 'isTruthy') return truthy(receiver)
     if (typeof receiver === 'number')
         return callNumberMethod(receiver, name, args)
     if (typeof receiver === 'string')
@@ -154,6 +157,9 @@ function linkName(a: unknown): string {
             return baseName(o.path) // a Link
         if (typeof o.name === 'string') return o.name // a FileMeta
         if (typeof o.path === 'string') return baseName(o.path)
+        // an embedding note's `this`: its file rides under `file`, as Obsidian's `this` is the host file
+        const f = o.file as Record<string, unknown> | undefined
+        if (f && typeof f === 'object' && typeof f.path === 'string') return baseName(f.path)
     }
     return asString(a)
 }
@@ -230,6 +236,10 @@ function callStringMethod(s: string, name: string, args: unknown[]): unknown {
             )
         case 'contains':
             return s.includes(asString(args[0]))
+        case 'containsAny':
+            return args.some(a => s.includes(asString(a)))
+        case 'containsAll':
+            return args.every(a => s.includes(asString(a)))
         case 'startsWith':
             return s.startsWith(asString(args[0]))
         case 'endsWith':
@@ -272,9 +282,17 @@ function callArrayMethod(
 ): unknown {
     switch (name) {
         case 'contains':
+            // looseEquals lets `categories.contains(link("People"))` match a property holding
+            // `"[[People]]"`, the way Obsidian compares a link with a link-valued property.
             return arr.some(
-                x => x === args[0] || asString(x) === asString(args[0]),
+                x =>
+                    looseEquals(x, args[0]) ||
+                    asString(x) === asString(args[0]),
             )
+        case 'containsAny':
+            return args.some(a => arr.some(x => looseEquals(x, a) || asString(x) === asString(a)))
+        case 'containsAll':
+            return args.every(a => arr.some(x => looseEquals(x, a) || asString(x) === asString(a)))
         case 'join':
             return arr
                 .map(asString)

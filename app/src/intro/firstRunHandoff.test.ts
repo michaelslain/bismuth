@@ -133,7 +133,10 @@ describe('runFirstRunHandoff', () => {
         expect(r.drafts).toEqual([convertPrompt(job)])
         expect(r.drafts[0]).toContain('"/v/Notes"')
         expect(r.drafts[0]).toContain('"/v/Notes-bismuth"')
+        expect(r.drafts[0]).toContain('bismuth import obsidian "/v/Notes" --out "/v/Notes-bismuth"')
+        expect(r.drafts[0]).toContain('Needs a decision')
         expect(r.drafts[0]).toContain('guides/converting-obsidian-to-bismuth.md')
+        expect(r.drafts[0]).toContain('ask me first')
         expect(r.storage.has(FIRST_RUN_CONVERT_KEY)).toBe(false)
     })
 

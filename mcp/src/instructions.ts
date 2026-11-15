@@ -15,8 +15,9 @@ export const SERVER_INSTRUCTIONS =
     'docs. Never run anything inside Bismuth.app: that binary is the app and opens a second window. ' +
     'EVERY time you create, edit or debug a Bismuth base (a `.base.jsonl` file, a `type: base` note, or a ```query ' +
     'block), first run `bismuth docs read bases/authoring.md`, then bases/authoring/<layout>.md ' +
-    'for the layout you are writing. Converting a vault between Obsidian and Bismuth: ' +
-    'first read guides/converting-obsidian-to-bismuth.md or ' +
+    'for the layout you are writing. Converting a vault from Obsidian: run ' +
+    '`bismuth import obsidian <folder>`, then read guides/converting-obsidian-to-bismuth.md to ' +
+    'handle its report. Converting a vault to Obsidian: first read ' +
     'guides/converting-bismuth-to-obsidian.md. ' +
     'Making or changing a colour theme: first read guides/custom-themes.md. ' +
     'Adding a button: first read editor/buttons.md. ' +

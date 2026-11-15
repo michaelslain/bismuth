@@ -37,7 +37,7 @@ export type FirstRunHandoffDeps = {
 export function convertPrompt(job: ConvertJob): string {
     return [
         `Convert my Obsidian vault at "${job.source}" into this Bismuth vault, "${job.target}".`,
-        'First run `bismuth docs read guides/converting-obsidian-to-bismuth.md` and follow that guide.',
+        `Run \`bismuth import obsidian "${job.source}" --out "${job.target}"\`, then read the report it prints the path of, handle every item under "Needs a decision" using \`bismuth docs read guides/converting-obsidian-to-bismuth.md\`, and summarise the report for me.`,
         'Bismuth created this vault for the conversion: when it holds nothing besides .settings and .daemon, copy into it without asking; when it holds anything else, ask me first.',
     ].join(' ')
 }

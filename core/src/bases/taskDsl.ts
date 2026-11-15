@@ -52,15 +52,26 @@ const SORT_BY_RE = new RegExp(
     'i',
 )
 const DATE_FILTER_RE = new RegExp(`^(${DATE_ALT})(?: (before|after))? (.+)$`)
+// `ignore global query` is the Tasks plugin's "skip the vault-wide default query": display
+// and scope only, nothing about which tasks match.
 const IGNORED_INSTRUCTION =
-    /^(group by|limit|hide|show|short mode|full mode|explain)\b/i
+    /^(group by|limit|hide|show|short mode|full mode|explain|ignore global query)\b/i
+// Sort keys a Bases row can order by beyond the SORT_BY_RE ones. Any other `sort by …`
+// line (happens, urgency, function …) has no Bases form and is reported as ignored.
+const FILE_SORT_RE = /^sort by (path|filename|folder)(?: (reverse))?$/i
+const FILE_SORT_PROPERTY: Record<string, string> = {
+    path: 'file.path',
+    filename: 'file.name',
+    folder: 'file.folder',
+}
+const ANY_SORT_RE = /^sort by\b/i
 
 // The cheap discriminator between legacy DSL text and a Bases expression, used by
 // source.ts on a `where` string it doesn't yet know the language of. A Bases expression
 // always names a property with a dot (`note.due`); DSL text never contains one. Combined
 // with the DSL's own opening keywords, the two languages don't collide.
 const DSL_OPENERS = new RegExp(
-    `^(?:done\\b|not\\s+done\\b|is\\s+(?:not\\s+)?(?:cancelled|recurring)\\b|priority\\s+is\\b|sort\\s+by\\b|(?:${DATE_ALT})\\s+\\S)`,
+    `^(?:done\\b|not\\s+done\\b|is\\s+(?:not\\s+)?(?:cancelled|recurring)\\b|priority\\s+is\\b|sort\\s+by\\b|(?:${DATE_ALT})\\s+\\S|(?:path|folder|filename|description|tags?)\\s+(?:includes?|does\\s+not|do\\s+not|regex)\\b|(?:has|no)\\s+(?:tags\\b|(?:${DATE_ALT})\\s+date\\b)|exclude\\s+sub-items\\b|NOT\\s*\\()`,
     'i',
 )
 
@@ -132,6 +143,88 @@ function resolveDateExprLive(expr: string): string | null {
     return null // weekday words (`friday`, `next monday`, …): no live Bases equivalent
 }
 
+// ── text leaves: `path includes …`, `description regex matches /…/`, `tags include …` ──
+// The Tasks plugin's text filters are case-insensitive substring matches and its regex
+// filters are plain JavaScript regexes, so `contains` on a lowered string and `matches`
+// are exact counterparts. User text is quoted into the expression, never pasted raw.
+
+/** A Bases string literal for `s`: only `\` and `"` are escapable in the Bases lexer (`\n`
+ *  reads as `n`), so control characters collapse to a space instead of being escaped. */
+function quoteStr(s: string): string {
+    return `"${s.replace(/[\r\n\t]+/g, ' ').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+/** `/source/flags` as a Bases regex literal, or null when the lexer could not read it back
+ *  as ONE literal (an unescaped `/` outside a class, a newline) or JS rejects it. */
+function regexLiteral(source: string, flags: string): string | null {
+    let inClass = false
+    for (let i = 0; i < source.length; i++) {
+        const ch = source[i]
+        if (ch === '\\') i++
+        else if (ch === '[') inClass = true
+        else if (ch === ']') inClass = false
+        else if ((ch === '/' && !inClass) || ch === '\n') return null
+    }
+    try {
+        new RegExp(source, flags)
+    } catch {
+        return null
+    }
+    return `/${source}/${flags}`
+}
+
+// What each text field reads. The plugin's `path` and `filename` carry the `.md`
+// extension and its `folder` a trailing slash (`/` at the vault root), so the row's
+// extension-less name and slash-less folder are rebuilt into the plugin's spelling.
+const TEXT_FIELD_EXPR: Record<string, string> = {
+    path: 'file.path',
+    folder: '(file.folder + "/")',
+    filename: '(file.name + ".md")',
+    description: 'note.description',
+}
+const TEXT_INCLUDES_RE =
+    /^(path|folder|filename|description) (includes|does not include) (.+)$/i
+const TEXT_REGEX_RE =
+    /^(path|folder|filename|description|tags?) (regex matches|regex does not match) \/(.*)\/([a-z]*)$/i
+const TAG_INCLUDES_RE =
+    /^tags? (includes?|does not include|do not include) (.+)$/i
+const HAS_DATE_RE = new RegExp(`^(has|no) (${DATE_ALT}) date$`, 'i')
+// A placeholder names the file holding the query; there is no query file at translation time.
+const PLACEHOLDER = '{{'
+
+// Task tags are stored without `#`; the plugin matches against the tag WITH it, so `#home`
+// does not match `#location/home` but `home` matches both.
+const TAG_LIST = 'note.tags.filter(t => ("#" + t)'
+
+function translateTextLeaf(raw: string): string | null {
+    if (raw.includes(PLACEHOLDER)) return null
+
+    let m = raw.match(TEXT_INCLUDES_RE)
+    if (m) {
+        const call = `${TEXT_FIELD_EXPR[m[1].toLowerCase()]}.lower().contains(${quoteStr(m[3].toLowerCase())})`
+        return m[2].toLowerCase() === 'includes' ? call : `!${call}`
+    }
+
+    m = raw.match(TEXT_REGEX_RE)
+    if (m) {
+        const re = regexLiteral(m[3], m[4])
+        if (!re) return null
+        const negate = m[2].toLowerCase() !== 'regex matches'
+        const field = m[1].toLowerCase()
+        if (field.startsWith('tag'))
+            return `${TAG_LIST}.matches(${re})).length ${negate ? '==' : '>'} 0`
+        const call = `${TEXT_FIELD_EXPR[field]}.matches(${re})`
+        return negate ? `!${call}` : call
+    }
+
+    m = raw.match(TAG_INCLUDES_RE)
+    if (m) {
+        const has = m[1].toLowerCase().startsWith('include')
+        return `${TAG_LIST}.lower().contains(${quoteStr(m[2].toLowerCase())})).length ${has ? '>' : '=='} 0`
+    }
+    return null
+}
+
 /** Translate one leaf (no AND/OR/parens) to a Bases expression, or null when unrecognized.
  *  `blocked` collects the raw text of a date leaf that `TranslateOptions.liveDates` could
  *  not keep live — see `TaskDslTranslation.blocked`. */
@@ -154,6 +247,17 @@ function translateLeaf(
 
     m = s.match(/^priority is( not)? (highest|high|medium|low|lowest|none)$/)
     if (m) return `note.priority ${m[1] ? '!=' : '=='} "${m[2]}"`
+
+    if (s === 'has tags') return 'note.tags.length > 0'
+    if (s === 'no tags') return 'note.tags.length == 0'
+    // Only top-level tasks: a nested task's raw line starts with its indentation.
+    if (s === 'exclude sub-items') return '!note.raw.matches(/^\\s/)'
+
+    m = s.match(HAS_DATE_RE)
+    if (m) return `${m[1] === 'has' ? '' : '!'}note.${m[2]}`
+
+    const text = translateTextLeaf(raw.trim())
+    if (text !== null) return text
 
     m = s.match(DATE_FILTER_RE)
     if (m) {
@@ -185,6 +289,31 @@ type Tok =
     | { t: 'or' }
     | { t: 'leaf'; v: string }
 
+// A text filter's argument is free text, so an `and` / `or` inside it is a word, not a
+// boolean operator: the plugin needs each operand of a real AND/OR parenthesised, and the
+// `(`-opened operand starts a fresh buffer here.
+const TEXT_LEAF_START =
+    /^(description|path|folder|filename|root|tags?|heading)\s+(includes?|does not include|do not include|regex)\b/i
+const REGEX_ARG_AHEAD = /\bregex (?:matches|does not match)\s+$/i
+
+/** Index just past the `/…/flags` literal starting at `start` (the end of the line when it
+ *  never closes). Mirrors the Bases lexer: `\` escapes, `/` inside `[...]` does not close. */
+function regexEnd(line: string, start: number): number {
+    let inClass = false
+    let j = start + 1
+    for (; j < line.length; j++) {
+        const ch = line[j]
+        if (ch === '\\') j++
+        else if (ch === '[') inClass = true
+        else if (ch === ']') inClass = false
+        else if (ch === '/' && !inClass) break
+    }
+    if (j >= line.length) return line.length
+    j++
+    while (j < line.length && /[a-z]/i.test(line[j])) j++
+    return j
+}
+
 function tokenize(line: string): Tok[] {
     const toks: Tok[] = []
     let buf = ''
@@ -195,7 +324,13 @@ function tokenize(line: string): Tok[] {
     }
     for (let i = 0; i < line.length; i++) {
         const c = line[i]
-        if (c === '(') {
+        if (c === '/' && REGEX_ARG_AHEAD.test(buf)) {
+            // The regex of `… regex matches /(a|b)/i` is one atom: its parens and a word
+            // like `or` inside it are not boolean structure.
+            const end = regexEnd(line, i)
+            buf += line.slice(i, end)
+            i = end - 1
+        } else if (c === '(') {
             flush()
             toks.push({ t: '(' })
         } else if (c === ')') {
@@ -203,7 +338,11 @@ function tokenize(line: string): Tok[] {
             toks.push({ t: ')' })
         } else {
             const op = line.slice(i).match(/^(AND|OR)\b/i)
-            if (op && (buf === '' || /\s$/.test(buf))) {
+            if (
+                op &&
+                (buf === '' || /\s$/.test(buf)) &&
+                !TEXT_LEAF_START.test(buf.trim())
+            ) {
                 flush()
                 toks.push({ t: op[1].toLowerCase() as 'and' | 'or' })
                 i += op[1].length - 1 // -1 because for loop increments
@@ -269,6 +408,8 @@ function translateBool(
         }
         if (tk.t === 'leaf') {
             next()
+            // `NOT (…)` negates the group that follows, as in the Tasks plugin's boolean filters.
+            if (tk.v.toUpperCase() === 'NOT' && peek()?.t === '(') return `!${parseFactor()}`
             const p = translateLeaf(tk.v, today, opts, blocked)
             if (p === null) unrecognized.push(tk.v)
             return p ?? 'true'
@@ -280,6 +421,25 @@ function translateBool(
     // Trailing tokens after a full expression parses are ignored, exactly like the old
     // evaluator: it logged "trailing tokens in filter" but still used what it had built.
     return parseExpr()
+}
+
+/** Join the Tasks plugin's continued lines: one ending in `\` carries on to the next line
+ *  (how a multi-line `filter by function` is written), so it is one instruction, not
+ *  several leaves of JavaScript. */
+export function joinContinuationLines(lines: string[]): string[] {
+    const out: string[] = []
+    let carry = ''
+    for (const line of lines) {
+        const t = line.trimEnd()
+        if (t.endsWith('\\')) {
+            carry += `${t.slice(0, -1)} `
+            continue
+        }
+        out.push(carry + line)
+        carry = ''
+    }
+    if (carry) out.push(carry.trimEnd())
+    return out
 }
 
 /** Translate a legacy Tasks-DSL query string into a Bases `where` expression plus any
@@ -300,7 +460,7 @@ export function translateTaskDsl(
     const blocked: string[] = []
     const ignored: string[] = []
 
-    for (const line of dsl.split(/\r?\n/)) {
+    for (const line of joinContinuationLines(dsl.split(/\r?\n/))) {
         const trimmed = line.trim()
         if (!trimmed || trimmed.startsWith('#')) continue
 
@@ -312,7 +472,15 @@ export function translateTaskDsl(
             })
             continue
         }
-        if (IGNORED_INSTRUCTION.test(trimmed)) {
+        const fileSortM = trimmed.match(FILE_SORT_RE)
+        if (fileSortM) {
+            sort.push({
+                property: FILE_SORT_PROPERTY[fileSortM[1].toLowerCase()],
+                direction: fileSortM[2] ? 'DESC' : 'ASC',
+            })
+            continue
+        }
+        if (IGNORED_INSTRUCTION.test(trimmed) || ANY_SORT_RE.test(trimmed)) {
             ignored.push(trimmed)
             continue
         }

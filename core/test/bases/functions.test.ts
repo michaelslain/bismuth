@@ -145,3 +145,38 @@ test('regex literal: /…/flags and .matches accepts RegExp directly', () => {
     // Division still parses as division when context says so.
     expect(evaluate(parseExpr('10 / 2'), ctx)).toBe(5)
 })
+
+test('a list of wikilink-valued properties contains link("X") (the Obsidian categories pattern)', () => {
+    const c: EvalContext = { ...ctx, note: { categories: ['[[People]]', '[[Clippings|clips]]'] } }
+    const r = (e: string) => evaluate(parseExpr(e), c)
+    expect(r('categories.contains(link("People"))')).toBe(true)
+    expect(r('categories.contains(link("Clippings"))')).toBe(true)
+    expect(r('categories.contains(link("Places"))')).toBe(false)
+    expect(r('categories.contains("[[People]]")')).toBe(true)
+})
+
+test('toString, isTruthy, containsAny and containsAll behave as in Obsidian Bases', () => {
+    expect(run('note.price.toString()')).toBe('10.456')
+    expect(run('note.title.isTruthy()')).toBe(true)
+    expect(run('note.missing.toString()')).toBe('')
+    expect(run('file.ext.containsAny("pdf", "md")')).toBe(true)
+    expect(run('file.ext.containsAll("m", "d")')).toBe(true)
+    expect(run('file.ext.containsAny("pdf", "canvas")')).toBe(false)
+    expect(run('note.items.containsAny("z", "a")')).toBe(true)
+    expect(run('note.items.containsAll("a", "z")')).toBe(false)
+})
+
+test('list(prop).contains(this) and file.hasLink(this) inside an embedding note', () => {
+    const host = { file: { name: 'Kyoto', basename: 'Kyoto', path: 'References/Kyoto.md', tags: [], links: [] } }
+    const c: EvalContext = {
+        ...ctx,
+        file: { ...ctx.file, links: ['Kyoto'] },
+        note: { loc: ['[[Kyoto]]', '[[Japan]]'] },
+        this: host,
+    } as EvalContext
+    const r = (e: string) => evaluate(parseExpr(e), c)
+    expect(r('list(loc).contains(this)')).toBe(true)
+    expect(r('file.hasLink(this)')).toBe(true)
+    const other: EvalContext = { ...c, this: { file: { ...host.file, name: 'Osaka', basename: 'Osaka', path: 'Osaka.md' } } } as EvalContext
+    expect(evaluate(parseExpr('list(loc).contains(this)'), other)).toBe(false)
+})

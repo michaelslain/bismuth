@@ -144,7 +144,7 @@ view: table
 order: [file.name, formula.adj]
 ```
 
-With a host whose frontmatter is `minPrice: 10` and `markup: 2`, only rows priced 10 or more remain, and `adj` doubles the price. `file.hasLink(this.file)` keeps the rows that link back to the host note.
+With a host whose frontmatter is `minPrice: 10` and `markup: 2`, only rows priced 10 or more remain, and `adj` doubles the price. `file.hasLink(this.file)` keeps the rows that link back to the host note. `this` on its own also stands for the host note wherever a link is compared, as in Obsidian: `file.hasLink(this)` keeps the same rows, and `list(location).contains(this)` keeps the rows whose `location` property holds `"[[<host note>]]"`.
 
 ## Can I edit filters without writing YAML?
 

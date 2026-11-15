@@ -1,0 +1,20 @@
+filters:
+  and:
+    - file.hasTag("book")
+properties:
+  note.author:
+    displayName: Author
+views:
+  - type: table
+    name: All books
+    order:
+      - file.name
+      - author
+    sort:
+      - property: file.name
+        direction: ASC
+  - type: cards
+    name: Shelf
+    filters:
+      and:
+        - 'author != ""'

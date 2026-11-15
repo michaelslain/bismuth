@@ -146,7 +146,7 @@ bun run build:app
 Agents read these before acting; the MCP server's instructions name each one.
 
 - [Authoring bases](bases/authoring.md) — read before creating, editing or debugging a base or query block; one page per layout under `bases/authoring/`
-- [Converting an Obsidian vault to Bismuth](guides/converting-obsidian-to-bismuth.md) — with topic pages under `guides/converting-obsidian-to-bismuth/`
+- [Converting an Obsidian vault to Bismuth](guides/converting-obsidian-to-bismuth.md) — `bismuth import obsidian <folder>` and how to handle its report, with topic pages under `guides/converting-obsidian-to-bismuth/`
 - [Converting a Bismuth vault to Obsidian](guides/converting-bismuth-to-obsidian.md) — with topic pages under `guides/converting-bismuth-to-obsidian/`
 - [Make a custom colour theme](guides/custom-themes.md) — the `.themes/<name>.yaml` format and its validate loop
 

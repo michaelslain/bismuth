@@ -423,3 +423,201 @@ test('ignored instruction lines are reported, and where/sort are unchanged', () 
     expect(out.sort).toEqual([{ property: 'note.due', direction: 'ASC' }])
     expect(translateTaskDsl('not done', TODAY).ignored).toBeUndefined()
 })
+
+// ── Tasks-plugin text, tag and has/no-date leaves. Each asserts the exact expression AND
+// runs it through the real Bases evaluator against a sample row, so a leaf that parses
+// but matches wrongly (or does not parse) shows up as a red test. ───────────────────────
+const sampleRow = taskToRow(
+    task({
+        path: 'Work/Sub/My Note.md',
+        description: 'Buy Milk and eggs #home #location/work',
+        tags: ['home', 'location/work'],
+        due: '2026-06-01',
+        raw: '- [ ] Buy Milk',
+    }),
+)
+const nestedRow = taskToRow(
+    task({ path: 'Note.md', description: 'nested', raw: '    - [ ] nested' }),
+)
+const check = (dsl: string, expr: string, row = sampleRow) => {
+    const out = translateTaskDsl(dsl, TODAY)
+    expect(out.unrecognized).toBeUndefined()
+    expect(out.where).toBe(expr)
+    return passesFilter(out.where!, toContext(row))
+}
+
+test('path leaves', () => {
+    expect(check('path includes work/sub', 'file.path.lower().contains("work/sub")')).toBe(true)
+    expect(check('path includes .md', 'file.path.lower().contains(".md")')).toBe(true)
+    expect(check('path does not include Work', '!file.path.lower().contains("work")')).toBe(false)
+    expect(check('path does not include other', '!file.path.lower().contains("other")')).toBe(true)
+    expect(check('path regex matches /^Work\\//', 'file.path.matches(/^Work\\//)')).toBe(true)
+    expect(check('path regex matches /^work/', 'file.path.matches(/^work/)')).toBe(false)
+    expect(check('path regex matches /^work/i', 'file.path.matches(/^work/i)')).toBe(true)
+    expect(check('path regex does not match /note/', '!file.path.matches(/note/)')).toBe(true)
+})
+
+test('folder leaves use the plugin spelling: trailing slash, `/` at the root', () => {
+    expect(check('folder includes Work/Sub/', '(file.folder + "/").lower().contains("work/sub/")')).toBe(true)
+    expect(check('folder includes work', '(file.folder + "/").lower().contains("work")')).toBe(true)
+    expect(check('folder includes /', '(file.folder + "/").lower().contains("/")', nestedRow)).toBe(true)
+    expect(check('folder does not include sub', '!(file.folder + "/").lower().contains("sub")')).toBe(false)
+    expect(check('folder regex matches /^Work\\/$/', '(file.folder + "/").matches(/^Work\\/$/)')).toBe(false)
+})
+
+test('filename leaves include the .md extension', () => {
+    expect(check('filename includes My Note.md', '(file.name + ".md").lower().contains("my note.md")')).toBe(true)
+    expect(check('filename does not include note', '!(file.name + ".md").lower().contains("note")')).toBe(false)
+    expect(check('filename regex matches /\\.md$/', '(file.name + ".md").matches(/\\.md$/)')).toBe(true)
+})
+
+test('description leaves are case-insensitive substrings and plain regexes', () => {
+    expect(check('description includes MILK AND eggs', 'note.description.lower().contains("milk and eggs")')).toBe(true)
+    expect(check('description does not include milk', '!note.description.lower().contains("milk")')).toBe(false)
+    expect(check('description regex matches /(milk|cheese)/', 'note.description.matches(/(milk|cheese)/)')).toBe(false)
+    expect(check('description regex matches /(Milk|cheese)/', 'note.description.matches(/(Milk|cheese)/)')).toBe(true)
+    expect(check('description regex does not match /^Buy/', '!note.description.matches(/^Buy/)')).toBe(false)
+})
+
+test('user text is quoted, never pasted raw', () => {
+    expect(check('description includes say "hi" \\ there', 'note.description.lower().contains("say \\"hi\\" \\\\ there")')).toBe(false)
+    const out = translateTaskDsl('description includes x" || true || "', TODAY)
+    expect(out.where).toBe('note.description.lower().contains("x\\" || true || \\"")')
+    expect(passesFilter(out.where!, toContext(sampleRow))).toBe(false)
+})
+
+test('tag leaves: partial, case-insensitive, # optional, # must match from the tag start', () => {
+    const inc = (t: string) => `note.tags.filter(t => ("#" + t).lower().contains("${t}")).length > 0`
+    expect(check('tags include #home', inc('#home'))).toBe(true)
+    expect(check('tag includes HOME', inc('home'))).toBe(true)
+    expect(check('tags include location', inc('location'))).toBe(true)
+    expect(check('tags include #work', inc('#work'))).toBe(false) // #location/work is not #work
+    expect(check('tags include work', inc('work'))).toBe(true)
+    expect(
+        check('tags do not include foo', 'note.tags.filter(t => ("#" + t).lower().contains("foo")).length == 0'),
+    ).toBe(true)
+    expect(
+        check('tag does not include home', 'note.tags.filter(t => ("#" + t).lower().contains("home")).length == 0'),
+    ).toBe(false)
+    expect(check('tags regex matches /#home$/', 'note.tags.filter(t => ("#" + t).matches(/#home$/)).length > 0')).toBe(true)
+    expect(check('tag regex matches /#work$/', 'note.tags.filter(t => ("#" + t).matches(/#work$/)).length > 0')).toBe(false) // #location/work is not #work
+    expect(check('tag regex does not match /#home$/', 'note.tags.filter(t => ("#" + t).matches(/#home$/)).length == 0')).toBe(false)
+    expect(check('has tags', 'note.tags.length > 0')).toBe(true)
+    expect(check('no tags', 'note.tags.length == 0')).toBe(false)
+})
+
+test('has / no <date> date, for every date field', () => {
+    for (const f of ['due', 'scheduled', 'start', 'done', 'created', 'cancelled']) {
+        const row = taskToRow(task({ [f]: '2026-06-01' }))
+        const bare = taskToRow(task({}))
+        const has = translateTaskDsl(`has ${f} date`, TODAY).where!
+        const no = translateTaskDsl(`no ${f} date`, TODAY).where!
+        expect(has).toBe(`note.${f}`)
+        expect(no).toBe(`!note.${f}`)
+        expect(passesFilter(has, toContext(row))).toBe(true)
+        expect(passesFilter(has, toContext(bare))).toBe(false)
+        expect(passesFilter(no, toContext(row))).toBe(false)
+        expect(passesFilter(no, toContext(bare))).toBe(true)
+    }
+})
+
+test('exclude sub-items keeps only tasks that are not indented', () => {
+    expect(check('exclude sub-items', '!note.raw.matches(/^\\s/)')).toBe(true)
+    expect(check('exclude sub-items', '!note.raw.matches(/^\\s/)', nestedRow)).toBe(false)
+})
+
+test('a regex with parens and a word like "or" inside is one atom in a boolean line', () => {
+    const out = translateTaskDsl(
+        '(description regex matches /(milk|a or b)/i) AND (not done)',
+        TODAY,
+    )
+    expect(out.unrecognized).toBeUndefined()
+    expect(out.where).toBe('(note.description.matches(/(milk|a or b)/i)) && (!note.resolved)')
+    expect(passesFilter(out.where!, toContext(sampleRow))).toBe(true)
+})
+
+test('and / or inside a text filter are words, not operators', () => {
+    const out = translateTaskDsl('description includes cats and dogs', TODAY)
+    expect(out.where).toBe('note.description.lower().contains("cats and dogs")')
+})
+
+test('leaves with no Bases form stay unrecognized', () => {
+    for (const leaf of [
+        'filter by function task.due',
+        'heading includes Inbox',
+        'path includes {{query.file.path}}',
+        'description regex matches /a/b/',
+        'description regex matches /(/',
+        'is blocked',
+        'due date is invalid',
+    ])
+        expect(translateTaskDsl(leaf, TODAY).unrecognized).toEqual([leaf])
+})
+
+test('display-only instructions are ignored, never filters', () => {
+    const out = translateTaskDsl(
+        'not done\nexplain\nhide backlinks\nshow tree\nshort mode\nfull mode\nignore global query\nlimit groups 3',
+        TODAY,
+    )
+    expect(out.where).toBe('!note.resolved')
+    expect(out.unrecognized).toBeUndefined()
+    expect(out.ignored).toEqual([
+        'explain',
+        'hide backlinks',
+        'show tree',
+        'short mode',
+        'full mode',
+        'ignore global query',
+        'limit groups 3',
+    ])
+})
+
+test('sort by a file field translates, any other sort key is ignored without adding a filter', () => {
+    expect(translateTaskDsl('sort by path', TODAY).sort).toEqual([{ property: 'file.path', direction: 'ASC' }])
+    expect(translateTaskDsl('sort by filename reverse', TODAY).sort).toEqual([
+        { property: 'file.name', direction: 'DESC' },
+    ])
+    expect(translateTaskDsl('sort by folder', TODAY).sort).toEqual([{ property: 'file.folder', direction: 'ASC' }])
+    const out = translateTaskDsl('not done\nsort by happens\nsort by function task.due', TODAY)
+    expect(out.where).toBe('!note.resolved')
+    expect(out.sort).toBeUndefined()
+    expect(out.unrecognized).toBeUndefined()
+    expect(out.ignored).toEqual(['sort by happens', 'sort by function task.due'])
+})
+
+test('a backslash continues an instruction onto the next line', () => {
+    const out = translateTaskDsl(
+        'not done\nfilter by function \\\n    const x = 1; \\\n    return x\nhas due date',
+        TODAY,
+    )
+    expect(out.where).toBe('(!note.resolved) && (true) && (note.due)')
+    expect(out.unrecognized).toEqual(['filter by function      const x = 1;      return x'])
+})
+
+test('NOT (…) negates the group that follows', () => {
+    expect(
+        check('NOT (path includes work/sub)', '!(file.path.lower().contains("work/sub"))'),
+    ).toBe(false)
+    expect(
+        check(
+            'NOT ( (description includes milk) AND (description includes tea) )',
+            '!((note.description.lower().contains("milk")) && (note.description.lower().contains("tea")))',
+        ),
+    ).toBe(true)
+})
+
+test('looksLikeTaskDsl knows the text, tag, has/no date and NOT openers; Bases expressions still are not DSL', () => {
+    for (const dsl of [
+        'path includes Projects',
+        'folder does not include Archive',
+        'description regex matches /x/i',
+        'tags include #home',
+        'has due date',
+        'no tags',
+        'exclude sub-items',
+        'NOT (done)',
+    ])
+        expect(looksLikeTaskDsl(dsl)).toBe(true)
+    for (const expr of ['file.path.contains("x")', 'note.due', 'has(note.tags)'])
+        expect(looksLikeTaskDsl(expr)).toBe(false)
+})

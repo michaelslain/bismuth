@@ -59,6 +59,13 @@ file.inFolder("reading")        // true for reading and reading/quotes
 file.asLink()                   // a link to this file, showing its name
 ```
 
+## Which methods does every value have?
+
+| Method | Returns | Behaviour |
+|---|---|---|
+| `v.toString()` | string | The value as text; an empty property gives `""`. |
+| `v.isTruthy()` | boolean | False for an empty value, `false`, `0` or an empty list; true otherwise. |
+
 ## Which number methods are there?
 
 | Method | Returns | Behaviour |
@@ -78,6 +85,7 @@ Use `round(2)` instead of `toFixed(2)` when the result feeds more arithmetic. `(
 | `s.trim()` | string | Strip surrounding whitespace. |
 | `s.title()` | string | Capitalise each word. |
 | `s.contains(sub)` | boolean | Substring test. |
+| `s.containsAny(a, b, …)`, `s.containsAll(a, b, …)` | boolean | True when the string holds any, or every, of the arguments. |
 | `s.startsWith(p)`, `s.endsWith(p)` | boolean | Prefix and suffix tests. |
 | `s.replace(find, repl)` | string | Replaces every occurrence. Plain text, not a regex. |
 | `s.slice(start, end?)` | string | A substring. |
@@ -98,7 +106,8 @@ title.length                  // 11; a member, no parentheses
 
 | Method | Returns | Behaviour |
 |---|---|---|
-| `a.contains(x)` | boolean | True when an element equals `x` or has the same text. |
+| `a.contains(x)` | boolean | True when an element equals `x` or has the same text. A link-valued element such as `"[[People]]"` equals `link("People")`, and inside an embedded base it equals `this` on the People note. |
+| `a.containsAny(x, y, …)`, `a.containsAll(x, y, …)` | boolean | True when the list holds any, or every, of the arguments, compared as `contains` does. |
 | `a.join(sep?)` | string | Joins the elements; the separator defaults to `", "`. |
 | `a.unique()` | list | Removes duplicates. |
 | `a.sort()` | list | A sorted copy using default text order, so numbers sort as text. |

@@ -53,7 +53,15 @@ Each Tasks-plugin leaf becomes the Bases expression in the right column. `<field
 | `<field> <date>` | `note.<field> == "<ISO date>"` |
 | `<field> before <date>` | `note.<field> < "<ISO date>"` |
 | `<field> after <date>` | `note.<field> > "<ISO date>"` |
-| `sort by priority\|<field>\|description [reverse]` | a sort on that property, descending with `reverse` |
+| `has <field> date` / `no <field> date` | `note.<field>` / `!note.<field>` |
+| `path\|folder\|filename\|description includes <text>` | a case-insensitive `contains` on `file.path`, `file.folder`, `file.name` or `note.description`; `does not include` negates it |
+| `path\|folder\|filename\|description regex matches /<re>/<flags>` | `.matches(/<re>/<flags>)` on the same property; `regex does not match` negates it |
+| `tags include <text>`, `tag includes <text>` | true when any `#tag` holds the text, ignoring case; `tags do not include` negates it |
+| `tags regex matches /<re>/` | true when any `#tag` matches |
+| `has tags` / `no tags` | `note.tags.length > 0` / `== 0` |
+| `exclude sub-items` | true for a task whose line is not indented |
+| `NOT (<group>)` | `!(<group>)` |
+| `sort by priority\|<field>\|description\|path\|filename\|folder [reverse]` | a sort on that property, descending with `reverse` |
 
 Relative dates (`today`, `tomorrow`, `in 3 days`, `2 days ago`, weekday names) resolve against the
 query's `today` when the block is read. `AND`/`OR` become `&&`/`||`; parentheses keep their meaning.
@@ -63,8 +71,13 @@ query's `today` when the block is read. `AND`/`OR` become `&&`/`||`; parentheses
 - **An unrecognized leaf becomes `true`.** A typo such as `not dnoe` filters nothing on that line
   and raises no error; the rest of the line still applies. `bismuth base migrate-queries --dry-run`
   lists unrecognized leaves.
-- **Display lines are ignored.** `group by`, `limit`, `hide`, `show`, `short mode`, `full mode` and
-  `explain` are recognised and dropped; the base's own config controls display.
+- **Display lines are ignored.** `group by`, `limit`, `hide`, `show`, `short mode`, `full mode`,
+  `explain` and `ignore global query` are recognised and dropped, and so is a `sort by` key a task
+  row cannot order by (`urgency`, `happens`, a function); the base's own config controls display.
+- **Some Tasks filters have no task-row form and become `true`**: `filter by function`, `heading
+  includes` (a task row carries no heading), `is blocked`/`is blocking`, `happens …`, and
+  `{{query.file.…}}` placeholders. A line ending in `\` continues on the next line, so a long
+  `filter by function` counts as one leaf.
 - **`sort by priority` ranks by urgency**, not alphabetically: `highest`, `high`, `medium`, `none`,
   `low`, `lowest`. The plain `sort: note.priority` key ranks the same way, so a rewritten block keeps
   its order.
@@ -72,8 +85,9 @@ query's `today` when the block is read. `AND`/`OR` become `&&`/`||`; parentheses
 ## How it works
 
 `translateTaskDsl(dsl, today)` turns the text into a `where` string plus a `SortSpec` list;
-`looksLikeTaskDsl(text)` is the cheap check `source.ts` uses to decide whether a `tasks:` value needs
-translating, and `applyTaskSort` sorts at the source level through the same `compareForSort` the layout
+`looksLikeTaskDsl(text)` is the cheap check `source.ts` and `bismuth task list --query` use to decide
+whether a value needs translating (text with no `.` that opens with a Tasks keyword such as `not done`,
+`path includes`, `has due date` or `NOT (`), and `applyTaskSort` sorts at the source level through the same `compareForSort` the layout
 uses. `base migrate-queries` calls the translator with live (relative) dates and writes the result
 through `migrateQueryBody`.
 

@@ -24,3 +24,23 @@ test('looseEquals: link equals its path (either arg order)', () => {
     expect(looseEquals(a, 'note.md')).toBe(true)
     expect(looseEquals('note.md', a)).toBe(true)
 })
+
+test('a link equals a property written as that wikilink, as in Obsidian', () => {
+    const people: Link = { __link: true, path: 'People' }
+    expect(looseEquals(people, '[[People]]')).toBe(true)
+    expect(looseEquals('[[People|them]]', people)).toBe(true)
+    expect(looseEquals(people, '[[Categories/People]]')).toBe(true)
+    expect(looseEquals(people, '[[People#Work]]')).toBe(true)
+    expect(looseEquals(people, '[[Places]]')).toBe(false)
+    expect(looseEquals(people, 'People and more')).toBe(false)
+    expect(looseEquals({ __link: true, path: 'Categories/People' } as Link, { __link: true, path: 'People' } as Link)).toBe(true)
+})
+
+test('an embedding note`s this compares like a link to that note, as Obsidian`s this is the host file', () => {
+    const kyoto = { loc: ['[[Kyoto]]'], file: { name: 'Kyoto', path: 'References/Kyoto.md', tags: [] } }
+    expect(looseEquals('[[Kyoto]]', kyoto)).toBe(true)
+    expect(looseEquals(kyoto, link('Kyoto'))).toBe(true)
+    expect(looseEquals('[[Osaka]]', kyoto)).toBe(false)
+    expect(looseEquals(kyoto.file, '[[References/Kyoto]]')).toBe(true)
+    expect(looseEquals({ a: 1 }, '[[Kyoto]]')).toBe(false)
+})

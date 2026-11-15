@@ -97,7 +97,7 @@ Find the change in the table, then follow its steps in the section below. A test
 
 ### Add a Bases function
 
-1. Add the case to `callFunction` (global functions) or to the per-type method helper that `callMethod` dispatches to, in `core/src/bases/functions.ts`. A new summary name goes in `summarize` in `core/src/bases/query.ts`.
+1. Add the case to `callFunction` (global functions) or to the per-type method helper that `callMethod` dispatches to, in `core/src/bases/functions.ts`. A new summary name goes in `summarize` in `core/src/bases/query.ts`. The Obsidian importer keeps its own list of known functions and summaries in `core/src/obsidianImport/bases.ts`; `core/test/obsidianImport/bases.test.ts` fails until that list matches.
 2. Test it in `core/test/bases/functions.test.ts`.
 3. Add a row to `docs/bases/functions.md`.
 
@@ -156,6 +156,7 @@ Give it a colocated `<Name>.module.css` and `<Name>.stories.tsx`; the shared sto
 |---|---|---|
 | `core/src/routes/` | One route factory per area: `vault`, `graph`, `settings`, `bases`, `tasks`, `daemon`, `gcal`, `relay`, `agents`, `memory`, `system`, plus `context.ts` | `context.ts` |
 | `core/src/bases/` | The Bases engine: lexer, parser, evaluator, filters, functions, sources, query, chart data, task rows, and the base file format (`baseFile.ts`: `.base.jsonl` and markdown read and write) | `query.ts`, `baseFile.ts` |
+| `core/src/obsidianImport/` | The Obsidian importer behind `bismuth import obsidian`: one pure step per area (settings, tags, links, bases, tasks, flashcards, scan) over the vault's text, plus the report; `cli/src/obsidianImport.ts` does the copy, writes and validation | `types.ts`, `bases.ts` |
 | `core/src/schema/` | The settings schema, validation, coercion, completion suggestions | `settingsSchema.ts` |
 | `core/src/theme/` | Theme tokens, the design-token registry, custom themes, font families | `tokens.ts`, `designTokens.ts` |
 | `core/src/srs/` | Flashcards: SM-2 scheduler, markdown card parser, row cards | `scheduler.ts` |

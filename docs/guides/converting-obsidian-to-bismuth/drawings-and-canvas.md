@@ -1,6 +1,6 @@
 # Converting Obsidian canvas and Excalidraw files
 
-Bismuth reads neither Obsidian canvases nor Excalidraw drawings, so this page keeps the files on disk, preserves their content as images where the user wants it, and reports every loss. Bismuth's own drawing formats (`.draw` files and ` ```draw ` fences) have no Obsidian source, so nothing converts into them.
+Bismuth reads neither Obsidian canvases nor Excalidraw drawings. `bismuth import obsidian` keeps both files on disk, converts neither, and lists each one under Needs a decision so a person can decide whether to preserve the content as an image. Bismuth's own drawing formats (`.draw` files and ` ```draw ` fences) have no Obsidian source, so nothing converts into them. The vault-wide procedure is in [the conversion guide](../converting-obsidian-to-bismuth.md).
 
 ## Sources
 
@@ -10,7 +10,7 @@ Bismuth reads neither Obsidian canvases nor Excalidraw drawings, so this page ke
 
 ## Format differences
 
-The table orients you; where a linked live page disagrees, follow the live page and note the difference in the report.
+The table orients you; where a linked live page disagrees, follow the live page and tell the user about the difference.
 
 | Obsidian | In Bismuth |
 |---|---|
@@ -20,11 +20,17 @@ The table orients you; where a linked live page disagrees, follow the live page 
 | Excalidraw auto-export PNG/SVG copy (a plugin setting) | an image; embeds like any image |
 | stroke ink | none in Obsidian; nothing to import |
 
-## Convert
+## What the command reports
 
-1. Canvas: leave each `.canvas` where it is (the rsync in the guide's step 1 already copied it) and list every canvas path in the report as lossy. If the user wants the content kept visible, ask them to export an image from Obsidian and embed it as `![[Board.png]]`. Do not hand-translate nodes.
-2. Excalidraw (only when the plugin is present): for each `.excalidraw.md`, ask the user to enable the plugin's auto-export (a PNG or SVG copy on save) or to export an image. Put the image next to the note and add `![[<name>.png]]` to the top of the note body. Leave the original note and report each one.
-3. Remove stale `![[X.canvas]]` embeds only if the user agrees; otherwise leave them and report them.
+| Section | Item |
+|---|---|
+| Needs a decision | `canvas is not shown in Bismuth; …` per `.canvas` file, `canvas embed: …` per `![[X.canvas]]`, `Excalidraw drawing shows as raw text; …` per `.excalidraw.md` note |
+
+## Resolve a Needs a decision item
+
+- **A canvas file**: leave the `.canvas` where it is. If the user wants its content visible, ask them to export an image from Obsidian and embed it as `![[Board.png]]`. Do not hand-translate nodes.
+- **An Excalidraw note**: ask the user to enable the plugin's auto-export (a PNG or SVG copy on save) or to export an image. Put the image next to the note and add `![[<name>.png]]` to the top of the note body. Leave the original note.
+- **A canvas embed**: remove a stale `![[X.canvas]]` embed only if the user agrees; otherwise leave it.
 
 ## Lossy
 
@@ -34,4 +40,4 @@ The table orients you; where a linked live page disagrees, follow the live page 
 ## Validate
 
 - `bismuth tree --vault "$OUT" --pretty | grep -ci canvas` prints `0`, because canvas files are not in the tree, and every canvas path is in the report.
-- Any image you added resolves: the unresolved-links check in [the conversion guide](../converting-obsidian-to-bismuth.md) (step 5) prints nothing.
+- Any image you added sits in the vault, so its `![[<name>.png]]` embed resolves by file name.

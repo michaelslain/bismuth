@@ -1,16 +1,16 @@
 # Converting Obsidian vault settings
 
-Obsidian keeps settings in `.obsidian/*.json`; Bismuth keeps a sparse YAML file named `.settings` at the vault root. This page maps the Obsidian settings that have a Bismuth key (attachments, editor flags, templates, daily notes, math macros, folder icons) and lists the ones that carry over to nothing.
+Obsidian keeps settings in `.obsidian/*.json`; Bismuth keeps a sparse YAML file named `.settings` at the vault root. `bismuth import obsidian` reads the source's `.obsidian/` folder, writes the settings that have a Bismuth key into the new vault's `.settings`, and lists the ones that carry over to nothing. It never copies `.obsidian/` itself. The vault-wide procedure is in [the conversion guide](../converting-obsidian-to-bismuth.md).
 
 ## Sources
 
 - Bismuth: `docs/vault/structure.md` (what the tree shows, hidden files), `docs/settings/reference.md` (every `.settings` key), `docs/overview/storage.md` (git snapshots, `.settings`), `docs/templates/syntax.md` (`dailyNotes`, template tokens), `docs/cli/reference.md` (the `settings` and `folder-icon` commands).
 - Obsidian: https://obsidian.md/help/data-storage, https://obsidian.md/help/plugins/daily-notes, https://obsidian.md/help/plugins/templates, https://obsidian.md/help/attachments
-- The Obsidian docs describe the `.obsidian/` folder but not each JSON key. Read the real files in `$SRC/.obsidian/`; they are the truth for key names and values.
+- The Obsidian docs describe the `.obsidian/` folder but not each JSON key. The real files in the source's `.obsidian/` are the truth for key names and values.
 
 ## Format differences
 
-A Bismuth vault is any existing folder. `.settings` (hidden YAML at the vault root) is created on first open as a two-line comment seed with no keys. It is sparse: absent keys read as schema defaults, and the file gains only the keys that the user, or `bismuth settings set`, writes. The table orients you; where a linked live page disagrees, follow the live page and note the difference in the report.
+A Bismuth vault is any existing folder. `.settings` (hidden YAML at the vault root) holds only the keys the user, or `bismuth settings set`, writes; absent keys read as schema defaults. The table orients you; where a linked live page disagrees, follow the live page and tell the user about the difference.
 
 | Obsidian file and key (as read from `.obsidian/`) | Bismuth `.settings` key |
 |---|---|
@@ -19,56 +19,60 @@ A Bismuth vault is any existing folder. `.settings` (hidden YAML at the vault ro
 | `attachmentFolderPath` `"./"` (next to the note) | `attachments.folder: "."` |
 | `attachmentFolderPath` `"./sub"` | no equivalent (lossy) |
 | `app.json` live preview, line numbers, spellcheck | `editor.livePreview`, `editor.lineNumbers`, `editor.spellcheck` |
-| math macros file (a LaTeX preamble; file name unverified) | `editor.mathMacros`, one string of `\newcommand`/`\def` |
+| math macros file (a LaTeX preamble) | `editor.mathMacros`, one string of `\newcommand`/`\def`; not mapped by the command |
 | `templates.json` `folder` | `templates.folder` (default `Templates`) |
 | `daily-notes.json` `folder`, `format`, `template` | `dailyNotes:` list item `{id, label, icon, folder, fileName, template}` |
-| `appearance.json` theme | `appearance.theme`: `ink`, `paper`, `cathode` or `riso` (see `docs/settings/themes.md`) |
-| `hotkeys.json` | `keybindings:` (a different schema, see `docs/settings/keybindings.md`) |
+| `appearance.json` theme, fonts, accent colour | not mapped; Bismuth keeps its own theme (`docs/settings/themes.md`) |
+| `hotkeys.json` | not mapped; `keybindings:` is a different schema (`docs/settings/keybindings.md`) |
 | plugin config, CSS snippets, community themes | nothing carries over |
 
 Embeds resolve by file name anywhere in the vault, so `attachments.folder` decides only where new files land. Existing `![[x.png]]` embeds keep working.
 
-## Convert
+## What the command converts
 
-0. No `.obsidian/` in `$SRC`: nothing to map. Skip this whole page, leave `.settings` alone, and write "no `.obsidian/`, settings defaults apply" in the report.
-1. Read each file that exists:
-   ```bash
-   cat "$SRC"/.obsidian/{app,daily-notes,templates,appearance}.json
-   ```
-2. Attachments: use the mapped value from the table, with `""` and `"."` quoted as empty and dot:
-   ```bash
-   bismuth settings set attachments.folder assets --vault "$OUT"
-   ```
-3. Editor flags: repeat for each flag that is set:
-   ```bash
-   bismuth settings set editor.lineNumbers true --vault "$OUT"
-   ```
-4. Templates:
-   ```bash
-   bismuth settings set templates.folder Templates --vault "$OUT"
-   ```
-5. Daily notes: map `format` to `fileName: "{{date:FORMAT}}"` (no `.md`) and `template` to a vault path with `.md`:
-   ```bash
-   bismuth settings set dailyNotes '[{"id":"daily","label":"Daily","icon":"calendar","folder":"Daily","fileName":"{{date:YYYY-MM-DD}}","template":"Templates/Daily.md"}]' --vault "$OUT"
-   ```
-6. Math macros (only if the vault has a preamble):
-   ```bash
-   bismuth settings set editor.mathMacros '\newcommand{\R}{\mathbb{R}}' --vault "$OUT"
-   ```
-7. Folder icons (only if an icon plugin is in `community-plugins.json`; read its `data.json` for the folder-to-icon map):
-   ```bash
-   bismuth folder-icon "Projects" Folder --vault "$OUT"
-   ```
-8. Do not copy `.obsidian/` into `$OUT`. A Bismuth backup stages everything with `git add -A`, so it would be committed.
+- Attachments, the editor flags (live preview, line numbers, spellcheck) and the templates folder, from the table above.
+- Daily notes: one `dailyNotes` item with id `daily`. A Moment `format` becomes `fileName: "{{date:FORMAT}}"` and a `template` becomes a vault path ending in `.md`. A format with a token Bismuth lacks falls back to `{{date}}`; a format with slashes is flattened with `-`.
+- Folder icons, when `obsidian-icon-folder` is in the source's `community-plugins.json`: a Lucide icon written with the `Lu` prefix becomes its Lucide name, and an emoji passes through.
+- A source with no `.obsidian/` folder gets no settings; the report says so under Defaults taken.
 
-## Lossy
+Each setting the command writes is one line under Converted, in the form `<key> = <value> (from .obsidian/<file>)`, and each folder icon is `folder icon <folder> = <icon> (…)`. Read the values back with `bismuth settings get`.
 
-- All plugin settings, hotkeys (no automatic mapping), CSS snippets and community themes.
-- `attachmentFolderPath` of `"./sub"`, and Obsidian settings with no Bismuth key (`userIgnoreFilters`, `newFileLocation`, `useMarkdownLinks`, `alwaysUpdateLinks`: no key found in `docs/settings/reference.md`).
-- A daily-note `format` with slashes (nested folders), or Moment tokens such as `Do`, `W`, `Q`, `[literal]`: it is unverified whether `fileName` supports nested folders, and the template vocabulary is in `docs/templates/syntax.md`. Flatten the name and report it.
+## What the command copies
+
+The command copies every file in the source except the top-level `.obsidian/`, `.trash/` and `.git/` folders. Notes and bases are rewritten; every other file is copied byte for byte.
+
+- The source's git history is not copied; the report lists that under Defaults taken (area `plugins`), and Bismuth starts its own snapshot history in the new vault.
+- A symbolic link is never followed or copied. Each one is listed under Needs a decision (area `syntax`).
+- A copied or written file keeps its source modified date, so a base that filters or sorts on `file.mtime` behaves as it did. Creation dates are the import time and the report lists that under Lossy.
+
+## What the command reports
+
+| Section | Item |
+|---|---|
+| Converted | one line per written setting, and one per folder icon |
+| Lossy | file creation dates (they are the import time), `attachmentFolderPath "./sub"`, `userIgnoreFilters`, `newFileLocation`, `useMarkdownLinks`, `alwaysUpdateLinks`, `appearance.json`, CSS snippets, `hotkeys.json`, a daily-note format whose tokens Bismuth lacks or that has slashes, and a folder icon Bismuth cannot show |
+| Defaults taken | `no .obsidian folder: settings defaults apply`, and the source's `.git` history not copied |
+| Needs a decision | each symbolic link, as `symbolic link not copied; copy what it points to into the vault by hand: "<path>"` |
+
+Only symbolic links land under Needs a decision.
+
+## Resolve a Needs a decision item
+
+- **A symbolic link**: copy what it points to into the new vault by hand, or tell the user the target was not copied. The command never reads outside the source, so the target is not in the new vault.
+
+## Resolve a Lossy item by hand
+
+- **Math macros**: when the vault has a preamble, set it as one string:
+  ```bash
+  bismuth settings set editor.mathMacros '\newcommand{\R}{\mathbb{R}}' --vault "$OUT"
+  ```
+- **A daily-note format that fell back to `{{date}}` or was flattened**: the template vocabulary is in `docs/templates/syntax.md`. Choose a `fileName` from it with the user and set `dailyNotes`.
+- **A folder icon the command could not map**: set one with `bismuth folder-icon "Projects" Folder --vault "$OUT"`.
+- **Hotkeys, CSS snippets, themes**: tell the user; none carries over.
+- **File creation dates**: tell the user; Bismuth has no way to set them.
 
 ## Validate
 
 - `bismuth settings get --key attachments --vault "$OUT" --pretty` shows the mapped folder.
 - `bismuth settings get --key dailyNotes --vault "$OUT" --pretty` shows one item per Obsidian daily-notes config, and its `template` path exists under `$OUT`.
-- `ls -A "$OUT"` shows no `.obsidian`. `.settings` is created the first time the app opens the vault, so its absence is a pass and the CLI reads defaults. A `settings get` that returns the mapped value proves the mapping.
+- `ls -A "$OUT"` shows no `.obsidian`. `.settings` is created the first time the app opens the vault when the source mapped no settings, so its absence is then a pass and the CLI reads defaults.

@@ -18,14 +18,56 @@ export function truthy(v: unknown): boolean {
     return true
 }
 
+/** The target of a value written as a wikilink (`"[[Notes/People|them]]"` → `Notes/People`), the
+ *  way a frontmatter property holds a link; null for any other text. */
+function wikilinkTarget(v: unknown): string | null {
+    if (typeof v !== 'string') return null
+    const m = /^\s*\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]\s*$/.exec(v)
+    return m ? m[1].trim() : null
+}
+
+/** Two link targets name the same note: equal, or equal once the folder and `.md` are dropped,
+ *  since `[[People]]` and `[[Categories/People]]` both resolve to `Categories/People.md`. */
+function sameTarget(a: string, b: string): boolean {
+    const base = (p: string) => p.slice(p.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+    return a === b || base(a) === base(b)
+}
+
+function linkEqualsValue(l: Link, v: unknown): boolean {
+    if (l.path === v || (l.display !== undefined && l.display === v)) return true
+    const t = wikilinkTarget(v)
+    return t !== null && sameTarget(l.path, t)
+}
+
+/** The note a file value stands for, compared like a link: a file's metadata (`file`, which has a
+ *  `path` and `tags`), or an embedding note's `this`, which carries its file under `file`. In
+ *  Obsidian `this` in an embedded base IS the host file, so `list(loc).contains(this)` matches a
+ *  property holding `"[[Kyoto]]"` on the Kyoto note. Null for any other value. */
+function filePathOf(v: unknown): string | null {
+    if (!v || typeof v !== 'object' || Array.isArray(v) || v instanceof Date || isLink(v)) return null
+    const o = v as Record<string, unknown>
+    if (typeof o.path === 'string' && Array.isArray(o.tags)) return o.path
+    const f = o.file as Record<string, unknown> | undefined
+    if (f && typeof f === 'object' && typeof f.path === 'string') return f.path
+    return null
+}
+
 export function looseEquals(a: unknown, b: unknown): boolean {
     if (a instanceof Date && b instanceof Date)
         return a.getTime() === b.getTime()
-    if (isLink(a) && isLink(b)) return a.path === b.path
-    if (isLink(a))
-        return a.path === b || (a.display !== undefined && a.display === b)
-    if (isLink(b))
-        return b.path === a || (b.display !== undefined && b.display === a)
+    const fa = filePathOf(a)
+    const fb = filePathOf(b)
+    if (fa !== null || fb !== null) {
+        if (fa !== null && fb !== null) return fa === fb
+        const path = (fa ?? fb)!
+        const other = fa !== null ? b : a
+        if (isLink(other)) return sameTarget(path, other.path)
+        const t = wikilinkTarget(other)
+        return t !== null && sameTarget(path, t)
+    }
+    if (isLink(a) && isLink(b)) return sameTarget(a.path, b.path)
+    if (isLink(a)) return linkEqualsValue(a, b)
+    if (isLink(b)) return linkEqualsValue(b, a)
     return a === b
 }
 

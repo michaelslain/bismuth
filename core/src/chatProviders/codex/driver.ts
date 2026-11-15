@@ -273,7 +273,7 @@ export const CODEX_AGENTS_MD_CONTENT = [
     'first run `bismuth docs read bases/authoring.md`, then `bismuth docs read',
     'bases/authoring/<layout>.md` for the layout you are writing.',
     '',
-    '**Converting a vault between Obsidian and Bismuth?** First run `bismuth docs read guides/converting-obsidian-to-bismuth.md` or `bismuth docs read guides/converting-bismuth-to-obsidian.md`.',
+    '**Converting a vault from Obsidian?** Run `bismuth import obsidian <folder>`, then `bismuth docs read guides/converting-obsidian-to-bismuth.md` to handle its report. **Converting a vault to Obsidian?** First run `bismuth docs read guides/converting-bismuth-to-obsidian.md`.',
 ].join('\n')
 
 /**

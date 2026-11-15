@@ -1,125 +1,105 @@
 # Converting an Obsidian vault to Bismuth
 
-A Bismuth vault is any folder of markdown, so an Obsidian vault already opens as one. Converting (importing, migrating) rewrites the few features whose format differs, writes the result to a new folder, and reports what was lossy. Follow this guide whenever you turn an Obsidian vault into a Bismuth vault; the source vault is never modified.
-
-Wikilinks, embeds, tags, frontmatter, callouts, math and `::` flashcards work unchanged. The conversion covers `.base` files, Tasks-plugin emoji, links by alias or with `.md`, and the `.obsidian/` settings. For the reverse direction, read [converting a Bismuth vault to Obsidian](converting-bismuth-to-obsidian.md).
-
-## Ground rules
-
-- Write to `<source>-bismuth`. If that folder exists and is not empty, ask the user before touching it.
-- Look formats up before converting. Both Bismuth and Obsidian (and its plugins) change, so the tables in the topic pages under `guides/converting-obsidian-to-bismuth/` orient you and the live sources win.
-- Apply only the rewrites the topic pages specify. Never edit a note's own content to make a check pass. A validation failure caused by the note itself (a typo, a stray `[[`) goes in the report's Lossy section as a known item, and the check stays failing for that item.
-- Read Bismuth docs (cited below as `docs/<path>.md`) in this order:
-  1. `bismuth docs read <page>`, with the page path minus the `docs/` prefix, for example `bismuth docs read bases/overview.md`. `--section <heading>` returns one section. With no shell, call the MCP tool `bismuth_cli` with the same arguments.
-  2. The file `~/.bismuth/docs/<path>.md`.
-  3. `docs/<path>.md` in a Bismuth checkout.
-
-  `bismuth docs search <words>` finds a page by keyword, and `bismuth --help` lists every CLI command.
-- Read a topic page the same way: each `<name>.md` cited below is `guides/converting-obsidian-to-bismuth/<name>.md`, for example `bismuth docs read guides/converting-obsidian-to-bismuth/tasks.md`.
-- Every command below takes `--vault "$OUT"`; add `--pretty` to read the JSON. From a checkout, run the CLI as `bun run cli/src/index.ts`. On an installed machine `bismuth` may not be on PATH; the binary is at `~/.bismuth/bin/bismuth`.
-
-## Workflow
-
-### 1. Copy
-
-The rsync leaves `.obsidian/` readable in `$SRC` for step 4.
+`bismuth import obsidian <folder>` turns an Obsidian vault into a Bismuth vault in a new folder: it applies every fixed rewrite, checks the result, and writes a report that lists what it converted, lost, defaulted and could not decide. You run the command, read the report, and handle the items under **Needs a decision**. For the reverse direction, read [converting a Bismuth vault to Obsidian](converting-bismuth-to-obsidian.md).
 
 ```bash
-SRC=/path/to/vault; SRC="${SRC%/}"; OUT="$SRC-bismuth"
-case "$OUT" in "$SRC"/*) echo "OUT is inside SRC"; exit 1;; esac
-[ -n "$(ls -A "$OUT" 2>/dev/null)" ] && echo "EXISTS, ask the user" || { mkdir -p "$OUT" && rsync -a --exclude=.obsidian --exclude=.trash "$SRC"/ "$OUT"/; }
+bismuth import obsidian ~/vaults/notes --pretty
 ```
 
-### 2. Inventory
+```json
+{
+  "out": "/Users/me/vaults/notes-bismuth",
+  "reportPath": "/Users/me/vaults/notes-bismuth.conversion-report.md",
+  "counts": { "converted": 42, "decide": 3, "lossy": 5, "defaults": 1, "left": 2 },
+  "validation": { "ok": true, "failures": 0 }
+}
+```
 
-Count what the vault uses; only those features get converted.
+`counts` holds the number of report items in each section. The command exits `0` whenever the conversion ran, with decide items or without, so read `counts.decide` and `validation.ok` rather than the exit code.
+
+## Run the import
+
+Run the command against the Obsidian vault's folder. It copies the folder to `<folder>-bismuth` (or the `--out` folder), rewrites the copy and prints the JSON above.
+
+- The source folder is never written, and a symbolic link in it is never followed.
+- The top-level `.obsidian/`, `.trash/` and `.git/` folders are never copied; `.obsidian/` is read where needed. Every other file and folder, hidden ones included, is copied.
+- Each copied or written file keeps its source modified date. Creation dates are the import time.
+- The command refuses an output folder that is not empty and an output folder inside the source. Pick another `--out`, or ask the user before emptying the folder.
+- `--out` may be a vault that holds only Bismuth's own `.settings`, `.daemon`, `.git` or `.DS_Store`, which is what the app's first-run import creates; the command copies into it and writes settings onto its `.settings`.
+- Notes and bases with CRLF line endings are written with LF, and each is listed under Defaults taken.
+- `--dry-run` computes the same report and writes nothing; `reportPath` is `null` and the report text comes back as `report` in the JSON.
+- The report is written beside the new vault as `<out>.conversion-report.md`, not inside it.
+
+Flags, refusals and the output shape are in the [CLI reference](../cli/reference.md#import). With no shell, call the MCP tool `bismuth_cli` with the same arguments. From a Bismuth checkout, run the CLI as `bun run cli/src/index.ts`; on an installed machine the binary is `~/.bismuth/bin/bismuth` when `bismuth` is not on PATH.
+
+## What the command converts
+
+Every rewrite skips fenced code blocks and inline code spans, so a `[[x.md]]` shown as an example stays as written. A step that cannot decide leaves the text alone and adds a Needs a decision item that quotes it.
+
+| Area | What the command does | Topic page |
+|---|---|---|
+| Settings | Maps attachments, editor flags, templates, daily notes and folder icons into `.settings`, and reports the settings that have no Bismuth key | [vault-and-settings.md](converting-obsidian-to-bismuth/vault-and-settings.md) |
+| Tags | Writes tags that differ only by case in one spelling, and turns `tags: a b` into a list; a comma-separated `tags:` string is left as written | [tags-and-properties.md](converting-obsidian-to-bismuth/tags-and-properties.md) |
+| Links | Strips `.md` from wikilinks, rewrites alias, case-mismatched and markdown links to wikilinks; a markdown link resolves relative to its note, then from the vault root, then by file name | [links-and-embeds.md](converting-obsidian-to-bismuth/links-and-embeds.md) |
+| Bases | Converts `.base` files, ` ```base ` fences and base embeds and links | [bases.md](converting-obsidian-to-bismuth/bases.md) |
+| Tasks | Rewrites Tasks-plugin emoji to bracket fields and ` ```tasks ` blocks to ` ```query ` blocks | [tasks.md](converting-obsidian-to-bismuth/tasks.md) |
+| Flashcards | Moves scheduling comments onto single-line cards and maps custom deck tags | [flashcards.md](converting-obsidian-to-bismuth/flashcards.md) |
+| Everything else | Reports Dataview, Templater, canvas, Excalidraw and unknown plugins without touching them | [other-syntax.md](converting-obsidian-to-bismuth/other-syntax.md), [drawings-and-canvas.md](converting-obsidian-to-bismuth/drawings-and-canvas.md) |
+
+Wikilinks, embeds, frontmatter properties, callouts, math and `::` flashcards work unchanged and need no rewrite.
+
+## Read the report
+
+The report has these sections, in this order. Under each, items are grouped by area as `### <area>` and written as `- <path>: <detail>`; an empty section says `none`.
+
+| Section | What it holds | Your work |
+|---|---|---|
+| Needs a decision | Text the command left as written because it cannot decide | Handle each item (next section) |
+| Converted | Each rewrite that was applied | None |
+| Lossy | Converted, but something Obsidian had does not carry over | Tell the user; fix only what they ask for |
+| Defaults taken | A choice the command made without asking | Tell the user |
+| Left as is | Plugin syntax that shows as code, and links that were already unresolved in the source vault; neither needs anything | None |
+| Validation | The result of the checks the command ran on the written vault | One line when every check passed; a failing check also appears under Needs a decision |
+| Inventory | What the source vault used, as counts | None |
+
+## Handle each Needs a decision area
+
+Open `<out>.conversion-report.md`, read `## Needs a decision`, and for each `### <area>` follow the page that owns it. Edit only the item named; never edit a note's own content to make a check pass.
+
+| Area | What lands here | Resolve in |
+|---|---|---|
+| `bases` | Multi-view bases that were split, a layout with no Bismuth equivalent, Obsidian-only functions, a base that does not parse, a base embed inside a list item | [bases.md](converting-obsidian-to-bismuth/bases.md#resolve-a-needs-a-decision-item) |
+| `links` | Alias links that are ambiguous, and links inside table rows, including `[[Note\|Alias]]` written in a table | [links-and-embeds.md](converting-obsidian-to-bismuth/links-and-embeds.md#resolve-a-needs-a-decision-item) |
+| `tasks`, `queries` | A task that did not round-trip, a ` ```tasks ` query with no translation or with filters that did not translate, Dataview and dataviewjs | [tasks.md](converting-obsidian-to-bismuth/tasks.md#resolve-a-needs-a-decision-item), [other-syntax.md](converting-obsidian-to-bismuth/other-syntax.md#resolve-a-needs-a-decision-item) |
+| `drawings` | Canvas files, canvas embeds and Excalidraw notes | [drawings-and-canvas.md](converting-obsidian-to-bismuth/drawings-and-canvas.md#resolve-a-needs-a-decision-item) |
+| `syntax`, `plugins` | Templater code, symbolic links, and community plugins the command does not know | [other-syntax.md](converting-obsidian-to-bismuth/other-syntax.md#resolve-a-needs-a-decision-item), [vault-and-settings.md](converting-obsidian-to-bismuth/vault-and-settings.md#resolve-a-needs-a-decision-item) |
+| `validation` | A check that failed on the written vault: a base that does not validate, a task line or query block that still migrates, a link that resolved in the source and does not resolve in the new vault, a changed task count | [Resolve a validation item](#resolve-a-validation-item) |
+
+Read a topic page by running `bismuth docs read guides/converting-obsidian-to-bismuth/<name>.md`. When a live Obsidian or plugin page disagrees with a topic page's format table, follow the live page and tell the user about the difference.
+
+## Resolve a validation item
+
+A failing check names a path and what failed. `base validate: …` means a converted base is invalid: run `bismuth base validate "P/Name" --vault "$OUT"` and fix the config in [bases.md](converting-obsidian-to-bismuth/bases.md). `unresolved link [[x]]` means a link that resolved in Obsidian matches no note or file in the new vault (a link already broken in the source is listed under Left as is instead): fix the case or path in [links-and-embeds.md](converting-obsidian-to-bismuth/links-and-embeds.md), or tell the user the target never existed. `task count changed` names the source and the copy counts; compare them with `bismuth task list --vault "$OUT" --pretty`. A failure caused by the note's own text, such as a stray `[[`, stays failing and goes to the user as a known item; never edit the note to make the check pass.
+
+## Verify
+
+After handling the items, confirm the new vault from the shell. Every command takes `--vault "$OUT"`, where `$OUT` is the `out` path from the JSON.
 
 ```bash
-SRC="$SRC" bash <<'EOF'
-cd "$SRC" || exit 1; export LC_ALL=en_US.UTF-8
-g() { grep -rE --include='*.md' --exclude-dir=.obsidian --exclude-dir=.trash "$@" .; }
-n() { wc -l | tr -d ' '; }; BT='```'
-pr() { printf '%-22s %s\n' "$1" "$2"; }
-pr "base files" "$(find . \( -path ./.obsidian -o -path ./.trash \) -prune -o -name '*.base' -print | n)"
-for f in base tasks dataview dataviewjs mermaid; do pr "$f fences" "$(g "^[[:space:]]*${BT}${f}[[:space:]]*\$" | n)"; done
-pr "checkbox tasks" "$(g '^[[:space:]]*[-*+] \[.\] ' | n)"
-pr "emoji tasks" "$(g '^[[:space:]]*[-*+] \[.\] .*(📅|⏳|🛫|✅|➕|❌|🔺|⏫|🔼|🔽|⏬|🔁)' | n)"
-pr "numbered tasks" "$(g '^[[:space:]]*[0-9]+[.)] \[.\] ' | n)"
-pr "lossy emoji (🏁⛔🆔)" "$(g '🏁|⛔|🆔' | n)"
-pr ":: lines (hint only)" "$(g '^([^`]*[^:`])?:{2,3}[^:]' | n)"
-pr "flashcard-tag notes" "$(g -l '#flashcard|^tags:.*flashcard|^[[:space:]]*- flashcard' | n)"
-pr "excalidraw notes" "$(find . \( -path ./.obsidian -o -path ./.trash \) -prune -o -name '*.excalidraw.md' -print | n)"
-pr "canvas files" "$(find . \( -path ./.obsidian -o -path ./.trash \) -prune -o -name '*.canvas' -print | n)"
-pr "notes with aliases" "$(g -l '^aliases:' | n)"
-pr "block refs" "$(g '\^[A-Za-z0-9-]+[[:space:]]*$|\[\[[^]]*#\^' | n)"
-pr "[[x.md]] links" "$(g -o '\[\[[^]|#]+\.md[]|#]' | n)"
-pr "md links to .md" "$(g -o '\]\([^)]+\.md(#[^)]*)?\)' | n)"
-pr "%% comment lines" "$(g '%%' | n)"
-pr "community plugins" "$(cat .obsidian/community-plugins.json 2>/dev/null || echo none)"
-EOF
+bismuth task migrate --dry-run --vault "$OUT"            # "changed":0
+bismuth base migrate-queries --dry-run --vault "$OUT"    # "changed":0
+bismuth base validate "P/Name" --vault "$OUT"            # "ok":true, for each base you edited
+bismuth card decks --vault "$OUT" --pretty               # one deck per flashcard tag
 ```
 
-### 3. Look up current formats
-
-For each feature present, open that topic page's `## Sources`: the Bismuth doc plus the Obsidian or plugin page. Plugin syntax is converted only when the plugin is in `community-plugins.json`. When a live source disagrees with the topic page's table, follow the live source and write the difference down for the report.
-
-### 4. Convert
-
-Convert in this order; each topic page holds the exact steps. With no `.obsidian/` in `$SRC` there are no settings or plugins: skip every step that reads it and every plugin-gated topic page, and say so in the report. Never stop to ask when nobody is there to answer: take the stated default and record it in the report.
-
-1. Settings: [`vault-and-settings.md`](converting-obsidian-to-bismuth/vault-and-settings.md)
-2. Bases: [`bases.md`](converting-obsidian-to-bismuth/bases.md)
-3. Tasks: `bismuth task migrate --dry-run --vault "$OUT" --pretty`, review, then run it without `--dry-run`: [`tasks.md`](converting-obsidian-to-bismuth/tasks.md)
-4. Query blocks: grep the ` ```tasks ` blocks for the lines `migrate-queries` drops, rewrite ` ```tasks ` to ` ```query `, then run `bismuth base migrate-queries --vault "$OUT"`: [`tasks.md`](converting-obsidian-to-bismuth/tasks.md)
-5. Flashcards: [`flashcards.md`](converting-obsidian-to-bismuth/flashcards.md)
-6. Links, aliases, embeds, tags, frontmatter: [`links-and-embeds.md`](converting-obsidian-to-bismuth/links-and-embeds.md), [`tags-and-properties.md`](converting-obsidian-to-bismuth/tags-and-properties.md)
-7. Drawings and canvas: [`drawings-and-canvas.md`](converting-obsidian-to-bismuth/drawings-and-canvas.md)
-8. Everything else (callouts, math, templates, daily notes, Dataview): [`other-syntax.md`](converting-obsidian-to-bismuth/other-syntax.md)
-
-### 5. Validate
-
-Every check must pass; fix and rerun otherwise.
-
-```bash
-cd "$OUT" && grep -rlx --include='*.md' 'type: base' . | while IFS= read -r f; do
-  echo "$f $(bismuth base validate "$f" --vault "$OUT")"; done          # every line must say "ok":true
-grep -rlx --include='*.md' 'type: base' . | while IFS= read -r f; do
-  echo "$f rows $(bismuth base render "$f" --vault "$OUT" --pretty | grep -c '"basename"')"; done   # compare to Obsidian
-bismuth task list --vault "$OUT" --pretty | grep -c '"line"'            # equals the inventory's checkbox tasks
-bismuth task migrate --dry-run --vault "$OUT"                           # "changed":0
-bismuth base migrate-queries --dry-run --vault "$OUT"                   # "changed":0
-bismuth card decks --vault "$OUT" --pretty                              # one deck per flashcard tag; the bare `flashcards` tag is the deck named ""
-```
-
-Then run the unresolved-links check. It prints nothing when clean, and it skips fenced code and inline code spans, where `[[x]]` is an example. Targets ending in `.md` or `.base` count as unresolved. A target caused by the note's own content, such as a stray `[[`, is a known item for the report and is never edited away.
-
-```bash
-cd "$OUT" && find . -name '*.md' -print0 | xargs -0 perl -0ne 's/^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$//gsm; s/(`+)[^\n]*?\1//g; print "$1\n" while /\[\[([^\]|#\n]+|(?=\n|\z))/g' | sort -u | while IFS= read -r t; do
-  case "$t" in '') echo "UNRESOLVED [[ with no target (end of line)"; continue;; esac
-  case "$t" in *.md|*.base) echo "UNRESOLVED [[$t]]"; continue;; esac
-  case "$t" in ../*|*/../*) echo "UNRESOLVED [[$t]]"; continue;; */*) [ -f "$t.md" ] || [ -f "$t" ] || echo "UNRESOLVED [[$t]]"; continue;; esac
-  b=$(basename "$t")
-  [ -n "$(find . -type f \( -name "$b.md" -o -name "$b" \) -print -quit)" ] || echo "UNRESOLVED [[$t]]"; done
-```
-
-`.settings` need not exist yet: the app creates it the first time it opens the vault, and until then the CLI reads defaults. Absent is a pass; check it only when `$SRC/.obsidian/` existed.
-
-### 6. Report
-
-Write `$OUT.conversion-report.md` and summarise it to the user, with these sections in order:
-
-- Inventory: the step 2 counts.
-- Converted: what changed, per step, with paths.
-- Lossy: each item with its path, including dropped Obsidian view names, dropped task query lines, and links rewritten by hand.
-- Defaults taken: every choice made without asking, for example migrating emoji tasks with no Tasks plugin.
-- Left as-is: plugin syntax, and features the vault uses that nothing converted.
-- Source disagreements: where a live source differed from a topic page.
+`.settings` need not exist yet: the app creates it the first time it opens the vault, and until then the CLI reads defaults. Summarise the report to the user, naming each item you resolved and each one that remains.
 
 ## Failure modes
 
+- If you treat exit code `0` as a clean conversion, decide items go unread; they are listed only in the report.
 - If a base filters on `#x`, it matches nothing. The tag filter is `file.hasTag("x")`, and tags are case-sensitive in Bismuth (`#Foo` is not `#foo`).
-- If an Obsidian base has several views (Obsidian's word for its named renderings), only the first becomes the base. A Bismuth base has one layout; each extra Obsidian view becomes its own `source: base` + `ref` base, a Bismuth view, with its filters restated, because only rows carry over.
-- If a base is left as a `.base` file, Bismuth never reads it. A base is a `<Name>.md` note with `type: base`, and a ` ```base ` fence becomes a ` ```query ` fence. Bismuth renders no ` ```tasks ` fence.
+- If a filter calls a function Bismuth does not define, `bismuth base validate` still passes and the function evaluates to nothing, so a filter on it matches no rows. Check names against `docs/bases/functions.md`.
+- If a base is left as a `.base` file, Bismuth never reads it. The command converts every `.base` file that parses; one that does not is listed under Needs a decision.
+- If a ` ```query ` fence has no `source:`, it renders empty. The command writes `source: notes` in every converted fence.
 - If an image or PDF's tags are written to a `<file>.md` that embeds the file, that note is a duplicate. Tags for an image or PDF live in its companion note `<file>.<ext>.md` (`photo.png.md`).
-- If a ` ```query ` fence has no `source:`, it renders empty. A source-less base note with no body rows resolves to every vault note (in the app, in `base render`, and through a `ref`), but write `source: notes` in every converted base so the scope is explicit.
-- If a filter calls an unknown function, `base validate` still passes and the function evaluates to nothing. Check function names against `docs/bases/functions.md`.
+- If a ` ```tasks ` fence stays as written, Bismuth renders nothing for it; the item is under Needs a decision.

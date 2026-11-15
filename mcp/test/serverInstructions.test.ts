@@ -27,9 +27,11 @@ import { server } from '../src/server'
 // Raised 460 → 480 for the transcription pointer: a book's pages, handwritten scans and math are
 // text only after `bismuth transcribe`, and an agent that never reads vault/transcription.md greps
 // the image files instead.
+// Raised 480 → 500 for the Obsidian import pointer: `bismuth import obsidian <folder>` does the
+// conversion, and an agent that only reads the guide converts by hand what the command already does.
 test('SERVER_INSTRUCTIONS stays terse', () => {
     const words = SERVER_INSTRUCTIONS.trim().split(/\s+/).length
-    expect(words).toBeLessThan(480)
+    expect(words).toBeLessThan(500)
 })
 
 test('SERVER_INSTRUCTIONS leads with the CLI as the way in, and bismuth_cli for a host with no shell', () => {

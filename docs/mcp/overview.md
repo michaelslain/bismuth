@@ -86,7 +86,7 @@ Before an agent calls any tool, the server hands it a short block of instruction
 | Task | The agent is told to read first |
 |---|---|
 | Create, edit or debug a base (a `type: base` note or a `query` block) | [`bases/authoring.md`](../bases/authoring.md), then `bases/authoring/<layout>.md` |
-| Convert a vault from Obsidian | [`guides/converting-obsidian-to-bismuth.md`](../guides/converting-obsidian-to-bismuth.md) |
+| Convert a vault from Obsidian | `bismuth import obsidian <folder>`, then [`guides/converting-obsidian-to-bismuth.md`](../guides/converting-obsidian-to-bismuth.md) to handle its report |
 | Convert a vault to Obsidian | [`guides/converting-bismuth-to-obsidian.md`](../guides/converting-bismuth-to-obsidian.md) |
 | Make or change a colour theme | [`guides/custom-themes.md`](../guides/custom-themes.md) |
 

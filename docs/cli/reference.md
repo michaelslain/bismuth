@@ -531,6 +531,38 @@ The companion note is created when missing, and its other properties and body st
 bismuth image describe photos/board.png
 ```
 
+## import
+
+Converts a vault from another app into a Bismuth vault copy. Headless: it needs no vault and no running server. The conversion procedure and how to handle the report are in [converting an Obsidian vault to Bismuth](../guides/converting-obsidian-to-bismuth.md).
+
+| Command | Arguments and flags | What it does | Server |
+|---|---|---|---|
+| `import obsidian` | `<folder> [--out <dir>] [--dry-run] [--pretty]` | Copies the Obsidian vault in `<folder>` to `--out` (default `<folder>-bismuth`), applies every fixed rewrite, validates the result, writes the report and prints a JSON summary. | no |
+
+`<folder>` is the Obsidian vault's own folder, not a `--vault`. The command never writes to it, never follows a symbolic link in it, and never copies its top-level `.obsidian/`, `.trash/` or `.git/` folders. It reads `.obsidian/` for settings and the plugin list. A copied file keeps its modified date; creation dates are the import time.
+
+It refuses, with exit `1`, a `<folder>` that does not exist or is not a folder, an `--out` inside `<folder>`, and an `--out` that exists and is not empty. An `--out` that holds only Bismuth's own `.settings`, `.daemon`, `.git` or `.DS_Store` (the folder the app's first-run import creates) counts as empty: the command copies into it and writes settings onto its `.settings`.
+
+The report is written beside the new vault as `<out>.conversion-report.md`, never inside it. Its sections, in order, are `Needs a decision`, `Converted`, `Lossy`, `Defaults taken`, `Left as is`, `Validation` and `Inventory`. Each item is a line `- <path>: <detail>` under a `### <area>` heading, and an empty section says `none`.
+
+The command prints `{out, reportPath, counts, validation}`:
+
+| Field | Meaning |
+|---|---|
+| `out` | The new vault's absolute path. |
+| `reportPath` | The report's path, or `null` under `--dry-run`. |
+| `counts` | Items per report section: `converted`, `decide`, `lossy`, `defaults`, `left`. |
+| `validation` | `{ok, failures}` for the checks run on the written vault. |
+
+`--dry-run` computes the same report and writes neither the vault nor the report file; the report text is then printed as `report` in the same JSON. The exit code is `0` whenever the conversion ran, even with items under `Needs a decision` or a failed check, so read `counts.decide` and `validation.ok`.
+
+```bash
+bismuth import obsidian ~/vaults/notes --dry-run --pretty
+bismuth import obsidian ~/vaults/notes --out ~/vaults/notes-in-bismuth
+```
+
+An agent is refused `import` in a vault that restricts anything, because the visibility gate does not list it.
+
 ## install and uninstall
 
 Installs or removes the CLI and MCP server machine-wide. Neither touches the vault. The packaged app installs the CLI and MCP server itself on launch; see [install](../overview/install.md).

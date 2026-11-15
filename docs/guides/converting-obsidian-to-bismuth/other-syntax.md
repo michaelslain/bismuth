@@ -1,6 +1,6 @@
 # Converting callouts, math, templates and plugin syntax
 
-Callouts, math and core template tokens work in Bismuth as written; Dataview, Templater and Mermaid do not run. This page lists what to leave alone, what to report, and how to confirm nothing was lost.
+Callouts, math and core template tokens work in Bismuth as written; Dataview, Templater and Mermaid do not run. `bismuth import obsidian` leaves all of this text untouched and lists each plugin construct in the report, so nothing is silently lost. The vault-wide procedure is in [the conversion guide](../converting-obsidian-to-bismuth.md).
 
 ## Sources
 
@@ -10,28 +10,39 @@ Callouts, math and core template tokens work in Bismuth as written; Dataview, Te
 
 ## Format differences
 
-The table orients you; where a linked live page disagrees, follow the live page and note the difference in the report.
+The table orients you; where a linked live page disagrees, follow the live page and tell the user about the difference.
 
-| Feature | Obsidian | Bismuth | Action |
+| Feature | Obsidian | Bismuth | The command |
 |---|---|---|---|
-| callouts `> [!type]+ Title` | built-in types, foldable with `+`/`-`, custom types via CSS | same syntax; an unmapped type renders as `note` (the text is kept); aliases such as `info`, `hint`, `caution`, `summary` map to canonical types | none; report custom types |
-| math `$..$`, `$$..$$` | MathJax | KaTeX, macros from `editor.mathMacros`, mhchem included | see `vault-and-settings.md`; report any macro that KaTeX rejects |
-| templates `{{title}}`, `{{date}}`, `{{time}}`, `{{date:FORMAT}}` (Moment tokens) | core plugin | same tokens, plus `{{cursor}}` and offsets like `{{date+1w}}`; a limited format vocabulary | none for core tokens; Moment tokens such as `Do`, `W`, `Q`, `[literal]` stay verbatim, report them |
-| Templater `<% tp.* %>` | plugin | not expanded; stays verbatim | leave, report |
-| daily notes | plugin settings | `dailyNotes:` list | `vault-and-settings.md` |
-| ` ```dataview `, ` ```dataviewjs `, inline `` `= x` `` | plugin | no handler; an ordinary code block | leave as is, report each file; offer a ` ```query ` rewrite only for simple lists |
-| ` ```mermaid ` | rendered | no handler; an ordinary code block | leave, report |
-| `%%comment%%`, footnotes `[^1]`, `==highlight==` outside cards | built-in | unverified: not documented in `docs/editor/markdown.md` | leave the text as is; report that rendering is unverified |
+| callouts `> [!type]+ Title` | built-in types, foldable with `+`/`-`, custom types via CSS | same syntax; an unmapped type renders as `note` (the text is kept); aliases such as `info`, `hint`, `caution`, `summary` map to canonical types | lists a custom type under Left as is |
+| math `$..$`, `$$..$$` | MathJax | KaTeX, macros from `editor.mathMacros`, mhchem included | none; math macros are a hand step ([vault-and-settings.md](vault-and-settings.md)) |
+| templates `{{title}}`, `{{date}}`, `{{time}}`, `{{date:FORMAT}}` (Moment tokens) | core plugin | same tokens, plus `{{cursor}}` and offsets like `{{date+1w}}`; a limited format vocabulary | none; Moment tokens such as `Do`, `W`, `Q`, `[literal]` stay verbatim |
+| Templater `<% tp.* %>` | plugin | not expanded; stays verbatim | lists each block |
+| daily notes | plugin settings | `dailyNotes:` list | maps them ([vault-and-settings.md](vault-and-settings.md)) |
+| ` ```dataview `, ` ```dataviewjs `, inline `` `= x` `` | plugin | no handler; an ordinary code block | lists each one |
+| ` ```mermaid ` | rendered | no handler; an ordinary code block | lists each one under Left as is |
+| `%%comment%%`, footnotes `[^1]`, `==highlight==` outside cards | built-in | unverified: not documented in `docs/editor/markdown.md` | none; rendering is unverified |
 | `<!-- pagebreak -->` | invisible HTML comment | the PDF/PNG/HTML export slices a page at it | none |
 | `.yaml`, `.yml` files | not shown | listed in the tree | none |
 | ` ```graph `, ` ```query ` blocks | none | Bismuth-only | none |
 
-## Convert
+## What the command reports
 
-1. Callouts and math need no change; list each custom callout type in the report.
-2. Templates: the copy already brought `Templates/` across. Setting `templates.folder` is part of `vault-and-settings.md`.
-3. Dataview and Templater: grep each flagged file, leave the text, and list the file path and the first line of each block in the report. Never delete plugin syntax.
-4. For every plugin in `community-plugins.json` that the conversion guide does not cover, add one line to the report: "plugin X: its syntax and data were left as is".
+| Section | Item |
+|---|---|
+| Needs a decision | a ` ```dataview ` query that is not a simple list, a ` ```dataviewjs ` block, an inline `` `= x` `` expression, a Templater `<% %>` block, a community plugin the command does not know |
+| Left as is | a simple Dataview `LIST` or `TABLE ... FROM` query, a Mermaid diagram, a custom callout type, one line per template file in the Templater or core Templates folder (its tags stay code until Templater runs it) |
+
+The command knows `obsidian-tasks-plugin`, `obsidian-spaced-repetition`, `dataview`, `templater-obsidian`, `obsidian-excalidraw-plugin` and `obsidian-icon-folder`; every other plugin in `community-plugins.json` is listed under the area `plugins`.
+
+## Resolve a Needs a decision item
+
+Never delete plugin syntax. Each item quotes the first line of what it found.
+
+- **`dataview query is not live in Bismuth`**: the text stays as an ordinary code block. Offer the user a ` ```query ` block (`docs/bases/query-block.md`) only when the query is a plain list of notes; otherwise leave it.
+- **`dataviewjs block does not run in Bismuth`** and **`inline dataview expression`**: no translation exists. Leave the text and tell the user which notes stop being live.
+- **`templater code is not expanded`**: a note outside the templates folder holds Templater code Obsidian expanded and Bismuth shows raw. Replace it with the text it produced, or tell the user which notes hold it.
+- **`plugin <id>: its syntax and data were left as is`**: tell the user that the plugin's syntax and data stay in the notes and do nothing in Bismuth.
 
 ## Lossy
 
@@ -40,5 +51,5 @@ The table orients you; where a linked live page disagrees, follow the live page 
 
 ## Validate
 
-- `grep -rlE --include='*.md' '^[[:space:]]*```(dataview|dataviewjs|mermaid)' "$OUT"` lists exactly the files the report names.
-- The report has an entry for every plugin in `community-plugins.json`.
+- `grep -rlE --include='*.md' '^[[:space:]]*```(dataview|dataviewjs|mermaid)' "$OUT"` lists the files the report names under `queries` and Left as is.
+- The report has an entry for every plugin in `community-plugins.json` that the command does not know.

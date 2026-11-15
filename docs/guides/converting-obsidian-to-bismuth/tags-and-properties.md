@@ -1,6 +1,6 @@
 # Converting Obsidian tags and properties
 
-Frontmatter properties copy unchanged, but Bismuth's tag rules are stricter than Obsidian's: case-sensitive, ASCII-only inline tags, and no parent-tag matching in `file.hasTag`. This page finds the tags that change meaning and fixes the ones that can be fixed.
+Frontmatter properties copy unchanged, but Bismuth's tag rules are stricter than Obsidian's: case-sensitive, ASCII-only inline tags, and no parent-tag matching in `file.hasTag`. `bismuth import obsidian` fixes the tag problems that have one right answer and lists the rest. The vault-wide procedure is in [the conversion guide](../converting-obsidian-to-bismuth.md).
 
 ## Sources
 
@@ -9,11 +9,11 @@ Frontmatter properties copy unchanged, but Bismuth's tag rules are stricter than
 
 ## Format differences
 
-The table orients you; where a linked live page disagrees, follow the live page and note the difference in the report.
+The table orients you; where a linked live page disagrees, follow the live page and tell the user about the difference.
 
 | Aspect | Obsidian | Bismuth |
 |---|---|---|
-| frontmatter `tags` | a YAML list | YAML list, flow list or a comma-separated string; a leading `#` is stripped; `tags: a b` is one tag `a b` |
+| frontmatter `tags` | a YAML list; `tags: a b` also reads as two tags | YAML list, flow list or a comma-separated string (`tags: a, b` is two tags); a leading `#` is stripped; `tags: a b` is one tag `a b` |
 | inline `#tag` | letters, numbers, `_`, `-`, `/`, and Unicode (including emoji) | letters (any script), numbers, `_`, then also `/` and `-`; emoji end the tag |
 | purely numeric tag (`#1984`) | not a tag | not a tag; the name needs a letter |
 | case | case-insensitive | case-sensitive: `#Foo` and `#foo` are two tags |
@@ -24,28 +24,41 @@ The table orients you; where a linked live page disagrees, follow the live page 
 | `icon:` | via plugins | a Lucide name or emoji shown in the tree; Obsidian `Li*` names resolve |
 | dates | text or date type | an unquoted ISO date parses as a date |
 
-## Convert
+## What the command converts
 
-1. Find tag collisions by case, over the tag list Bismuth itself extracts (inline and frontmatter). Pick one spelling per pair and rewrite with `perl -pi` across `$OUT` (frontmatter `tags:` and inline). Tags that differ only by case become distinct in Bismuth.
-   ```bash
-   bismuth graph --vault "$OUT" | jq -r '.nodes[] | select(.kind=="tag") | .label | ltrimstr("#")' | sort -u | awk '{k=tolower($0); if (k in s && s[k]!=$0) print s[k], $0; s[k]=$0}'
-   ```
-2. Space-separated `tags: a b` becomes `tags: [a, b]`.
-3. Non-ASCII inline tags: leave them (they still show in the editor) and report them. They do not appear in the tag graph or in `file.hasTag`.
-4. Properties need no conversion; Bismuth keeps unknown frontmatter keys. Add an `icon:` only if the user wants tree icons.
-5. Tags on images and PDFs: Obsidian has none. A note named `x.png.md` in the source becomes a companion note in Bismuth; rename it if that was not intended. To tag a binary, run the command below. It creates the companion note `paper.pdf.md` and refuses when the binary does not exist:
-   ```bash
-   bismuth prop set "Papers/paper.pdf" tags '["reading"]' --vault "$OUT"
-   ```
+- Tags that differ only by case are written in one spelling across frontmatter and inline: the most frequent spelling, and on a tie the all-lowercase one, else the first in sort order.
+- A frontmatter `tags:` of whitespace-separated words with no comma (`tags: a b`) is rewritten to a flow list (`tags: [a, b]`). A comma-separated string (`tags: a, b`) is left as written, because Bismuth reads it.
+- Properties are not touched; Bismuth keeps unknown frontmatter keys.
+- `file.hasTag("a")` in a converted base lists the subtags present; see [bases.md](bases.md).
+
+## What the command reports
+
+| Section | Item |
+|---|---|
+| Converted | `frontmatter tags written as [...]` and `inline tags rewritten to the vault spelling`, per note |
+| Defaults taken | `tags #A, #a differ only by case, all written as #a`, once per group of spellings |
+| Lossy | `inline tag #x is not a Bismuth tag, left as written`, only for a tag Obsidian reads and Bismuth does not, such as `#📚books` |
+| Defaults taken | under `### syntax`, one vault-wide line for the notes named `x.png.md` that sit beside `x.png`: each becomes the companion note of that image; the line gives the count and the first five paths |
+
+Nothing from this area lands under Needs a decision.
+
+## Resolve a Lossy or Defaults item by hand
+
+- **A tag spelling you disagree with**: rewrite it across the vault, frontmatter `tags:` and inline, with the spelling the user wants. Tags that differ only by case are distinct in Bismuth.
+- **A non-ASCII inline tag**: it still shows in the editor but does not appear in the tag graph or in `file.hasTag`. Leave it, or rename the tag with ASCII letters.
+- **An `x.png.md` companion note you did not intend**: rename it. To tag an image or PDF on purpose, run the command below. It creates the companion note `paper.pdf.md` and refuses when the binary does not exist:
+  ```bash
+  bismuth prop set "Papers/paper.pdf" tags '["reading"]' --vault "$OUT"
+  ```
+- **Tree icons**: add an `icon:` property only if the user wants them.
 
 ## Lossy
 
 - Case-insensitivity, the numeric-tag exclusion, and Unicode inline tags.
-- Parent-tag matching: `file.hasTag("a")` stops matching `a/b`. `bases.md` Convert step 7 rewrites each filter to list the subtags (`file.hasTag("a", "a/b", …)`), so a subtag created later is not matched.
-- `aliases` stop doing anything for links; `links-and-embeds.md` rewrites the links that used them.
+- Parent-tag matching: a converted base lists the subtags present when it was converted, so a subtag created later is not matched.
+- `aliases` stop doing anything for links; the command rewrites the links that used them ([links-and-embeds.md](links-and-embeds.md)).
 
 ## Validate
 
-- Rerun the case-collision command from Convert step 1; it prints nothing. It reads the graph's tag list, so frontmatter tags are covered.
+- Tags that differed only by case are already written in one spelling; the report lists each group under Defaults taken.
 - Check every `hasTag("x")` string in the converted bases against that tag list (`bismuth graph --vault "$OUT" | jq -r '.nodes[] | select(.kind=="tag") | .label'`). A string with no match returns no rows.
-- Spot check: a base filtered with `file.hasTag("book")` returns every note you tagged (`bismuth base render "<base>.md" --vault "$OUT" --pretty | grep -c '"basename"'`).
