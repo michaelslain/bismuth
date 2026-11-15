@@ -37,7 +37,7 @@ const METRIC_ROWS: Partial<Row>[] = [
 ]
 
 /** Three declared metrics — two plain sums and one ratio expression (`sum(price) /
- *  sum(units)`) — each rendering its own value/period/sparkline/KaTeX tile. */
+ *  sum(units)`) — each rendering its own value/period/sparkline/formula tile. */
 export const DeclaredMetrics: Story = {
     render: () => {
         const view = {
@@ -134,7 +134,7 @@ export const MetricError: Story = {
 }
 
 /** The view's x axis is explicitly a non-date property (`status`, a select enum) — every tile
- *  omits the period line and sparkline, showing just value/label/KaTeX. */
+ *  omits the period line and sparkline, showing just value/label/formula. */
 export const NoDateAxis: Story = {
     render: () => {
         const view = {
@@ -147,5 +147,38 @@ export const NoDateAxis: Story = {
             }
         const config = sampleBaseConfig({ view })
         return <StatView result={sampleViewResult(undefined, { view })} config={config} />
+    },
+}
+
+/** A score log a few days old: every row falls in the current week, so the weekly history has a
+ *  single bin with rows. The lone tile sits centred in the block, draws no spark line (a single
+ *  bar says nothing the period line does not) and names its metric as written, `avg(score)`. */
+export const OneWeekOfData: Story = {
+    render: () => {
+        const view = {
+            type: 'stat' as const,
+            x: 'date',
+            bin: 'week' as const,
+            stats: [{ label: 'Elo this week', value: 'avg(score)' }],
+        }
+        const properties: Record<string, BasePropertyDef> = {
+            score: { type: { kind: 'number', number: 'plain' } },
+        }
+        const rows: Partial<Row>[] = [10.1, 17.7, 17.7].map(score => ({
+            // all today, so the rows share one week whatever weekday the story is opened on
+            note: { date: back(0), score },
+        }))
+        return (
+            <StatView
+                result={sampleViewResult(rows, { view, properties })}
+                config={sampleBaseConfig({ view, properties })}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.textContent).toContain('Elo this week'))
+        expect(canvasElement.querySelectorAll('[data-bucket]')).toHaveLength(0)
+        expect(canvasElement.textContent).toContain('avg(score)')
+        expect(canvasElement.textContent).not.toContain('n.score')
     },
 }

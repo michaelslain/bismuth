@@ -1,6 +1,9 @@
 .statgrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  /* Tiles as wide as their content, the row centred in the block: a lone tile stretched across a
+     1fr column sat in the top-left corner of an otherwise empty card. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
+  justify-content: center;
   gap: var(--sp-6);
   padding: var(--sp-2) 0;
 }

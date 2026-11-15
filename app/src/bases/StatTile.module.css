@@ -1,5 +1,5 @@
 /* StatTile.tsx ONLY — one stat tile. The grid that lays tiles out is StatTiles.module.css. */
-.statTile { display: flex; flex-direction: column; }
+.statTile { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .statValue {
   font-family: var(--ui-font-stack);
   font-size: var(--fs-display);
@@ -34,9 +34,10 @@
   margin-top: var(--sp-1);
   letter-spacing: 0.05em;
 }
-.statTex {
+.statFormula {
   font-size: var(--fs-micro);
-  color: var(--text-muted);
+  color: var(--faint);
+  font-family: var(--ui-font-stack);
   margin-top: var(--sp-1);
 }
 .statError {

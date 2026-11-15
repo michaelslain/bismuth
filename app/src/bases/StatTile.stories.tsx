@@ -1,5 +1,5 @@
 // Visual spec for <StatTile> — one tile of the stat grid, every variant on its own: plain,
-// accent, faint, delta, a period + sparkline pair that reacts to hover, a string spark, KaTeX and
+// accent, faint, delta, a period + sparkline pair that reacts to hover, a string spark, formula and
 // an error. StatTiles.stories.tsx shows them laid out in the grid.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor } from 'storybook/test'
@@ -41,7 +41,7 @@ export const PeriodAndSparkline: Story = {
         tone: 'accent',
         period: '12 this week // 9 last week',
         spark: { values: [2, 3, 5, 4, 6, 12], keys: KEYS, labels: LABELS, bin: 'week' },
-        tex: '\\sum_{n \\in \\text{notes}} n.\\text{price}',
+        formula: 'sum(price)',
     },
     play: async ({ canvasElement }) => {
         const first = await waitFor(() => {

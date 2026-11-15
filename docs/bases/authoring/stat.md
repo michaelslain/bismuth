@@ -1,6 +1,6 @@
 # stat
 
-The `stat` layout shows one tile per metric: the number, a this-period/last-period split, a 12-bin sparkline and the metric as math. Declare the tiles with `stats:`, or let the layout build one tile from `x`/`y`/`aggregate`.
+The `stat` layout shows one tile per metric: the number, a this-period/last-period split, a sparkline of up to 12 bins and the metric as written. Declare the tiles with `stats:`, or let the layout build one tile from `x`/`y`/`aggregate`.
 
 ## Working example
 

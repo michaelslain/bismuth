@@ -24,7 +24,7 @@ All four layouts read the same keys and bucket rows the same way; they differ in
 |---|---|---|
 | `bar` | one full-width row of `#` fill per bucket, value printed at the right | comparing categories, or a handful of periods |
 | `line` | an ASCII line plot with a y-axis gutter and a least-squares trend | reading a trend over time |
-| `stat` | one tile per metric: the number, a this-period/last-period split, a 12-bin sparkline | headline numbers |
+| `stat` | one tile per metric: the number, a this-period/last-period split, a sparkline of up to 12 bins | headline numbers |
 | `heatmap` | a week-column grid of days, intensity as a glyph, plus streak counts | a daily habit or log |
 
 ## Chart config keys shared by every chart layout
@@ -127,7 +127,7 @@ The trend line and its math appear only on a date axis with at least 3 points th
 
 ## Stat layout
 
-The `stat` layout shows one tile per metric. Each tile has the number, its label, the current bin against the previous one (`3 this week // 1 last week`, or `today`/`yesterday` for day bins), a 12-bin sparkline (`▁▂▃▄▅▆▇█`) and the metric written as math. The first tile's number is in the accent colour.
+The `stat` layout shows one tile per metric. Each tile has the number, its label, the current bin against the previous one (`3 this week // 1 last week`, or `today`/`yesterday` for day bins), a sparkline of up to 12 bins (`▁▂▃▄▅▆▇█`) and the metric as written (`avg(score)`). The first tile's number is in the accent colour, and the tiles sit centred in the block.
 
 ```yaml
 ---
@@ -145,7 +145,8 @@ stats:
 ```
 
 - Without `stats:`, the layout shows one tile: `count()` labelled `notes` when the aggregate is `count` or no `y` resolves, otherwise `<aggregate>(<y>)` labelled `<aggregate> of <y>` (`average of` for `avg`).
-- The period split and the sparkline appear only when `x` is a date axis; with a category `x`, tiles show the number, label and math only.
+- The period split and the sparkline appear only when `x` is a date axis; with a category `x`, tiles show the number, label and metric only.
+- The sparkline starts at the first bin that has rows, so a base a few weeks old draws only those weeks, and it is left out while only one bin has rows (the period split already says that bin's value).
 - The sparkline names its window under the glyphs (`last 12 weeks // Jul 6 – Sep 21`), and hovering a glyph replaces the period line with that bin's value (`week of Sep 14 // 3`).
 - A `stat` layout's `bin` defaults to `week`, unlike the other charts, so the same base with no `bin` buckets differently as a `bar`.
 
@@ -250,7 +251,7 @@ The layouts are drawn by `BarView.tsx` (bar rows in `barRows.ts`), `LineView.tsx
 
 `HeatmapView` calls `buildChartData` with `bin: 'day'`, then `buildHeatmapWeeks(points, range)` snaps the range to whole Monday–Sunday columns. What a click does is `dayAction` in `heatmapWrites.ts`, and what it writes is `planSetValue`/`planToggle`, with the day's row chosen by `dayRow` (the visible rows first, then the base's stored rows); `BaseView.tsx` builds the `HeatmapWriteSeam` (origin `base` when the base, or the base a query block points at, has no `source:`) and runs the writes with `api.rowCreate`/`rowUpdate`/`rowDelete` or `api.setProperty`.
 
-Stat metrics are `metricResults(rows, view, today)` in `core/src/bases/metrics.ts`; `defaultMetric` synthesizes the fallback tile. Trend fitting is `fitTrend` in `trend.ts`. The math comes from `chartDefinitionLatex`, `trendLatex` and `metricToLatex` in `chartLatex.ts`, rendered by `ui/Tex.tsx`; captions and readouts come from `chartCaption`, `bucketReadout` and `formatValue` in `chartText.ts`.
+Stat metrics are `metricResults(rows, view, today)` in `core/src/bases/metrics.ts`; `defaultMetric` synthesizes the fallback tile. Trend fitting is `fitTrend` in `trend.ts`. The line chart's math comes from `chartDefinitionLatex` and `trendLatex` in `chartLatex.ts`, rendered by `ui/Tex.tsx`; a stat tile's sparkline window is `trimSpark` in `sparkline.ts`; captions and readouts come from `chartCaption`, `bucketReadout` and `formatValue` in `chartText.ts`.
 
 The toolbar's pickers are `ChartConfigBar.tsx`, wired by `BaseView`'s chart config slot to `api.setProperty`/`api.deleteProperty`. The settings panel's chart fields are `ChartFields.tsx` and the `x`/`y` entries of `baseSettingsPlan.ts`. Keys are parsed by `normalizeView` in `parse.ts`. The CLI payloads come from `base render` and `base validate` in `cli/src/commands/base.ts`.
 

@@ -792,7 +792,7 @@ export function BaseView(props: {
                                 )}
                             </Show>
                             <Show when={props.embeddedSource}>
-                                <Badge>query</Badge>
+                                <Badge inline tone="muted">query</Badge>
                             </Show>
                         </>
                     }

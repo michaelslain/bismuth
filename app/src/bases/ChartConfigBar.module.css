@@ -20,6 +20,18 @@
     flex-shrink: 0;
 }
 
+/* A picker is as wide as its value ("date ▾", "week ▾"). FormControl's `width: 100%` and a fixed
+   min-width made every picker hold the same wide box whatever it said, so a bar of four kept that
+   room while the base name ellipsized beside it. Sized to content, they leave the name its width,
+   and the bar drops them into [≡] (data-bar-drop) when it runs out. */
 .select {
-    min-width: 84px;
+    width: auto;
+    flex: none;
+}
+
+/* In the [≡] panel (ui/BarOverflow) a dropped field sits in a row the panel already names from
+   `data-bar-menu-label`, so its own label would read twice (`agg  agg sum`). Outside the bar, the
+   picker alone. Keyed on the bar's `data-viewbar` hook, never a class. */
+.field:not([data-viewbar] *) > .label {
+    display: none;
 }

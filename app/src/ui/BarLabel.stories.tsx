@@ -59,6 +59,7 @@ function Bar(props: { width: number }): JSX.Element {
                         icon="Tag"
                         title="Categories"
                         data-bar-drop="1"
+                        data-bar-menu-label="categories"
                         data-testid="drop1-btn"
                     >
                         <BarLabel long="categories" drop="early" />

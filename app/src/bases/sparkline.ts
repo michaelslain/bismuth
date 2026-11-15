@@ -42,3 +42,19 @@ export function sparklineCaption(bin: Bin, binCount: number): string {
 export function hoverPeriodText(bin: Bin, label: string, value: number | null): string {
     return `${bin} of ${label} // ${value === null ? '—' : formatValue(value)}`
 }
+
+export type SparkSeries = { values: (number | null)[]; keys: string[]; labels: string[] }
+
+/** The part of a stat metric's bin history worth drawing: from the first bin that has rows to the
+ *  last, so weeks before the data began do not draw as a run of `▁` floors ahead of one real bar.
+ *  `undefined` when fewer than two bins remain, since a single bar says nothing the period line
+ *  does not. A gap after the first bin with rows still draws as the floor glyph. */
+export function trimSpark(series: SparkSeries): SparkSeries | undefined {
+    const first = series.values.findIndex(v => v !== null)
+    if (first < 0 || series.values.length - first < 2) return undefined
+    return {
+        values: series.values.slice(first),
+        keys: series.keys.slice(first),
+        labels: series.labels.slice(first),
+    }
+}

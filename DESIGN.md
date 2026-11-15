@@ -408,7 +408,9 @@ and the editor.
 slots: `identity` `locus` `facet` lead, `readouts` `config` `actions` trail. A control opts into dropping with `data-bar-drop`
 (level 4 goes first, 1 last); it drops only when the bar cannot hold it, and a dropped control moves
 into the bar's `[≡]` panel under its `data-bar-menu-label`. The `[≡]` shows only while something is
-dropped, and only when dropping frees more room than the `[≡]` itself takes.
+dropped, and only when dropping frees more room than the `[≡]` itself takes. Controls drop before the
+bar's title is cut: the title shortens only once nothing is left to drop. A bar states its own UI
+face and size, so a bar inside a note (a ` ```query ` block's toolbar) reads as chrome, not prose.
 
 **A view bar stays short.** Words go to the one switch for what the view shows (the calendar's
 day/week/month); tools are icons; settings a person sets once and

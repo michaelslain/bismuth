@@ -34,6 +34,8 @@ import {
     DEFAULT_CODE_SCALE,
 } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
+import { addDaysISO, todayISO } from '../../core/src/dates'
+import { syntheticBaseFile } from '../../core/src/bases/types'
 import { onCleanup } from 'solid-js'
 import { setPropertySchemas } from './propertyRegistry'
 import { loadSchemaSet } from '../../core/src/schema/namedSchemas'
@@ -3541,5 +3543,123 @@ export const DrawModeExitCancelsStroke: Story = {
         const blocks = scanDrawBlocks(view.state.doc.toString())
         await expect(blocks).toHaveLength(1)
         await expect(blocks[0].strokes).toHaveLength(INK.length)
+    },
+}
+
+// ── Chart query blocks in a note (T48) ─────────────────────────────────────────────────────────
+// A note holding the two chart blocks a score log reads through: a stat block (one declared
+// metric, weekly bins) and a line chart, both over a collection base whose three rows all fall in
+// the current week. Rendered at a narrow and a wide column so the embedded toolbar's fit (the
+// `query` tag, the base name, the x/y/agg/bin pickers dropping into [≡]) and the stat card's
+// layout can be judged where they actually live: inside note prose.
+const SCORE_BASE_PATH = 'elo/Score History.base.jsonl'
+const SCORE_DAYS = [-2, -1, 0].map(d => addDaysISO(todayISO(), d))
+const SCORE_VALUES = [10.1, 17.7, 17.7]
+const SCORE_BASE =
+    '{"type":"base","view":"line","x":"date","y":"score"}\n' +
+    SCORE_DAYS.map((date, i) => JSON.stringify({ date, score: SCORE_VALUES[i] })).join('\n') +
+    '\n'
+const SCORE_ROWS: Row[] = SCORE_DAYS.map((date, i) => ({
+    file: syntheticBaseFile(SCORE_BASE_PATH),
+    note: { date, score: SCORE_VALUES[i] },
+    formula: {},
+}))
+const CHART_NOTE_TEXT = `# Elo
+
+Log in [[Habit Tracker]].
+
+\`\`\`query
+source: base
+ref: "[[Score History]]"
+view: stat
+x: date
+bin: week
+stats:
+  - label: Elo this week
+    value: avg(score)
+\`\`\`
+
+\`\`\`query
+source: base
+ref: "[[Score History]]"
+view: line
+x: date
+y: score
+\`\`\`
+`
+
+function chartNoteStory(width: number) {
+    return () => {
+        setTransport(
+            fakeTransport({
+                files: { 'elo/Elo.md': CHART_NOTE_TEXT, [SCORE_BASE_PATH]: SCORE_BASE },
+                rows: SCORE_ROWS,
+            }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: `${width}px` }}>
+                <Editor
+                    path="elo/Elo.md"
+                    initialText={CHART_NOTE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    }
+}
+
+/** What every width must hold: each block's `query` tag and base name are whole (nothing wraps or
+ *  is cut), the bar's labels read in the UI face like its picker values, the stat card draws no
+ *  spark line for a single week of rows, and its footer is the metric as written. */
+async function chartNotePlay(canvasElement: HTMLElement) {
+    const bars = await waitFor(() => {
+        const found = [...canvasElement.querySelectorAll<HTMLElement>('[data-viewbar]')]
+        if (found.length < 2) throw new Error('query blocks not mounted yet')
+        return found
+    })
+    await document.fonts.ready
+    for (let i = 0; i < 2; i++) await new Promise(res => requestAnimationFrame(res))
+    for (const bar of bars) {
+        const tag = [...bar.querySelectorAll<HTMLElement>('span')].find(
+            e => e.textContent === 'query',
+        )!
+        expect(tag.getBoundingClientRect().height).toBeLessThan(20)
+        expect(tag.scrollWidth).toBeLessThanOrEqual(tag.clientWidth + 1)
+        // The bar's fit pass runs from a ResizeObserver: wait for it to settle.
+        const title = bar.querySelector<HTMLElement>('[data-bar-title]')!
+        await waitFor(() =>
+            expect(title.scrollWidth, 'base name whole').toBeLessThanOrEqual(
+                title.clientWidth + 1,
+            ),
+            { timeout: 5000 },
+        )
+        expect(getComputedStyle(bar).fontFamily).toBe(
+            getComputedStyle(bar.querySelector('[data-select-trigger]')!).fontFamily,
+        )
+    }
+    expect(canvasElement.querySelectorAll('[data-bucket]')).toHaveLength(0)
+    const stat = canvasElement.querySelector('.bismuth-query-block')!
+    expect(stat.textContent).toContain('avg(score)')
+    expect(stat.textContent).not.toContain('n.score')
+}
+
+export const ChartQueryBlocksNarrow: Story = {
+    render: chartNoteStory(520),
+    play: ({ canvasElement }) => chartNotePlay(canvasElement),
+}
+export const ChartQueryBlocksWide: Story = {
+    render: chartNoteStory(900),
+    play: ({ canvasElement }) => chartNotePlay(canvasElement),
+}
+/** Below the bar's floor width: the pickers the bar cannot hold drop into [≡]. */
+export const ChartQueryBlocksTight: Story = {
+    render: chartNoteStory(380),
+    play: async ({ canvasElement }) => {
+        await chartNotePlay(canvasElement)
+        const bars = canvasElement.querySelectorAll('[data-viewbar]')
+        for (const bar of bars) expect(bar.querySelector('[data-bar-overflow]')).not.toBeNull()
     },
 }

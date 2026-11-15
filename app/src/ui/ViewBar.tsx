@@ -201,17 +201,15 @@ function ViewBar(props: ViewBarProps) {
             const w = t?.getBoundingClientRect().width ?? 0
             return w > 0 ? w + gap : undefined
         }
-        /** The lead at its natural width, minus how far its crumb titles can still shrink: a title
-         *  keeps 7ch, everything else in the lead is rigid. */
+        /** The lead at its natural width, titles whole. Droppable controls leave before a title
+         *  gives up a character: a dropped control is one click away in [≡], a cut title is simply
+         *  gone (a chart query block cut its base name to "Score His…" beside four pickers that
+         *  could have dropped). Once nothing is left to drop, the title's own ellipsis absorbs the
+         *  rest. A consumer's clamp (`min-width` on the lead) still wins. */
         const leadMinimum = () => {
             const prev = lead.style.flex
             lead.style.flex = '0 0 auto'
-            const titles = [...lead.querySelectorAll<HTMLElement>('[data-bar-title]')]
-            const saved = titles.map(b => b.style.cssText)
-            for (const b of titles)
-                b.style.cssText += ';max-width:7ch;min-width:0;flex:0 0 auto;overflow:hidden'
             const w = lead.getBoundingClientRect().width
-            titles.forEach((b, i) => (b.style.cssText = saved[i]!))
             lead.style.flex = prev
             return Math.max(w, parseFloat(getComputedStyle(lead).minWidth) || 0)
         }

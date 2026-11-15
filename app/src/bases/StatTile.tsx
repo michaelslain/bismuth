@@ -3,7 +3,6 @@ import { Show, createSignal } from 'solid-js'
 import type { Bin } from '../../../core/src/dates'
 import Readout from '../ui/Readout'
 import Text from '../ui/Text'
-import Tex from '../ui/Tex'
 import SparklineChart from './SparklineChart'
 import { hoverPeriodText } from './sparkline'
 import styles from './StatTile.module.css'
@@ -34,16 +33,17 @@ export type StatTileProps = {
               labels: string[]
               bin: Bin
           }
-    /** The metric's expression, pre-rendered to LaTeX (no delimiters) for `ui/Tex`. */
-    tex?: string
-    /** A parse/evaluation failure message — replaces `tex` as `cannot read: <error>`. */
+    /** The metric's expression as written (`avg(score)`), shown faint under the tile so a reader
+     *  can tell what the number is. */
+    formula?: string
+    /** A parse/evaluation failure message — replaces `formula` as `cannot read: <error>`. */
     error?: string
     class?: string
 }
 
 /**
  * One stat tile — a big number, a muted label, a faint delta, then (for a declared metric) the
- * period split, the hoverable sparkline and the KaTeX definition. Owns its own hover state: a
+ * period split, the hoverable sparkline and the expression it was computed from. Owns its own hover state: a
  * sparkline glyph swaps the period line for that bin's own value (`hoverPeriodText`), and
  * leaving it restores the default line. No card border or background (bases-stat.card.html).
  */
@@ -115,11 +115,10 @@ const StatTile: Component<StatTileProps> = props => {
             <Show
                 when={props.error}
                 fallback={
-                    <Show when={props.tex}>
-                        <Tex
-                            tex={props.tex ? `\\displaystyle ${props.tex}` : ''}
-                            class={styles.statTex}
-                        />
+                    <Show when={props.formula}>
+                        <Text as="div" inherit class={styles.statFormula}>
+                            {props.formula}
+                        </Text>
                     </Show>
                 }
             >

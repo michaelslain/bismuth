@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { sparkline, sparklineCaption, hoverPeriodText } from './sparkline'
+import { sparkline, sparklineCaption, hoverPeriodText, trimSpark } from './sparkline'
 
 describe('sparkline', () => {
     test('empty series renders nothing', () => {
@@ -47,5 +47,29 @@ describe('hoverPeriodText', () => {
 
     test('a null value renders as —', () => {
         expect(hoverPeriodText('week', 'Jun 8', null)).toBe('week of Jun 8 // —')
+    })
+})
+
+describe('trimSpark', () => {
+    const s = (values: (number | null)[]) => ({
+        values,
+        keys: values.map((_, i) => `k${i}`),
+        labels: values.map((_, i) => `l${i}`),
+    })
+    test('drops the bins before the first one with rows', () => {
+        expect(trimSpark(s([null, null, 3, null, 5]))).toEqual({
+            values: [3, null, 5],
+            keys: ['k2', 'k3', 'k4'],
+            labels: ['l2', 'l3', 'l4'],
+        })
+    })
+    test('nothing to draw when only the last bin has rows', () => {
+        expect(trimSpark(s([null, null, null, 15.2]))).toBeUndefined()
+    })
+    test('nothing to draw with no rows at all', () => {
+        expect(trimSpark(s([null, null]))).toBeUndefined()
+    })
+    test('a full series is kept whole', () => {
+        expect(trimSpark(s([1, 2, 3]))?.values).toEqual([1, 2, 3])
     })
 })
