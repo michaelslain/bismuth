@@ -1,4 +1,4 @@
-import { createSignal, For, Show, type Component } from 'solid-js'
+import { createSignal, For, onCleanup, Show, type Component } from 'solid-js'
 import PlainButton from '../ui/PlainButton'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
@@ -6,6 +6,8 @@ import RemoveRowButton from '../ui/RemoveRowButton'
 import EmptyState from '../ui/EmptyState'
 import Text from '../ui/Text'
 import { matchesKeybinding } from '../keybindings'
+import { isDismissKey } from '../ui/widgetKeys'
+import { edgeScrollStep, moveTarget, pastThreshold, slotForTile } from './pageSortDrag'
 import CardCell from './CardCell'
 import styles from './CardsListEditor.module.css'
 
@@ -29,21 +31,88 @@ const text = (n: Record<string, unknown>, field: string) =>
 
 /** The Cards mode of EditCardsModal: a reorderable list of Front/Back rows with live markdown,
  *  an inline draft row to add one, per-row reset + delete. The `#` handle drags with the pointer
- *  and moves with Up/Down from the keyboard. */
+ *  (Escape cancels) and moves with Up/Down from the keyboard. */
 const CardsListEditor: Component<CardsListEditorProps> = props => {
     let wrap: HTMLDivElement | undefined
     let draftBackRef: HTMLTextAreaElement | undefined
+    // The card being dragged by its `#` handle, and the slot a drop lands in (before card `at`;
+    // cards.length = after the last). Pointer events: HTML5 drag-and-drop never reaches the app's
+    // WKWebView.
     const [dragFrom, setDragFrom] = createSignal<number | null>(null)
-    const [dropTo, setDropTo] = createSignal<number | null>(null)
+    const [dropAt, setDropAt] = createSignal<number | null>(null)
     const [draftFront, setDraftFront] = createSignal('')
     const [draftBack, setDraftBack] = createSignal('')
+    let press: { from: number; x: number; y: number; id: number } | null = null
+    let pointerY = 0
+    let pointerX = 0
+    let scrollFrame = 0
 
-    const drop = (to: number) => {
-        const from = dragFrom()
-        setDragFrom(null)
-        setDropTo(null)
-        if (from !== null && from !== to) props.onMove(from, to)
+    const slotAt = (x: number, y: number): number | null => {
+        const el = document.elementFromPoint(x, y)
+        if (!el || !wrap?.contains(el)) return dropAt()
+        if (el.closest('[data-card-draft]')) return props.cards.length
+        const row = el.closest<HTMLElement>('[data-card-row]')
+        if (!row) return dropAt()
+        const r = row.getBoundingClientRect()
+        return slotForTile(r.top, r.height, y, Number(row.dataset.cardRow))
     }
+    const track = () => {
+        const w = wrap
+        if (dragFrom() === null || !w) return
+        const r = w.getBoundingClientRect()
+        const step = edgeScrollStep(r.top, r.bottom, pointerY)
+        if (step) {
+            w.scrollTop += step
+            setDropAt(slotAt(pointerX, pointerY))
+        }
+        scrollFrame = requestAnimationFrame(track)
+    }
+    const stop = () => {
+        press = null
+        cancelAnimationFrame(scrollFrame)
+        setDragFrom(null)
+        setDropAt(null)
+        window.removeEventListener('pointermove', onPointerMove)
+        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointercancel', stop)
+        window.removeEventListener('keydown', onKey, true)
+    }
+    const onPointerMove = (e: PointerEvent) => {
+        if (!press || e.pointerId !== press.id) return
+        pointerX = e.clientX
+        pointerY = e.clientY
+        if (dragFrom() === null) {
+            if (!pastThreshold(e.clientX - press.x, e.clientY - press.y)) return
+            setDragFrom(press.from)
+            scrollFrame = requestAnimationFrame(track)
+        }
+        e.preventDefault()
+        setDropAt(slotAt(e.clientX, e.clientY))
+    }
+    const onUp = (e: PointerEvent) => {
+        if (!press || e.pointerId !== press.id) return
+        const from = dragFrom()
+        const at = from === null ? null : slotAt(e.clientX, e.clientY)
+        stop()
+        if (from === null || at === null) return
+        const to = moveTarget(from, at)
+        if (to !== from) props.onMove(from, to)
+    }
+    const onKey = (e: KeyboardEvent) => {
+        if (!isDismissKey(e) || dragFrom() === null) return
+        e.preventDefault()
+        e.stopPropagation()
+        stop()
+    }
+    const onPress = (e: PointerEvent, i: number) => {
+        if (e.button !== 0) return
+        press = { from: i, x: e.clientX, y: e.clientY, id: e.pointerId }
+        window.addEventListener('pointermove', onPointerMove)
+        window.addEventListener('pointerup', onUp)
+        window.addEventListener('pointercancel', stop)
+        window.addEventListener('keydown', onKey, true)
+    }
+    onCleanup(stop)
 
     const addDraft = async () => {
         const ok = await props.onAdd(draftFront().trim(), draftBack().trim())
@@ -90,27 +159,17 @@ const CardsListEditor: Component<CardsListEditorProps> = props => {
                 {(n, i) => (
                     <div
                         data-testid="cards-row"
-                        class={`${styles['cards-row']} ${dropTo() === i() ? styles['dropbefore'] : ''} ${dragFrom() === i() ? styles['dragging'] : ''}`}
-                        onDragOver={e => {
-                            e.preventDefault()
-                            setDropTo(i())
-                        }}
-                        onDrop={e => {
-                            e.preventDefault()
-                            drop(i())
-                        }}
+                        data-card-row={i()}
+                        data-drop={dropAt() === i() ? 'before' : dropAt() === i() + 1 && i() === props.cards.length - 1 ? 'after' : undefined}
+                        data-dragging={dragFrom() === i() ? '' : undefined}
+                        class={styles['cards-row']}
                     >
                         <PlainButton
                             class={styles['cards-num']}
                             title="Drag to reorder, or press Up / Down"
                             aria-label={`move card ${i() + 1}`}
                             data-card-handle={i()}
-                            draggable={true}
-                            onDragStart={() => setDragFrom(i())}
-                            onDragEnd={() => {
-                                setDragFrom(null)
-                                setDropTo(null)
-                            }}
+                            onPointerDown={e => onPress(e, i())}
                             onKeyDown={e => moveByKey(e, i())}
                         >
                             <Text as="span" inherit>
@@ -148,6 +207,7 @@ const CardsListEditor: Component<CardsListEditorProps> = props => {
 
             <div
                 data-testid="draft-row"
+                data-card-draft
                 class={`${styles['cards-row']} ${styles['cards-draft']}`}
             >
                 <div class={styles['cards-mark']}>

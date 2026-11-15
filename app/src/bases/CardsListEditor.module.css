@@ -1,6 +1,6 @@
 /* CardsListEditor.module.css — the Cards list of EditCardsModal (bases/CardsListEditor.tsx), split
-   out of EditCardsModal.module.css. OWNS the header row, the card rows (+ .dragging/.dropbefore
-   state classes), the `#` drag handle, the trailing delete column, the draft row and the add row.
+   out of EditCardsModal.module.css. OWNS the header row, the card rows (+ the data-dragging / data-drop
+   states), the `#` drag handle, the trailing delete column, the draft row and the add row.
    The Front/Back cells are CardCell's own module.
 
    Layout sizes that are not spacing are custom properties, defined once here: the handle column and
@@ -20,12 +20,14 @@
 .cards-collbl span:first-child { text-align: center; }
 .cards-row { display: grid; grid-template-columns: var(--cards-num-w) 1fr 1fr var(--cards-act-w); gap: var(--sp-5); align-items: stretch; padding: var(--sp-2); border-top: 1px solid var(--border-soft); position: relative; }
 .cards-row:first-of-type { border-top: 0; }
-.cards-row.dragging { background: var(--state-active-bg); }
-.cards-row.dropbefore::before { content: ""; position: absolute; left: var(--cards-num-w); right: calc(var(--cards-act-w) / 2 + var(--sp-2)); top: -1px; height: 0; border-top: var(--rule-drop); pointer-events: none; }
+.cards-row[data-dragging] { background: var(--state-active-bg); }
+.cards-row[data-drop="before"]::before,
+.cards-row[data-drop="after"]::after { content: ""; position: absolute; left: var(--cards-num-w); right: calc(var(--cards-act-w) / 2 + var(--sp-2)); top: -1px; height: 0; border-top: var(--rule-drop); pointer-events: none; }
+.cards-row[data-drop="after"]::after { top: auto; bottom: -1px; }
 
 /* The `#` handle is a PlainButton (a real, focusable control that also drags). Doubled so it out-ranks
    PlainButton's own reset regardless of stylesheet order. No focus ring, by decision. */
-.cards-num.cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-ui); cursor: grab; user-select: none; outline: none; }
+.cards-num.cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-ui); cursor: grab; user-select: none; touch-action: none; outline: none; }
 .cards-num.cards-num:hover { color: var(--fg); }
 .cards-num.cards-num:active { cursor: grabbing; }
 /* The draft row's `+` is a mark, not a handle: no grab cursor, accent coloured. */

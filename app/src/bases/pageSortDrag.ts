@@ -1,5 +1,6 @@
 // app/src/bases/pageSortDrag.ts
-// The pure geometry of dragging a page in the book's page sorter (BookPageEditor). The drag itself is
+// The pure geometry of dragging an item to a new place in a list: pages in the book's page sorter
+// (BookPageEditor) and cards in the flashcard deck editor (CardsListEditor). The drag itself is
 // pointer events, not HTML5 drag-and-drop, which the app's WKWebView never delivers.
 
 /** Pixels the pointer travels before a press on a page becomes a drag. */
@@ -13,8 +14,8 @@ export function pastThreshold(dx: number, dy: number, threshold = DRAG_THRESHOLD
     return dx * dx + dy * dy > threshold * threshold
 }
 
-/** The drop slot for a pointer over tile `i`: before it (`i`) on its left half, after it (`i + 1`)
- *  on its right half. */
+/** The drop slot for a pointer over tile `i`, along one axis: before it (`i`) on its first half,
+ *  after it (`i + 1`) on its second. Pass left/width/x for a row of tiles, top/height/y for a column. */
 export function slotForTile(left: number, width: number, x: number, i: number): number {
     return x - left < width / 2 ? i : i + 1
 }
