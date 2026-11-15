@@ -14,6 +14,7 @@ import { api, apiBase } from '../api'
 import { loadPreviewView, persistPreviewViewFor, savePreviewView } from '../preview/previewViewMemory'
 import { serverVersion, lastChange } from '../serverVersion'
 import { changeAffectsView, type ViewDeps } from './changeRelevance'
+import rowsOnDoc from './rowsOnDoc'
 import { reconcileViewResult } from './reconcileRows'
 import { RowCache } from './rowCache'
 import { BaseSkeleton } from './BaseSkeleton'
@@ -473,10 +474,13 @@ export function BaseView(props: {
     // Effective data: the freshly fetched result when available, else the last cached
     // resolution for this base (stale-while-revalidate) so a reopen/split paints instantly
     // from cache instead of blanking to a spinner while /rows runs.
+    // The config, base path and own rows come from the document on screen now, not the copy the
+    // rows resolve started from (see rowsOnDoc.ts): a mount that painted from a stale cached
+    // document would otherwise keep drawing the old config once the fresh one lands.
     const data = createMemo<LoadedRows | undefined>(() => {
         const key = rowsKey()
         const fresh = fetchedRows.state === 'errored' ? undefined : fetchedRows()
-        return fresh ?? (key ? rowCache.peek(key) : undefined)
+        return rowsOnDoc(fresh ?? (key ? rowCache.peek(key) : undefined), doc())
     })
 
     // A failed read/resolve with nothing cached to paint: say so instead of leaving the
