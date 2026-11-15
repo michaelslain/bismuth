@@ -1,9 +1,8 @@
 // Codex chats in history: rollout files under a fake CODEX_HOME, in the shapes codex 0.158 writes
 // (session_meta first, then event_msg item_completed UserMessage / AgentMessage) and the older
 // user_message / agent_message shape.
-import { afterAll, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { describe, expect, test } from 'bun:test'
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     codexHistoryFrames,
@@ -14,14 +13,11 @@ import {
     searchCodexChats,
     trashCodexChats,
 } from '../../src/chatProviders/codex/codexHistory'
+import { tempDir } from '../tempDirs'
 
-const home = mkdtempSync(join(tmpdir(), 'codex-history-'))
+const home = tempDir('codex-history-')
 const env = { CODEX_HOME: home }
-const vault = mkdtempSync(join(tmpdir(), 'codex-vault-'))
-afterAll(() => {
-    rmSync(home, { recursive: true, force: true })
-    rmSync(vault, { recursive: true, force: true })
-})
+const vault = tempDir('codex-vault-')
 
 const A = '01a1dc64-89e7-7f30-b617-6462d33e0464'
 const B = '01a1dc65-0000-7000-8000-000000000001'
