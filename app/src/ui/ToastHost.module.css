@@ -1,16 +1,22 @@
 /* app/src/ui/ToastHost.module.css
-   Fixed bottom-center toast stack (ToastHost.tsx). Both selectors are fully static.
+   Fixed top-center toast stack (ToastHost.tsx). Both selectors are fully static.
    Flat .asc-card register — pill-NOT: radius 3 (technical corners), a hairline border,
    --surface-1 fill, --fs-ui type. An action reads as a bracket text button, the same
-   CLI-confirm register the permission/inbox row actions use. */
+   CLI-confirm register the permission/inbox row actions use.
+
+   Placement: the first toast sits centred INSIDE the top strip (shell/TopStrip, a --h-band row
+   whose middle is empty: the wordmark is at the start, window controls at the end), so a lone toast
+   covers no working UI. A toast is one --h-control row plus its 1px hairline top and bottom, so the
+   offset that centres it in the strip is (band - control - 2 hairlines) / 2. Further toasts stack
+   downward from there. */
 .toast-host {
   position: fixed;
-  bottom: 16px;
+  top: calc((var(--h-band) - var(--h-control) - 2px) / 2);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--sp-2);
   z-index: var(--z-toast);
   align-items: center;
 }
@@ -18,13 +24,24 @@
   background: var(--surface-1);
   border: var(--rule);
   border-radius: var(--r-0);
-  padding: var(--sp-4) var(--sp-5);
+  /* One control row, whatever the toast holds: a message alone and a message with a [ action ] or
+     [x] (each --h-control tall) are the same height, so a stack never mixes two sizes. content-box
+     so the min-height is the row and the hairline sits outside it. */
+  box-sizing: content-box;
+  min-height: var(--h-control);
+  padding: 0 var(--sp-4);
   box-shadow: var(--lift);
   font-size: var(--fs-ui);
   color: var(--fg);
   display: flex;
   align-items: center;
-  gap: var(--sp-5);
+  gap: var(--sp-4);
+}
+/* The message carries the row's vertical inset itself: one line plus this inset is exactly one
+   --h-control row, and a message long enough to wrap keeps that same gap from the hairline instead
+   of touching it (the pill has no vertical padding, so its buttons do not add a second inset). */
+.toast-message {
+  padding-block: calc((var(--h-control) - var(--row-h)) / 2);
 }
 /* A failure: the danger ink on a danger hairline. `data-tone` is a runtime hook the host sets, so
    the rule cannot drift from a hashed class literal. The message inherits the pill's colour. */

@@ -21,7 +21,7 @@ import CloseButton from './CloseButton'
 export type { Toast, ToastTone, PushToastOptions }
 export { pushToast, updateToast, dismissToast, toasts }
 
-/** Fixed bottom-center stack of toasts. Mount once near the app root.
+/** Fixed top-center stack of toasts, the first one inside the top strip. Mount once near the app root.
  *
  * ── Why the live region ───────────────────────────────────────────────────────────────────────
  * The app had ZERO `aria-live` regions, and this is the surface that needed one most: toasts are
@@ -48,7 +48,7 @@ export function ToastHost() {
             <For each={toasts()}>
                 {t => (
                     <div class={styles['toast-pill']} data-tone={t.tone}>
-                        <Text as="span" inherit>
+                        <Text as="span" inherit class={styles['toast-message']}>
                             {t.message}
                         </Text>
                         {t.action && (

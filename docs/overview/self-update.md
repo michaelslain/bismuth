@@ -16,7 +16,7 @@ The app checks for updates at launch and every 5 minutes after that. To update:
 
 Dismiss the banner with the **x** button; it comes back on the next launch. The palette command answers with a toast: it says `Bismuth is up to date` when nothing is pending, and reports why when it cannot check (see the section on a missing banner).
 
-The banner, the progress toast and the palette show one update, whichever of them started it. A running update shows in the banner even after you dismissed it, and in a progress toast at the bottom of the window. Closing that toast with its **x** hides it until you run **Update Bismuth…** again, which brings it back instead of starting a second update. An update started from the CLI (`bismuth update apply`) appears in both within one status check.
+The banner, the progress toast and the palette show one update, whichever of them started it. A running update shows in the banner even after you dismissed it, and in a progress toast at the top of the window. Closing that toast with its **x** hides it until you run **Update Bismuth…** again, which brings it back instead of starting a second update. An update started from the CLI (`bismuth update apply`) appears in both within one status check.
 
 ## Cancel an update
 

@@ -1,4 +1,4 @@
-// Visual spec for <ToastHost> — the fixed bottom-center toast stack. ToastHost itself takes
+// Visual spec for <ToastHost> — the fixed top-center toast stack. ToastHost itself takes
 // no props; it reads a MODULE-LEVEL signal (`toasts`) that only `pushToast()` populates, so
 // each story calls it imperatively before rendering the host (the same pattern the daemon
 // inbox's "N pages ready for review" toast uses in production — see serverVersion.ts / App.tsx).
@@ -11,6 +11,9 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, within } from 'storybook/test'
 import { ToastHost, pushToast, dismissToast, toasts } from './ToastHost'
 import { showUpdateFailureWith } from '../updateFailure'
+import { TopStrip } from '../shell/TopStrip'
+import { TextButton } from './TextButton'
+import Band from './Band'
 
 function reset(): void {
     for (const t of toasts()) dismissToast(t.id)
@@ -92,5 +95,60 @@ export const UpdateDiverged: Story = {
             canvas.getByText(/^Update failed: the Bismuth clone has 3 commits/),
         ).toBeInTheDocument()
         await expect(canvas.getByText('reset')).toBeInTheDocument()
+    },
+}
+
+/** Where toasts sit in the window: the first one centred inside the top strip (whose middle is empty),
+ *  the rest stacking down over the pane below. The buttons push real toasts, so stacking, an action,
+ *  a failure and the timed dismiss can all be tried here. */
+export const InWindow: Story = {
+    render: () => {
+        reset()
+        pushToast('Copied', { ttl: 0 })
+        let n = 0
+        return (
+            <div
+                style={{
+                    height: '100vh',
+                    display: 'flex',
+                    'flex-direction': 'column',
+                }}
+            >
+                <TopStrip mac dragRegion={false} />
+                <Band>
+                    <div style={{ display: 'flex', gap: 'var(--sp-4)' }}>
+                        <TextButton onClick={() => pushToast(`Copied ${++n}`)}>
+                            copy
+                        </TextButton>
+                        <TextButton
+                            onClick={() =>
+                                pushToast(`Deleted note ${++n}`, {
+                                    action: {
+                                        label: 'undo',
+                                        onClick: () => {},
+                                    },
+                                })
+                            }
+                        >
+                            delete
+                        </TextButton>
+                        <TextButton
+                            onClick={() =>
+                                pushToast('Rename failed: EEXIST', {
+                                    tone: 'danger',
+                                })
+                            }
+                        >
+                            fail
+                        </TextButton>
+                    </div>
+                </Band>
+                <ToastHost />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Copied')).toBeInTheDocument()
     },
 }
