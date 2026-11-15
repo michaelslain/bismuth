@@ -30,3 +30,32 @@ export const STORY_READY_EXPRESSION = `(()=>{
   let n=r.querySelectorAll('*').length;
   for(const el of Array.prototype.slice.call(document.body.children)) if(el!==r&&!isChrome(el)) n+=el.querySelectorAll('*').length;
   return n})()`
+
+// WHY A SECOND SIGNAL: STORYBOOK'S OWN LIFECYCLE. The expression above cannot tell "Storybook is
+// still loading this story's module" from "the story mounted and drew nothing", and any deadline
+// counted from navigation pays for that load. A cold heavy module (Editor.stories.tsx with its
+// editor and query-block graph, about 4-6 s on an idle machine and more under load) used up the
+// whole paint deadline, and the converge loop then shot a stable empty page as empty-render.
+// Storybook announces the end of a story's render on its addons channel, the same channel
+// bench/playCheck.ts grades play() from: `storyFinished` once render (and play, when there is one)
+// is done, `storyThrewException` / `storyErrored` when it never mounts. Wait on that first, then on
+// paint. Install with Page.addScriptToEvaluateOnNewDocument so it runs before the page's own
+// scripts and again after any reload (a Vite dep re-optimise reloads the frame).
+export const STORY_LIFECYCLE_INJECT = `(function () {
+    window.__storyLife = { done: false, error: null };
+    ;(function poll() {
+        var ch = window.__STORYBOOK_ADDONS_CHANNEL__;
+        if (!ch) return setTimeout(poll, 10);
+        ch.on('storyFinished', function () { window.__storyLife.done = true; });
+        ['storyThrewException', 'storyErrored'].forEach(function (n) {
+            ch.on(n, function (e) {
+                e = e || {};
+                window.__storyLife.error = n + ': ' + String(e.message || e.description || e.title || JSON.stringify(e)).slice(0, 200);
+                window.__storyLife.done = true;
+            });
+        });
+    })();
+})();`
+
+/** `{ done, error }` from STORY_LIFECYCLE_INJECT, as a JSON string; `null` before the hook exists. */
+export const STORY_LIFECYCLE_EXPRESSION = `JSON.stringify(window.__storyLife || null)`

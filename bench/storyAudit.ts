@@ -31,7 +31,11 @@ import { join } from 'node:path'
 import { launchChrome } from './chromeSession'
 import { CLIP_BOX_SRC } from './clipBox'
 import { poolSize } from './poolSize'
-import { STORY_READY_EXPRESSION } from './storyReady'
+import {
+    STORY_LIFECYCLE_EXPRESSION,
+    STORY_LIFECYCLE_INJECT,
+    STORY_READY_EXPRESSION,
+} from './storyReady'
 import { arg, BASE, loadStoryIndex } from './args'
 
 const ONLY = arg('story', '')
@@ -39,8 +43,12 @@ const OUT_DIR = arg('out', join(import.meta.dir, '..', '.claude', 'audit'))
 const SETTLE = Number(arg('settle', '700'))
 const MAX_TRIES = Number(arg('tries', '12'))
 const WAIT = Number(arg('wait', '300'))
-// How long to poll bench/storyReady.ts's expression for before giving up on a story ever mounting.
-// Same default as invariants.ts, and doubled for the serial re-check below — see captureStory.
+// How long to wait for Storybook to report the story rendered (storyFinished on its channel, see
+// bench/storyReady.ts) before going on without it. Generous on purpose: it only runs out on a story
+// that hangs, and a cold module load under a busy machine is waited out instead of shot blank.
+const LOAD_TIMEOUT = Number(arg('load-timeout', '60000'))
+// How long to poll bench/storyReady.ts's paint expression for once Storybook says the story
+// rendered. Same default as invariants.ts, and doubled for the serial re-check below.
 const READY_TIMEOUT = Number(arg('ready-timeout', '6000'))
 
 /* CONCURRENCY IS DERIVED, NOT A CONSTANT — see bench/poolSize.ts for the two budgets and why the
@@ -279,6 +287,7 @@ const preparePage = async () => {
         deviceScaleFactor: 1,
         mobile: false,
     })
+    await p('Page.addScriptToEvaluateOnNewDocument', { source: STORY_LIFECYCLE_INJECT })
     return p
 }
 
@@ -312,6 +321,30 @@ const captureStory = async (
     await p('Page.navigate', {
         url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
     })
+
+    // First wait for Storybook to finish loading and rendering the story (module load, mount, and
+    // play() when the story has one). The paint deadline below starts only after that, so a slow
+    // cold module load no longer eats it. See STORY_LIFECYCLE_INJECT for why.
+    const loadStart = Date.now()
+    let loadTimedOut = false
+    let threw: string | null = null
+    for (;;) {
+        const q = await p('Runtime.evaluate', {
+            expression: STORY_LIFECYCLE_EXPRESSION,
+            returnByValue: true,
+        })
+        const life = q?.exceptionDetails ? null : JSON.parse(q?.result?.value ?? 'null')
+        if (life?.done) {
+            threw = life.error
+            break
+        }
+        if (Date.now() - loadStart > LOAD_TIMEOUT) {
+            loadTimedOut = true
+            break
+        }
+        await sleep(250)
+    }
+    const loadMs = Date.now() - loadStart
 
     // Wait for the story's own subtree to paint SOMETHING before trusting the converge loop below.
     // A pre-mount page (Storybook's own chrome excluded, per STORY_READY_EXPRESSION) is a perfectly
@@ -380,6 +413,8 @@ const captureStory = async (
                   stats: null,
               }
 
+    if (threw) parsed.flags.unshift({ kind: 'crashed', sel: ':root', text: '', detail: `story threw: ${threw}` })
+
     const shot = await p('Page.captureScreenshot', {
         format: 'png',
         clip: { ...parsed.box, scale: SHOT_SCALE },
@@ -390,7 +425,7 @@ const captureStory = async (
 
     return {
         flags: parsed.flags,
-        stats: parsed.stats ? { ...parsed.stats, readyMs, readyTimedOut } : { readyMs, readyTimedOut },
+        stats: { ...(parsed.stats ?? {}), loadMs, loadTimedOut, readyMs, readyTimedOut },
         shot: join('shots', file),
         readyMs,
         readyTimedOut,
@@ -473,7 +508,7 @@ if (stillToCheck.length) {
                 rec.shot = retry.shot
             } else {
                 const f = rec.flags.find((fl: any) => fl.kind === 'empty-render')
-                if (f) f.detail = `root still empty after ${retry.readyMs}ms alone`
+                if (f) f.detail = `root still empty after ${retry.stats.loadMs + retry.readyMs}ms alone`
             }
         } catch (err) {
             rec.flags.push({

@@ -151,7 +151,7 @@ Signals miss geometrically legal wrongness, which is why the screenshots exist: 
 Read the screenshots of any story you changed.
 A story whose emptiness is the behaviour under test (a hidden overlay host, a dismissed modal) is exempt by exact id in `EMPTY_BY_DESIGN`, each with the `play()` that asserts it; an exempt story that starts rendering raises a `stale-exemption` lead.
 
-It waits for each story to paint (`--ready-timeout`, default 6000 ms) before it converges, and re-checks anything still empty alone with a doubled timeout, so "slow under load" reads differently from "renders nothing".
+It first waits for Storybook to report the story rendered, `play()` included (`--load-timeout`, default 60000 ms), so a heavy story module loading slowly on a busy machine is waited out rather than shot blank. Then it waits for the story to paint (`--ready-timeout`, default 6000 ms) before it converges, and re-checks anything still empty alone with a doubled paint timeout, so "slow under load" reads differently from "renders nothing". A story that throws while rendering raises `crashed` with the error message. Each story's `stats` carry `loadMs` and `readyMs`.
 
 ### `bench/cssBaseline.ts`: the computed-style baseline
 
@@ -287,7 +287,7 @@ The launcher passes the three `--disable-*background*` flags and calls `Emulatio
 `--concurrency` overrides it.
 The ceiling stays low because a CPU-starved story mounts late, and a late mount produces a mid-mount capture.
 
-**Readiness is polled, not slept.** `bench/storyReady.ts` exports the page expression that counts painted elements in the story root and in portals under `document.body` (modals render there), excluding Storybook's own dormant chrome. `invariants` and `storyAudit` poll it before measuring.
+**Readiness is polled, not slept.** `bench/storyReady.ts` exports the page expression that counts painted elements in the story root and in portals under `document.body` (modals render there), excluding Storybook's own dormant chrome. `invariants` and `storyAudit` poll it before measuring. The same file exports a hook on Storybook's addons channel (`STORY_LIFECYCLE_INJECT`) that records when a story finishes rendering or throws; `storyAudit` waits on it before it polls for paint.
 
 **Shared helpers.** `bench/args.ts` reads flags (`arg`, `has`, `argAll`) and loads the story index from `<base>/index.json`; a value that starts with `--` is never taken as a flag's value.
 `bench/verifyReport.ts` holds the pure half of `verify`: argument parsing, the shot-hash diff, the verdict rule and the summary text, unit-tested in `bench/verifyReport.test.ts`.
