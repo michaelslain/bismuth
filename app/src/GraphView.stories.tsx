@@ -138,9 +138,9 @@ export const FindPanelOpen: Story = {
 
 /** The mini graph's contract: its ViewBar header holds EXACTLY ONE 2d/3d TextButton plus
  *  the [clusters] and [local] icon toggles, and no bottom bar renders any of them (the bar, when present at all,
- *  carries only the fps badge). `localSelected` is whether [local] must read as showing. Returns
+ *  carries only the fps badge). `local` is whether [local] must read as on. Returns
  *  the 2d/3d button. */
-const assertMiniHeaderControls = (root: HTMLElement, mode: GraphMode) => {
+const assertMiniHeaderControls = (root: HTMLElement, local: boolean) => {
     const bar = root.querySelector('[data-viewbar]')
     if (!bar) throw new Error('no [data-viewbar] rendered')
     const buttons = [...bar.querySelectorAll('button')]
@@ -154,14 +154,14 @@ const assertMiniHeaderControls = (root: HTMLElement, mode: GraphMode) => {
     const clusters = iconNamed('clusters')
     expect(clusters).toHaveLength(1)
     expect(/[a-z]/i.test(clusters[0]!.textContent ?? '')).toBe(false)
-    const local = iconNamed('local')
-    expect(local).toHaveLength(1)
-    expect(local[0]!.getAttribute('aria-pressed')).toBe(String(mode === 'local'))
+    const localButton = iconNamed('local')
+    expect(localButton).toHaveLength(1)
+    expect(localButton[0]!.getAttribute('aria-pressed')).toBe(String(local))
     expect(
         /^Showing the open note's neighbourhood/.test(
-            local[0]!.getAttribute('data-tooltip') ?? '',
+            localButton[0]!.getAttribute('data-tooltip') ?? '',
         ),
-    ).toBe(mode === 'local')
+    ).toBe(local)
     // Nothing the header owns may also render at the floor.
     const floor = root.querySelector('[class*="graph-bottom-bar"]')
     if (floor) {
@@ -206,8 +206,10 @@ export const MiniLocal: Story = {
                     graph={graph}
                     communitySource={graph}
                     onOpen={noop}
-                    mode="local"
+                    mode="2nd"
                     setMode={noop}
+                    local
+                    setLocal={noop}
                     active={graph.nodes[1]?.id ?? null}
                     fill
                     mini
@@ -238,7 +240,7 @@ export const MiniLocal: Story = {
         )
         expect(modeIcons).toHaveLength(0)
 
-        const modeButton = assertMiniHeaderControls(canvasElement, 'local')
+        const modeButton = assertMiniHeaderControls(canvasElement, true)
 
         // Clicking the 2D/3D button flips its OWN label — it always shows the mode you'd switch
         // TO, so after one click it must read the opposite of what it read before. Scoped to
@@ -307,6 +309,8 @@ export const MiniModeSwitcher: Story = {
         // A live mode, so clicking a mode moves the selection — the pick-one gaps are only proven by
         // looking at every member selected in turn (play() below walks all three).
         const [mode, setMode] = createSignal<GraphMode>('2nd')
+        // A live lens too: play() turns it on and checks the selected brain stays selected.
+        const [local, setLocal] = createSignal(false)
         const graph = sampleGraphData(8)
         return (
             <div style={{ height: '305px', width: '266px' }}>
@@ -316,6 +320,8 @@ export const MiniModeSwitcher: Story = {
                     onOpen={noop}
                     mode={mode()}
                     setMode={setMode}
+                    local={local()}
+                    setLocal={setLocal}
                     active={graph.nodes[1]?.id ?? null}
                     fill
                     mini
@@ -346,7 +352,7 @@ export const MiniModeSwitcher: Story = {
         // LEFT-ALIGNED, not centred: the leading control is the 2d/3d button (a facet, ahead of the
         // icons), so IT starts at the content edge and the first icon follows it. Sub-pixel
         // tolerance only: centring moves it by tens of px.
-        const lead = assertMiniHeaderControls(canvasElement, '2nd')
+        const lead = assertMiniHeaderControls(canvasElement, false)
         expect(
             Math.abs(lead.getBoundingClientRect().left - barLeft),
         ).toBeLessThanOrEqual(1)
@@ -384,6 +390,21 @@ export const MiniModeSwitcher: Story = {
         }
         expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(0.5)
         buttons[0].click()
+        await waitFor(() => expect(first.getAttribute('aria-pressed')).toBe('true'))
+
+        // LOCAL IS A LENS, NOT A MODE. Turning it on keeps the picked brain selected, and picking
+        // another brain with it on keeps it on: the two sides of the bar never unselect each other.
+        const localButton = await canvas.findByRole('button', { name: 'local' })
+        localButton.click()
+        await waitFor(() => expect(localButton.getAttribute('aria-pressed')).toBe('true'))
+        expect(first.getAttribute('aria-pressed')).toBe('true')
+        buttons[1].click()
+        await waitFor(() => expect(buttons[1].getAttribute('aria-pressed')).toBe('true'))
+        expect(localButton.getAttribute('aria-pressed')).toBe('true')
+        // Back to how the story started, so it rests with 2nd brain on and the lens off.
+        buttons[0].click()
+        localButton.click()
+        await waitFor(() => expect(localButton.getAttribute('aria-pressed')).toBe('false'))
     },
 }
 

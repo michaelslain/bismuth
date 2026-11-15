@@ -26,8 +26,9 @@ export type ButtonProps = {
     /** Colour for the selected state (a `var(--…)` token or a token-derived value). Sets
      *  `--btn-accent` on the root, read by `.btn--text.btn--selected` in place of `--accent`. */
     accent?: string
-    /** Member of a pick-one icon group (exactly one member is ever on): the off state draws no
-     *  bracket space. Icon kind only — see buttonClass.ts. */
+    /** Member of a pick-one icon group (exactly one member is ever on), or of a row of independent
+     *  icon toggles in one IconBar: the off state draws no bracket space. Icon kind only — see
+     *  buttonClass.ts. */
     pickOne?: boolean
     /** A standalone (`normal`) icon in a row of toggles: lays out the same unpainted brackets an
      *  off toggle reserves (IconBrackets `reserved`), so the two share one footprint. Icon kind

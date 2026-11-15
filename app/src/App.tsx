@@ -362,6 +362,10 @@ export default function App() {
         modeChosenByUser = true
         setModeRaw(m)
     }
+    // The LOCAL lens: narrows whichever mode is showing to the open note's neighbourhood. Separate
+    // from `mode` on purpose, so turning it on never unselects the brain the user picked.
+    const [graphLocal, setGraphLocal] = createSignal(false)
+    const toggleGraphLocal = () => setGraphLocal(!graphLocal())
     let modeHydrationApplied = false
     createEffect(() => {
         if (modeHydrationApplied) return
@@ -659,7 +663,7 @@ export default function App() {
                 .filter(c => !isSentinel(c))
                 .map(c => ({ path: c, label: contentLabel(c) })),
             activeFile: c && !isSentinel(c) ? c : null,
-            activePane: c ? paneContextLabel(c, mode()) : null,
+            activePane: c ? paneContextLabel(c, mode(), graphLocal()) : null,
         })
     })
 
@@ -1072,9 +1076,10 @@ export default function App() {
     // frontend-injected here for 2nd/3rd/both too, but read as noise floating at the origin next
     // to real vault/memory structure.
     const displayGraph = createMemo<GraphData>(() =>
-        // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
+        // `activeId` feeds the local lens only: the focused note's graph id (path minus ".md").
         selectDisplayGraph(mode(), {
             graph: graph(),
+            local: graphLocal(),
             activeId: focusedContent()
                 ? focusedContent()!.replace(/\.md$/i, '')
                 : null,
@@ -1674,6 +1679,8 @@ export default function App() {
                 openDaemon,
                 openFeedback,
                 setMode,
+                toggleGraphLocal,
+                graphLocalOn: graphLocal,
                 openDailyNote,
                 equalizePanes,
                 splitPaneRight,
@@ -3713,6 +3720,8 @@ export default function App() {
                             }}
                             mode={mode()}
                             setMode={setMode}
+                            local={graphLocal()}
+                            setLocal={setGraphLocal}
                             active={focusedContent()}
                             searchMatchIds={
                                 switcherOpen() ? switcherMatchIds() : null

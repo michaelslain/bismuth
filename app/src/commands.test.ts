@@ -41,6 +41,23 @@ describe('bindCommands', () => {
         expect(calls).toEqual(['new-note', 'mode:2nd', 'settings'])
     })
 
+    it('binds graph-local to the local lens toggle, never to a graph mode', () => {
+        const { handlers, calls } = noopHandlers()
+        let on = false
+        Object.assign(handlers, {
+            toggleGraphLocal: () => {
+                on = !on
+                calls.push('local')
+            },
+            graphLocalOn: () => on,
+        })
+        const local = bindCommands(handlers).get('graph-local')!
+        expect(local.isOn?.()).toBe(false)
+        local.action()
+        expect(calls).toEqual(['local'])
+        expect(local.isOn?.()).toBe(true)
+    })
+
     it('binds the three shell-layout commands to their handlers', () => {
         const { handlers, calls } = noopHandlers()
         Object.assign(handlers, {

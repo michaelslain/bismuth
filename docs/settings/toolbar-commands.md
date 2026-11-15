@@ -34,7 +34,7 @@ toolbar:
 | `icon` | An icon name (any Phosphor icon) or an emoji. Required. |
 | `tooltip` | Hover text. Defaults to the command's label. A command with a keybinding also shows its shortcut there ([hover hints](keybindings.md#see-a-buttons-shortcut-by-hovering-it)). |
 
-A button whose command has an on state draws its icon in brackets while that state is on: the `create-menu` button reads `[+]` while its menu is open. Every other button is a bare icon.
+A button whose command has an on state draws its icon in brackets while that state is on: the `create-menu` button reads `[+]` while its menu is open, and a `graph-local` button is bracketed while the graph's local lens is on. Every other button is a bare icon.
 
 Use `command` or `commands`, not both. If both are present and `commands` is non-empty, `commands` wins.
 
@@ -186,7 +186,7 @@ Notes on individual commands:
 - `quick-ask`. It opens the [quick ask popover](../chat/overview.md#how-do-i-ask-a-quick-question), the same as its `Mod+K` shortcut, anchored at the caret in a note or at the top of another pane. It only opens the popover, so it counts as a dialog command. App control refuses it, because opening it starts or resumes a live agent session.
 - `emoji-library`. It opens the emoji picker and inserts your pick at the cursor of the focused note.
 - `edit-dictionary`. It opens the list of words you added to the spellcheck dictionary, so you can remove them.
-- Graph modes. `graph-2nd` shows the vault, `graph-3rd` the memory graph, `graph-both` both with their cross-links, and `graph-local` the neighbourhood of the open note. See [graph overview](../graph/overview.md).
+- Graph modes. `graph-2nd` shows the vault, `graph-3rd` the memory graph, `graph-both` both with their cross-links, and `graph-local` turns on or off the lens that narrows the graph to the open note's neighbourhood. See [graph overview](../graph/overview.md).
 - Pane commands run the same logic as the matching [keybindings](keybindings.md).
 - Layout commands. `move-sidebar-side`, `move-tab-rail-side` and `toggle-status-bar` flip the `layout` keys and write `.settings`; `toggle-sidebar` and `toggle-tab-rail` show or pin the panels. See [shell layout](layout.md).
   The panel edge lines run the same toggles: drag one to resize, click it to toggle.

@@ -6,10 +6,11 @@
 import { COMMAND_CATALOG } from '../../core/src/commands'
 import type { DailyNoteConfig } from '../../core/src/dailyNote'
 
-/** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory,
- *  local=the open note's neighbourhood. The daemon's cron/process supervision view moved to its
- *  own page (`::daemon`) — it is no longer a graph mode. */
-export type GraphMode = '2nd' | '3rd' | 'both' | 'local'
+/** Graph view mode, which brain the graph shows: 2nd=vault notes, 3rd=memory, both=vault+memory.
+ *  The daemon's cron/process supervision view is its own page (`::daemon`). LOCAL is not a mode: it
+ *  is a separate on/off lens that narrows whichever mode is showing to the open note's
+ *  neighbourhood (App's `graphLocal` signal, `toggleGraphLocal` below). */
+export type GraphMode = '2nd' | '3rd' | 'both'
 
 export interface CommandHandlers {
     openSettings: () => void
@@ -27,6 +28,10 @@ export interface CommandHandlers {
     // True while the create chooser is open; the toolbar draws its `+` as an on toggle then.
     createMenuOpen?: () => boolean
     openGraph: () => void
+    /** Flip the graph's LOCAL lens (the open note's neighbourhood over the current mode). */
+    toggleGraphLocal: () => void
+    /** True while the LOCAL lens is on; a toolbar `graph-local` button draws as an on toggle. */
+    graphLocalOn?: () => boolean
     // Open the daemon page (the living face, crons + services, inbox + log, docked chat) as its
     // own tab. The inbox folded into that page, so `open-inbox` routes here too.
     openDaemon: () => void
@@ -169,7 +174,7 @@ export function bindCommands(
         'graph-2nd': () => h.setMode('2nd'),
         'graph-3rd': () => h.setMode('3rd'),
         'graph-both': () => h.setMode('both'),
-        'graph-local': () => h.setMode('local'),
+        'graph-local': h.toggleGraphLocal,
         'equalize-panes': h.equalizePanes,
         'split-right': h.splitPaneRight,
         'split-down': h.splitPaneDown,
@@ -209,7 +214,12 @@ export function bindCommands(
             icon: spec.icon,
             interactive: spec.interactive,
             action,
-            isOn: spec.id === 'create-menu' ? h.createMenuOpen : undefined,
+            isOn:
+                spec.id === 'create-menu'
+                    ? h.createMenuOpen
+                    : spec.id === 'graph-local'
+                      ? h.graphLocalOn
+                      : undefined,
         })
     }
     // Dynamic, user-defined daily-note commands. NOT in the static catalog; the toolbar

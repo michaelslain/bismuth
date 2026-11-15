@@ -47,15 +47,20 @@ The graph draws up to two sources, called brains. The 2nd brain is your vault: n
 | `2nd` | Notes and tags |
 | `3rd` | Memory notes only |
 | `both` | Everything, plus `about` edges |
-| `local` | The open note and its direct neighbours |
 
 Each brain mode has its own layout, so a memory linked to a vault note does not sit stranded far from its own cluster when the vault is hidden.
 
 ## Show only the open note's neighbourhood
 
-The `local` mode narrows the 2nd-brain graph to the note you have open and every note one link away, in either direction. It is a lens over the mini graph in the sidebar, not a fourth switcher segment. Click the crosshair icon (`local`) at the top of the mini graph to turn it on and click it again to return to the mode you were in.
+`local` is a lens over the mini graph in the sidebar, not a brain mode. It narrows whichever brain is selected to the note you have open and everything one link away, in either direction, and the selected brain stays selected. Click the crosshair icon (`local`) at the top of the mini graph to turn it on and click it again to turn it off. Switching brains while it is on keeps it on.
 
-The `graph-local` command (**Graph: Local (open note)**) switches to the same lens. If you promote the mini graph to a full pane while `local` is on, the pane returns to the mode you were in. With no note open, `local` shows an empty graph.
+| Brain | `local` shows |
+|---|---|
+| `2nd` | The open note and the notes and tags one link away |
+| `3rd` | The open note and the memories about it |
+| `both` | The open note and every neighbour of either kind |
+
+The `graph-local` command (**Graph: Local (open note)**) turns the same lens on or off; a toolbar button bound to it draws as on while the lens is on. If you promote the mini graph to a full pane while `local` is on, the lens turns off. With no note open, `local` shows an empty graph.
 
 ## Zoom, pan and keys
 

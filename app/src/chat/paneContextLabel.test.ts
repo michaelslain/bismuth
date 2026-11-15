@@ -12,8 +12,8 @@ describe('paneContextLabel', () => {
         expect(paneContextLabel('::graph', 'both')).toBe(
             'knowledge graph (both brains)',
         )
-        expect(paneContextLabel('::graph', 'local')).toBe(
-            'knowledge graph (local)',
+        expect(paneContextLabel('::graph', '3rd', true)).toBe(
+            'knowledge graph (3rd brain, local)',
         )
         expect(paneContextLabel('::graph')).toBe('knowledge graph')
     })

@@ -522,7 +522,11 @@ the accent. An outline appears only when it means something.
   reserved space put two off icons ~10px apart ink to ink against ~6px beside the on bracket, and
   the eye reads `[▣]` as one unit, so the row looked lopsided. With one member always bracketed the
   row keeps its width anyway; every unit — `[▣]` or `▣` — sits one gap apart, and only the icons
-  between the old and new selection slide. There is no separate butted look.
+  between the old and new selection slide. There is no separate butted look. A **row of
+  independent toggles that sit side by side in one `IconBar`** (the mini graph's clusters and
+  local lenses) takes `pickOne` too: reserved space reads just as lopsided there, so each toggle
+  draws no bracket space while off and its neighbour slides by one bracket when it flips. A lone
+  toggle among commands keeps the reservation.
 - **`accent` recolours a selected toggle** (a category's own colour).
 - **Hierarchy:** `selected` and `primary` paint alike (accent + bold); `primary` is the one
   confirming action in a footer or view, `selected` is a toggle member that is on. A command

@@ -9,6 +9,7 @@ import { createSignal, Show, type JSX } from 'solid-js'
 import ViewBar, { Crumb } from './ViewBar'
 import { SegmentedToggle } from './SegmentedToggle'
 import { IconButton } from './IconButton'
+import IconBar from './IconBar'
 import { TextButton } from './TextButton'
 import Text from './Text'
 import { createPaneChrome, PaneChromeContext } from './paneChrome'
@@ -404,10 +405,10 @@ export const BelowFloorLeadFits: Story = {
                     </>
                 }
                 config={
-                    <>
-                        <IconButton icon="CirclesThree" label="clusters" variant="selected" />
-                        <IconButton icon="Crosshair" label="local" variant="unselected" />
-                    </>
+                    <IconBar label="Graph lenses">
+                        <IconButton icon="CirclesThree" label="clusters" variant="selected" pickOne />
+                        <IconButton icon="Crosshair" label="local" variant="unselected" pickOne />
+                    </IconBar>
                 }
             />
         </Frame>

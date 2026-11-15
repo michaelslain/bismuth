@@ -71,7 +71,6 @@ const MODE_SHORT: Record<GraphMode, string> = {
     '2nd': '2nd',
     '3rd': '3rd',
     both: 'both',
-    local: 'local',
 }
 /**
  * The same switcher as ICONS, for the sidebar mini-graph only.
@@ -89,7 +88,6 @@ const MODE_ICON: Record<GraphMode, string> = {
     '2nd': 'Notebook', // the vault: markdown notes
     '3rd': 'Brain', // the daemon's memory graph
     both: 'Combine', // both brains + their cross-edges
-    local: 'Share', // the open note's neighbourhood
 }
 
 export function GraphView(props: {
@@ -97,6 +95,11 @@ export function GraphView(props: {
     onOpen: (id: string) => void
     mode: GraphMode
     setMode: (m: GraphMode) => void
+    /** The LOCAL lens (mini graph only): the open note's neighbourhood over the current mode. The
+     *  graph data is already narrowed by the owner (selectDisplayGraph); this drives the toggle and
+     *  the local re-layout. */
+    local?: boolean
+    setLocal?: (on: boolean) => void
     active: string | null
     // When true, fill the available height (main pane) instead of a 1:1 square (sidebar).
     fill?: boolean
@@ -166,24 +169,14 @@ export function GraphView(props: {
         renderer.clearHighlight()
     }
 
-    // LOCAL is a LENS, not a brain view: it shows whatever note is open, so it toggles on and off over
-    // the mode you were already in rather than replacing it in the switcher. `beforeLocal` remembers what
-    // to go back to.
-    let beforeLocal: GraphMode = '2nd'
-    const localOn = () => props.mode === 'local'
-    const toggleLocal = () => {
-        if (localOn()) {
-            props.setMode(beforeLocal)
-            return
-        }
-        beforeLocal = props.mode
-        props.setMode('local')
-    }
+    // LOCAL is a LENS, not a brain view: it narrows whichever mode is showing to the open note's
+    // neighbourhood, so it is its own on/off flag beside `mode` and the selected brain stays selected.
+    const localOn = () => !!props.local
+    const toggleLocal = () => props.setLocal?.(!localOn())
     // LOCAL only exists in the little graph. If the graph is promoted to a full pane while the lens is
-    // on, drop back — otherwise the full-pane switcher would show no selected segment (its options don't
-    // include "local") and there would be no control anywhere to turn it off.
+    // on, turn it off — the full pane has no control anywhere to turn it off.
     createEffect(() => {
-        if (!props.mini && props.mode === 'local') props.setMode(beforeLocal)
+        if (!props.mini && localOn()) props.setLocal?.(false)
     })
 
     // The 3rd-brain (memory) graph mode only exists while the daemon is enabled (the per-vault
@@ -241,10 +234,10 @@ export function GraphView(props: {
     // apply (a neighbour sharing the focused note's community settles closer than a cross-community
     // bridge) WITHOUT changing what gets rendered: the returned nodes below never carry these fields, so
     // the renderer stays exactly as flat/uncoloured in local mode as it already was (showLodMasses is
-    // separately gated off `props.mode !== "local"` regardless). See localLayoutInput.ts / its test.
+    // separately gated off the lens regardless). See localLayoutInput.ts / its test.
     const localLaidOut = createMemo<GraphData>(() => {
         const g = props.graph
-        if (props.mode !== 'local' || g.nodes.length === 0) return g
+        if (!localOn() || g.nodes.length === 0) return g
         const input = localLayoutInput(g, props.communitySource)
         const pos3 = computeLayout(input, { refineTicks: LOCAL_REFINE_TICKS })
         const pos2 = computeLayout(input, {
@@ -265,7 +258,7 @@ export function GraphView(props: {
     })
 
     const rendererGraph = (): GraphData =>
-        props.mode === 'local' ? localLaidOut() : props.graph
+        localOn() ? localLaidOut() : props.graph
 
     /** Render `g` on the renderer and refresh the search/legend UI data from its new node set.
      *  Shared by the graph-render effect below and mountRenderer. */
@@ -318,14 +311,14 @@ export function GraphView(props: {
             // DETAIL block) and then left unreachable — GraphView never set the flag, so the shipped field
             // drew every node at every zoom and the hierarchy read only through colour + labels. That is
             // the version the user found unreadable; the masses are what made it legible.
-            // ...but NEVER in "local" mode. A local neighbourhood carries no community hierarchy by design
+            // ...but NEVER under the local lens. A local neighbourhood carries no community hierarchy by design
             // (localSubgraph strips it), and the LOD path suppresses the individual-note raster at coarse
             // zoom on the assumption that aggregate MASSES are covering the field. With no communities there
             // are no masses, so both passes stay off and the field renders completely empty. Local mode wants
             // the real notes at every zoom, which is exactly the non-LOD path.
             // The [clusters] toggle (graph/graphLayers.ts) turns the masses off for every-note-at-every-zoom,
             // the same non-LOD path local mode takes.
-            showLodMasses: graphClusters() && props.mode !== 'local',
+            showLodMasses: graphClusters() && !localOn(),
             // On light themes the neutral grey, alpha-blended over the pale canvas, reads as harsh dark
             // lines. Lift the edge color toward the background and drop its opacity so links stay faint.
             edgeColor: ap.isLight
@@ -447,12 +440,11 @@ export function GraphView(props: {
         '2nd': '2nd brain',
         '3rd': '3rd brain',
         both: 'both brains',
-        local: "the open note's neighbourhood",
     }
     /**
      * Plain-language expansion for the switcher's tooltip.
      *
-     * The segment labels (2nd / 3rd / both / local) and the stats footer keep the product's own
+     * The segment labels (2nd / 3rd / both) and the stats footer keep the product's own
      * three-brain vocabulary — it is the documented model, it is what `.settings` and the docs call
      * these, and the text-only switcher was an explicit design decision (see MODE_SHORT's note).
      * But the tooltip used to repeat the same words back ("2nd brain"), so a user who did not
@@ -463,9 +455,10 @@ export function GraphView(props: {
         '2nd': '2nd brain — your vault: notes, tags and the links between them',
         '3rd': "3rd brain — what the daemon remembers, and what it's about",
         both: 'Both brains — vault and memory together, with the links across',
-        local: "Local — only the open note's immediate neighbourhood",
     }
-    const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode
+    const modeLabel = () =>
+        (MODE_LABEL[props.mode] ?? props.mode) +
+        (localOn() ? ", the open note's neighbourhood" : '')
     const nodeCount = () => props.graph?.nodes?.length ?? 0
     const edgeCount = () => props.graph?.edges?.length ?? 0
 
@@ -620,12 +613,16 @@ export function GraphView(props: {
                        groups, a crosshair for narrowing to the open note. The accessible names stay
                        "clusters" and "local"; the tooltip carries the explanation. LOCAL stays apart
                        from the brain-mode icons because it is a different kind of choice: those pick
-                       WHICH graph, this narrows the current one to the open note. Lone on/off
-                       toggles, not pickOne: an off one keeps its bracket room so nothing shifts. */
+                       WHICH graph, this narrows the current one to the open note. Both sit in an
+                       <IconBar>, like the mode switcher, so they take its button box, glyph size and
+                       gap. They are independent toggles but pass `pickOne`: reserved bracket room put
+                       two off icons twice as far apart as the modes beside them (DESIGN.md, Toggles),
+                       so an off one draws none and its neighbour slides one bracket when it flips. */
                     props.mini ? (
-                        <>
+                        <IconBar label="Graph lenses">
                             <IconButton
                                 icon="CirclesThree"
+                                pickOne
                                 label="clusters"
                                 variant={graphClusters() ? 'selected' : 'unselected'}
                                 title={
@@ -637,6 +634,7 @@ export function GraphView(props: {
                             />
                             <IconButton
                                 icon="Crosshair"
+                                pickOne
                                 label="local"
                                 variant={localOn() ? 'selected' : 'unselected'}
                                 title={
@@ -646,7 +644,7 @@ export function GraphView(props: {
                                 }
                                 onClick={toggleLocal}
                             />
-                        </>
+                        </IconBar>
                     ) : undefined
                 }
             />

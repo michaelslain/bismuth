@@ -42,8 +42,26 @@ export function applyView(
 export interface DisplayGraphSources {
     /** The full "both"-mode graph (vault + memory), with `views.second`/`views.third` if cached. */
     graph: GraphData
-    /** The focused note's graph node id (its path minus ".md"), or null. Only "local" mode reads it. */
+    /** The focused note's graph node id (its path minus ".md"), or null. Only the local lens reads it. */
     activeId?: string | null
+    /** The LOCAL lens: narrow the mode's graph to the open note and its one-link neighbours. */
+    local?: boolean
+}
+
+/**
+ * The nodes the local lens may keep for a mode: that brain's kinds, plus the open note itself, so
+ * "3rd brain, local" is the open note and the memories that touch it rather than an empty graph
+ * (a note is not a 3rd-brain kind).
+ */
+function localBase(mode: GraphMode, g: GraphData, activeId: string): GraphData {
+    if (mode === 'both') return g
+    const kinds = mode === '2nd' ? SECOND_BRAIN_KINDS : THIRD_BRAIN_KINDS
+    const nodes = g.nodes.filter(n => kinds.has(n.kind) || n.id === activeId)
+    const ids = new Set(nodes.map(n => n.id))
+    return {
+        nodes,
+        edges: g.edges.filter(e => ids.has(e.from) && ids.has(e.to)),
+    }
 }
 
 /**
@@ -54,6 +72,15 @@ export function selectDisplayGraph(
     mode: GraphMode,
     sources: DisplayGraphSources,
 ): GraphData {
+    if (sources.local) {
+        // Just what the open note touches within the mode's brain: it, its neighbours in BOTH
+        // directions (outbound links and backlinks alike), and the edges among them. `localSubgraph`
+        // strips the hierarchy fields, so the renderers fall back to one flat level — a local
+        // neighbourhood has no super-clusters to read. Positions come from a whole-vault layout and
+        // are meaningless at this scale; GraphView re-lays the subgraph out while the lens is on.
+        const activeId = sources.activeId ?? ''
+        return localSubgraph(localBase(mode, sources.graph, activeId), activeId)
+    }
     switch (mode) {
         case '2nd':
             return applyView(
@@ -67,16 +94,5 @@ export function selectDisplayGraph(
             )
         case 'both':
             return sources.graph // full brain, no "you" hub
-        case 'local':
-            // Just what the open note touches: it, its neighbours in BOTH directions (outbound links and
-            // backlinks alike), and the edges among them. `localSubgraph` strips the hierarchy fields, so
-            // the renderers fall back to one flat level — a local neighbourhood has no super-clusters to
-            // read, and colouring a dozen notes by the whole vault's community structure said nothing.
-            // Positions come from a whole-vault layout and are meaningless at this scale; GraphView re-lays
-            // the subgraph out for this mode.
-            return localSubgraph(
-                subgraphByKinds(sources.graph, SECOND_BRAIN_KINDS),
-                sources.activeId ?? '',
-            )
     }
 }
