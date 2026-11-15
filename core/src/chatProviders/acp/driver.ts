@@ -143,6 +143,12 @@ export function buildMcpServers(
         { name: 'BISMUTH_VAULT', value: vaultRoot },
         { name: 'BISMUTH_MCP_CHANNEL', value: 'chat' },
         { name: 'BISMUTH_AGENT_CHANNEL', value: 'chat' },
+        // The installed server runs the installed CLI through BISMUTH_CLI, and reads docs from
+        // BISMUTH_DOCS_DIR, as every other registration sets them (bismuthInstall.ts's
+        // installedMcpLaunch). Without BISMUTH_CLI it falls back to `bun run <repo>/cli/src/index.ts`,
+        // a path only a dev checkout has, and every bismuth_cli call fails with "Module not found".
+        { name: 'BISMUTH_CLI', value: bismuthHome('bin', 'bismuth') },
+        { name: 'BISMUTH_DOCS_DIR', value: bismuthHome('docs') },
     ]
     if (memoryDir) env.push({ name: 'BISMUTH_MEMORY_DIR', value: memoryDir })
     return [{ name: 'bismuth', command: bin, args: [], env }]

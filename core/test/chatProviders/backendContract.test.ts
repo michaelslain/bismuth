@@ -6,6 +6,7 @@
 //   - history: the catalog's `sessionPicker` matches a history source that lists its chats;
 //   - window: a backend that runs local models sizes its prompt to the loaded window.
 // A new backend has no row in the tables below and fails until it is wired and given one.
+import { bismuthHome } from '../../src/bismuthHome'
 import { describe, expect, test } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -189,6 +190,17 @@ describe('every chat backend', () => {
             expect(b?.capabilities.localModel).toBe(true)
             expect(WINDOW_SIZED[id]).toBeUndefined()
         }
+    })
+})
+
+describe('the Bismuth MCP server an ACP agent launches', () => {
+    test('runs the installed CLI and docs, as every other registration does', () => {
+        const env = Object.fromEntries(
+            (buildMcpServers('/vault', undefined, FAKE_MCP)[0]?.env ?? []).map(e => [e.name, e.value]),
+        )
+        expect(env.BISMUTH_CLI).toBe(bismuthHome('bin', 'bismuth'))
+        expect(env.BISMUTH_DOCS_DIR).toBe(bismuthHome('docs'))
+        expect(env.BISMUTH_VAULT).toBe('/vault')
     })
 })
 

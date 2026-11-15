@@ -23,7 +23,7 @@
 // write a developer's real ~/.config/goose, independent of (and in addition to) backendMockEnv's own
 // mapping, which only points goose's PROVIDER at the mock.
 import { afterAll, afterEach, describe, expect, test } from 'bun:test'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, symlinkSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -58,10 +58,26 @@ if (!HAS_GOOSE) {
  * gooseToolUse test below), so the tool-call fixture couldn't be driven meaningfully. A missing
  * install here is a missing-PRECONDITION skip, same spirit as HAS_GOOSE's missing-BINARY skip —
  * never a missing-account skip.
+ *
+ * Under `bun test` the driver resolves `~/.bismuth` through BISMUTH_HOME, which core/test/setup.ts
+ * points at a temp dir, so `linkInstalledTools` links the real install's MCP server, CLI and docs
+ * into that temp home before the tool-use test runs; without it the driver sends goose no Bismuth
+ * server and goose answers the fixture's tool call with "Tool 'bismuth__bismuth_cli' is not available".
  */
-const HAS_BISMUTH_MCP = existsSync(
-    join(homedir(), '.bismuth', 'bin', 'bismuth-mcp'),
-)
+const INSTALL = join(homedir(), '.bismuth')
+const HAS_BISMUTH_MCP = existsSync(join(INSTALL, 'bin', 'bismuth-mcp'))
+
+/** Link the real install's `bin/bismuth-mcp`, `bin/bismuth` and `docs/` into the test BISMUTH_HOME. */
+function linkInstalledTools(): void {
+    const home = process.env.BISMUTH_HOME
+    if (!home) throw new Error('BISMUTH_HOME is unset; run bun test from the repo root')
+    mkdirSync(join(home, 'bin'), { recursive: true })
+    for (const rel of [join('bin', 'bismuth-mcp'), join('bin', 'bismuth'), 'docs']) {
+        const from = join(INSTALL, rel)
+        const to = join(home, rel)
+        if (existsSync(from) && !existsSync(to)) symlinkSync(from, to)
+    }
+}
 if (HAS_GOOSE && !HAS_BISMUTH_MCP) {
     // eslint-disable-next-line no-console
     console.warn(
@@ -211,6 +227,7 @@ describeOrSkip(
             'a real goose ACP tool call (bismuth__bismuth_cli docs list, a genuine Bismuth MCP tool) yields tool-use then tool-result with equal ids, then completes normally',
             async () => {
                 await setup()
+                linkInstalledTools()
 
                 const cwd = await newTempDir('bismuth-goose-toolcall-cwd-')
                 const chatId = 'goose-mocked-toolcall-' + Date.now()
