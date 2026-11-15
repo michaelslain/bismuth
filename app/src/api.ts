@@ -661,7 +661,7 @@ export const api = {
         pages?: number[]
         book?: string
         onlyMissing?: boolean
-        math?: 'careful' | 'fast'
+        math?: 'careful' | 'fast' | 'ai'
     }) =>
         postJson<{
             ok: true
@@ -711,7 +711,7 @@ export const api = {
     cancelTranscribeJob: (file: string) =>
         postJson<TranscribeJobState>('/transcribe/job/cancel', { file }),
     /** Answer the running job's math question: re-read math pages properly, or keep the fast text. */
-    decideTranscribeMath: (file: string, choice: 'careful' | 'fast') =>
+    decideTranscribeMath: (file: string, choice: 'careful' | 'fast' | 'ai') =>
         postJson<TranscribeJobState>('/transcribe/job/math', { file, choice }),
     /** Rewrite a pdf's pages to exactly `order`; ink, highlights and transcript follow their page. */
     pdfPages: (file: string, order: PageSource[], withPdf?: WithPdf) =>

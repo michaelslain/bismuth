@@ -57,6 +57,12 @@ function Live(props: { n: number; pending?: boolean }) {
                     setDirty(true)
                 }}
                 onAddFiles={() => {}}
+                onDropPaths={(at, paths) => {
+                    const next = [...list()]
+                    next.splice(at, 0, ...paths.map(p => ({ key: `d${p}`, label: p.split('/').pop() ?? p, pending: true })))
+                    setList(next)
+                    setDirty(true)
+                }}
                 onAddBlank={at => {
                     const next = [...list()]
                     next.splice(at, 0, { key: `b${at}`, label: 'blank page', pending: true })
@@ -77,6 +83,99 @@ export const Pages: Story = {
         await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile] canvas').length).toBe(8))
         // nothing changed yet: save waits
         await expect(within(canvasElement).getByRole('button', { name: 'save' })).toBeDisabled()
+    },
+}
+
+/** A mouse press on page `from`, carried to (x, y) in steps, the way a person drags: pointer events,
+ *  since the app's WKWebView never delivers HTML5 drag-and-drop. */
+const press = (tile: Element) => {
+    const r = tile.getBoundingClientRect()
+    const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }
+    tile.dispatchEvent(new PointerEvent('pointerdown', { ...at, bubbles: true, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse' }))
+    return at
+}
+const moveTo = async (x: number, y: number, steps = 6, from = { clientX: x, clientY: y }) => {
+    for (let k = 1; k <= steps; k++) {
+        const clientX = from.clientX + ((x - from.clientX) * k) / steps
+        const clientY = from.clientY + ((y - from.clientY) * k) / steps
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX, clientY, bubbles: true, buttons: 1, pointerId: 1, pointerType: 'mouse' }))
+        await new Promise(r => requestAnimationFrame(r))
+    }
+}
+const release = (x: number, y: number) =>
+    window.dispatchEvent(new PointerEvent('pointerup', { clientX: x, clientY: y, bubbles: true, button: 0, pointerId: 1, pointerType: 'mouse' }))
+const tileAt = (root: Element, i: number) => root.querySelector(`[data-book-edit-tile="${i}"]`)!
+const order = (root: Element) => Array.from(root.querySelectorAll('[data-book-edit-tile] [data-testid="page-caption"]')).map(e => e.textContent)
+
+/** Drag page 1 onto the right half of page 3: it lands after page 3, and `save` turns on. A press on
+ *  the page's `[x]` removes it and never lifts it. */
+export const DragToMove: Story = {
+    name: 'Drag to move',
+    render: () => <Live n={6} />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile] canvas').length).toBe(6))
+        const start = press(tileAt(canvasElement, 0))
+        const r = tileAt(canvasElement, 2).getBoundingClientRect()
+        const x = r.right - 10
+        const y = r.top + r.height / 2
+        await moveTo(x, y, 8, start)
+        await waitFor(() => expect(tileAt(canvasElement, 2).getAttribute('data-drop')).toBe(null))
+        await expect(tileAt(canvasElement, 3).getAttribute('data-drop')).toBe('before')
+        await expect(within(document.body).getByText('page 1')).toBeTruthy()
+        release(x, y)
+        await waitFor(() => expect(order(canvasElement)).toEqual(['2', '3', '1', '4', '5', '6']))
+        await expect(within(canvasElement).getByRole('button', { name: 'save' })).toBeEnabled()
+        // the drop cue and the ghost go with the drag
+        await expect(canvasElement.querySelector('[data-drop]')).toBe(null)
+        await expect(within(document.body).queryByText('page 1')).toBe(null)
+        // Escape mid-drag puts the page back where it was
+        const again = press(tileAt(canvasElement, 0))
+        const r5 = tileAt(canvasElement, 5).getBoundingClientRect()
+        await moveTo(r5.right - 10, r5.top + 20, 6, again)
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        release(r5.right - 10, r5.top + 20)
+        await expect(order(canvasElement)).toEqual(['2', '3', '1', '4', '5', '6'])
+    },
+}
+
+/** Mid-drag: page 2 lifted (dimmed), its ghost under the cursor, the accent rule before page 5. */
+export const Dragging: Story = {
+    render: () => <Live n={8} />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile] canvas').length).toBe(8))
+        const start = press(tileAt(canvasElement, 1))
+        const r = tileAt(canvasElement, 4).getBoundingClientRect()
+        await moveTo(r.left + 12, r.top + r.height / 2, 8, start)
+        await waitFor(() => expect(tileAt(canvasElement, 4).getAttribute('data-drop')).toBe('before'))
+        await expect(tileAt(canvasElement, 1).hasAttribute('data-dragging')).toBe(true)
+    },
+}
+
+/** Tauri's native file drop as the app forwards it: a window event with paths and the pointer. */
+const nativeDrag = (type: 'enter' | 'over' | 'drop' | 'leave', x: number, y: number, paths: string[] = []) =>
+    window.dispatchEvent(new CustomEvent('bismuth-native-drag', { detail: { type, x, y, paths: type === 'drop' || type === 'enter' ? paths : [] } }))
+
+/** Files dragged in from Finder in the desktop app land where they are dropped: hovering the right
+ *  half of page 2 shows the accent rule before page 3, and the drop adds the file there. */
+export const DropFromFinder: Story = {
+    name: 'Drop from Finder',
+    render: () => <Live n={4} />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(canvasElement.querySelectorAll('[data-book-edit-tile] canvas').length).toBe(4))
+        const r = tileAt(canvasElement, 1).getBoundingClientRect()
+        const x = r.right - 10
+        const y = r.top + r.height / 2
+        nativeDrag('enter', x, y, ['/Users/me/Desktop/scan-0412.jpg'])
+        nativeDrag('over', x, y)
+        await waitFor(() => expect(tileAt(canvasElement, 2).getAttribute('data-drop')).toBe('before'))
+        nativeDrag('drop', x, y, ['/Users/me/Desktop/scan-0412.jpg'])
+        await waitFor(() => expect(order(canvasElement)).toEqual(['1', '2', 'scan-0412.jpg', '3', '4']))
+        await expect(canvasElement.querySelector('[data-drop]')).toBe(null)
+        await expect(within(canvasElement).getByRole('button', { name: 'save' })).toBeEnabled()
+        // a drop outside the pages (the head row) adds at the end
+        const head = within(canvasElement).getByText('drag a page to move it').getBoundingClientRect()
+        nativeDrag('drop', head.left + 5, head.top + 5, ['/Users/me/Desktop/notes.pdf'])
+        await waitFor(() => expect(order(canvasElement).at(-1)).toBe('notes.pdf'))
     },
 }
 

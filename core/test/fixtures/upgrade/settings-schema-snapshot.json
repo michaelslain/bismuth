@@ -3699,6 +3699,7 @@
     "type": {
       "kind": "enum",
       "values": [
+        "ai",
         "ask",
         "careful",
         "fast"

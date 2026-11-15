@@ -60,7 +60,7 @@ export const commands: CommandMap = {
     'transcribe': {
         summary:
             "Transcribe an image or PDF into its companion note, math as LaTeX (--engine auto, on-device, marker or ai; default: the transcription.engine setting); search and embeddings then index it",
-        usage: '<file> [--engine auto|on-device|marker|ai] [--math careful|fast] [--pages 1-3,7] [--book <base>] [--missing] [--progress]',
+        usage: '<file> [--engine auto|on-device|marker|ai] [--math careful|fast|ai] [--pages 1-3,7] [--book <base>] [--missing] [--progress]',
         args: {
             positionals: ['path'],
             flags: {
@@ -83,8 +83,8 @@ export const commands: CommandMap = {
             if (engine !== undefined && !['auto', 'on-device', 'marker', 'ai'].includes(engine))
                 fail(`--engine takes auto, on-device, marker or ai: ${engine}`)
             const math = flag(args, 'math')
-            if (math !== undefined && math !== 'careful' && math !== 'fast')
-                fail(`--math takes careful or fast: ${math}`)
+            if (math !== undefined && math !== 'careful' && math !== 'fast' && math !== 'ai')
+                fail(`--math takes careful, fast or ai: ${math}`)
             const pagesSpec = flag(args, 'pages')
             // A hidden page reads exactly like a missing one for an agent.
             const entries = await agentDenyEntries(vault)

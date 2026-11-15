@@ -29,7 +29,7 @@ A run with `--pages` replaces only those pages; a run without it replaces the fi
 
 `auto` reads every page on-device first, then re-reads the pages that need more. The result lists every re-read page in `escalated`.
 
-- A page that looks like math is re-read by `marker` when `math` is `careful`, or by `ai` where marker cannot run; the result's `markerSkipped` says why marker did not run.
+- A page that looks like math is re-read by `marker` when `math` is `careful`, or by `ai` where marker cannot run; the result's `markerSkipped` says why marker did not run. With `math` set to `ai`, it is re-read by `ai` and marker is not tried.
 - With `math` set to `fast`, a math page keeps its on-device text, and the result's `math` lists those page numbers.
 - Any other page whose recognition confidence is below 0.5, or whose text is blank, is re-read by `ai`. If ai cannot run, the on-device text stays and the result carries `aiSkipped` with the reason.
 - Where on-device recognition is absent, `auto` sends every page to `marker`, then to `ai` if marker cannot run.
@@ -38,11 +38,11 @@ A page looks like math when at least 2 of its lines, and at least 15% of its lin
 
 ## Choose how math is read
 
-The `math` option sets what `auto` does with a page that looks like math: `careful` re-reads it, `fast` keeps the on-device text. Pass `--math careful|fast` on the command line, or set `transcription.math`. A call that names none uses the setting. With the setting at `ask`, a book view reads math pages fast and then asks whether to read them properly (see [book view transcription](../bases/views/book.md#transcription)), while the CLI, the MCP tool and an HTTP request with no `math` read them carefully.
+The `math` option sets what `auto` does with a page that looks like math: `careful` re-reads it with `marker`, `ai` re-reads it with `ai` (one agent backend turn per page image, no download), `fast` keeps the on-device text. Pass `--math careful|fast|ai` on the command line, or set `transcription.math`. A call that names none uses the setting. With the setting at `ask`, a book view reads math pages fast and then asks whether to go fast, use the math reader or read them properly with ai (see [book view transcription](../bases/views/book.md#transcription)), while the CLI, the MCP tool and an HTTP request with no `math` read them carefully.
 
 ## Install Marker
 
-Marker installs itself on a Mac the first time it is needed: choosing `[ read it properly ]` in a book's math prompt starts the install when Marker is missing (the prompt says so), the book's readout ends with `// setting up the math reader` while it runs, and the math pages are re-read when it finishes. From the command line, `bismuth transcribe setup` does the same and waits:
+Marker installs itself on a Mac the first time it is needed: choosing `math reader` in a book's math prompt starts the install when Marker is missing (the prompt says so), the book's readout ends with `// setting up the math reader` while it runs, and the math pages are re-read when it finishes. From the command line, `bismuth transcribe setup` does the same and waits:
 
 ```bash
 bismuth transcribe setup
@@ -76,7 +76,7 @@ uv tool install --reinstall 'marker-pdf>=2,<3'
 |---|---|---|
 | `transcription.auto` | `true` | A book view transcribes every page with no text on its own |
 | `transcription.engine` | `auto` | The engine used when a call names none: `auto`, `on-device`, `marker` or `ai` |
-| `transcription.math` | `ask` | What `auto` does with a page that looks like math: `ask`, `careful` or `fast` |
+| `transcription.math` | `ask` | What `auto` does with a page that looks like math: `ask`, `careful`, `fast` or `ai` |
 | `transcription.provider` | `auto` | The backend that runs `ai`; `auto` follows `chat.provider` |
 | `transcription.model` | empty | The model `ai` asks for; empty is the backend's own default |
 
@@ -186,7 +186,7 @@ A reader that transcribes a long file starts a background job instead of waiting
 - **Progress.** The job lists every page it covers with a status of `queued`, `reading`, `done` or `failed`. A `done` page carries the engine whose text it holds and how long it took in milliseconds; a `failed` page carries a one-line reason, and the run goes on with the next page. The job's `etaMs` is the mean time of the pages done so far times the pages left, and is absent until one page is done. `on-device` and `ai` read one page at a time; `marker` reads its pages as one batch, so they change status together.
 - **Cancel.** `POST /transcribe/job/cancel` ends the job with the state `cancelled`. `on-device` and `ai` stop after the page being read; `marker` stops at once. Pages already done keep their text and nothing is written after the cancel. A job started for the file after a cancel waits until the stopped engine has settled.
 - **One at a time.** Jobs for different files run one after another in start order, because the engines are heavy. Starting a job for a file whose job is running returns that job.
-- **A math question during the run.** With `math` at `ask`, the job reads every page on-device first and lists the pages that look like math in `mathPending` as soon as each is found, while it goes on with the other pages. `POST /transcribe/job/math` with `careful` re-reads every pending page, and every math page found later, with `marker` (with `ai` where marker is not installed, and the job then sets `markerMissing`); `fast` keeps the on-device text and clears the list. With no choice the job ends `done` with `mathPending` still listed, and a `careful` choice made afterward starts the re-read.
+- **A math question during the run.** With `math` at `ask`, the job reads every page on-device first and lists the pages that look like math in `mathPending` as soon as each is found, while it goes on with the other pages. `POST /transcribe/job/math` with `careful` re-reads every pending page, and every math page found later, with `marker` (with `ai` where marker is not installed, and the job then sets `markerMissing`); `ai` does the same with `ai` and never needs marker; `fast` keeps the on-device text and clears the list. With no choice the job ends `done` with `mathPending` still listed, and a `careful` or `ai` choice made afterward starts the re-read.
 
 The job lives in the running server, so a restart forgets it; the finished pages stay in the companion. `GET /transcribe/job?file=<file>` answers the file's current or last job, or `null`. Under `ask` the CLI, the MCP tool and `POST /transcribe` have no one to ask and read math pages carefully.
 
@@ -197,7 +197,7 @@ The job lives in the running server, so a restart forgets it; the finished pages
 | Flag | Effect |
 |---|---|
 | `--engine auto\|on-device\|marker\|ai` | The engine; the `transcription.engine` setting when omitted |
-| `--math careful\|fast` | What `auto` does with a page that looks like math; the `transcription.math` setting when omitted |
+| `--math careful\|fast\|ai` | What `auto` does with a page that looks like math; the `transcription.math` setting when omitted |
 | `--pages <spec>` | 1-based PDF pages, such as `3`, `1-4` or `1-3,7`. Default all |
 | `--book <base>` | Add `[[<base>]]` to the companion's `books` list |
 | `--missing` | Skip a file whose companion already has `transcribed:`; the result carries `"skipped": true` |
@@ -224,7 +224,7 @@ An agent runs `bismuth transcribe` from its shell with the flags in the table ab
 - If the engine is `on-device` and the helper is absent (the app is not installed, or the machine is not a Mac), the call fails with `VISION_UNAVAILABLE` and status 503, and no companion is written. Retry with `--engine marker` or `--engine ai`.
 - If the engine is `marker` and `marker_single` or `llama-server` is missing, the call fails with `MARKER_UNAVAILABLE` and status 503, naming the install command, and no companion is written. Under `auto` the math pages go to `ai` instead and the result carries `markerSkipped`.
 - If the engine is `ai` and the resolved backend is not installed or cannot read images, the call fails with `AI_UNAVAILABLE` and status 503, naming the backend. Under `auto` the on-device text is kept instead.
-- An unknown `engine`, or a `math` other than `careful`, `fast` or `ask`, fails with status 400.
+- An unknown `engine`, or a `math` other than `careful`, `fast`, `ai` or `ask`, fails with status 400.
 - If a job's every page fails, the job ends `failed` with the reason in `error`.
 - If you start a job on the iPad, the call fails with `VISION_UNAVAILABLE` and status 503; `GET /transcribe/job` answers `null`.
 - If the file is a note or any other kind, the call fails with status 422. If it does not exist, status 404.

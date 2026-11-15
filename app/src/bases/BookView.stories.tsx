@@ -761,7 +761,7 @@ export const MathAskedMidRun: Story = {
         // file is still queued and inherits the choice when it starts
         const files = [...new Set(fk.calls.map(c => c.file))]
         await expect(files).toEqual([1, 2, 3, 4].map(imagePath))
-        await userEvent.click(bodyText().getByRole('button', { name: 'go fast' }))
+        await userEvent.click(bodyText().getByRole('button', { name: /go fast/ }))
         await waitFor(() => expect(bodyText().queryByText('this page has math')).toBeNull())
         await waitFor(() => expect(fk.decisions).toEqual(['fast', 'fast', 'fast']))
     },
@@ -1416,8 +1416,8 @@ export const PdfMergeVersion: Story = {
             doc.text(p === n ? `page ${p}, written on` : `page ${p}`, 20, 60)
         }
         const file = new File([doc.output('arraybuffer')], 'lecture v2.pdf', { type: 'application/pdf' })
-        // with one page, the plan keeps none of the old pages, so the head says they were paired by order
-        const summary = `merging lecture v2.pdf${n > 1 ? '' : ' // no page matched, paired by order'} // 1 updated // 2 new`
+        // the last page is matched and written on, so the head names no fallback
+        const summary = 'merging lecture v2.pdf // 1 updated // 2 new'
         const input = canvasElement.querySelector<HTMLInputElement>('input[type=file][accept="application/pdf,.pdf"]')!
         await userEvent.upload(input, file)
         await waitFor(() => expect(c.getByText(summary)).toBeTruthy(), { timeout: 8000 })
@@ -1539,7 +1539,7 @@ export const AutoOff: Story = {
     },
 }
 
-/** A page whose stored text looks like math (read on-device before math was looked for): opening the book asks once, and `read it properly` re-reads only that page carefully. */
+/** A page whose stored text looks like math (read on-device before math was looked for): opening the book asks once, and `read it properly` re-reads only that page with ai. */
 export const StoredMathAsks: Story = {
     name: 'Stored math asks',
     beforeEach: () => {
@@ -1552,11 +1552,11 @@ export const StoredMathAsks: Story = {
         const body = within(document.body)
         await expect(await body.findByText('this page has math', undefined, { timeout: 8000 })).toBeInTheDocument()
         await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
-        await waitFor(() => expect(fk.calls.map(c => [c.file, c.pages, c.math])).toEqual([[imagePath(1), [1], 'careful']]), { timeout: 8000 })
+        await waitFor(() => expect(fk.calls.map(c => [c.file, c.pages, c.math])).toEqual([[imagePath(1), [1], 'ai']]), { timeout: 8000 })
     },
 }
 
-/** The math reader is missing: the prompt says it downloads itself, and `read it properly` installs it before the choice reaches the run. */
+/** The math reader is missing: the prompt says the math reader downloads first, and choosing it installs it before the choice reaches the run. */
 export const MathPromptInstallsReader: Story = {
     name: 'Math prompt installs the reader',
     beforeEach: () => startFake({ count: 3, auto: true, markerInstalled: false, mathKeys: [`${imagePath(1)}#1`] }),
@@ -1565,8 +1565,8 @@ export const MathPromptInstallsReader: Story = {
         await waitFor(() => expect(shown(barNode(canvasElement))).toContain('transcribing'), { timeout: 8000 })
         await fk.tick(1)
         const body = within(document.body)
-        await expect(await body.findByText(/the math reader downloads itself/, undefined, { timeout: 8000 })).toBeInTheDocument()
-        await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
+        await expect(await body.findByText(/first time only: the math reader downloads/, undefined, { timeout: 8000 })).toBeInTheDocument()
+        await userEvent.click(body.getByRole('button', { name: /math reader/ }))
         // install first, then a careful decide for each running file
         await waitFor(() => expect(fk.events.filter(e => e.startsWith('decide')).length).toBeGreaterThan(0), { timeout: 8000 })
         const files = [...new Set(fk.calls.map(c => c.file))]
@@ -1587,7 +1587,7 @@ export const MathCountGrows: Story = {
         await body.findByText('this page has math')
         for (let i = 0; i < 14 && !body.queryByText('2 pages have math'); i++) await fk.tick()
         await body.findByText('2 pages have math')
-        await userEvent.click(body.getByRole('button', { name: 'go fast' }))
+        await userEvent.click(body.getByRole('button', { name: /go fast/ }))
         await waitFor(() => expect(body.queryByText('2 pages have math')).toBeNull())
         await fk.tick(12)
         await waitFor(() => expect(shown(barNode(canvasElement))).not.toContain('transcribing'), { timeout: 8000 })

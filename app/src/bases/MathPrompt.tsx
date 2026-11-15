@@ -1,21 +1,22 @@
 // app/src/bases/MathPrompt.tsx
 // Asked when transcription finds pages that look like math and `transcription.math` is `ask`: the
-// fast on-device read garbles formulas, and reading them properly (marker, else ai) takes about
-// 15 s a page. `go fast` keeps the text already there; `read it properly` re-reads those pages.
-// `don't ask again` saves the choice as the setting.
-import { createSignal, Show, type Component } from 'solid-js'
+// fast on-device read garbles formulas. Three readers, ranked best first, one row each with who
+// reads, how long and how good: `read it properly` (the ai backend, one turn a page), `math reader`
+// (marker on this machine) and `go fast` (keeps the text already there).
+// `make this the default` saves the choice as the setting, after which the prompt no longer appears.
+import { createSignal, For, Show, type Component } from 'solid-js'
 import FormModal from '../ui/FormModal'
 import ModalHeader from '../ui/ModalHeader'
 import ModalBody from '../ui/ModalBody'
-import ModalFooter from '../ui/ModalFooter'
 import Text from '../ui/Text'
 import ToggleRow from '../ui/ToggleRow'
-import { TextButton } from '../ui/TextButton'
+import OptionRow from '../ui/OptionRow'
+import RowList from '../ui/RowList'
 
 /** Seconds a careful read takes a page, for the estimate. */
 export const CAREFUL_SECONDS_PER_PAGE = 15
 
-export type MathChoice = 'careful' | 'fast'
+export type MathChoice = 'careful' | 'fast' | 'ai'
 
 export type MathPromptProps = {
     /** How many pages look like math. */
@@ -37,31 +38,35 @@ const MathPrompt: Component<MathPromptProps> = props => {
     const [remember, setRemember] = createSignal(false)
     const choose = (c: MathChoice) => props.onChoose(c, remember())
     const one = () => props.pages === 1
+    const time = () => (one() ? `about ${CAREFUL_SECONDS_PER_PAGE} s` : estimate(props.pages))
+    // best first: runs on | time | quality, as aligned columns
+    const readers = (): { choice: MathChoice; icon: string; label: string; cells: { text: string; ch: number }[] }[] => [
+        { choice: 'ai', icon: 'Sparkles', label: '[read it properly]', cells: [{ text: 'your ai', ch: 10 }, { text: time(), ch: 12 }, { text: 'best', ch: 5 }] },
+        { choice: 'careful', icon: 'Sigma', label: '[math reader]', cells: [{ text: 'this mac', ch: 10 }, { text: time(), ch: 12 }, { text: 'good', ch: 5 }] },
+        { choice: 'fast', icon: 'Zap', label: '[go fast]', cells: [{ text: 'on-device', ch: 10 }, { text: 'instant', ch: 12 }, { text: 'rough', ch: 5 }] },
+    ]
     return (
-        <FormModal onClose={() => choose('fast')} width={420} label="math on the page">
-            <ModalHeader title={one() ? 'this page has math' : `${props.pages} pages have math`} onClose={() => choose('fast')} />
+        <FormModal onClose={() => choose('fast')} width={480} label="page transcriber">
+            <ModalHeader title="page transcriber" onClose={() => choose('fast')} />
             <ModalBody>
-                <Text size="ui" tone="muted" data-math-prompt-body>
-                    {`reading math properly takes about ${CAREFUL_SECONDS_PER_PAGE} s a page${one() ? '' : ` (${props.pages} pages, ${estimate(props.pages)})`}. the fast read garbles formulas.`}
+                <Text size="ui" tone="muted" data-math-prompt-body data-math-prompt-running={props.running ? '' : undefined}>
+                    <Text as="span" inherit>
+                        {one() ? 'this page has math' : `${props.pages} pages have math`}
+                    </Text>
+                    {`. how do you want ${one() ? 'it' : 'them'} transcribed?${props.running ? ' later math pages get the same choice.' : ''}`}
                 </Text>
-                <Show when={props.running}>
-                    <Text size="ui" tone="muted" data-math-prompt-running>
-                        {`the other pages keep reading meanwhile, and ${one() ? 'any more' : 'later ones'} found get the same choice.`}
-                    </Text>
-                </Show>
+                <RowList>
+                    <For each={readers()}>
+                        {r => <OptionRow icon={r.icon} label={r.label} cells={r.cells} onClick={() => choose(r.choice)} />}
+                    </For>
+                </RowList>
                 <Show when={props.install}>
-                    <Text size="ui" tone="muted" data-math-prompt-install>
-                        the first time, the math reader downloads itself (about 1.2 GB, a few minutes).
+                    <Text size="ui" tone="faint" data-math-prompt-install>
+                        first time only: the math reader downloads 1.2 GB.
                     </Text>
                 </Show>
-                <ToggleRow label="don't ask again" checked={remember()} onToggle={() => setRemember(r => !r)} />
+                <ToggleRow label="make this the default" checked={remember()} onToggle={() => setRemember(r => !r)} />
             </ModalBody>
-            <ModalFooter>
-                <TextButton onClick={() => choose('fast')}>go fast</TextButton>
-                <TextButton primary autofocus onClick={() => choose('careful')}>
-                    read it properly
-                </TextButton>
-            </ModalFooter>
         </FormModal>
     )
 }

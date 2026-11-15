@@ -88,13 +88,13 @@ function fail(job: Job, e: unknown): void {
     )
 }
 
-/** Re-read the pages still waiting on a careful choice. */
+/** Re-read the pages still waiting on a careful or ai choice. */
 async function followUp(job: Job, first: number[]): Promise<void> {
     let pages = first
-    while (job.choice === 'careful' && pages.length && !job.ctrl.signal.aborted) {
+    while ((job.choice === 'careful' || job.choice === 'ai') && pages.length && !job.ctrl.signal.aborted) {
         job.state.state = 'running'
         try {
-            await transcribeMathPages(job.root, { file: job.req.file, book: job.req.book }, pages, hooks(job))
+            await transcribeMathPages(job.root, { file: job.req.file, book: job.req.book }, pages, hooks(job), job.choice === 'ai')
             if (!job.ctrl.signal.aborted) job.state.state = 'done'
         } catch (e) {
             fail(job, e)
@@ -165,8 +165,8 @@ export function startTranscribeJob(
     opts: Job['opts'] = {},
 ): TranscribeJobState {
     const kind = checkPageFile(req.file)
-    if (req.math !== undefined && !['ask', 'careful', 'fast'].includes(req.math))
-        throw new AppError('EINVAL', 'math must be ask, careful or fast', 400)
+    if (req.math !== undefined && !['ask', 'careful', 'fast', 'ai'].includes(req.math))
+        throw new AppError('EINVAL', 'math must be ask, careful, fast or ai', 400)
     const live = jobs.get(req.file)
     if (live && live.state.state === 'running') return snapshot(live)
     const explicit = kind === 'pdf' && req.pages?.length ? [...new Set(req.pages)].sort((a, b) => a - b) : []
@@ -213,9 +213,10 @@ export function cancelTranscribeJob(file: string): TranscribeJobState | null {
 }
 
 /** The answer to the math question. `careful` re-reads every pending page and every later math page
- *  with the math reader; `fast` keeps the fast reads. After the run it starts the re-read itself. */
+ *  with the math reader, `ai` re-reads them with ai; `fast` keeps the fast reads. After the run it starts the re-read itself. */
 export function decideTranscribeMath(file: string, choice: MathChoice): TranscribeJobState | null {
-    if (choice !== 'careful' && choice !== 'fast') throw new AppError('EINVAL', 'choice must be careful or fast', 400)
+    if (choice !== 'careful' && choice !== 'fast' && choice !== 'ai')
+        throw new AppError('EINVAL', 'choice must be careful, fast or ai', 400)
     const job = jobs.get(file)
     if (!job) return null
     job.choice = choice

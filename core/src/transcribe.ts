@@ -24,8 +24,9 @@ import type { TextLine } from './visionOcr'
 import { looksLikeMath } from './mathDetect'
 import type { TranscribePageState } from './transcribeJobTypes'
 
-/** What auto does with a page that looks like math: re-read it (`careful`) or keep the fast read. */
-export type MathChoice = 'careful' | 'fast'
+/** What auto does with a page that looks like math: re-read it with marker (`careful`), re-read it
+ *  with ai (`ai`) or keep the fast read (`fast`). */
+export type MathChoice = 'careful' | 'fast' | 'ai'
 
 export type TranscribeRequest = {
     file: string
@@ -219,7 +220,7 @@ export function checkPageFile(file: unknown): 'image' | 'pdf' {
 }
 
 const ENGINE_NAMES: readonly string[] = ['auto', 'on-device', 'marker', 'ai']
-const MATH_NAMES: readonly string[] = ['ask', 'careful', 'fast']
+const MATH_NAMES: readonly string[] = ['ask', 'careful', 'fast', 'ai']
 
 /** The vault's `transcription` settings over the schema defaults. Loads the settings reader on demand,
  *  because it is bound to Bun, which the iPad's in-process core lacks. */
@@ -254,8 +255,8 @@ export async function transcribe(
     const kind = checkPageFile(req.file)
     if (req.engine !== undefined && !ENGINE_NAMES.includes(req.engine))
         throw new AppError('EINVAL', 'engine must be auto, on-device, marker or ai', 400)
-    if (req.math !== undefined && req.math !== 'careful' && req.math !== 'fast')
-        throw new AppError('EINVAL', 'math must be careful or fast', 400)
+    if (req.math !== undefined && req.math !== 'careful' && req.math !== 'fast' && req.math !== 'ai')
+        throw new AppError('EINVAL', 'math must be careful, fast or ai', 400)
     const settings = opts.settings ?? (await readTranscriptionSettings(root))
     const requested: TranscribeEngine = req.engine ?? settings.engine
     const target: AiTarget = {
@@ -291,7 +292,8 @@ export async function transcribe(
         engine = 'on-device'
         pages = (await engineFor('onDevice')(abs, kind, req.pages)).map(onDevicePage)
     } else {
-        const math: MathChoice = (req.math ?? settings.math) === 'fast' ? 'fast' : 'careful'
+        const chosen = req.math ?? settings.math
+        const math: MathChoice = chosen === 'fast' || chosen === 'ai' ? chosen : 'careful'
         auto = await transcribeAuto(abs, kind, req.pages, target, math, opts.signal)
         pages = auto.pages
         engine = auto.engine
@@ -332,7 +334,7 @@ function throwIfCancelled(signal?: AbortSignal): void {
 const why = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** On-device first. A page that looks like math goes to marker when `math` is careful (ai where
- *  marker cannot run); any other page read below AUTO_AI_BELOW, or blank, goes to ai. A failed
+ *  marker cannot run) and to ai when `math` is ai; any other page read below AUTO_AI_BELOW, or blank, goes to ai. A failed
  *  re-read keeps the on-device text and says why. With no on-device helper, every page goes to
  *  marker, then ai. */
 async function transcribeAuto(
@@ -375,7 +377,7 @@ async function transcribeAuto(
             markerSkipped = why(e)
         }
         for (const n of mathPages) if (!redone.has(n)) hard.push(n)
-    }
+    } else if (math === 'ai') hard.push(...mathPages)
     if (hard.length) {
         try {
             for (const p of await engineFor('ai')(abs, kind, hard, target))
@@ -579,9 +581,14 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
         }
     }
 
-    /** Re-read pages with the math reader as one batch (ai page by page where it cannot run). */
-    const rereadMath = async (pages: number[]): Promise<void> => {
+    /** Re-read pages with the math reader as one batch (ai page by page where it cannot run), or
+     *  with ai page by page when `viaAi`. */
+    const rereadMath = async (pages: number[], viaAi = false): Promise<void> => {
         if (!pages.length) return
+        if (viaAi) {
+            for (const n of pages) await aiPage(n, texts.has(n))
+            return
+        }
         for (const n of pages) emit(n, { status: 'reading', engine: 'marker' })
         const got = new Map<number, string>()
         try {
@@ -664,13 +671,18 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
     const auto = async (pages: number[]) => {
         const base = req.math ?? settings.math
         const asking = base === 'ask' && !!opts.onMath
-        const fixed: MathChoice = base === 'fast' ? 'fast' : 'careful'
+        const fixed: MathChoice = base === 'fast' || base === 'ai' ? base : 'careful'
         const careful: number[] = []
+        const viaAi: number[] = []
+        const take = (c: MathChoice, ns: number[]) => {
+            if (c === 'careful') careful.push(...ns)
+            else if (c === 'ai') viaAi.push(...ns)
+        }
         const afterPage = () => {
             if (!askPending.length) return
             const c = opts.mathChoice?.()
             if (!c) return
-            if (c === 'careful') careful.push(...askPending)
+            take(c, askPending)
             askPending = []
             opts.onMath?.([])
         }
@@ -708,15 +720,18 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
                 askPending.push(n)
                 opts.onMath?.([...askPending])
                 emit(n, { status: 'done', engine: 'on-device' })
-            } else if ((asking ? opts.mathChoice?.() : fixed) === 'careful') {
-                careful.push(n)
-                emit(n, { status: 'queued' })
+            } else {
+                const c = asking ? opts.mathChoice?.() : fixed
+                if (c === 'careful' || c === 'ai') {
+                    take(c, [n])
+                    emit(n, { status: 'queued' })
+                } else emit(n, { status: 'done', engine: 'on-device' })
             }
-            else emit(n, { status: 'done', engine: 'on-device' })
             afterPage()
         }
         check()
         await rereadMath(careful)
+        await rereadMath(viaAi, true)
     }
 
     return {
@@ -732,26 +747,27 @@ function createPager(root: string, req: TranscribeRequest, opts: TranscribeOpts,
             return finish(pages)
         },
         /** Re-read already stored pages with the math reader (a choice that came after the run). */
-        async math(pages: number[]): Promise<TranscribeResult> {
+        async math(pages: number[], viaAi = false): Promise<TranscribeResult> {
             const files = await getFileAccess()
             for (const p of readTranscript(await files.readNote(root, companion).catch(() => ''))) {
                 texts.set(p.page, p.text)
                 // the stored on-device text's lines stand for the lines that pass found
                 onDeviceLines.set(p.page, p.text.split('\n').filter(l => l.trim()).length)
             }
-            await rereadMath(pages)
+            await rereadMath(pages, viaAi)
             return finish(pages)
         },
     }
 }
 
-/** Re-read `pages` with the math reader (ai where it cannot run), reporting through the same hooks as
+/** Re-read `pages` with the math reader (ai where it cannot run, or ai outright with `viaAi`), reporting through the same hooks as
  *  a paged run. Used when the math choice arrives after the reading pass. */
 export async function transcribeMathPages(
     root: string,
     req: TranscribeRequest,
     pages: number[],
     opts: TranscribeOpts,
+    viaAi = false,
 ): Promise<TranscribeResult> {
     const kind = checkPageFile(req.file)
     const settings = opts.settings ?? (await readTranscriptionSettings(root))
@@ -768,5 +784,5 @@ export async function transcribeMathPages(
         settings,
         requested: 'auto',
     })
-    return pager.math(pages)
+    return pager.math(pages, viaAi)
 }

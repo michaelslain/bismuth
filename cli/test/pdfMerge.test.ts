@@ -38,11 +38,11 @@ test('pdf merge prints the plan, then --write merges it', async () => {
     expect(readFileSync(join(vault, 'n.pdf.md'), 'utf8')).not.toContain('two')
 })
 
-test('pdf merge pairs by order a pdf that shares no page', async () => {
+test('pdf merge adds after the old pages a pdf that shares no page', async () => {
     const vault = makeVault({})
     writeFileSync(join(vault, 'n.pdf'), await pdf([{ id: 1 }]))
     writeFileSync(join(vault, 'x.pdf'), await pdfOfWidths([400]))
     const r = await run(['pdf', 'merge', 'n.pdf', 'x.pdf'], vault)
     expect(r.code).toBe(0)
-    expect(JSON.parse(r.stdout)).toMatchObject({ steps: [{ kind: 'update', page: 0, from: 0 }], kept: 0, updated: 1 })
+    expect(JSON.parse(r.stdout)).toMatchObject({ steps: [{ kind: 'only', page: 0 }, { kind: 'add', from: 0 }], kept: 0, updated: 0, added: 1 })
 })

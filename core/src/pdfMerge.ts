@@ -126,7 +126,7 @@ async function withBytes(root: string, w: WithPdf): Promise<Uint8Array> {
 }
 
 /** Which old page of `rel` each page of the newer version `w` is, kept or updated, and which pages are
- *  added. With no page in common, every page pairs by order (`kept` is 0). */
+ *  added. With no page in common, every old page stays and the newer pages are added after them. */
 export async function planPdfMerge(root: string, rel: string, w: WithPdf): Promise<MergePlan> {
     if (!isPdfPath(rel)) throw new AppError('EINVAL', `not a pdf: ${rel}`, 400)
     const fa = await getFileAccess()

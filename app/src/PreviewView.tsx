@@ -243,7 +243,7 @@ export function PreviewView(props: {
         given ??
         createTranscription({
             client: api,
-            math: () => settings.transcription.math as 'ask' | 'careful' | 'fast',
+            math: () => settings.transcription.math as 'ask' | 'careful' | 'fast' | 'ai',
             setMath: m => setSettings('transcription', 'math', m),
             toast: pushToast,
         })

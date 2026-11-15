@@ -42,6 +42,8 @@
 .option-lab { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .option-sub { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); }
 .option-row:hover .option-lab { color: var(--accent); }
+/* Table cells: fixed-width faint columns (the caller sets each width in ch), so stacked rows align. */
+.option-cell { flex: 0 0 auto; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* delete variant — the semantic destructive token replaces the accent on the mark and the hover.
    Same weights as the default tone, only a different hue: a destructive choice is not a louder

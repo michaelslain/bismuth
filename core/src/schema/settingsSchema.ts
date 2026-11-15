@@ -701,9 +701,9 @@ export const SETTINGS_SCHEMA: Schema = {
             doc: 'Which transcriber reads a page: "on-device" (macOS text recognition, free and fast, garbles math), "marker" (Marker on this machine, slower, writes math as LaTeX), "ai" (one turn on an agent backend that reads images), or "auto" (the default: on-device first, then math pages are re-read with marker as transcription.math says, and other pages it reads poorly with ai).',
         },
         math: {
-            type: enumType(['ask', 'careful', 'fast']),
+            type: enumType(['ask', 'careful', 'fast', 'ai']),
             default: 'ask',
-            doc: 'What auto does with a page that looks like math: "ask" (the default: the reader asks; the CLI and agents read it carefully), "careful" (re-read it with marker, or ai where marker is missing; about 15 s a page), or "fast" (keep the on-device text).',
+            doc: 'What auto does with a page that looks like math: "ask" (the default: the reader asks; the CLI and agents read it carefully), "careful" (re-read it with marker, or ai where marker is missing; about 15 s a page), "ai" (re-read it with ai, one turn a page), or "fast" (keep the on-device text).',
         },
         provider: {
             type: enumType(CHAT_PROVIDER_IDS),

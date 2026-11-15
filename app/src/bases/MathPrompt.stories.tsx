@@ -15,14 +15,14 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** One page: the estimate is the per-page time alone. */
+/** One page: each reader's time is the per-page time alone. */
 export const OnePage: Story = {
     name: 'One page',
     render: () => <MathPrompt pages={1} onChoose={() => {}} />,
     play: async () => {
         const body = within(document.body)
         await expect(await body.findByText('this page has math')).toBeInTheDocument()
-        await expect(body.getByText(/^reading math properly takes about 15 s a page\. the fast read garbles formulas\.$/)).toBeInTheDocument()
+        await expect(body.getAllByText('about 15 s')[0]).toBeInTheDocument()
     },
 }
 
@@ -44,21 +44,44 @@ export const SeveralPages: Story = {
     play: async ({ canvasElement }) => {
         const body = within(document.body)
         await expect(await body.findByText('10 pages have math')).toBeInTheDocument()
-        await expect(body.getByText(/\(10 pages, about 3 min\)/)).toBeInTheDocument()
+        await expect(body.getAllByText('about 3 min')[0]).toBeInTheDocument()
         await userEvent.click(body.getByRole('switch'))
-        await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
+        await userEvent.click(body.getByRole('button', { name: /math reader/ }))
         await waitFor(() => expect(canvasElement.querySelector('[data-chosen]')!.textContent).toBe('careful remember'))
         await expect(estimate(12)).toBe('about 3 min')
     },
 }
 
-/** Marker, the local math reader, is not installed yet: the body says reading properly downloads it. */
+/** `read it properly` sends the pages to the ai, the best reader: it reports `ai`, and `make this the default` saves it like the others. */
+export const ReadItProperly: Story = {
+    name: 'Read it properly',
+    render: () => {
+        const [chosen, setChosen] = createSignal<string>()
+        return (
+            <>
+                <Show when={!chosen()}>
+                    <MathPrompt pages={2} onChoose={(c, r) => setChosen(`${c} ${r ? 'remember' : 'once'}`)} />
+                </Show>
+                <Text data-chosen>{chosen() ?? ''}</Text>
+            </>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const body = within(document.body)
+        await expect(await body.findByText('2 pages have math')).toBeInTheDocument()
+        await userEvent.click(body.getByRole('switch'))
+        await userEvent.click(body.getByRole('button', { name: /read it properly/ }))
+        await waitFor(() => expect(canvasElement.querySelector('[data-chosen]')!.textContent).toBe('ai remember'))
+    },
+}
+
+/** Marker, the local math reader, is not installed yet: its row says it downloads first. */
 export const NeedsInstall: Story = {
     name: 'Needs install',
     render: () => <MathPrompt pages={3} install onChoose={() => {}} />,
     play: async () => {
         const body = within(document.body)
-        await expect(await body.findByText(/the math reader downloads itself \(about 1\.2 GB/)).toBeInTheDocument()
+        await expect(await body.findByText(/first time only: the math reader downloads 1\.2 GB/)).toBeInTheDocument()
     },
 }
 
@@ -79,10 +102,10 @@ export const CountGrows: Story = {
     play: async () => {
         const body = within(document.body)
         await expect(await body.findByText('3 pages have math')).toBeInTheDocument()
-        await expect(body.getByText(/\(3 pages, about 45 s\)/)).toBeInTheDocument()
-        await expect(body.getByText(/keep reading meanwhile/)).toBeInTheDocument()
+        await expect(body.getAllByText('about 45 s')[0]).toBeInTheDocument()
+        await expect(body.getByText(/later math pages get the same choice/)).toBeInTheDocument()
         await userEvent.click(body.getByRole('button', { name: /found one more/ }))
         await expect(await body.findByText('4 pages have math')).toBeInTheDocument()
-        await expect(body.getByText(/\(4 pages, about 60 s\)/)).toBeInTheDocument()
+        await expect(body.getAllByText('about 60 s')[0]).toBeInTheDocument()
     },
 }

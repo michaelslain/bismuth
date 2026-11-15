@@ -363,6 +363,85 @@ describe('math choice', () => {
     })
 })
 
+describe('ai math choice', () => {
+    function aiEngines(onMarker: (p: number[]) => void, onAi: (p: number[]) => void) {
+        setTranscribeEngines({
+            onDevice: async (_a, _k, p) => [{ page: p![0], text: p![0] === 1 || p![0] === 3 ? MATH : PROSE, confidence: 0.9 }],
+            marker: async (_a, _k, p) => {
+                onMarker(p!)
+                return p!.map(page => ({ page, text: `marker ${page}` }))
+            },
+            ai: async (_a, _k, p) => {
+                onAi(p!)
+                return p!.map(page => ({ page, text: `ai ${page}` }))
+            },
+        })
+    }
+
+    test('a request with math ai sends math pages to ai and never to marker', async () => {
+        const root = makeVault({})
+        await pdf(root, 'a.pdf', 3)
+        const marker: number[][] = []
+        const ai: number[][] = []
+        aiEngines(p => marker.push(p), p => ai.push(p))
+        startTranscribeJob(root, { file: 'a.pdf', engine: 'auto', math: 'ai' }, { settings })
+        await transcribeJobSettled('a.pdf')
+        expect(marker).toEqual([])
+        expect(ai).toEqual([[1], [3]])
+        expect((await stored(root, 'a.pdf')).map(p => p.text)).toEqual(['ai 1', PROSE, 'ai 3'])
+        expect(transcribeJobState('a.pdf')!.pages.map(p => p.engine)).toEqual(['ai', 'on-device', 'ai'])
+    })
+
+    test('an ai choice after the run re-reads the pending pages with ai', async () => {
+        const root = makeVault({})
+        await pdf(root, 'a.pdf', 3)
+        const marker: number[][] = []
+        const ai: number[][] = []
+        aiEngines(p => marker.push(p), p => ai.push(p))
+        startTranscribeJob(root, { file: 'a.pdf', engine: 'auto' }, { settings })
+        await transcribeJobSettled('a.pdf')
+        expect(transcribeJobState('a.pdf')!.mathPending).toEqual([1, 3])
+        expect(decideTranscribeMath('a.pdf', 'ai')!.state).toBe('running')
+        await transcribeJobSettled('a.pdf')
+        const s = transcribeJobState('a.pdf')!
+        expect(s.state).toBe('done')
+        expect(s.mathPending).toEqual([])
+        expect(marker).toEqual([])
+        expect(ai).toEqual([[1], [3]])
+        expect((await stored(root, 'a.pdf')).map(p => p.text)).toEqual(['ai 1', PROSE, 'ai 3'])
+    })
+
+    test('an ai choice mid-run covers math pages found later', async () => {
+        const root = makeVault({})
+        await pdf(root, 'a.pdf', 4)
+        const g = gate()
+        const ai: number[][] = []
+        setTranscribeEngines({
+            onDevice: async (_a, _k, p) => {
+                const n = p![0]
+                if (n === 2) await g.wait
+                return [{ page: n, text: n === 1 || n === 3 ? MATH : PROSE, confidence: 0.9 }]
+            },
+            ai: async (_a, _k, p) => {
+                ai.push(p!)
+                return p!.map(page => ({ page, text: `ai ${page}` }))
+            },
+        })
+        startTranscribeJob(root, { file: 'a.pdf', engine: 'auto' }, { settings })
+        await until(() => transcribeJobState('a.pdf')?.mathPending.length === 1)
+        decideTranscribeMath('a.pdf', 'ai')
+        g.open()
+        await transcribeJobSettled('a.pdf')
+        expect(ai.flat().sort()).toEqual([1, 3])
+        expect((await stored(root, 'a.pdf')).map(p => p.text)).toEqual(['ai 1', PROSE, 'ai 3', PROSE])
+    })
+
+    test('an unknown math value or choice is refused', () => {
+        expect(() => startTranscribeJob('/x', { file: 'a.pdf', math: 'slow' as never })).toThrow(/ask, careful, fast or ai/)
+        expect(() => decideTranscribeMath('a.pdf', 'slow' as never)).toThrow(/careful, fast or ai/)
+    })
+})
+
 describe('queue', () => {
     test('a start while the file runs joins it, and two files run one at a time in start order', async () => {
         const root = makeVault({})

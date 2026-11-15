@@ -366,6 +366,34 @@ test('a math page goes to ai when marker cannot run, and says why', async () => 
     })
 })
 
+test('math ai re-reads a math page with ai and never runs marker, by request or by setting', async () => {
+    const markerCalls: (number[] | undefined)[] = []
+    const aiCalls: (number[] | undefined)[] = []
+    setTranscribeEngines({
+        onDevice: async () => [
+            { page: 1, text: PROSE, confidence: 0.9 },
+            { page: 2, text: GARBLED_MATH, confidence: 0.8 },
+        ],
+        marker: async (_abs, _kind, pages) => {
+            markerCalls.push(pages)
+            return [{ page: 2, text: 'marker' }]
+        },
+        ai: async (_abs, _kind, pages) => {
+            aiCalls.push(pages)
+            return [{ page: 2, text: '$s = s$' }]
+        },
+    })
+    await withServer({ 'a.pdf': PNG, 'b.pdf': PNG, '.settings': 'transcription:\n  math: ai\n' }, async (base, vault, token) => {
+        const byRequest = await (await post(base, token, { file: 'a.pdf', engine: 'auto', math: 'ai' })).json()
+        expect(byRequest).toMatchObject({ engine: 'ai', escalated: [2] })
+        const bySetting = await (await post(base, token, { file: 'b.pdf', engine: 'auto' })).json()
+        expect(bySetting).toMatchObject({ engine: 'ai', escalated: [2] })
+        expect(markerCalls).toEqual([])
+        expect(aiCalls).toEqual([[2], [2]])
+        expect(readFileSync(join(vault, 'a.pdf.md'), 'utf8')).toContain('$s = s$')
+    })
+})
+
 test('engine marker reads the asked pages with marker alone', async () => {
     const asked: (number[] | undefined)[] = []
     setTranscribeEngines({

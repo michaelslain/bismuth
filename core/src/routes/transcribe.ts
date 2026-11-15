@@ -143,7 +143,7 @@ export function transcribeMutatingRoutes(ctx: RouteContext): Record<string, Hand
         ),
         'POST /transcribe/job/math': ctx.mutatingHandler(
             async req => {
-                const body = (await req.json()) as { file: string; choice: 'careful' | 'fast' }
+                const body = (await req.json()) as { file: string; choice: 'careful' | 'fast' | 'ai' }
                 try {
                     checkPageFile(body.file)
                     if (!(await visible(ctx, req, body.file))) return error('forbidden', 403)

@@ -236,8 +236,9 @@ export function pageMatch(a: ArrayLike<number>, b: ArrayLike<number>): PageMatch
  *  order winning; each is kept, or updated when it has `addedMin` or more new ink. Between two of
  *  them the remaining old and new pages pair up by position as updates, extra new pages are added
  *  there, and extra old pages stay after the page they followed. A page left over on both sides that
- *  is the same page moved elsewhere takes its old page at its new place. With no page in common,
- *  every page pairs by order. The order follows the newer version. */
+ *  is the same page moved elsewhere takes its old page at its new place. Fewer than two pages alike
+ *  is no page in common: every old page stays and the newer pages are added after them. The order
+ *  follows the newer version. */
 export function planMerge(match: PageMatch[][], newCount: number, cuts: { sameMin?: number; addedMin?: number } = {}): MergeStep[] {
     const sameMin = cuts.sameMin ?? SAME_MIN
     const addedMin = cuts.addedMin ?? ADDED_MIN
@@ -255,13 +256,17 @@ export function planMerge(match: PageMatch[][], newCount: number, cuts: { sameMi
             const g = gain(i, j)
             best[i]![j] = Math.max(best[i + 1]![j]!, best[i]![j + 1]!, g > 0 ? best[i + 1]![j + 1]! + g : -Infinity)
         }
-    const anchors: [number, number][] = []
+    let anchors: [number, number][] = []
     for (let i = 0, j = 0; i < oldCount && j < newCount;) {
         const g = gain(i, j)
         if (g > 0 && best[i]![j] === best[i + 1]![j + 1]! + g) anchors.push([i++, j++])
         else if (best[i + 1]![j]! >= best[i]![j + 1]!) i++
         else j++
     }
+    // One page alike is not a page in common: two half-empty pages with a few lines at the top can look
+    // alike page to page, and a lone match would pull every page around it into place as an update.
+    // Two copies of one notebook share a run of pages.
+    if (anchors.length < 2) anchors = []
 
     const oldOf = new Array<number | null>(newCount).fill(null) // the old page a new page is, matched
     const pairOf = new Array<number | null>(newCount).fill(null) // the old page a new page takes the place of
@@ -273,7 +278,7 @@ export function planMerge(match: PageMatch[][], newCount: number, cuts: { sameMi
     // Between consecutive matches, pair the leftovers by position, counted from the match they follow.
     // Before the first match there is only the match after them, so they count back from it: a newer
     // copy that starts a few pages later pairs its first page with the old page just before the match,
-    // not with the old first page. With no match at all, every page pairs by order from the start.
+    // not with the old first page. With no match at all nothing pairs.
     const bounds: [number, number][] = [[-1, -1], ...anchors, [oldCount, newCount]]
     for (let k = 0; k + 1 < bounds.length; k++) {
         const [i0, j0] = bounds[k]!
@@ -282,7 +287,9 @@ export function planMerge(match: PageMatch[][], newCount: number, cuts: { sameMi
         for (let i = i0 + 1; i < i1; i++) olds.push(i)
         const news: number[] = []
         for (let j = j0 + 1; j < j1; j++) news.push(j)
-        const fromEnd = k === 0 && anchors.length > 0
+        // with no page in common nothing pairs: the newer pages are added after the old ones
+        if (anchors.length === 0) break
+        const fromEnd = k === 0
         const pairs = Math.min(olds.length, news.length)
         for (let n = 0; n < pairs; n++) {
             const o = fromEnd ? olds[olds.length - pairs + n]! : olds[n]!
@@ -293,7 +300,7 @@ export function planMerge(match: PageMatch[][], newCount: number, cuts: { sameMi
     }
     // Pages left over on both sides that are the same page moved: matched one to one, closest first.
     const loose: [number, number, number][] = []
-    for (let i = 0; i < oldCount; i++)
+    for (let i = 0; i < oldCount && anchors.length > 0; i++)
         if (!usedOld.has(i))
             for (let j = 0; j < newCount; j++)
                 if (oldOf[j] === null && pairOf[j] === null && gain(i, j) > 0) loose.push([at(i, j).same, i, j])

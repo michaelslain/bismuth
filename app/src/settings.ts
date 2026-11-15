@@ -172,7 +172,7 @@ export interface Settings {
     transcription: {
         auto: boolean // the reader transcribes every page with no text on its own
         engine: string // "auto" | "on-device" | "marker" | "ai"
-        math: string // "ask" | "careful" | "fast": what auto does with a page that looks like math
+        math: string // "ask" | "careful" | "fast" | "ai": what auto does with a page that looks like math
         provider: string // agent backend for ai transcription: "auto" follows chat.provider
         model: string // "" = the backend's own default model
     }

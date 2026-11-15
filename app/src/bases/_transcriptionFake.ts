@@ -27,7 +27,7 @@ export type FakeOptions = {
     lines?: (file: string, page: number) => { text: string; x: number; y: number; w: number; h: number }[]
 }
 
-type Job = TranscribeJobState & { engine?: TranscriptEngine; math?: 'ask' | 'careful' | 'fast' }
+type Job = TranscribeJobState & { engine?: TranscriptEngine; math?: 'ask' | 'careful' | 'fast' | 'ai' }
 
 export type FakeTranscription = {
     client: TranscribeJobClient
@@ -162,7 +162,7 @@ export function fakeTranscribe(opts: FakeOptions = {}): FakeTranscription {
         controller: () => {
             const ctl = createTranscription({
                 client,
-                math: () => settings.transcription.math as 'ask' | 'careful' | 'fast',
+                math: () => settings.transcription.math as 'ask' | 'careful' | 'fast' | 'ai',
                 setMath: m => setSettings('transcription', 'math', m),
                 toast: pushToast,
                 pollMs: 1_000_000_000,

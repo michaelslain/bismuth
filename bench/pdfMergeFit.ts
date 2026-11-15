@@ -18,8 +18,8 @@
 // score. A pair missed costs more than a pair of different pages over the cut: a missed page is read
 // as written on, or pairs with the wrong page. ADDED_MIN is the added-ink cut with the fewest pages on
 // the wrong side between rescans and one-line pages; ties take the middle of the widest gap.
-// The held-out check plans another real pair with the fitted cuts and compares the plan with --expect,
-// one word per merged page (keep update add only), in order.
+// Each held-out check plans another real pair with the fitted cuts and compares the plan with its
+// --expect, one word per merged page (keep update add only), in order; --pair/--expect repeat.
 // Usage: bun bench/pdfMergeFit.ts <scan.pdf> --fit-pair <old.pdf> <new.pdf> --truth "4:2 5:3 3:1? ..."
 //            --pair <old.pdf> <new.pdf> --expect "add add keep ..."
 import { createRequire } from 'node:module'
@@ -37,19 +37,22 @@ type PDFDict = PdfLib.PDFDict
 type PDFRawStream = PdfLib.PDFRawStream
 
 const argv = process.argv.slice(2)
-const pairAt = argv.indexOf('--pair')
-const expectAt = argv.indexOf('--expect')
 const fitAt = argv.indexOf('--fit-pair')
 const truthAt = argv.indexOf('--truth')
 const file = argv[0]
-if (!file || file.startsWith('--') || pairAt < 0 || expectAt < 0 || fitAt < 0 || truthAt < 0) {
+if (!file || file.startsWith('--') || !argv.includes('--pair') || !argv.includes('--expect') || fitAt < 0 || truthAt < 0) {
     console.error(
         'usage: bun bench/pdfMergeFit.ts <scan.pdf> --fit-pair <old.pdf> <new.pdf> --truth "4:2 5:3 3:1? ..." --pair <old.pdf> <new.pdf> --expect "add add keep ..."',
     )
     process.exit(2)
 }
-const [pairOld, pairNew] = [argv[pairAt + 1]!, argv[pairAt + 2]!]
-const expected = argv[expectAt + 1]!.trim().split(/\s+/)
+// every --pair <old> <new> with the --expect that follows it
+const heldOut = argv.flatMap((a, k) => {
+    if (a !== '--pair') return []
+    const e = argv.indexOf('--expect', k)
+    if (e < 0) throw new Error('--pair needs an --expect after it')
+    return [{ old: argv[k + 1]!, new: argv[k + 2]!, expected: argv[e + 1]!.trim().split(/\s+/) }]
+})
 const [fitOld, fitNew] = [argv[fitAt + 1]!, argv[fitAt + 2]!]
 // known pairs of the fit pair, 0-based; `?` pairs are the same page written on past matching
 const truth = argv[truthAt + 1]!
@@ -241,21 +244,23 @@ console.log(
 )
 let ok = true
 
-const [a, b] = await Promise.all([
-    pageInk(new Uint8Array(await Bun.file(pairOld).arrayBuffer())),
-    pageInk(new Uint8Array(await Bun.file(pairNew).arrayBuffer())),
-])
-const match = a.map(g => b.map(h => pageMatch(g, h)))
-const steps = planMerge(match, b.length, { sameMin, addedMin })
-const got = steps.map(s => s.kind)
-const pass = got.join(' ') === expected.join(' ')
-ok &&= pass
-console.log(`held out ${pairOld} -> ${pairNew}: ${pass ? 'PASS' : 'FAIL'}`)
-console.log(`  got    ${got.join(' ')}`)
-if (!pass) console.log(`  wanted ${expected.join(' ')}`)
-for (const s of steps)
-    if (s.kind === 'keep' || s.kind === 'update')
-        console.log(
-            `  old ${s.page + 1} -> new ${s.from + 1}: likeness ${r2(match[s.page]![s.from]!.same)}, added ink ${match[s.page]![s.from]!.added.toFixed(3)} (${s.kind})`,
-        )
+for (const h of heldOut) {
+    const [a, b] = await Promise.all([
+        pageInk(new Uint8Array(await Bun.file(h.old).arrayBuffer())),
+        pageInk(new Uint8Array(await Bun.file(h.new).arrayBuffer())),
+    ])
+    const match = a.map(g => b.map(n => pageMatch(g, n)))
+    const steps = planMerge(match, b.length, { sameMin, addedMin })
+    const got = steps.map(s => s.kind)
+    const pass = got.join(' ') === h.expected.join(' ')
+    ok &&= pass
+    console.log(`held out ${h.old} -> ${h.new}: ${pass ? 'PASS' : 'FAIL'}`)
+    console.log(`  got    ${got.join(' ')}`)
+    if (!pass) console.log(`  wanted ${h.expected.join(' ')}`)
+    for (const s of steps)
+        if (s.kind === 'keep' || s.kind === 'update')
+            console.log(
+                `  old ${s.page + 1} -> new ${s.from + 1}: likeness ${r2(match[s.page]![s.from]!.same)}, added ink ${match[s.page]![s.from]!.added.toFixed(3)} (${s.kind})`,
+            )
+}
 process.exit(ok ? 0 : 1)

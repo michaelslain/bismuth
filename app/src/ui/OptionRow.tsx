@@ -7,7 +7,7 @@
 // Not TextButton (which enforces lowercase bracket labels) and not Button (documented internal-only) —
 // a sentence-case, two-line, full-width choice row is a different control, so it is its own
 // primitive rather than a special case of the label button.
-import { Show, type Component } from 'solid-js'
+import { For, Show, type Component } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import styles from './OptionRow.module.css'
 
@@ -16,6 +16,9 @@ export type OptionRowProps = {
     icon: string
     label: string
     sublabel?: string
+    /** Faint columns after the label, each `ch` characters wide, so a list of rows reads as a table
+     *  (in place of a sublabel). */
+    cells?: { text: string; ch: number }[]
     /** Destructive tone — the mark, hover and focus ring take --danger instead of --accent. */
     danger?: boolean
     onClick: () => void
@@ -39,6 +42,13 @@ const OptionRow: Component<OptionRowProps> = props => (
         <Show when={props.sublabel}>
             {s => <span class={styles['option-sub']}>{s()}</span>}
         </Show>
+        <For each={props.cells ?? []}>
+            {c => (
+                <span class={styles['option-cell']} style={{ 'flex-basis': `${c.ch}ch` }}>
+                    {c.text}
+                </span>
+            )}
+        </For>
     </button>
 )
 

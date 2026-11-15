@@ -56,17 +56,19 @@ describe('planPdfMerge', () => {
         expect([plan.pages, plan.kept, plan.updated, plan.added, plan.only]).toEqual([4, 2, 1, 1, 0])
     })
 
-    test('with no page unchanged, every page pairs by order', async () => {
+    test('with no page in common, every old page stays and the newer pages go after them', async () => {
         // the newer pages are blank: nothing on them is like the old pages
         const v = await vault([{ id: 1 }, { id: 2 }], [{ id: 1 }])
         writeFileSync(join(v, 'n2.pdf'), await pdfOfWidths([400, 400, 400]))
         const plan = await planPdfMerge(v, 'n.pdf', { file: 'n2.pdf' })
         expect(plan.steps).toEqual([
-            { kind: 'update', page: 0, from: 0 },
-            { kind: 'update', page: 1, from: 1 },
+            { kind: 'only', page: 0 },
+            { kind: 'only', page: 1 },
+            { kind: 'add', from: 0 },
+            { kind: 'add', from: 1 },
             { kind: 'add', from: 2 },
         ])
-        expect(plan.kept).toBe(0)
+        expect([plan.kept, plan.updated]).toEqual([0, 0])
     })
 
     test('picked bytes plan the same as a vault file', async () => {

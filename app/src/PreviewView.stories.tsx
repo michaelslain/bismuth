@@ -3980,7 +3980,7 @@ export const PdfMathChoiceCoversLater: Story = {
         await body.findByText('this page has math')
         await fk.tick()
         await body.findByText('2 pages have math')
-        await userEvent.click(body.getByRole('button', { name: 'go fast' }))
+        await userEvent.click(body.getByRole('button', { name: /go fast/ }))
         await waitFor(() => expect(body.queryByText('2 pages have math')).toBeNull())
         await fk.tick(10)
         await waitFor(() => expect(shown(canvasElement)).not.toContain('transcribing'), { timeout: 8000 })

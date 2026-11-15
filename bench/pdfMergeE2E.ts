@@ -52,7 +52,7 @@ async function main() {
     writeFileSync(join(VAULT, '.settings'), 'transcription:\n  auto: false\n  engine: on-device\n')
     const before = { pages: await pageCount(pdf), text: transcriptPages(readFileSync(`${pdf}.md`, 'utf8')) }
     const plan = spawnSync('bun', [join(ROOT, 'cli/src/index.ts'), 'pdf', 'merge', 'scans/notebook.pdf', newerRel, '--vault', VAULT], { encoding: 'utf8', timeout: 120_000 })
-    const planned = JSON.parse(plan.stdout || 'null') as { updated: number; added: number; pages: number; steps: { kind: string; page?: number; from?: number }[] } | null
+    const planned = JSON.parse(plan.stdout || 'null') as { kept: number; updated: number; added: number; pages: number; steps: { kind: string; page?: number; from?: number }[] } | null
 
     const env = { ...process.env, BROWSER: 'none', BISMUTH_OWNER_TOKEN: TOKEN, BISMUTH_VAULT: VAULT, BISMUTH_MEMORY: join(VAULT, '.daemon/memory') }
     procs.push(spawn('bun', [join(ROOT, 'core/src/server.ts'), '--port', String(CORE), '--vault', VAULT, '--memory', join(VAULT, '.daemon/memory')], { env, stdio: ['ignore', 'ignore', 'inherit'] }))
@@ -122,7 +122,7 @@ async function main() {
     const doc = await cdp('DOM.getDocument', { depth: -1 })
     const input = await cdp('DOM.querySelector', { nodeId: doc.root.nodeId, selector: 'input[type=file][accept="application/pdf,.pdf"]' })
     await cdp('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [newer] })
-    const want = EXPECT || (planned ? `merging ${basename(newer)} // ${planned.updated} updated // ${planned.added} new` : '')
+    const want = EXPECT || (planned ? `merging ${basename(newer)}${planned.kept + planned.updated ? '' : ' // no page matched, added at the end'} // ${planned.updated} updated // ${planned.added} new` : '')
     const summary = await waitFor(async () => ((await bodyText()).includes(want) ? want : null), 60_000)
     step('5 head shows the merge summary', !!summary && !!want, want)
     const total = planned?.pages ?? 0

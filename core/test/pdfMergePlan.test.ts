@@ -64,12 +64,17 @@ describe('planMerge', () => {
     test('pages before the first match pair counting back from it', () => {
         // the newer copy starts at old page 2, which was written over past matching since
         expect(plan(['A', 'B', 'C', 'D', 'E'], ['X', 'D', 'E', 'F'])).toEqual(['~0', '~1', '2>0', '=3', '=4', '+3'])
-        expect(plan(['A', 'B', 'C'], ['X', 'Y', 'C'])).toEqual(['0>0', '1>1', '=2'])
+        expect(plan(['A', 'B', 'C'], ['X', 'Y', 'B', 'C'])).toEqual(['+0', '0>1', '=1', '=2'])
     })
 
-    test('nothing in common pairs every page by order', () => {
-        expect(plan(['A', 'B'], ['X', 'Y', 'Z'])).toEqual(['0>0', '1>1', '+2'])
-        expect(plan(['A', 'B', 'C'], ['X'])).toEqual(['0>0', '~1', '~2'])
+    test('nothing in common: every old page stays and the newer pages are added after them', () => {
+        expect(plan(['A', 'B'], ['X', 'Y', 'Z'])).toEqual(['~0', '~1', '+0', '+1', '+2'])
+        expect(plan(['A', 'B', 'C'], ['X'])).toEqual(['~0', '~1', '~2', '+0'])
+    })
+
+    test('one page alike is not a page in common: a newer copy of only new pages goes after the old ones', () => {
+        // the newer copy's last page, a half-empty one, looks like old page C; nothing is replaced
+        expect(plan(['A', 'B', 'C', 'D'], ['X', 'Y', 'C'])).toEqual(['~0', '~1', '~2', '~3', '+0', '+1', '+2'])
     })
 
     test('every old page is used once, every new page appears once, in order', () => {

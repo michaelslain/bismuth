@@ -22,7 +22,7 @@ export type TranscribeJobRequest = {
     book?: string
     onlyMissing?: boolean
     /** auto only. `ask` reads math pages fast and lists them in `mathPending` until a choice arrives. */
-    math?: 'ask' | 'careful' | 'fast'
+    math?: 'ask' | 'careful' | 'fast' | 'ai'
 }
 
 export type TranscribeJobState = {

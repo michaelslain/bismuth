@@ -112,3 +112,15 @@
 .caption {
     text-align: center;
 }
+
+/* While a page is being dragged the whole grid reads as grabbing, not only the tile under the press. */
+.grid[data-dragging],
+.grid[data-dragging] .tile {
+    cursor: grabbing;
+}
+
+/* A page passed over mid-drag is a drop place, not a page to remove: its hover [x] stays away. */
+.grid[data-dragging] .remove {
+    visibility: hidden;
+}
+

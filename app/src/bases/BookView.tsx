@@ -190,7 +190,7 @@ const BookView: Component<BookViewProps> = props => {
         createTranscription({
             client: api,
             book: props.basePath,
-            math: () => settings.transcription.math as 'ask' | 'careful' | 'fast',
+            math: () => settings.transcription.math as 'ask' | 'careful' | 'fast' | 'ai',
             setMath: m => setSettings('transcription', 'math', m),
             toast: pushToast,
         })
@@ -1304,8 +1304,8 @@ const BookView: Component<BookViewProps> = props => {
     // a remove's undo only means something while the sorter is open
     let undoToasts: number[] = []
     // ── merge a newer version: its pages are read from the picked bytes until save or cancel ──
-    // `kept` 0: no page matched, so every page was paired by order
-    type Merging = { key: string; name: string; data: string; kept: number }
+    // `matched` 0: no page in common, so every newer page was added after the old ones
+    type Merging = { key: string; name: string; data: string; matched: number }
     const [merging, setMerging] = createSignal<Merging | null>(null)
     let mergeSeq = 0
     // the name of the pdf being compared with this one, while its plan is worked out
@@ -1372,6 +1372,12 @@ const BookView: Component<BookViewProps> = props => {
         next.splice(at, 0, ...ok.map(file => ({ key: `f${++stagedSeq}`, kind: 'file' as const, file })))
         if (ok.length) stage(next)
     }
+    /** Finder files dropped on the sorter in the desktop app: read by path, added before tile `at`. */
+    const addStagedPaths = (at: number, paths: string[]) =>
+        void Promise.all(paths.map(async p => new File([await readNativeBytes(p)], basename(p)))).then(
+            files => addStaged(at, files),
+            () => pushToast("couldn't read the dropped files"),
+        )
     /** The sorter as it was before the merge: `undo merge` puts it back. */
     let beforeMerge: Staged[] = []
     const mergeNote = createMemo(() => {
@@ -1382,7 +1388,7 @@ const BookView: Component<BookViewProps> = props => {
         const list = staged() ?? []
         const updated = list.filter(st => st.kind === 'with' && st.marksOf !== undefined && st.textOf === undefined).length
         const added = list.filter(st => st.kind === 'with' && st.marksOf === undefined).length
-        return `merging ${m.name}${m.kept ? '' : ' // no page matched, paired by order'} // ${updated} updated // ${added} new`
+        return `merging ${m.name}${m.matched ? '' : ' // no page matched, added at the end'} // ${updated} updated // ${added} new`
     })
     /** Plan the merge of `f` into the open PDF and lay the result out in the sorter, unsaved. */
     const mergeIn = async (f: File) => {
@@ -1397,7 +1403,7 @@ const BookView: Component<BookViewProps> = props => {
             endMerge()
             const key = `::merge/${++mergeSeq}/${f.name}`
             holdPdfBytes(key, new Uint8Array(await f.arrayBuffer()))
-            setMerging({ key, name: f.name, data, kept: plan.kept })
+            setMerging({ key, name: f.name, data, matched: plan.kept + plan.updated })
             stage(
                 plan.steps.map(s =>
                     s.kind === 'only'
@@ -1552,14 +1558,9 @@ const BookView: Component<BookViewProps> = props => {
             const d = (e as CustomEvent<NativeDragDetail>).detail
             if (d.type !== 'drop' || d.paths.length === 0) return
             if (!pointInDropRect(host.getBoundingClientRect(), d.x, d.y)) return
+            // the sorter takes its own drops, where they land (BookPageEditor's onDropPaths)
+            if (staged()) return
             if (!claimNativeDrop(d)) return
-            // the sorter takes dropped files as pages to add, saved with the rest
-            if (staged()) {
-                void Promise.all(
-                    d.paths.map(async p => new File([await readNativeBytes(p)], basename(p))),
-                ).then(files => addStaged(staged()?.length ?? 0, files), () => pushToast("couldn't read the dropped files"))
-                return
-            }
             void takePages({ paths: d.paths })
         }
         window.addEventListener('bismuth-native-drag', onNative)
@@ -1822,6 +1823,7 @@ const BookView: Component<BookViewProps> = props => {
                             onMove={moveStaged}
                             onRemove={removeStaged}
                             onAddFiles={addStaged}
+                            onDropPaths={addStagedPaths}
                             onAddBlank={addBlank}
                             onSave={() => void savePages()}
                             onCancel={closePageEditor}

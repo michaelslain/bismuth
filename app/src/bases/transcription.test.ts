@@ -115,6 +115,21 @@ test('chooseMath mid-run decides each running file and remembers', async () => {
     t.dispose()
 })
 
+test('chooseMath ai decides each running file with ai and remembers it', async () => {
+    const f = fakeClient({ mathPages: { 'a.pdf': [1], 'b.pdf': [1] } })
+    const { t, set } = make(f)
+    for (const file of ['a.pdf', 'b.pdf']) t.start(file)
+    await flush()
+    f.advance()
+    await t.tick()
+    expect(t.mathPending()).toBe(2)
+    t.chooseMath('ai', true)
+    await flush()
+    expect(f.calls.filter(c => c.startsWith('decide'))).toEqual(['decide a.pdf ai', 'decide b.pdf ai'])
+    expect(set).toEqual(['ai'])
+    t.dispose()
+})
+
 test('chooseMath decides every running file and files started later in the batch inherit it', async () => {
     const f = fakeClient({ mathPages: { 'a.pdf': [1], 'c.pdf': [1] } })
     const { t } = make(f)

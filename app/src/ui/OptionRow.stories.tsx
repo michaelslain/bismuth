@@ -79,6 +79,25 @@ export const Sublabel: Story = {
     },
 }
 
+/** Rows with `cells`: fixed-width faint columns, so stacked choices read as a table whose columns line up. */
+export const Cells: Story = {
+    render: () => (
+        <div style={shell}>
+            <RowList>
+                <OptionRow icon="Sparkles" label="read it properly" cells={[{ text: 'your ai', ch: 10 }, { text: 'about 45 s', ch: 12 }, { text: 'best', ch: 5 }]} onClick={() => {}} />
+                <OptionRow icon="Sigma" label="math reader" cells={[{ text: 'this mac', ch: 10 }, { text: 'about 45 s', ch: 12 }, { text: 'good', ch: 5 }]} onClick={() => {}} />
+                <OptionRow icon="Zap" label="go fast" cells={[{ text: 'on-device', ch: 10 }, { text: 'instant', ch: 12 }, { text: 'rough', ch: 5 }]} onClick={() => {}} />
+            </RowList>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const rows = [...canvasElement.querySelectorAll('button')]
+        const lefts = (i: number) => rows.map(r => Math.round(r.querySelectorAll('[class*="option-cell"]')[i]!.getBoundingClientRect().left))
+        // every column starts at the same x on every row
+        for (const i of [0, 1, 2]) expect(new Set(lefts(i)).size).toBe(1)
+    },
+}
+
 /** The destructive variant — RecurrenceDialog's delete-scope picker. `--danger` replaces the
  *  accent on the bare mark; `play` asserts the two render with different computed mark colours
  *  rather than just carrying different class names, AND that neither mark sits on a filled plate.

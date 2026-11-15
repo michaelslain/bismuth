@@ -27,7 +27,7 @@ export type Transcription = {
     mathPending(): number
     markerMissing(): boolean
     installing(): boolean
-    chooseMath(choice: 'careful' | 'fast', remember: boolean): void
+    chooseMath(choice: 'careful' | 'fast' | 'ai', remember: boolean): void
     /** fires after a job wrote pages, so the reader reloads that file's transcript */
     onWrote(fn: (file: string) => void): () => void
     dispose(): void
@@ -36,8 +36,8 @@ export type Transcription = {
 export type TranscriptionOptions = {
     client: TranscribeJobClient
     book?: string
-    math: () => 'ask' | 'careful' | 'fast'
-    setMath: (m: 'careful' | 'fast') => void
+    math: () => 'ask' | 'careful' | 'fast' | 'ai'
+    setMath: (m: 'careful' | 'fast' | 'ai') => void
     toast: (msg: string) => void
     /** poll interval; stories pass a tiny one or drive `tick()` */
     pollMs?: number
@@ -100,7 +100,7 @@ export function createTranscription(opts: TranscriptionOptions): TranscriptionCo
     // files seen running since the last idle moment: progress counts them whatever their state now
     const batch = new Set<string>()
     // the math choice made during this batch: files started later in it inherit it
-    let batchChoice: 'careful' | 'fast' | undefined
+    let batchChoice: 'careful' | 'fast' | 'ai' | undefined
 
     const running = () => [...jobs().values()].filter(j => j.state === 'running')
 
@@ -149,7 +149,7 @@ export function createTranscription(opts: TranscriptionOptions): TranscriptionCo
         )
     }
 
-    async function run(file: string, body: { pages?: number[]; engine?: TranscribeEngine; math?: 'careful' | 'fast' }, loud: boolean) {
+    async function run(file: string, body: { pages?: number[]; engine?: TranscribeEngine; math?: 'careful' | 'fast' | 'ai' }, loud: boolean) {
         if (loud) explicit.add(file)
         try {
             apply(
@@ -242,7 +242,7 @@ export function createTranscription(opts: TranscriptionOptions): TranscriptionCo
             storedChecked.add(file)
             const setting = opts.math()
             if (setting === 'fast') return
-            if (setting === 'careful') return void run(file, { pages, math: 'careful' }, false)
+            if (setting === 'careful' || setting === 'ai') return void run(file, { pages, math: setting }, false)
             setLocalMath(m => new Map(m).set(file, [...new Set([...(m.get(file) ?? []), ...pages])]))
             void client.markerSetup().then(
                 s => setLocalMissing(!s.installed),
@@ -294,8 +294,8 @@ export function createTranscription(opts: TranscriptionOptions): TranscriptionCo
                     }
                 }
                 setDeciding(new Set<string>())
-                if (choice === 'careful')
-                    for (const [f, pages] of stored) await run(f, { pages, math: 'careful' }, true)
+                if (choice !== 'fast')
+                    for (const [f, pages] of stored) await run(f, { pages, math: choice }, true)
             }
             if (needInstall) install(() => void go())
             else void go()
