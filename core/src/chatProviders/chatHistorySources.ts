@@ -20,6 +20,13 @@ import {
     searchOpencodeChats,
     trashOpencodeChats,
 } from './opencode/opencodeHistory'
+import {
+    isCodexThreadId,
+    listCodexChats,
+    restoreCodexChats,
+    searchCodexChats,
+    trashCodexChats,
+} from './codex/codexHistory'
 
 export type ChatHistoryRow = {
     sessionId: string
@@ -46,11 +53,12 @@ export type ChatHistorySource = {
     restore(vault: string, ids: string[]): Promise<number>
 }
 
-const CLAUDE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const CHAT_HISTORY_SOURCES: Partial<Record<BackendId, ChatHistorySource>> = {
     claude: {
-        owns: id => CLAUDE_ID.test(id),
+        // Any UUID but a version 7 one, which is a Codex thread's.
+        owns: id => UUID.test(id) && !isCodexThreadId(id),
         list: async (vault, scope) =>
             (await listChatSessions(vault, undefined, scope)).map(s => ({
                 ...s,
@@ -82,6 +90,25 @@ export const CHAT_HISTORY_SOURCES: Partial<Record<BackendId, ChatHistorySource>>
                       (await listOpencodeChats(vault, 2000)).map(r => r.sessionId),
                   ),
         restore: async (_, ids) => restoreOpencodeChats(ids).length,
+    },
+    // Codex chats are read from Codex's own rollout files (codexHistory.ts); like opencode's they are
+    // the user's own, so they join the `user` and `all` scopes, never `daemon`, whose Codex threads
+    // live under the vault's own CODEX_HOME.
+    codex: {
+        owns: isCodexThreadId,
+        list: (vault, scope) =>
+            scope === 'daemon' ? Promise.resolve([]) : listCodexChats(vault),
+        search: (vault, query, scope) =>
+            scope === 'daemon' ? Promise.resolve([]) : searchCodexChats(vault, query),
+        remove: async (vault, ids) => trashCodexChats(ids, vault),
+        removeScope: async (vault, scope) =>
+            scope === 'daemon'
+                ? []
+                : trashCodexChats(
+                      (await listCodexChats(vault, 2000)).map(r => r.sessionId),
+                      vault,
+                  ),
+        restore: async (_, ids) => restoreCodexChats(ids).length,
     },
 }
 

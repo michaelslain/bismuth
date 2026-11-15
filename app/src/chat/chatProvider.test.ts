@@ -5,6 +5,7 @@ import {
     modelStorageKeys,
     OPENCODE_LOGIN_COMMAND,
     providerCan,
+    providerPersona,
     providerInstallHint,
     providerLabel,
     providerStorageKey,
@@ -63,9 +64,15 @@ describe('header gating + options', () => {
         expect(providerCan('opencode', 'effort')).toBe(true)
         expect(providerCan('opencode', 'images')).toBe(true)
     })
-    test('resume and sessionPicker are distinct: codex resumes per tab with no cross-session list', () => {
+    test('a chat is named for its backend, Claude only for Claude Code', () => {
+        expect(providerPersona('claude')).toBe('Claude')
+        expect(providerPersona('opencode')).toBe('opencode')
+        expect(providerPersona('codex')).toBe('OpenAI Codex')
+        expect(providerPersona('goose')).toBe('Goose')
+    })
+    test('codex resumes per tab and lists its chats in history', () => {
         expect(providerCan('codex', 'resume')).toBe(true)
-        expect(providerCan('codex', 'sessionPicker')).toBe(false)
+        expect(providerCan('codex', 'sessionPicker')).toBe(true)
     })
     test('permission PROMPTS and permission MODES are separate capabilities', () => {
         // These were one flag. An ACP backend can park a session/request_permission as a live

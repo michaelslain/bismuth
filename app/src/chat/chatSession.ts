@@ -84,6 +84,7 @@ import {
 } from './chatModelResolution'
 import {
     providerCan,
+    providerPersona,
     resolveChatProvider,
     sanitizeChatProvider,
 } from './chatProvider'
@@ -1708,8 +1709,7 @@ export function createChatSession(
         }
         return true
     }
-    const persona = () =>
-        chatPersonaName() ?? (provider() === 'opencode' ? 'opencode' : 'Claude')
+    const persona = () => chatPersonaName() ?? providerPersona(provider())
     // The manifest's commands + the client-side ones (deduped).
     const slashCommands = createMemo(() =>
         withClientSlashCommands(manifest()?.slashCommands ?? []),

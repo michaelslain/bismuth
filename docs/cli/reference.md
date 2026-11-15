@@ -282,7 +282,7 @@ Reads, hides and deletes the owner's chat history (terminal and in-app sessions)
 
 | Command | Arguments and flags | What it does | Server |
 |---|---|---|---|
-| `chat list` | `[--scope user\|daemon\|all]` | Lists past sessions (Claude Code and in-app opencode chats), each with its `provider`, `visibility` and `ownVisibility`. | yes |
+| `chat list` | `[--scope user\|daemon\|all]` | Lists past sessions (Claude Code, in-app opencode and Codex chats), each with its `provider`, `visibility` and `ownVisibility`. | yes |
 | `chat read` | `<id> [--provider <p>]` | Replays one session's messages; an opencode id (`ses_…`) replays from opencode. | yes |
 | `chat search` | `<query> [--scope user\|daemon\|all]` | Searches sessions by content. | yes |
 | `chat visibility` | `<id> <all\|chat-only\|hidden>`, `<id> --clear`, or `--default <all\|chat-only\|hidden>` | Sets one chat's [visibility](../vault/visibility.md#how-do-i-hide-a-past-chat), clears it so the chat takes the default, or sets the default. | yes |

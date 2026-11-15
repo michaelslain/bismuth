@@ -4,7 +4,7 @@
 import { readSettings } from '../settings'
 import { can, type BackendId } from './catalog'
 import type { LocalServerKind } from './contextWindow'
-import { probeLocalServer } from './contextWindowProbe'
+import { loadOllamaModel, probeLocalServer } from './contextWindowProbe'
 import {
     localSpawnFor,
     parseLocalModel,
@@ -81,6 +81,24 @@ export async function resolveLocalSpawn(
     const requested = requestedModel?.replace(/^local\//, '') || ''
     const model =
         (models.includes(requested) && requested) || lm.model || models[0]
+    // Ollama lists a model under its tag (`qwen3.5:9b`, `mine:latest`) and serves the bare name too,
+    // so a setting that omits `:latest` names the listed `<model>:latest`.
+    const listedId = models.includes(model)
+        ? model
+        : models.includes(`${model}:latest`)
+          ? `${model}:latest`
+          : null
+    // An Ollama model that is not running reports no window, so the turn would run on the CLI's own
+    // default. The turn loads it anyway: load it first and read the window it loaded with.
+    if (probe?.kind === 'ollama' && listedId && !windows[listedId]) {
+        if (await loadOllamaModel(lm.url, listedId, lm.apiKey)) {
+            const after = await probeLocalServer(lm.url, lm.apiKey, 5000)
+            const w = after?.models.find(m => m.id === listedId)?.window
+            if (w) windows[listedId] = w
+        }
+    }
+    if (listedId && listedId !== model && windows[listedId])
+        windows[model] = windows[listedId]
     const spawn = localSpawnFor(id, lm, model, models, windows)
     if (!spawn) return { kind: 'off' }
     return {

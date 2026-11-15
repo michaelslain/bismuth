@@ -42,9 +42,9 @@ Four backends honor `localModel`: the ones whose catalog entry has the `localMod
 Each backend is wired at spawn time:
 
 - Claude Code gets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and every model-role variable (`ANTHROPIC_MODEL`, the `ANTHROPIC_DEFAULT_*_MODEL` family, `CLAUDE_CODE_SUBAGENT_MODEL`) set to the chosen model, so background and subagent calls never name a Claude model the server has never heard of. When the server reports the model's loaded window, `CLAUDE_CODE_MAX_CONTEXT_TOKENS` carries it, so Claude Code auto-compacts within that window instead of the larger one it assumes for a model it does not know.
-- Codex gets `--config` overrides that define a custom `bismuth_local` provider with `wire_api="responses"` and the chosen `--model`; the key rides `BISMUTH_LOCAL_MODEL_KEY`. Codex prints a "Model metadata not found" warning for any model outside its catalog; a local turn does not show it as an error.
+- Codex gets `--config` overrides that define a custom `bismuth_local` provider with `wire_api="responses"` and the chosen `--model`; the key rides `BISMUTH_LOCAL_MODEL_KEY`. When the server reports the model's loaded window, `--config model_context_window=<window>` carries it, so Codex sizes its prompt and compacts within that window instead of the fallback it assumes for a model outside its catalog. Codex keeps 5% of the window in reserve, so a 12,345-token window reports as 11,727. Codex prints a "Model metadata not found" warning for any model outside its catalog, and on a small window a "skills context budget" notice when it drops its skill descriptions; a chat shows neither as an error.
 - opencode gets an inline `OPENCODE_CONFIG_CONTENT` declaring a `local` provider, which outranks your own opencode config without replacing it.
-- Goose gets `GOOSE_PROVIDER=openai` plus `OPENAI_HOST`, `OPENAI_BASE_PATH`, `GOOSE_MODEL` and `OPENAI_API_KEY`.
+- Goose gets `GOOSE_PROVIDER=openai` plus `OPENAI_HOST`, `OPENAI_BASE_PATH`, `GOOSE_MODEL` and `OPENAI_API_KEY`. When the server reports the model's loaded window, `GOOSE_CONTEXT_LIMIT` carries it, so goose fits its per-turn context and compacts within that window. Goose's opening request carries its system prompt with every agent in your `~/.claude/agents` and every skill it finds, so it can run to tens of thousands of tokens; the section on fitting goose to a small window covers how Bismuth handles that.
 
 ## How does Bismuth know the context window?
 
@@ -59,7 +59,21 @@ opencode only compacts a long conversation before it overflows when it knows the
 | other OpenAI-compatible | `GET /v1/models` | none reported |
 
 The server kind is identified by the route that answers. Embedding models are dropped from every list.
+A model named without the tag Ollama lists it under (`mine` for `mine:latest`) gets the listed model's window. Ollama reports a window only for a model that is running, so before a chat's turn on an Ollama model that is not running, Bismuth asks Ollama to load it (a request with an empty prompt only loads) and reads the window it loaded with. The turn would load the model anyway, so this adds no wait of its own.
 The injected limit is `{context: window, output: min(the model's own output limit, window)}`, or the window for both when none is known. It rides `OPENCODE_CONFIG_CONTENT` on the opencode processes Bismuth starts, for the `local` model, for servers saved from the provider manager, and for loopback models opencode lists from providers you configured yourself. A window that changes while Bismuth runs is read again before each turn on that model.
+
+## How does a goose chat fit a small context window?
+
+Before a goose chat on a local model starts, Bismuth measures goose's opening request on your machine and runs the richest goose profile that fits the model's loaded window:
+
+| Profile | goose extensions | Picked when |
+|---------|------------------|-------------|
+| full | your own goose setup (by default developer, apps, analyze, extension manager and summon, which lists your agents) | its opening request leaves room for a chat's first exchange |
+| lean | developer only: the shell and reading and editing files | the full profile does not leave that room |
+
+Both profiles keep Bismuth's tool and goose's skills list, which goose always sends. When even the lean opening request is larger than the window, the chat shows an error naming the window and the opening size instead of sending a prompt the server would cut. The lean profile is set through goose's `EXTENSIONS` environment variable for the goose process Bismuth starts; your goose config file is never edited.
+
+The measurement runs goose once per profile against a stand-in model inside Bismuth, with your goose config, and is kept until Bismuth restarts. A model with no reported window runs goose's own setup.
 
 ## What happens when the prompt does not fit the context window?
 
@@ -143,4 +157,6 @@ For opencode, `opencodeConfigContent` (`opencodeConfig.ts`) builds the injected 
 
 The tier comes from `pickTier` (`opencodeBudget.ts`), which weighs `OPENCODE_BASE_TOKENS` (opencode's own share of an opening request per profile), Bismuth's text at `CHARS_PER_TOKEN`, the message and `CHAT_GROWTH_TOKENS` against the window. `chooseTier` in `opencode.ts` applies it before each turn, never richer than the session's `tier`, and `lean` for a model that overflowed. `learnBase` replaces a profile's base with what a fresh chat's first step reported (`firstInputTokens`, from `session.step.ended`).
 
-Source: `core/src/agentBackends/localModel.ts`, `core/src/agentBackends/contextWindowProbe.ts`, `core/src/chatProviders/opencode/opencodeConfig.ts`, `core/src/chatProviders/opencode/opencodeBudget.ts`, `core/src/chatProviders/opencode/opencodeOverflow.ts`, `core/src/agentBackends/localModelProbe.ts`, `core/src/agentBackends/catalog.ts` (`localModel` capability), `core/src/schema/settingsSchema.ts`
+For goose, `sizeGooseChat` (`gooseSizing.ts`) runs before the ACP driver spawns goose: `measureGooseOpening` (`gooseMeasure.ts`) reads goose's opening request per profile from a `goose run` against an in-process stand-in model, and `pickGooseProfile` (`gooseBudget.ts`) weighs it, plus Bismuth's chat instructions at `CHARS_PER_TOKEN`, against the window and `CHAT_GROWTH_TOKENS`. `loadOllamaModel` (`contextWindowProbe.ts`) loads an Ollama model that is not running so `resolveLocalSpawn` can read its window.
+
+Source: `core/src/agentBackends/localModel.ts`, `core/src/agentBackends/contextWindowProbe.ts`, `core/src/chatProviders/opencode/opencodeConfig.ts`, `core/src/chatProviders/opencode/opencodeBudget.ts`, `core/src/chatProviders/opencode/opencodeOverflow.ts`, `core/src/agentBackends/localModelProbe.ts`, `core/src/agentBackends/catalog.ts` (`localModel` capability), `core/src/schema/settingsSchema.ts`, `core/src/chatProviders/acp/gooseSizing.ts`, `core/src/chatProviders/acp/gooseMeasure.ts`, `core/src/chatProviders/acp/gooseBudget.ts`

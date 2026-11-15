@@ -488,8 +488,10 @@ const CODEX: BackendDescriptor = {
         chat: true,
         streaming: 'part',
         resume: true,
-        historyReplay: false,
-        sessionPicker: false,
+        // Both read Codex's own rollout files (chatProviders/codex/codexHistory.ts), verified against
+        // codex 0.158: the vault's threads list in history and a reopened one replays its messages.
+        historyReplay: true,
+        sessionPicker: true,
         models: false,
         effort: true,
         images: true,

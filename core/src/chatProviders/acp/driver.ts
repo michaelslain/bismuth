@@ -38,6 +38,7 @@
 //   4. The subprocess is killed on closeChat/abort-timeout/an unexpected exit, and on process
 //      "exit" (shutdownAll below) — never left running past its chat.
 import { chatInstructions } from '../../chatInstructions'
+import { sizeGooseChat } from './gooseSizing'
 import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import { existsSync } from 'node:fs'
 import { bismuthHome } from '../../bismuthHome'
@@ -655,7 +656,22 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             })
             return null
         }
-        const local = resolution.kind === 'ready' ? resolution.local : null
+        let local = resolution.kind === 'ready' ? resolution.local : null
+        // goose on a local model: fit its opening request to the loaded window (gooseSizing.ts).
+        if (agentId === 'goose' && local) {
+            const sized = await sizeGooseChat({
+                bin,
+                local,
+                baseEnv: claudeSpawnEnv(process.env, 'chat') as Record<string, string>,
+                instructions: chatInstructions(cwd, await chatLineRefNoteFor(cwd)),
+                mcpBin: bismuthMcpBin(),
+            })
+            if (sized.kind === 'too-small') {
+                sink({ type: 'error', code: 'error', message: sized.message })
+                return null
+            }
+            local = sized.local
+        }
         const spawnArgs = [
             ...agent.args,
             ...(agent.sessionKeyArgs?.(chatId) ?? []),

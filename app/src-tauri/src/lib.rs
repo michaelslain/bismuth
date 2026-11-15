@@ -291,6 +291,19 @@ fn detect_agents(binaries: Vec<String>) -> Vec<String> {
     }
     dirs.push("/usr/bin".into());
     dirs.push("/bin".into());
+    // Agent CLIs bundled in desktop apps (core/src/claudeWhich.ts's appBundledBinDirs): the ChatGPT
+    // app's `codex`, and every finished Claude Code download inside the Claude app.
+    dirs.push("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin".into());
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        let root = home.join("Library/Application Support/Claude/claude-code");
+        for version in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+            for build in std::fs::read_dir(version.path()).into_iter().flatten().flatten() {
+                if build.path().join(".verified").exists() {
+                    dirs.push(build.path().join("claude.app/Contents/MacOS"));
+                }
+            }
+        }
+    }
     binaries
         .into_iter()
         .filter(|b| {

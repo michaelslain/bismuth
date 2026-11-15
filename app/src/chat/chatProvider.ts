@@ -169,6 +169,13 @@ export function providerLabel(provider: ChatProviderChoice): string {
     return backendOf(provider).label
 }
 
+/** The name a chat's replies go under and its composer addresses ("Message <name>") when the vault
+ *  names no daemon: `Claude` for Claude Code, else the backend's label, so a Codex or Goose chat is
+ *  never called Claude. */
+export function providerPersona(provider: ChatProviderChoice): string {
+    return provider === 'claude' ? 'Claude' : providerLabel(provider)
+}
+
 /** What to tell the user when a backend's binary isn't installed (the chat setup screen). */
 export function providerInstallHint(provider: ChatProviderChoice): string {
     return backendOf(provider).installHint

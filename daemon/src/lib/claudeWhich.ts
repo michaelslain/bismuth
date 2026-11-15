@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { extraBinDirMap } from './childEnv.ts'
+import { appBundledBinDirs, extraBinDirMap } from './childEnv.ts'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 // Locate the user's installed `claude` CLI for the Agent SDK. The compiled daemon binary does NOT
@@ -50,7 +50,15 @@ export function claudeLookupPath(
     // Lookup order is homebrew BEFORE /usr/local and has no ~/.bismuth/bin, so pick the entries by
     // name rather than splat extraBinDirs() (whose order is pinned in childEnv.test.ts).
     const { usrLocal, homebrew, bun, local } = extraBinDirMap()
-    return [env.PATH, homebrew, usrLocal, bun, local, ...nvmBinPaths(env)]
+    return [
+        env.PATH,
+        homebrew,
+        usrLocal,
+        bun,
+        local,
+        ...nvmBinPaths(env),
+        ...appBundledBinDirs(),
+    ]
         .filter(Boolean)
         .join(':')
 }

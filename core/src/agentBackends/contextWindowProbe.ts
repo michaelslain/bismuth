@@ -92,3 +92,31 @@ export async function detectWindow(
     const probe = await probeLocalServer(url, apiKey)
     return probe?.models.find(m => m.id === modelId)?.window ?? null
 }
+
+/**
+ * Load an Ollama model so its window can be read: Ollama reports a model's context in `/api/ps` only
+ * while it is running, and a request with an empty prompt only loads the model, with the same
+ * options a chat request through `/v1` gets. Resolves whether the load answered; never throws.
+ */
+export async function loadOllamaModel(
+    url: string,
+    model: string,
+    apiKey?: string,
+    timeoutMs = 120_000,
+): Promise<boolean> {
+    try {
+        const res = await fetch(`${normalizeUrl(url)}/api/generate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+            body: JSON.stringify({ model, prompt: '', stream: false }),
+            signal: AbortSignal.timeout(timeoutMs),
+        })
+        await res.body?.cancel()
+        return res.ok
+    } catch {
+        return false
+    }
+}

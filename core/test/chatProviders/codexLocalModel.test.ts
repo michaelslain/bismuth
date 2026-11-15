@@ -4,6 +4,7 @@ import {
     buildCodexEnv,
     buildCodexExecArgs,
     isModelMetadataWarning,
+    isSkillsBudgetNotice,
 } from '../../src/chatProviders/codex/driver'
 import { localSpawnFor } from '../../src/agentBackends/localModel'
 
@@ -67,5 +68,20 @@ describe('isModelMetadataWarning', () => {
         ).toBe(true)
         expect(isModelMetadataWarning(err('stream disconnected'))).toBe(false)
         expect(isModelMetadataWarning({ type: 'done' })).toBe(false)
+    })
+})
+
+describe('isSkillsBudgetNotice', () => {
+    test('matches the small-window skills notice only', () => {
+        const err = (message: string) =>
+            ({ type: 'error', code: 'error', message }) as const
+        expect(
+            isSkillsBudgetNotice(
+                err(
+                    'Exceeded skills context budget. All skill descriptions were removed and 35 additional skills were not included in the model-visible skills list.',
+                ),
+            ),
+        ).toBe(true)
+        expect(isSkillsBudgetNotice(err('stream disconnected'))).toBe(false)
     })
 })

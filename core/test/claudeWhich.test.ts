@@ -10,6 +10,7 @@ import {
     claudeSpawnEnv,
     HOST_CLAUDE_SESSION_VARS,
     FREE_AGENT_BIN_DIR,
+    appBundledBinDirs,
 } from '../src/claudeWhich'
 
 // The real OS username, resolved the SAME way claudeSpawnEnv does (`id -un`), not via node:os's
@@ -98,6 +99,42 @@ describe('claudeLookupPath', () => {
     // In-app chat's Bash runs on this PATH; a bare `bismuth` must resolve with no PATH symlink.
     test('includes the bismuth CLI install dir', () => {
         expect(claudeLookupPath({}).split(':')).toContain(BISMUTH_BIN_DIR)
+    })
+
+    // The ChatGPT app's bundled codex resolves with nothing on PATH, after every PATH-style dir so a
+    // codex installed with npm or Homebrew still wins.
+    test('searches the app-bundled dirs after /sbin', () => {
+        const parts = claudeLookupPath({ PATH: '/usr/bin' }).split(':')
+        for (const dir of appBundledBinDirs()) {
+            expect(parts).toContain(dir)
+            expect(parts.indexOf('/sbin')).toBeLessThan(parts.indexOf(dir))
+            expect(parts.indexOf('/opt/homebrew/bin')).toBeLessThan(
+                parts.indexOf(dir),
+            )
+        }
+        expect(appBundledBinDirs()).toContain(
+            '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin',
+        )
+    })
+
+    // The Claude app's own Claude Code: every finished download, newest version first; a build with
+    // no `.verified` marker (still downloading) and the VM's Linux build are skipped.
+    test('finds Claude Code inside the Claude app, newest verified build first', () => {
+        const home = tempDir('claude-app-home-')
+        const root = join(home, 'Library', 'Application Support', 'Claude')
+        const build = (version: string, hash: string, verified: boolean) => {
+            const macos = join(root, 'claude-code', version, hash, 'claude.app', 'Contents', 'MacOS')
+            mkdirSync(macos, { recursive: true })
+            writeFileSync(join(macos, 'claude'), '')
+            if (verified) writeFileSync(join(root, 'claude-code', version, hash, '.verified'), '')
+            return macos
+        }
+        const old = build('2.1.9', 'aaa', true)
+        const fresh = build('2.1.321', 'bbb', true)
+        build('2.1.400', 'ccc', false)
+        mkdirSync(join(root, 'claude-code-vm', '2.1.321'), { recursive: true })
+        expect(appBundledBinDirs(home).slice(1)).toEqual([fresh, old])
+        expect(appBundledBinDirs(join(home, 'none')).length).toBe(1)
     })
 
     // A user's own opencode (homebrew, npm) must outrank Bismuth's managed download.

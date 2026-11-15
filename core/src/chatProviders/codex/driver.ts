@@ -62,6 +62,7 @@ import {
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import type { ChatBackend, ChatTurnContext } from '../backends'
 import { chatInstructions } from '../../chatInstructions'
+import { codexHistoryFrames } from './codexHistory'
 import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import { readCodexOptIns } from '../../settings'
 import {
@@ -164,6 +165,17 @@ export function isModelMetadataWarning(frame: ChatFrame): boolean {
     return (
         frame.type === 'error' &&
         /^Model metadata for .+ not found/.test(frame.message)
+    )
+}
+
+/** Codex reports, as an `error` item, that a small context window left no room for every skill's
+ *  description ("Exceeded skills context budget. All skill descriptions were removed…", seen on a
+ *  12k local window with codex 0.158). The turn goes on and completes, so it is a notice, not an
+ *  error, on any model. */
+export function isSkillsBudgetNotice(frame: ChatFrame): boolean {
+    return (
+        frame.type === 'error' &&
+        /^Exceeded skills context budget/.test(frame.message)
     )
 }
 
@@ -324,7 +336,16 @@ function createSession(
     if (s.threadId)
         emit(s, { type: 'session', sessionId: s.threadId, origin: 'user' })
     void applyCodexOptIns(cwd)
+    void showLocalModel(s)
     return s
+}
+
+/** With the vault's `localModel` on, name the local model in the header as soon as the chat opens
+ *  (a new or reopened chat), instead of only once its first turn starts. Best-effort. */
+async function showLocalModel(s: CodexSession): Promise<void> {
+    const resolved = await resolveLocalSpawn('codex', s.cwd, s.model).catch(() => null)
+    if (resolved?.kind !== 'ready' || s.model || sessions.get(s.id) !== s) return
+    emit(s, { type: 'manifest', manifest: blankManifest(resolved.local.model) })
 }
 
 /** Write each image attachment's base64 payload to a temp file — `--image` takes a PATH, not raw
@@ -480,6 +501,7 @@ async function runTurn(
                     s.translateState,
                 )) {
                     if (local && isModelMetadataWarning(frame)) continue
+                    if (isSkillsBudgetNotice(frame)) continue
                     if (frame.type === 'error') sawErrorFrame = true
                     emit(s, frame)
                 }
@@ -583,13 +605,9 @@ export function resumeSession(
     createSession(chatId, cwd, sink, sessionId)
 }
 
-/** No transcript-export or session-list mechanism was confirmed for Codex — the `~/.codex/sessions`
- *  rollout JSONL could in principle be tailed, but its exact shape was only medium-confidence
- *  (secondary-source) verified, not read directly the way ThreadEvent was — so historyReplay is
- *  false in the catalog and this stays a safe stub rather than populating a picker/replay from an
- *  unverified format. */
-async function sessionHistoryFrames(): Promise<ChatFrame[]> {
-    return []
+/** A thread's messages from its rollout file, for reopening it from history (codexHistory.ts). */
+async function sessionHistoryFrames(sessionId: string): Promise<ChatFrame[]> {
+    return codexHistoryFrames(sessionId)
 }
 
 export function abortTurn(chatId: string): void {

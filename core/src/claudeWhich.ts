@@ -8,6 +8,38 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 export const FREE_AGENT_BIN_DIR = bismuthHome('agents', 'bin')
 // Where the app installs the bismuth CLI and MCP binaries (core/src/bismuthInstall.ts).
 export const BISMUTH_BIN_DIR = bismuthHome('bin')
+// Agent CLIs that ship inside a desktop app instead of on PATH, searched after every PATH-style dir
+// so a CLI the user installed (npm, Homebrew, the claude installer) wins over a bundled copy:
+//  - the ChatGPT app bundles `codex` (a launcher script beside its own CodexCLI.app);
+//  - the Claude app downloads a native macOS Claude Code to
+//    `~/Library/Application Support/Claude/claude-code/<version>/<hash>/claude.app/Contents/MacOS/claude`,
+//    marking a finished download with a `.verified` file beside `claude.app`. Newest version first.
+//    (Its sibling `claude-code-vm/` holds a Linux build for the app's VM and is never searched.)
+export function appBundledBinDirs(home: string = homedir()): string[] {
+    const dirs = ['/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin']
+    const root = join(home, 'Library', 'Application Support', 'Claude', 'claude-code')
+    let versions: string[] = []
+    try {
+        versions = readdirSync(root)
+    } catch {
+        return dirs
+    }
+    versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    for (const v of versions) {
+        let builds: string[] = []
+        try {
+            builds = readdirSync(join(root, v))
+        } catch {
+            continue
+        }
+        for (const b of builds) {
+            const macos = join(root, v, b, 'claude.app', 'Contents', 'MacOS')
+            if (existsSync(join(root, v, b, '.verified')) && existsSync(join(macos, 'claude')))
+                dirs.push(macos)
+        }
+    }
+    return dirs
+}
 
 // nvm installs node — and globally-installed CLIs like `claude` (`npm i -g
 // @anthropic-ai/claude-code`) — under $NVM_DIR/versions/node/<version>/bin, a dir a
@@ -76,6 +108,7 @@ export function claudeLookupPath(
         '/bin',
         '/usr/sbin',
         '/sbin',
+        ...appBundledBinDirs(),
         FREE_AGENT_BIN_DIR,
     ]
         .filter(Boolean)

@@ -171,6 +171,12 @@ export function localSpawnFor(
                     `model_providers.${CODEX_PROVIDER_ID}.wire_api="responses"`,
                     '--config',
                     `model_providers.${CODEX_PROVIDER_ID}.env_key="${CODEX_KEY_ENV}"`,
+                    // Codex assumes a fallback window for a model outside its catalog. The loaded
+                    // window sizes its prompt budgets and auto-compaction instead (codex keeps 5% of
+                    // it in reserve: 12,345 is reported as 11,727, verified against 0.158).
+                    ...(windows[model]
+                        ? ['--config', `model_context_window=${windows[model]}`]
+                        : []),
                 ],
                 model,
             }
@@ -202,6 +208,11 @@ export function localSpawnFor(
                     OPENAI_HOST: lm.url,
                     OPENAI_BASE_PATH: 'v1/chat/completions',
                     OPENAI_API_KEY: key,
+                    // goose assumes a window for a model it does not know; the loaded window sizes
+                    // its turn context and auto-compaction instead (verified against goose 1.59.1:
+                    // at a 2,000 limit it drops its per-turn context block). Its own system prompt
+                    // is not trimmed, so a window smaller than that prompt cannot hold a turn.
+                    ...(windows[model] ? { GOOSE_CONTEXT_LIMIT: String(windows[model]) } : {}),
                 },
                 args: [],
                 model,

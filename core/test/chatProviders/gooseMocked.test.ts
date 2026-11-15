@@ -29,6 +29,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
+import { measureGooseOpening } from '../../src/chatProviders/acp/gooseMeasure'
 import { backendMockEnv } from '../support/backendEnv'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
@@ -195,6 +196,19 @@ describeOrSkip(
             if (resultFrame.type === 'result')
                 expect(resultFrame.isError).toBe(false)
         }, 60_000)
+
+        // gooseMeasure.ts: the opening request of the real goose, against its in-process stand-in
+        // model. The lean profile (developer extension only) is smaller than goose's defaults.
+        test('measures goose’s opening request, smaller on the lean profile', async () => {
+            await setup()
+            const env = { ...(process.env as Record<string, string>) }
+            const bin = whichBinary('goose')!
+            const full = await measureGooseOpening(bin, env, 'full')
+            const lean = await measureGooseOpening(bin, env, 'lean')
+            expect(full).toBeGreaterThan(0)
+            expect(lean).toBeGreaterThan(0)
+            expect(lean!).toBeLessThan(full!)
+        }, 90_000)
 
         /**
          * Task 12 (step 2 of 2, "live tool-use, the fixture half"): drive a REAL goose ACP tool call

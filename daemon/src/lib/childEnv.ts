@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
 
 // Install dirs a daemon-spawned worker's PATH MUST contain so a bare `bismuth` (Feature #51's
 // `checkpoint diff/advance` change-scoping) — and other user CLIs the model shells out to —
@@ -24,6 +25,40 @@ export function extraBinDirMap(home: string = homedir()) {
         bun: join(home, '.bun', 'bin'),
         local: join(home, '.local', 'bin'),
     }
+}
+
+// Agent CLIs that ship inside a desktop app instead of on PATH, searched after every PATH-style dir
+// so a CLI the user installed (npm, Homebrew, the claude installer) wins over a bundled copy:
+//  - the ChatGPT app bundles `codex` (a launcher script beside its own CodexCLI.app);
+//  - the Claude app downloads a native macOS Claude Code to
+//    `~/Library/Application Support/Claude/claude-code/<version>/<hash>/claude.app/Contents/MacOS/claude`,
+//    marking a finished download with a `.verified` file beside `claude.app`. Newest version first.
+//    (Its sibling `claude-code-vm/` holds a Linux build for the app's VM and is never searched.)
+// (Copy of core/src/claudeWhich.ts's appBundledBinDirs; the daemon imports nothing from core.)
+export function appBundledBinDirs(home: string = homedir()): string[] {
+    const dirs = ['/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin']
+    const root = join(home, 'Library', 'Application Support', 'Claude', 'claude-code')
+    let versions: string[] = []
+    try {
+        versions = readdirSync(root)
+    } catch {
+        return dirs
+    }
+    versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    for (const v of versions) {
+        let builds: string[] = []
+        try {
+            builds = readdirSync(join(root, v))
+        } catch {
+            continue
+        }
+        for (const b of builds) {
+            const macos = join(root, v, b, 'claude.app', 'Contents', 'MacOS')
+            if (existsSync(join(root, v, b, '.verified')) && existsSync(join(macos, 'claude')))
+                dirs.push(macos)
+        }
+    }
+    return dirs
 }
 
 // The same dirs as a priority-ordered list (usrLocal, homebrew, bismuth, bun, local).

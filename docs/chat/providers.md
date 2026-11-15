@@ -8,7 +8,7 @@ The catalog of backends and the capability flags that decide which controls rend
 | --- | --- | --- | --- |
 | `claude` | your `claude` | one long-lived Agent SDK `query()` per chat | the SDK session store, shared with terminal sessions |
 | `opencode` | your `opencode` | one shared `opencode serve` process (opencode 1 and 2), or a per-turn `opencode run` in a vault that hides notes | opencode's own store (`ses_…` ids) |
-| `codex` | your `codex` | a `codex exec --json` subprocess per turn | Codex thread ids; no history replay |
+| `codex` | your `codex`, or the copy the ChatGPT app bundles | a `codex exec --json` subprocess per turn | Codex's own rollout files under `~/.codex/sessions` |
 | every ACP backend | the agent's own CLI | one shared ACP driver, one subprocess per chat | the agent's own session |
 
 ## How does a chat pick its provider?
@@ -26,7 +26,6 @@ On the wire, the client's `open`, `user` and `resume` frames carry `provider`. T
 Controls that rely on a Claude-only surface are hidden for opencode, not broken. Each is gated by a capability flag in the catalog ([backends.md](backends.md#how-do-controls-know-what-a-backend-can-do)).
 
 - Permission mode select: opencode can raise and answer a live approval request, but its server API has no Default, Plan, Accept edits or Bypass vocabulary, so the mode select stays hidden.
-- Cross-session history. The `history` button lists the Claude Code session store. opencode conversations resume per tab but do not appear in that list.
 - Slash commands. The `/` popover lists opencode's own command registry instead of Claude's, with each command's description; opencode commands carry no argument hints. `/rename` and `/color` work on every provider.
 - Context meter. The header shows no context-window usage for opencode.
 
@@ -153,14 +152,15 @@ Its lifecycle matches opencode's run mode: a session map keyed by chat id, sink 
 - Command: `buildCodexExecArgs` builds `codex exec --json [--model <id>] --sandbox workspace-write --cd <vault> --skip-git-repo-check [local-model --config overrides] [--config model_reasoning_effort="<level>"] --config approval_policy="never" --config developer_instructions="<chatInstructions>" [resume <threadId>] [--image <path>]…`.
   A `developer_instructions` key in your own `~/.codex/config.toml` is overridden by that flag in a chat turn, without a warning; a Codex terminal tab still reads yours.
   The prompt is written to stdin, never argv. A turn that produces no parseable JSON and exits non-zero is retried once with `--experimental-json`, and the spelling that worked is remembered for the session.
-- Continuity. The thread id comes from the first `thread.started` event and goes out as a `session` frame. The next turn passes `resume <threadId>`. `historyReplay` and `sessionPicker` are `false`, so a resumed chat continues but shows no past transcript.
+- Continuity. The thread id comes from the first `thread.started` event and goes out as a `session` frame. The next turn passes `resume <threadId>`.
+- History. `codexHistory.ts` reads Codex's rollout files (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<id>.jsonl`, `CODEX_HOME` defaulting to `~/.codex`): the threads whose `session_meta` names the vault as their `cwd` list in `history` and `bismuth chat list`, titled by Codex's `session_index.jsonl` or the first message, and a reopened thread replays its typed messages and replies. Threads Codex spawned as subagents are left out, and so are chats from the Codex desktop app in other folders. A deleted Codex chat can be restored for ten minutes, then `eraseCodexThread` removes its rollout and its rows in Codex's databases. A Codex thread id is a version 7 UUID, which is how history tells it from a Claude Code session id.
 - Streaming. Prose arrives in whole-item chunks (`streaming: "part"`), the `result` frame carries `costUsd: null`, and the tab title comes from the first prompt (`titleFromPrompt`).
 - Images. Each attachment is written to a temp file under `os.tmpdir()/bismuth-codex-<uuid>/` because `--image` takes a path; the directory is deleted when the turn settles.
 - Effort and model: `set_effort` accepts `minimal | low | medium | high | xhigh` and sends it as `model_reasoning_effort`; anything else clears it. Codex has no model-list capability, so the driver emits no `models` frame: the dialog shows `no models reported` and no effort row.
   `set_model` takes a free-form id and passes `--model`.
 - Permissions: `codex exec` has no approval channel. The driver runs `--sandbox workspace-write` with `approval_policy="never"`, `permissionPrompts` and `permissionModes` are `false`, and the manifest is one empty static frame.
 - Stop kills the in-flight process and clears the queue; the non-zero exit is reported as a deliberate Stop.
-- Local model. With `localModel.enabled`, `resolveLocalSpawn('codex', …)` runs at the start of every turn ([local-models.md](local-models.md)).
+- Local model. With `localModel.enabled`, `resolveLocalSpawn('codex', …)` runs at the start of every turn ([local-models.md](local-models.md)). It also runs when a chat opens, new or reopened from history, so the controls row names the local model before the first turn.
 - Opt-ins. On session open, `settings.codex.writeAgentsMd` writes the managed AGENTS.md block and `settings.codex.installRelayHooks` writes the project-scoped Codex hook files. Both are read fresh per new session and never block it.
 
 ### The ACP driver
@@ -193,4 +193,4 @@ The pure half (JSON-RPC envelopes, the `session/update` to `ChatFrame` translato
 - Capabilities are one shared profile, `ACP_SHARED_CAPABILITIES`, plus per-agent overrides.
 - Missing binary emits `no-binary` with ``The `<binary>` CLI was not found. Install <label> to use this provider.`` For the two adapters the binary is `npx`.
 
-Source: `core/src/chat.ts`, `core/src/chatRenderingNote.ts`, `core/src/chatLineRefNote.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/chatProviders/sessionSink.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/chatProviders/opencode/opencodeCli.ts`, `core/src/chatProviders/opencode/opencodeTranslate.ts`, `core/src/chatProviders/opencode/opencodeV2Client.ts`, `core/src/chatProviders/opencode/opencodeV2Translate.ts`, `core/src/chatProviders/opencode/opencodeBudget.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/chatProviders/codex/protocol.ts`, `core/src/chatProviders/acp/driver.ts`, `core/src/chatProviders/acp/agents.ts`, `core/src/chatProviders/acp/protocol.ts`, `core/src/freeAgent.ts`, `core/src/agentBackends/catalog.ts`, `app/src/chat/chatProvider.ts`
+Source: `core/src/chat.ts`, `core/src/chatRenderingNote.ts`, `core/src/chatLineRefNote.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/chatProviders/sessionSink.ts`, `core/src/chatProviders/opencode/opencode.ts`, `core/src/chatProviders/opencode/opencodeServer.ts`, `core/src/chatProviders/opencode/opencodeCli.ts`, `core/src/chatProviders/opencode/opencodeTranslate.ts`, `core/src/chatProviders/opencode/opencodeV2Client.ts`, `core/src/chatProviders/opencode/opencodeV2Translate.ts`, `core/src/chatProviders/opencode/opencodeBudget.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/chatProviders/codex/protocol.ts`, `core/src/chatProviders/codex/codexHistory.ts`, `core/src/chatProviders/acp/driver.ts`, `core/src/chatProviders/acp/agents.ts`, `core/src/chatProviders/acp/protocol.ts`, `core/src/freeAgent.ts`, `core/src/agentBackends/catalog.ts`, `app/src/chat/chatProvider.ts`

@@ -106,6 +106,17 @@ describe('localSpawnFor', () => {
         expect(s.env).toEqual({ BISMUTH_LOCAL_MODEL_KEY: 'local' })
     })
 
+    test('codex gets the loaded window as model_context_window, only when known', () => {
+        const s = localSpawnFor('codex', LM, 'qwen3', ['qwen3'], { qwen3: 8192 })!
+        expect(s.args.slice(-2)).toEqual([
+            '--config',
+            'model_context_window=8192',
+        ])
+        expect(
+            localSpawnFor('codex', LM, 'qwen3', ['qwen3'], {})!.args.join(' '),
+        ).not.toContain('model_context_window')
+    })
+
     test('opencode declares every listed model under the local provider', () => {
         const s = localSpawnFor('opencode', { ...LM, apiKey: 'k' }, 'b', [
             'a',
@@ -163,6 +174,16 @@ describe('localSpawnFor', () => {
             OPENAI_BASE_PATH: 'v1/chat/completions',
             OPENAI_API_KEY: 'local',
         })
+    })
+
+    test('goose gets the loaded window as GOOSE_CONTEXT_LIMIT, only when known', () => {
+        expect(
+            localSpawnFor('goose', LM, 'qwen3', ['qwen3'], { qwen3: 8192 })!.env
+                .GOOSE_CONTEXT_LIMIT,
+        ).toBe('8192')
+        expect(
+            localSpawnFor('goose', LM, 'qwen3', ['qwen3'], {})!.env.GOOSE_CONTEXT_LIMIT,
+        ).toBeUndefined()
     })
 
     test('a mapping exists exactly where the catalog claims one', () => {
@@ -325,5 +346,52 @@ describe('probe', () => {
         expect(localUnreachableMessage('http://127.0.0.1:9')).toContain(
             'http://127.0.0.1:9',
         )
+    })
+    // Ollama reports a model's context only while it runs: the chosen model is loaded first (an
+    // empty-prompt /api/generate), so the first turn gets the window it loaded with.
+    test('an Ollama model that is not running is loaded, and its window read', async () => {
+        const loads: string[] = []
+        const listed = ['qwen', 'gemma']
+        const ollama = Bun.serve({
+            port: 0,
+            fetch: async req => {
+                const path = new URL(req.url).pathname
+                if (path === '/v1/models')
+                    return Response.json({ data: listed.map(id => ({ id })) })
+                if (path === '/api/ps')
+                    return Response.json({
+                        models: loads.map(name => ({ name, model: name, context_length: 4096 })),
+                    })
+                if (path === '/api/generate' && req.method === 'POST') {
+                    const body = (await req.json()) as { model: string; prompt: string }
+                    if (body.prompt === '') loads.push(body.model)
+                    return Response.json({ done: true, done_reason: 'load' })
+                }
+                return new Response('not found', { status: 404 })
+            },
+        })
+        try {
+            const v = await vault(
+                `localModel:\n  enabled: true\n  url: http://localhost:${ollama.port}\n  model: qwen\n`,
+            )
+            const r = await resolveLocalSpawn('codex', v)
+            expect(loads).toEqual(['qwen'])
+            expect(r.kind === 'ready' && r.local.windows.qwen).toBe(4096)
+            expect(r.kind === 'ready' && r.local.args).toContain('model_context_window=4096')
+            // already running: no second load
+            await resolveLocalSpawn('goose', v)
+            expect(loads).toEqual(['qwen'])
+            // a setting without the `:latest` tag Ollama lists the model under still gets its window
+            const bare = await vault(
+                `localModel:\n  enabled: true\n  url: http://localhost:${ollama.port}\n  model: mine\n`,
+            )
+            listed.push('mine:latest')
+            const r2 = await resolveLocalSpawn('codex', bare)
+            expect(loads).toEqual(['qwen', 'mine:latest'])
+            expect(r2.kind === 'ready' && r2.local.model).toBe('mine')
+            expect(r2.kind === 'ready' && r2.local.args).toContain('model_context_window=4096')
+        } finally {
+            ollama.stop(true)
+        }
     })
 })

@@ -169,6 +169,34 @@ describeOrSkip(
             expect(doneIdx).toBeGreaterThan(resultIdx)
         }, 60_000)
 
+        test('a chat opened with localModel on names the local model in its header before any turn', async () => {
+            await setup()
+            const server = Bun.serve({
+                port: 0,
+                fetch: req =>
+                    new URL(req.url).pathname === '/v1/models'
+                        ? Response.json({ data: [{ id: 'fake-local' }] })
+                        : new Response('not found', { status: 404 }),
+            })
+            try {
+                const cwd = await newTempDir('bismuth-codex-local-')
+                await Bun.write(
+                    `${cwd}/.settings`,
+                    `localModel:\n  enabled: true\n  url: http://127.0.0.1:${server.port}\n  model: fake-local\n`,
+                )
+                const chatId = 'codex-local-header-' + Date.now()
+                chatIds.push(chatId)
+                const { sink, waitFor } = makeChatFrameCollector()
+                CHAT_BACKENDS.codex.openSession({ chatId, cwd, sink })
+                const named = await waitFor(
+                    f => f.type === 'manifest' && f.manifest.model === 'fake-local',
+                )
+                expect(named.type).toBe('manifest')
+            } finally {
+                server.stop(true)
+            }
+        }, 30_000)
+
         test("sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done", async () => {
             // Regression coverage for core/src/chatProviders/codex/driver.ts's sendMessage() "existing
             // session" branch, which must call sessionSink.ts's reattachSessionSink (flush, no synthetic

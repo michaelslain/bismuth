@@ -138,11 +138,24 @@ const WINDOW_SIZED: Record<string, () => void> = {
         })
         expect(spawn?.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe('8192')
     },
+    // Codex is given the loaded window as `model_context_window`, which sizes its prompt budgets and
+    // auto-compaction (verified live on codex 0.158).
+    codex: () => {
+        const spawn = localSpawnFor('codex', LM, 'qwen/qwen3.5-9b', ['qwen/qwen3.5-9b'], {
+            'qwen/qwen3.5-9b': 8_192,
+        })
+        expect(spawn?.args).toContain('model_context_window=8192')
+    },
+    // goose is given the loaded window as GOOSE_CONTEXT_LIMIT (verified live on goose 1.59.1).
+    goose: () => {
+        const spawn = localSpawnFor('goose', LM, 'qwen/qwen3.5-9b', ['qwen/qwen3.5-9b'], {
+            'qwen/qwen3.5-9b': 8_192,
+        })
+        expect(spawn?.env.GOOSE_CONTEXT_LIMIT).toBe('8192')
+    },
 }
 const LM = { url: 'http://127.0.0.1:1234', apiKey: '', model: '' }
 const UNSIZED: Record<string, string> = {
-    codex: 'not installed here, so the window setting it reads cannot be verified',
-    goose: 'not installed here, so the window setting it reads cannot be verified',
 }
 
 describe('every chat backend', () => {
@@ -205,8 +218,12 @@ describe('the Bismuth MCP server an ACP agent launches', () => {
 })
 
 describe('history sources own disjoint ids', () => {
-    test('a Claude session id and an opencode id each have one owner', () => {
-        const ids = ['0ef199f6-7c8e-4f77-821d-76e79968c2ff', 'ses_e242d2f54ffeUXaxS7QRJDzuUF']
+    test('a Claude session id, an opencode id and a Codex thread id each have one owner', () => {
+        const ids = [
+            '0ef199f6-7c8e-4f77-821d-76e79968c2ff',
+            'ses_e242d2f54ffeUXaxS7QRJDzuUF',
+            '01a1dc64-89e7-7f30-b617-6462d33e0464',
+        ]
         for (const id of ids) {
             const owners = Object.entries(CHAT_HISTORY_SOURCES).filter(([, s]) => s?.owns(id))
             expect(owners.length).toBe(1)

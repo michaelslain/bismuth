@@ -12,6 +12,13 @@ Run `bismuth backends` for the live version of the table below on your machine. 
 bismuth backends
 ```
 
+Bismuth finds an agent's binary on your `PATH`, then in the usual install directories (Homebrew, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, nvm's Node versions), then in a desktop app that bundles one:
+
+- the `codex` inside the ChatGPT app, at `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`;
+- the Claude Code the Claude app downloads, at `~/Library/Application Support/Claude/claude-code/<version>/<build>/claude.app/Contents/MacOS/claude`, newest version first, once its download is complete.
+
+A CLI you installed yourself (npm, Homebrew, the Claude Code installer) wins over a bundled copy, so the Claude app alone is enough to run Claude Code chats.
+
 ## Which backend should I use?
 
 Use Claude Code unless you have a reason not to. It is the default, the most deeply integrated, and the only backend that covers every surface and can enforce a vault's [visibility](../vault/visibility.md) restrictions.
@@ -62,7 +69,7 @@ The flags are separate where the behaviors differ:
 
 - `permissionPrompts` means the backend can raise a live approval request. `permissionModes` means a mode picker is drivable. An ACP backend can prompt but has no mode to switch, so the picker stays hidden.
 - `agents` means the backend has selectable primary agents (opencode's `build` and `plan`). The chat shows an agent word and Shift+Tab cycles it; the backend implements `setAgent` exactly when the flag is set, and `catalogParity.test.ts` pins the pair.
-- `sessionPicker` and `resume` are separate. Codex resumes a conversation per tab but exposes no cross-session list, so it gets resume without the picker. A backend's `sessionPicker` is `true` exactly when `CHAT_HISTORY_SOURCES` (`core/src/chatProviders/chatHistorySources.ts`) lists its chats; Claude Code and opencode do.
+- `sessionPicker` and `resume` are separate: an ACP backend resumes a conversation per tab but exposes no cross-session list, so it gets resume without the picker. A backend's `sessionPicker` is `true` exactly when `CHAT_HISTORY_SOURCES` (`core/src/chatProviders/chatHistorySources.ts`) lists its chats; Claude Code, opencode and Codex do.
 - Every chat backend sends the same standing instructions (`chatInstructions.ts`: the rendering note, the line-citation note, and in a vault the daemon's name and the `bismuth` CLI note), each through its own channel. `core/test/chatProviders/backendContract.test.ts` checks every backend in the catalog for those instructions, for Bismuth's MCP when it speaks MCP, for a history source matching `sessionPicker`, and for window sizing when it runs local models; a backend added to the catalog fails it until it is wired.
 - `midTurnMessages` decides where a message sent during a reply waits. Claude Code reads it into the running turn, so the client sends it at once; every other backend runs one turn per message, so the client holds it until the turn's `done`.
 - `computerUse` gates no control. `core/src/chat.ts` reads it only to pass `--chrome` when it spawns a Claude Code session.
@@ -103,6 +110,7 @@ Every driver emits an error code for it (`no-claude`, `no-opencode`, or `no-bina
 ### The catalog
 
 `core/src/agentBackends/catalog.ts` holds one `BackendDescriptor` per backend: id, display label, the binary to resolve on PATH, an install hint, an optional login command, and a `BackendCapabilities` object. The file has zero imports by design.
+The binary resolves through `whichBinary` (`core/src/claudeWhich.ts`), against `claudeLookupPath`: your `PATH`, the install directories, then `appBundledBinDirs()`. The daemon keeps its own copy of the list (`daemon/src/lib/childEnv.ts`), and the first-run intro's `detect_agents` Tauri command searches the same directories.
 The server's chat router, the `.settings` schema and the frontend all read it, including the iPad and browser bundle where nothing may statically pull in Bun or `node:fs` ([mobile](../mobile/overview.md)). Anything effectful (resolving a binary, spawning it, registering MCP) lives elsewhere.
 
 - The `chat.provider` enum in `.settings` and its documentation string are generated from `BACKEND_IDS`, and `BackendId` derives from the same array. Adding a backend is one array entry plus one descriptor.
@@ -193,4 +201,4 @@ A flag, a payload field or a generated type that asserts a capability should fai
 - Do not trust generated types over the running server: opencode's SDK types disagree with its server on the delta and permission events, so those events are read as untyped JSON.
 - A flag nobody reads asserts nothing: `visibilityGate` has real consumers: `resolveDaemonBackend` and the chat router's `resolveVisibilityGate` branch on it.
 
-Source: `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/bismuthInstall.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/terminal.ts`, `core/src/relay.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/persona.ts`, `core/src/agentEnvFile.ts`, `core/src/agentCliNote.ts`, `app/src/chat/chatProvider.ts`, `app/src/chat/agentAvailability.ts`, `cli/src/commands/backends.ts`
+Source: `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/visibilityGate.ts`, `core/src/agentBackends/sandboxWrapper.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/bismuthInstall.ts`, `core/src/chatProviders/index.ts`, `core/src/chatProviders/backends.ts`, `core/src/terminal.ts`, `core/src/relay.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/persona.ts`, `core/src/agentEnvFile.ts`, `core/src/agentCliNote.ts`, `app/src/chat/chatProvider.ts`, `app/src/chat/agentAvailability.ts`, `cli/src/commands/backends.ts`, `core/src/claudeWhich.ts`

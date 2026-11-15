@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { claudeLookupPath, nvmBinPaths } from './claudeWhich.ts'
+import { appBundledBinDirs } from './childEnv.ts'
 
 // Bun.which returns the FIRST hit, so the order of this list is behavior. Pinned to the literal
 // list claudeLookupPath hardcoded before it was derived from childEnv's extraBinDirs().
@@ -15,6 +16,7 @@ test('claudeLookupPath keeps the original order and set (no ~/.bismuth/bin)', ()
             join(homedir(), '.bun', 'bin'),
             join(homedir(), '.local', 'bin'),
             ...nvmBinPaths(env),
+            ...appBundledBinDirs(),
         ].join(':'),
     )
     expect(claudeLookupPath(env)).not.toContain('.bismuth')
