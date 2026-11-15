@@ -102,6 +102,25 @@ describe('specForWikiEmbed', () => {
         })
         expect(specForWikiEmbed('Sketch.draw', asset)).toBeNull()
     })
+    test('a note embed keeps its #heading or #^block as the section to show', () => {
+        expect(specForWikiEmbed('Bread#Dough', asset)).toEqual({
+            kind: 'note',
+            target: 'Bread',
+            section: 'Dough',
+        })
+        expect(specForWikiEmbed('Bread#^bake-time', asset)).toEqual({
+            kind: 'note',
+            target: 'Bread',
+            section: '^bake-time',
+        })
+    })
+    test("a table's escaped pipe sizes an image like a bare one", () => {
+        expect(specForWikiEmbed('Engelbart.jpg\\|100', asset)).toMatchObject({
+            kind: 'image',
+            src: asset('Engelbart.jpg'),
+            width: 100,
+        })
+    })
 })
 
 describe('specForMarkdownImage', () => {

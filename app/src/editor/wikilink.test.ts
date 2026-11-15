@@ -342,3 +342,11 @@ test('wikilinkVisibleRange: a folder link reveals its name and slash', () => {
     // "[[Projects/Work/]]": inner starts at 2, "Work/" spans 11..16.
     expect(wikilinkVisibleRange('Projects/Work/', 0)).toEqual({ from: 11, to: 16 })
 })
+
+test('parseWikilink: a table-escaped `Note\\|Alias` targets Note and shows Alias', () => {
+    expect(parseWikilink('Note\\|Alias')).toEqual({
+        target: 'Note',
+        alias: 'Alias',
+        display: 'Alias',
+    })
+})

@@ -55,11 +55,11 @@ test('markdown links become wikilinks; urls and images untouched', () => {
     expect(run({ 'A.md': src, 'Other Note.md': '', 'sub/Other.md': '' }).out.get('A.md')).toBe('[[Other Note|t]] [[sub/Other#H|u]] [e](https://x.com/x.md) ![i](a.md)')
 })
 
-test('table rows needing a pipe are left with a decide item', () => {
+test('alias and markdown links in a table row are rewritten with an escaped pipe', () => {
     const files = { 'N.md': '---\naliases: [A]\n---\n', 'O.md': '', 'B.md': '| c |\n| [[A]] [t](O.md) |' }
     const r = run(files)
-    expect(r.out.get('B.md')).toBe(files['B.md'])
-    expect(r.items.filter(i => i.section === 'decide').length).toBe(2)
+    expect(r.out.get('B.md')).toBe('| c |\n| [[N\\|A]] [[O\\|t]] |')
+    expect(r.items.filter(i => i.section === 'decide').length).toBe(0)
 })
 
 test('fences and code spans stay byte-identical', () => {
@@ -84,12 +84,22 @@ test('a ./ or ../ markdown link is only ever note-relative', () => {
     expect(out.get('a/n.md')).toBe('[t](./Other.md)')
 })
 
-test('a wikilink ending in a backslash (escaped pipe in a table) is a decide item and stays unresolved', () => {
+test('a table link with an escaped pipe resolves and is left as written', () => {
     const files = { 'A.md': '| x |\n|---|\n| [[Note\\|Alias]] |', 'Note.md': '' }
     const { out, items } = run(files)
     expect(out.get('A.md')).toBe(files['A.md'])
-    expect(items.some(i => i.section === 'decide' && i.area === 'links' && i.detail.includes('backslash'))).toBe(true)
-    expect(unresolvedLinks(out, ['A.md', 'Note.md']).map(x => x.target)).toEqual(['Note\\'])
+    expect(items.some(i => i.section === 'decide')).toBe(false)
+    expect(unresolvedLinks(out, ['A.md', 'Note.md'])).toEqual([])
+})
+
+test('a table link rewritten keeps its escaped pipe', () => {
+    const { out } = run({ 'A.md': '| x |\n|---|\n| [[Note.md\\|Alias]] |', 'Note.md': '' })
+    expect(out.get('A.md')).toBe('| x |\n|---|\n| [[Note\\|Alias]] |')
+})
+
+test('a markdown link with text inside a table becomes a wikilink with an escaped pipe', () => {
+    const { out } = run({ 'A.md': '| x |\n|---|\n| [t](Note.md) |', 'Note.md': '' })
+    expect(out.get('A.md')).toBe('| x |\n|---|\n| [[Note\\|t]] |')
 })
 
 test('a pipe in markdown link text becomes a dash', () => {

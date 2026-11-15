@@ -46,6 +46,22 @@ The extension decides how an embed renders.
 
 `![[Other Note]]` transcludes a note. A name with an unrecognised extension (`![[foo.xyz]]`) is also tried as a note, and shows `not found: foo.xyz` if no such note exists.
 
+## Embed one section or block of a note
+
+A `#` after the note name embeds only part of it, and the embed's title reads `Note // part`:
+
+```markdown
+![[Bread#Dough]]
+![[Bread#Dough#Resting]]
+![[Bread#^bake-time]]
+```
+
+- `#Heading` shows that heading and everything under it, up to the next heading of the same or a higher level. The heading matches regardless of case and spacing.
+- `#Parent#Child` looks for `Child` inside the `Parent` section.
+- `#^id` shows the block marked `^id` at the end of its line: a paragraph, or a list item with the items nested under it. An `^id` alone on its own line marks the table, quote or list just above it, and one written straight after an embed (`![[photo.png]]^id`) marks that line.
+
+Block ids never show inside an embed. A heading or block the note does not have shows `section not found: Bread#Nope` instead of the whole note.
+
 ## How does each kind render?
 
 - Image. With no size it shows at its natural width, up to the editor width. An unsized embed in the middle of a line is capped at 1.4 em tall so it flows like an icon.
@@ -183,4 +199,4 @@ On the desktop app a native OS drop arrives as the `bismuth-native-drag` window 
 The folder under the cursor comes from the nearest `data-drop-folder` or `data-drop-root` attribute.
 A tree row dragged into a note uses `descriptorEmbedPath` and `embedFor` in `app/src/dnd/noteRef.ts`.
 
-Source: `app/src/editor/embedBlock.ts`, `app/src/editor/embedSpec.ts`, `app/src/editor/PdfEmbed.tsx`, `app/src/dropIntake.ts`, `app/src/fileTreeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dnd/noteRef.ts`, `app/src/attachmentPath.ts`, `core/src/files.ts`, `core/src/assetFetch.ts`, `core/src/routes/vault.ts`, `core/src/routes/context.ts`, `core/src/schema/settingsSchema.ts`
+Source: `app/src/editor/embedBlock.ts`, `app/src/editor/embedSpec.ts`, `core/src/noteSection.ts`, `app/src/editor/PdfEmbed.tsx`, `app/src/dropIntake.ts`, `app/src/fileTreeDrop.ts`, `app/src/nativeDropRouting.ts`, `app/src/dnd/noteRef.ts`, `app/src/attachmentPath.ts`, `core/src/files.ts`, `core/src/assetFetch.ts`, `core/src/routes/vault.ts`, `core/src/routes/context.ts`, `core/src/schema/settingsSchema.ts`

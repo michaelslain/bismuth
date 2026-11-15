@@ -25,6 +25,7 @@ export interface EmbedSpec {
     kind: EmbedKind
     src?: string // asset URL (media) — undefined for note transclusion
     target?: string // the raw target/basename (note transclusion + alt text)
+    section?: string // a note embed's `#Heading` or `#^block`: show only that part of the note
     page?: string // PDF fragment ("page=2") OR an html embed's URL fragment ("region=form"),
     //   carried onto `frame.src#…` so `![[viz.html#region=form]]` deep-links via location.hash
     width?: number
@@ -84,7 +85,7 @@ export function specForWikiEmbed(
     if (!target) return null
     const kind = kindForTarget(target)
     if (kind === null) return null // .draw — not embeddable
-    if (kind === 'note') return { kind, target }
+    if (kind === 'note') return heading ? { kind, target, section: heading } : { kind, target }
     const src = assetUrl(target) // backend resolves filename-first
     if (kind === 'image') return { kind, src, alt: target, ...parseSize(alias) }
     if (kind === 'pdf') return { kind, src, target, page: heading }

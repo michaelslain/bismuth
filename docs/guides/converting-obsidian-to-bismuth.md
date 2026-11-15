@@ -69,7 +69,7 @@ Open `<out>.conversion-report.md`, read `## Needs a decision`, and for each `###
 | Area | What lands here | Resolve in |
 |---|---|---|
 | `bases` | Multi-view bases that were split, a layout with no Bismuth equivalent, Obsidian-only functions, a base that does not parse, a base embed inside a list item | [bases.md](converting-obsidian-to-bismuth/bases.md#resolve-a-needs-a-decision-item) |
-| `links` | Alias links that are ambiguous, and links inside table rows, including `[[Note\|Alias]]` written in a table | [links-and-embeds.md](converting-obsidian-to-bismuth/links-and-embeds.md#resolve-a-needs-a-decision-item) |
+| `links` | Alias links that belong to several notes, and links that match several notes by case | [links-and-embeds.md](converting-obsidian-to-bismuth/links-and-embeds.md#resolve-a-needs-a-decision-item) |
 | `tasks`, `queries` | A task that did not round-trip, a ` ```tasks ` query with no translation or with filters that did not translate, Dataview and dataviewjs | [tasks.md](converting-obsidian-to-bismuth/tasks.md#resolve-a-needs-a-decision-item), [other-syntax.md](converting-obsidian-to-bismuth/other-syntax.md#resolve-a-needs-a-decision-item) |
 | `drawings` | Canvas files, canvas embeds and Excalidraw notes | [drawings-and-canvas.md](converting-obsidian-to-bismuth/drawings-and-canvas.md#resolve-a-needs-a-decision-item) |
 | `syntax`, `plugins` | Templater code, symbolic links, and community plugins the command does not know | [other-syntax.md](converting-obsidian-to-bismuth/other-syntax.md#resolve-a-needs-a-decision-item), [vault-and-settings.md](converting-obsidian-to-bismuth/vault-and-settings.md#resolve-a-needs-a-decision-item) |

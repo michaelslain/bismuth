@@ -2,10 +2,11 @@
 // wikilink away from notes already injected.
 import { memoryLinkIndex } from '@bismuth/memory'
 import type { MemoryNote } from '@bismuth/memory'
+import { splitWikilinkInner } from './wikilinkParts'
 
 /** Lowercase link target with alias, heading and `.md` removed. */
 const linkKey = (target: string): string =>
-    target.split('|')[0]!.split('#')[0]!.replace(/\.md$/i, '').trim().toLowerCase()
+    splitWikilinkInner(target).target.replace(/\.md$/i, '').trim().toLowerCase()
 
 const baseOf = (key: string): string => key.slice(key.lastIndexOf('/') + 1)
 

@@ -1,3 +1,5 @@
+import { splitWikilinkInner } from './wikilinkParts'
+
 /** Regex pattern to match wikilinks: [[target]], [[target|display]], [[target#anchor]].
  *  The negative lookbehind `(?<!!)` skips EMBEDS (`![[target]]`): an embed is a
  *  render-only directive (image/PDF/audio/video/note transclusion), not a graph
@@ -65,8 +67,8 @@ export function extractWikilinks(md: string): string[] {
     const targets = new Set<string>()
     for (const match of masked.matchAll(WIKILINK_REGEX)) {
         const raw = match[1]
-        // Extract the target, ignoring pipe (display text) and anchor (#hash)
-        const target = raw.split('|')[0].split('#')[0].trim()
+        // The target alone: no alias (`|` or a table's `\|`), no `#anchor`
+        const { target } = splitWikilinkInner(raw)
         if (target) targets.add(target)
     }
     return [...targets]

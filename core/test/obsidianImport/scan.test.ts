@@ -53,10 +53,9 @@ describe('scanUnconverted', () => {
         expect(r.map(i => i.section)).toEqual(['decide'])
         expect(r[0].detail).toContain('Excalidraw drawing shows as raw text; export an image from Obsidian')
     })
-    test('block refs, anchors, partial embeds are lossy', () => {
-        expect(one('see [[x#^abc]]\n').section).toBe('lossy')
-        expect(one('a paragraph ^abc\n').section).toBe('lossy')
-        expect(one('![[Note#Heading]]\n').section).toBe('lossy')
+    test('block links, block anchors and section embeds need no report', () => {
+        const text = 'see [[x#^abc]]\na paragraph ^abc\n![[Note#Heading]]\n![[Note#^abc]]\n'
+        expect(scanUnconverted(new Map([['n.md', text]]), ctx())).toHaveLength(0)
     })
     test('companion source beside a binary', () => {
         const r = scanUnconverted(new Map([['x.png.md', '']]), ctx(['x.png', 'x.png.md']))

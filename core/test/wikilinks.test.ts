@@ -186,3 +186,7 @@ test('stripCode blanks a 2.7 MB fenced block in under 30ms', () => {
     console.log('stripCode 2.7MB ms', ms.toFixed(1))
     expect(ms).toBeLessThan(30)
 })
+
+test("a table's escaped pipe `[[Note\\|Alias]]` links Note", () => {
+    expect(extractWikilinks('| a | [[Note\\|Alias]] |')).toEqual(['Note'])
+})

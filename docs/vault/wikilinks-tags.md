@@ -21,9 +21,11 @@ This note links to `Gamma` and `reading/Gamma` (the embed produces no link), and
 | Name | `[[My Note]]` | the note named `My Note`, anywhere in the vault |
 | Alias | `[[My Note\|shown text]]` | `My Note`; the editor shows `shown text` |
 | Heading | `[[My Note#Section]]` | `My Note`, opened scrolled to the `Section` heading |
+| Block | `[[My Note#^step-2]]` | `My Note`, opened with the block marked `^step-2` selected; a block is marked by ` ^step-2` at the end of its last line, which the editor hides until the caret reaches it |
 | Path | `[[reading/My Note]]` | exactly `reading/My Note.md` |
 | Line | `[[My Note#L12]]`, `[[My Note#L12-L18]]` | `My Note`, opened with line 12 (or lines 12 to 18) selected; shown as `My Note:12` or `My Note:12–18` |
 | Combined | `[[reading/My Note#Section\|Alias]]` | `reading/My Note`, heading and alias applied |
+| In a table | `[[My Note\\|shown text]]` | `My Note`, shown as `shown text`: inside a markdown table a bare `\|` ends the cell, so the alias pipe is written `\\|` |
 | Folder | `[[reading/Books/]]` | the folder `reading/Books`; clicking it shows the folder in the file tree |
 
 Anything between the brackets is allowed except `]`, so `[[2024-01-15]]`, `[[doc-v1.2.3]]` and `[[note@tag]]` are valid targets. An empty `[[]]` is ignored. In live preview the editor hides the brackets, the folder path and the heading, and shows the alias, or the bare name if there is none.

@@ -1,3 +1,4 @@
+import { splitWikilinkInner } from '../../../core/src/wikilinkParts'
 import { marked, type Token, type TokenizerAndRendererExtension } from 'marked'
 import { sanitizeHtml } from '../sanitizeHtml'
 import { MEMORY_REF_RE, memoryRefPath } from '../../../core/src/memoryRef'
@@ -307,8 +308,7 @@ export function renderMarkdown(src: string): string {
 const WIKILINK_RE = /(?<!!)\[\[([^\]\n]+?)\]\]/g
 function wikilinksToAnchors(src: string): string {
     return src.replace(WIKILINK_RE, (_m, inner: string) => {
-        const [rawTarget, alias] = inner.split('|')
-        const target = rawTarget.split('#')[0].trim()
+        const { target, alias } = splitWikilinkInner(inner)
         // A folder target (`Projects/Work/`) keeps its slash: it reveals the folder, never a note.
         const folder = target.length > 1 && target.endsWith('/')
         const name = folder ? `${target.slice(0, -1).split('/').pop()}/` : target.split('/').pop()

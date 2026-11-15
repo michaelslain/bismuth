@@ -1,5 +1,6 @@
 // Pure inline-markdown parser for a task description: wikilinks, [label](url) links, #tags,
 // **bold** and *italic*. Rendering lives in TaskText.tsx.
+import { splitWikilinkInner } from '../../../core/src/wikilinkParts'
 export type TaskInlineSegment =
     | { kind: 'text'; text: string }
     | { kind: 'wikilink'; target: string; label: string }
@@ -22,8 +23,8 @@ export function parseTaskInline(src: string): TaskInlineSegment[] {
     while ((m = INLINE_RE.exec(src))) {
         pushText(src.slice(last, m.index))
         if (m[1] !== undefined) {
-            const [target, display] = m[1].split('|')
-            const label = display ?? target.split('/').pop() ?? target
+            const { target, alias } = splitWikilinkInner(m[1])
+            const label = alias ?? target.split('/').pop() ?? target
             out.push({ kind: 'wikilink', target, label })
         } else if (m[2] !== undefined) {
             out.push({ kind: 'link', url: m[3], label: m[2] })

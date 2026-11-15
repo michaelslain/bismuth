@@ -20,6 +20,7 @@ import {
 } from '@codemirror/state'
 import { resolveNotePath, type NoteCandidate } from './wikilink'
 import { stripCode } from '../../../core/src/wikilinks'
+import { noteSection, stripBlockIds } from '../../../core/src/noteSection'
 import { api } from '../api'
 import { renderMarkdown } from '../bases/markdown'
 import { stripFrontmatter } from '../bases/cardBodySplit'
@@ -193,7 +194,7 @@ class EmbedWidget extends WidgetType {
             }
             if (this.resizable) this.makeResizable(wrap)
         } else if (s.kind === 'note') {
-            this.renderNote(wrap, s.target ?? '')
+            this.renderNote(wrap, s.target ?? '', s.section)
         } else {
             this.fail(wrap, `not found: ${s.target ?? s.src ?? ''}`)
         }
@@ -281,13 +282,16 @@ class EmbedWidget extends WidgetType {
     }
 
     /** Transclude a `.md` note: resolve filename-first, fetch, render its body markdown. */
-    private renderNote(wrap: HTMLElement, target: string): void {
+    /** A note transclusion: the whole note, or with `section` (`Heading` or `^block`) only that
+     *  part of it (noteSection.ts), the way Obsidian's `![[Note#Heading]]` shows. */
+    private renderNote(wrap: HTMLElement, target: string, section?: string): void {
         wrap.classList.add('cm-embed-note')
         const resolved = resolveNotePath(target, this.ctx.getNotes()) ?? target
         const path = resolved.endsWith('.md') ? resolved : `${resolved}.md`
         const title = document.createElement('div')
         title.className = 'cm-embed-note-title'
-        title.textContent = target.split('/').pop() ?? target
+        const name = target.split('/').pop() ?? target
+        title.textContent = section ? `${name} // ${section}` : name
         const bodyEl = document.createElement('div')
         bodyEl.className = 'cm-embed-note-body'
         bodyEl.textContent = '…'
@@ -300,7 +304,13 @@ class EmbedWidget extends WidgetType {
                     this.fail(wrap, `note not found: ${target}`)
                     return
                 }
-                bodyEl.innerHTML = renderMarkdown(stripFrontmatter(text)) // trusted vault content
+                const body = stripFrontmatter(text)
+                const part = section ? noteSection(body, section) : stripBlockIds(body)
+                if (part === null) {
+                    this.fail(wrap, `section not found: ${target}#${section}`)
+                    return
+                }
+                bodyEl.innerHTML = renderMarkdown(part) // trusted vault content
                 // its tables are the typed Bismuth table; destroy() disposes them like a Solid face
                 ;(wrap as HTMLElement & { __dispose?: () => void }).__dispose =
                     typeTables(bodyEl)
@@ -565,6 +575,14 @@ const embedTheme = EditorView.theme({
         color: 'color-mix(in srgb, var(--fg) 45%, transparent)',
         margin: '0.4em 0 0',
     },
+    // The body's first and last blocks sit one fixed step from the title and the bottom edge,
+    // whatever they are: a list's own margin is larger than a paragraph's, and a one-item embed
+    // (`![[Note#^id]]`) otherwise floats in empty space.
+    // Rendered HTML, not editor text: CodeMirror's inherited `white-space: break-spaces` would
+    // draw every newline between the rendered blocks as an extra blank line.
+    '.cm-embed-note-body': { 'white-space': 'normal' },
+    '.cm-embed-note-body > :first-child': { 'margin-top': '0.6em' },
+    '.cm-embed-note-body > :last-child': { 'margin-bottom': '0.8em' },
     '.cm-embed-error': {
         'font-family': MONO_FONT,
         'font-size': '0.85em',

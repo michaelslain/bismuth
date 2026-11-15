@@ -122,6 +122,8 @@ export function tokenizeInline(src: string): InlineSeg[] {
                 flush()
                 const inner = src.slice(i + 2, close)
                 const bar = inner.indexOf('|')
+                // A table's `[[Note\|Alias]]`: the backslash escapes the pipe, not the target.
+                const left = bar !== -1 && inner[bar - 1] === '\\' ? bar - 1 : bar
                 segs.push(
                     bar === -1
                         ? {
@@ -131,7 +133,7 @@ export function tokenizeInline(src: string): InlineSeg[] {
                           }
                         : {
                               type: 'wikilink',
-                              target: inner.slice(0, bar).trim(),
+                              target: inner.slice(0, left).trim(),
                               alias: inner.slice(bar + 1).trim(),
                           },
                 )

@@ -2,6 +2,7 @@
 // filter, the "▾ N completed" fold and the link-click handler. Plain CodeMirror — no Solid — so this
 // is the plain-DOM-library side of the seam and CardEditor.tsx is left with lifecycle, autosave and
 // reconcile. Its classes (`bismuth-card-*`) are global by necessity: CodeMirror builds its own DOM.
+import { splitWikilinkInner } from '../../../core/src/wikilinkParts'
 import {
     EditorView,
     Decoration,
@@ -317,7 +318,7 @@ export function navigateOnLinkClick(e: MouseEvent, view: EditorView): boolean {
     for (const m of line.text.matchAll(/(?<!!)\[\[([^\]]+?)\]\]/g)) {
         const s = line.from + (m.index ?? 0)
         if (pos >= s && pos <= s + m[0].length) {
-            const target = m[1].split('|')[0].split('#')[0].trim()
+            const { target } = splitWikilinkInner(m[1])
             openNote(target.endsWith('.md') ? target : `${target}.md`)
             return true
         }

@@ -6,6 +6,7 @@ import { matchTriggerPrefix } from './prefixMatch'
 import { pickByBase } from '../../../core/src/linkTarget'
 import { isBasePath } from '../../../core/src/bases/baseFile'
 import { pickRefPath } from '../../../core/src/bases/sourceSpec'
+import { splitWikilinkInner } from '../../../core/src/wikilinkParts'
 
 // `label` is the basename (what gets inserted + shown in autocomplete); `path` is the
 // note's real vault path (the graph node id), needed to resolve a clicked wikilink to
@@ -35,14 +36,8 @@ export function parseWikilink(inner: string): {
     heading?: string
     display: string
 } {
-    const pipe = inner.indexOf('|')
-    const alias = pipe === -1 ? undefined : inner.slice(pipe + 1).trim()
-    const beforeAlias = pipe === -1 ? inner : inner.slice(0, pipe)
-    const hash = beforeAlias.indexOf('#')
-    const heading = hash === -1 ? undefined : beforeAlias.slice(hash + 1).trim()
-    const target = (
-        hash === -1 ? beforeAlias : beforeAlias.slice(0, hash)
-    ).trim()
+    // A table's `[[Note\|Alias]]` splits like `[[Note|Alias]]` (wikilinkParts.ts).
+    const { target, alias, anchor: heading } = splitWikilinkInner(inner)
     const basename = linkBasename(target)
     const result: {
         target: string

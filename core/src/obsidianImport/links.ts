@@ -1,4 +1,5 @@
 import { parseFrontmatter } from '../frontmatter'
+import { splitWikilinkInner } from '../wikilinkParts'
 import { stripCode } from '../wikilinks'
 import { parseList } from '../schema/coerce'
 import type { ImportContext, ReportItem, StepResult, VaultText } from './types'
@@ -97,7 +98,9 @@ export function rewriteLinks(files: VaultText, ctx: ImportContext): StepResult {
         for (const m of masked.matchAll(WIKILINK)) {
             const raw = m[1]
             const bar = raw.indexOf('|')
-            const left = bar === -1 ? raw : raw.slice(0, bar)
+            // `[[Note\|Alias]]`, Obsidian's form inside a table, keeps its escaped pipe when rewritten.
+            const escaped = bar > 0 && raw[bar - 1] === '\\'
+            const left = bar === -1 ? raw : raw.slice(0, escaped ? bar - 1 : bar)
             const display = bar === -1 ? null : raw.slice(bar + 1)
             const hash = left.indexOf('#')
             const target = (hash === -1 ? left : left.slice(0, hash)).trim()
@@ -105,15 +108,13 @@ export function rewriteLinks(files: VaultText, ctx: ImportContext): StepResult {
             if (!target || /\.base$/i.test(target)) continue
             const at = m.index!
             const quote = m[0]
+            const table = escaped || inTable(text, at)
             const emit = (t: string, d: string | null) => {
-                reps.push({ at, len: quote.length, to: `[[${t}${anchor}${d === null ? '' : '|' + d}]]` })
+                const pipe = table ? '\\|' : '|'
+                reps.push({ at, len: quote.length, to: `[[${t}${anchor}${d === null ? '' : pipe + d}]]` })
                 converted++
             }
 
-            if (target.endsWith('\\')) {
-                decide(`wikilink inside a table row ends in a backslash (an escaped pipe), left as ${quote}`)
-                continue
-            }
             if (/\.md$/i.test(target)) {
                 emit(noExt(target), display)
                 continue
@@ -128,8 +129,6 @@ export function rewriteLinks(files: VaultText, ctx: ImportContext): StepResult {
                     continue
                 } else if (owners.length > 1) {
                     decide(`alias "${target}" belongs to ${owners.length} notes, left as ${quote}`)
-                } else if (inTable(text, at)) {
-                    decide(`alias link in a table row needs a pipe, left as ${quote}`)
                 } else {
                     emit(nameFor(owners[0], notes), display ?? (anchor ? null : target))
                 }
@@ -167,11 +166,8 @@ export function rewriteLinks(files: VaultText, ctx: ImportContext): StepResult {
             if (target === null) continue
             const text0 = m[1].replace(/\|/g, '-')
             const at = m.index!
-            if (text0 && inTable(text, at)) {
-                decide(`markdown link in a table row needs a pipe, left as ${m[0]}`)
-                continue
-            }
-            reps.push({ at, len: m[0].length, to: `[[${target}${anchor}${text0 ? '|' + text0 : ''}]]` })
+            const pipe = inTable(text, m.index!) ? '\\|' : '|'
+            reps.push({ at, len: m[0].length, to: `[[${target}${anchor}${text0 ? pipe + text0 : ''}]]` })
             converted++
         }
 
@@ -192,7 +188,7 @@ export function unresolvedLinks(files: VaultText, allPaths: string[]): Array<{ p
         if (!/\.md$/i.test(path) || text.indexOf('[[') === -1) continue
         const seen = new Set<string>()
         for (const m of stripCode(text).matchAll(/\[\[([^\]]+?)\]\]/g)) {
-            const target = m[1].split('|')[0].split('#')[0].trim()
+            const { target } = splitWikilinkInner(m[1])
             if (!target || seen.has(target)) continue
             seen.add(target)
             const ok =

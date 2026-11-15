@@ -317,7 +317,7 @@ const embedWiki = makeAtom({
         }
         const span = chip(
             'bismuth-embed',
-            '▦ ' + (inner.split('|')[0].split('#')[0] || inner),
+            '▦ ' + (parseWikilink(inner).target || inner),
         )
         span.title = m[0]
         return span

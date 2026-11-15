@@ -525,6 +525,23 @@ function pushWikilinks(
     }
 }
 
+/** A block id at the end of a line: ` ^id`, `![[x.png]]^id`, or `^id` alone. Matches
+ *  core/src/noteSection.ts's rule. The spaces before it hide with it. */
+const BLOCK_ID_RE = /(?:^|\s+|(?<=[\])]))\^[A-Za-z0-9-]+\s*$/
+function pushBlockId(
+    deco: Range<Decoration>[],
+    text: string,
+    lineFrom: number,
+    revealsRange: (from: number, to: number) => boolean,
+) {
+    if (text.indexOf('^') === -1) return
+    const m = BLOCK_ID_RE.exec(text)
+    if (!m || m[0].length === 0) return
+    const from = lineFrom + m.index
+    const to = lineFrom + text.length
+    deco.push((revealsRange(from, to) ? syntaxMark : hide).range(from, to))
+}
+
 /** Style each markdown link `[text](url)` on a line — showing the link text and hiding the
  *  `[`, `](url)` syntax off the cursor line (revealed in dim Monaspace when the caret touches
  *  it). Used for both body and frontmatter lines so links in properties read as links.
@@ -1226,6 +1243,10 @@ function buildDecorations(
             // body #hashtags — tint TEAL. Skipped on heading lines so heading "#"s
             // are never tinted (frontmatter/code/table lines already `continue` above).
             if (!hm) pushTags(deco, text, line.from)
+
+            // A block id (` ^id` at the line's end, noteSection.ts) marks the block for
+            // `[[Note#^id]]` links and embeds; it hides until the caret touches it.
+            pushBlockId(deco, text, line.from, revealsRange)
 
             // `\$` / `\#` escapes: hide the backslash so a literal dollar or hash reads plain.
             pushSymbolEscapes(

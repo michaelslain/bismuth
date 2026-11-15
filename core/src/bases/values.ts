@@ -1,3 +1,5 @@
+import { splitWikilinkInner } from '../wikilinkParts'
+
 export interface Link {
     __link: true
     path: string
@@ -22,8 +24,8 @@ export function truthy(v: unknown): boolean {
  *  way a frontmatter property holds a link; null for any other text. */
 function wikilinkTarget(v: unknown): string | null {
     if (typeof v !== 'string') return null
-    const m = /^\s*\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]\s*$/.exec(v)
-    return m ? m[1].trim() : null
+    const m = /^\s*\[\[([^\]]+)\]\]\s*$/.exec(v)
+    return m ? splitWikilinkInner(m[1]).target || null : null
 }
 
 /** Two link targets name the same note: equal, or equal once the folder and `.md` are dropped,

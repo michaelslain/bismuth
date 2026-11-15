@@ -3436,6 +3436,41 @@ export const OpensAtLineAnchor: Story = {
     },
 }
 
+const BLOCK_NOTE = [
+    '# Bread',
+    '',
+    ...Array.from({ length: 30 }, (_, i) => `Filler paragraph ${i + 1}.\n`),
+    'Bake at 230 degrees',
+    'for forty minutes. ^bake-time',
+    '',
+    'Cool on a rack.',
+].join('\n')
+
+/** A block link (`[[Bread#^bake-time]]`) opens the note with the block marked `^bake-time`
+ *  selected and scrolled into view, through the same pending-anchor channel a heading link uses. */
+export const OpensAtBlockAnchor: Story = {
+    render: () => {
+        setPendingAnchor('Bread.md', '^bake-time')
+        return inkedEditor('Bread.md', BLOCK_NOTE)()
+    },
+    play: async ({ canvasElement }) => {
+        const view = viewOf(canvasElement)
+        await waitFor(() =>
+            expect(view.state.selection.main.empty).toBe(false),
+        )
+        const sel = view.state.selection.main
+        await expect(view.state.sliceDoc(sel.from, sel.to)).toBe(
+            'Bake at 230 degrees\nfor forty minutes. ^bake-time',
+        )
+        await waitFor(() => {
+            const scroller = scrollerOf(canvasElement).getBoundingClientRect()
+            const top = view.coordsAtPos(sel.from)!
+            expect(top.top).toBeGreaterThanOrEqual(scroller.top)
+            expect(top.bottom).toBeLessThanOrEqual(scroller.bottom)
+        })
+    },
+}
+
 /** Entering draw mode drops the text selection: the range collapses to its head, so exiting
  *  puts the caret where the selection ended and nothing stays highlighted under the ink. */
 export const DrawModeClearsSelection: Story = {
