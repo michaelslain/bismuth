@@ -635,19 +635,20 @@ test.if(HAS_ZSH2 && existsSync(SHIM_ZDOTDIR2))(
         const home = tmp()
         const binDir = tmp()
         const relayDir = tmp()
-        makeStubBin(binDir, 'goose') // named exactly "goose" so `whence -p goose` finds it
+        // not named goose: a real goose on the login PATH would answer `whence -p` instead of the stub
+        makeStubBin(binDir, 'bismuth-stub-agent')
 
         const specs: ShimSpec[] = [
-            { id: 'goose', binary: 'goose', realPath: null, mode: 'hooks' },
+            { id: 'goose', binary: 'bismuth-stub-agent', realPath: null, mode: 'hooks' },
         ]
 
         const proc = Bun.spawn(
-            ['/bin/zsh', ...loginShellArgs(), '-i', '-c', 'goose hi'],
+            ['/bin/zsh', ...loginShellArgs(), '-i', '-c', 'bismuth-stub-agent hi'],
             {
                 env: {
                     HOME: home,
                     ZDOTDIR: SHIM_ZDOTDIR2,
-                    // binDir (holding the "goose" stub) is on PATH so whence -p can find it AFTER rc loads —
+                    // binDir (holding the stub) is on PATH so whence -p can find it AFTER rc loads —
                     // core's own pre-resolution (realPath: null above) deliberately couldn't.
                     PATH: `${binDir}:/usr/bin:/bin`,
                     TERM: 'dumb',
