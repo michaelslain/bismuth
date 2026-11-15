@@ -1,9 +1,6 @@
-// The wire shape for dragging a task chip to another day (native HTML5 drag-and-drop), and for
-// naming which row a reschedule (drag OR Alt+arrow) rewrites. Pure — no DOM, no framework — so
-// TaskChip (the drag source) and the day-cell drop targets (MonthView.tsx, TaskAllDayStrip.tsx)
-// share ONE definition of "which row, which field" instead of each hand-rolling its own shape,
-// which is exactly how a source and a target drift apart.
-export const TASK_DRAG_MIME = 'application/x-bismuth-task'
+// Which row, and which date field, a reschedule rewrites — a chip dragged to another day
+// (taskPointerDrag.ts) or moved with Alt+arrows. Pure, so the drag source (TaskChip), the day-cell
+// drop targets (MonthCell, AllDayRow) and the writer share ONE definition of the shape.
 
 /** Identifies one writable task row plus the date field a reschedule must rewrite. Exactly one
  *  of `line`/`index` is present: `line` for a markdown checkbox line (`POST /tasks/reschedule`
@@ -14,43 +11,4 @@ export interface TaskRowRef {
     field: string
     line?: number
     index?: number
-}
-
-/** @deprecated alias of `TaskRowRef` — kept so existing imports of the drag payload's shape
- *  keep working; new code should name `TaskRowRef` directly. */
-export type TaskDragPayload = TaskRowRef
-
-export function encodeTaskDrag(p: TaskRowRef): string {
-    return JSON.stringify(p)
-}
-
-/** Parses a drag payload, or null when it is missing/malformed/foreign — a drop target must
- *  never assume a `dragover` it accepted is one of OUR chips; some other draggable (a file
- *  tree row, browser text selection) can land on the same element. */
-export function decodeTaskDrag(raw: string): TaskRowRef | null {
-    if (!raw) return null
-    let v: unknown
-    try {
-        v = JSON.parse(raw)
-    } catch {
-        return null
-    }
-    if (
-        v &&
-        typeof v === 'object' &&
-        typeof (v as TaskRowRef).path === 'string' &&
-        typeof (v as TaskRowRef).field === 'string' &&
-        (typeof (v as TaskRowRef).line === 'number' ||
-            typeof (v as TaskRowRef).index === 'number')
-    )
-        return v as TaskRowRef
-    return null
-}
-
-/** The one drop-handler body every task drop target shares: claim the event, then read our
- *  payload out of it. Null for a foreign drag (a file-tree row, a text selection). */
-export function readTaskDrop(e: DragEvent): TaskRowRef | null {
-    e.preventDefault()
-    const raw = e.dataTransfer?.getData(TASK_DRAG_MIME)
-    return raw ? decodeTaskDrag(raw) : null
 }

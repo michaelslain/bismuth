@@ -41,6 +41,18 @@ function task(
     }
 }
 
+/** Does a pointer drag on `chip` lift it (the chip marks itself `data-dragging` and a ghost
+ *  follows)? Presses, moves well past the threshold, reads, then releases off every day. */
+function dragLifts(chip: HTMLElement): boolean {
+    const r = chip.getBoundingClientRect()
+    const off = { x: r.right + 60, y: r.bottom + 60 }
+    chip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, button: 0, clientX: r.left + 4, clientY: r.top + 4 }))
+    window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, buttons: 1, clientX: off.x, clientY: off.y }))
+    const lifted = chip.hasAttribute('data-dragging')
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: off.x, clientY: off.y }))
+    return lifted
+}
+
 /** A resolved task, carrying the RAW `statusChar` every real row has (taskToRow always sets
  *  it) — `x` for done, `-` for cancelled. `placeRows` never carries a resolved row forward
  *  (only unfinished ones roll onto today), so `late` is always 0 here. */
@@ -613,7 +625,7 @@ export const RightClickOpensStatusMenu: Story = {
     },
 }
 
-/** `draggable` gates on `isTaskLine` (taskPlacement.ts) — whether the row resolves BOTH a real
+/** Dragging gates on `isTaskLine` (taskPlacement.ts) — whether the row resolves BOTH a real
  *  markdown line (`note.line`) and a placement field — a self-owned base row (no `source:`, so
  *  no `line`) has neither and must not be draggable, since there is no "source markdown line"
  *  for a drop to rewrite. The SAME predicate also gates the marker's toggle/status-menu — see
@@ -644,12 +656,10 @@ export const DraggableOnlyWhenSourced: Story = {
         const titles = canvasElement.querySelectorAll<HTMLElement>(
             '[data-testid="task-chip-title"]',
         )
-        const sourcedChip = titles[0].closest('div')!
-        const selfOwnedChip = titles[1].closest('div')!
-        expect(sourcedChip.getAttribute('draggable')).toBe('true')
-        // dom-expressions may either write "false" or drop the attribute entirely for a
-        // false boolean prop — either reading means "not draggable", so only "true" counts.
-        expect(selfOwnedChip.getAttribute('draggable')).not.toBe('true')
+        const sourcedChip = titles[0].closest<HTMLElement>('[role="button"]')!
+        const selfOwnedChip = titles[1].closest<HTMLElement>('[role="button"]')!
+        expect(dragLifts(sourcedChip)).toBe(true)
+        expect(dragLifts(selfOwnedChip)).toBe(false)
     },
 }
 
@@ -758,8 +768,8 @@ export const MarkerInteractiveForStoredRow: Story = {
         await userEvent.click(marker)
         expect(calls).toEqual(['toggled'])
         // draggable too — the same isWritableTask gate covers drag as well as the marker.
-        const chip = marker.closest('div')!
-        expect(chip.getAttribute('draggable')).toBe('true')
+        const chip = marker.closest<HTMLElement>('[role="button"]')!
+        expect(dragLifts(chip)).toBe(true)
     },
 }
 

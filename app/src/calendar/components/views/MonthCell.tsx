@@ -1,6 +1,6 @@
 import type { Component, JSX } from 'solid-js'
 import type { TaskRowRef } from '../../taskDrag'
-import { readTaskDrop } from '../../taskDrag'
+import { onTaskDrop, taskDragOver, TASK_DROP_ATTR } from '../../taskPointerDrag'
 import AsciiCellEdges from '../../../ui/ascii/AsciiCellEdges'
 import type { AsciiEdge } from '../../../ui/ascii/AsciiCellEdges'
 import DayNumber from '../DayNumber'
@@ -40,19 +40,10 @@ const MonthCell: Component<MonthCellProps> = props => {
         <div
             class={`${styles.cell} ${props.class ?? ''}`.trim()}
             data-testid="month-cell"
+            {...{ [TASK_DROP_ATTR]: props.onDropTask ? props.date : undefined }}
+            data-task-over={props.onDropTask && taskDragOver() === props.date ? '' : undefined}
+            ref={el => onTaskDrop(el, (ref, date) => props.onDropTask?.(ref, date))}
             onClick={() => props.onOpen()}
-            onDragOver={e => {
-                // Only a tasks-register cell accepts a drop — and must preventDefault or the browser
-                // never fires `drop` at all.
-                if (!props.onDropTask) return
-                e.preventDefault()
-                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-            }}
-            onDrop={e => {
-                if (!props.onDropTask) return
-                const ref = readTaskDrop(e)
-                if (ref) props.onDropTask(ref, props.date)
-            }}
         >
             <DayNumber
                 day={props.day}

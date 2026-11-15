@@ -8,7 +8,7 @@ import { createSignal, onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { settings } from '../../state'
-import { encodeTaskDrag, TASK_DRAG_MIME } from '../../taskDrag'
+import { dragTo, releaseAt } from '../../../ui/_pointerDrag'
 import type { JSX } from 'solid-js'
 import { MonthView } from './MonthView'
 import { EventStore, MemoryBackend } from '../../EventStore'
@@ -760,19 +760,31 @@ export const WeekStartsOnMonday: Story = {
     },
 }
 
-/** Dropping a task chip's drag payload on a day cell reschedules it to THAT day: the view hands
- *  the parsed payload and the cell's date to `onRescheduleTask`. State is a real signal. */
-export const DropReschedulesToTheCellDay: Story = {
+/** Dragging a task chip onto another day reschedules it to THAT day, on pointer events (HTML5
+ *  drag-and-drop never reaches the app's WKWebView). Try it: drag `water plants` from the 15th to
+ *  any day — mid-drag a ghost follows the cursor and the day under it wears the accent ring; the
+ *  drop moves the chip there, and the readout names the write. State is a real signal. */
+export const DragRescheduleToAnotherDay: Story = {
     render: () => {
         seedCalendarState({ date: new Date(2026, 8, 15), events: [] })
-        const [moved, setMoved] = createSignal('nothing')
+        const [day, setDay] = createSignal('2026-09-15')
+        const [moved, setMoved] = createSignal('nothing yet')
+        const placed = () => {
+            const t = placedTask('water plants', day(), 0)
+            t.row.note.line = 4
+            t.field = 'due'
+            return new Map([[day(), [t]]])
+        }
         return (
             <div style={{ height: '520px' }}>
                 <CalendarFrame>
                     <MonthView
                         store={new EventStore(new MemoryBackend())}
-                        placed={new Map()}
-                        onRescheduleTask={(ref, date) => setMoved(`${ref.path}:${ref.line}->${date}`)}
+                        placed={placed()}
+                        onRescheduleTask={(ref, date) => {
+                            setMoved(`${ref.path}:${ref.line}->${date}`)
+                            setDay(date)
+                        }}
                     />
                 </CalendarFrame>
                 <output data-testid="moved">{moved()}</output>
@@ -781,10 +793,18 @@ export const DropReschedulesToTheCellDay: Story = {
     },
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        const cell = c.getAllByTestId('month-cell').find(el => el.textContent?.trim() === '20')!
-        const dataTransfer = new DataTransfer()
-        dataTransfer.setData(TASK_DRAG_MIME, encodeTaskDrag({ path: 'todo.md', line: 4, field: 'due' }))
-        cell.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }))
-        await waitFor(() => expect(c.getByTestId('moved').textContent).toBe('todo.md:4->2026-09-20'))
+        const cellOf = (n: string) =>
+            c.getAllByTestId('month-cell').find(el => el.querySelector('[class*="number"]')?.textContent?.trim() === n)!
+        const chip = c.getByRole('button', { name: /water plants/ })
+        const target = cellOf('20')
+        const at = dragTo(chip, target)
+        await waitFor(() => expect(target.hasAttribute('data-task-over')).toBe(true))
+        expect(document.body.textContent).toContain('water plants')
+        releaseAt(at)
+        await waitFor(() => expect(c.getByTestId('moved').textContent).toBe('tasks.md:4->2026-09-20'))
+        await waitFor(() => expect(cellOf('20').textContent).toContain('water plants'))
+        expect(target.hasAttribute('data-task-over')).toBe(false)
+        // the drop did not also open the 20th's composer
+        expect(canvasElement.querySelector('[data-testid="task-cell-composer-input"]')).toBeNull()
     },
 }

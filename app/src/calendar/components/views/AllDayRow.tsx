@@ -1,6 +1,8 @@
 import { For, Show, type Component, type JSX } from 'solid-js'
 import { todayISO } from '../../../../../core/src/dates'
 import AsciiCellEdges from '../../../ui/ascii/AsciiCellEdges'
+import type { TaskRowRef } from '../../taskDrag'
+import { onTaskDrop, taskDragOver, TASK_DROP_ATTR } from '../../taskPointerDrag'
 import DayGutter from './DayGutter'
 import styles from './AllDayRow.module.css'
 
@@ -17,8 +19,8 @@ export type AllDayRowProps = {
     /** Paint each cell's `AsciiCellEdges` backdrop ring — for a row inside a sticky header (TimeGrid's
      *  all-day row), so content scrolling beneath never shows through the glyph overhang. */
     backdrop?: boolean
-    onCellDragOver?: (e: DragEvent, date: string) => void
-    onCellDrop?: (e: DragEvent, date: string) => void
+    /** Makes every cell a drop target for a dragged task chip (the tasks register). */
+    onDropTask?: (ref: TaskRowRef, date: string) => void
     class?: string
 }
 
@@ -36,8 +38,9 @@ const AllDayRow: Component<AllDayRowProps> = props => (
                     <div
                         class={styles.cell}
                         data-testid="allday-cell"
-                        onDragOver={e => props.onCellDragOver?.(e, ds)}
-                        onDrop={e => props.onCellDrop?.(e, ds)}
+                        {...{ [TASK_DROP_ATTR]: props.onDropTask ? ds : undefined }}
+                        data-task-over={props.onDropTask && taskDragOver() === ds ? '' : undefined}
+                        ref={el => onTaskDrop(el, (ref, date) => props.onDropTask?.(ref, date))}
                     >
                         <div class={styles.content}>
                             {props.cell(ds)}

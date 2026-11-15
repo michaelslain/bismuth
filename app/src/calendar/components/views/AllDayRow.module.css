@@ -20,3 +20,6 @@
    it must grow, so its wrapper dissolves. */
 .content { max-height: calc(var(--row-h) * 6); overflow: hidden auto; overscroll-behavior: contain; }
 .row.fill .content { display: contents; }
+
+/* The day a dragged task chip is over: the accent ring a drop target wears (CardFrame's dropTarget). */
+.cell[data-task-over] { outline: 1px solid var(--accent); outline-offset: -1px; }

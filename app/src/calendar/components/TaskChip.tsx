@@ -12,9 +12,11 @@
 // to the remounted chip; a toggle or status change keeps the view where it is.
 import type { Component } from 'solid-js'
 import { onMount, Show } from 'solid-js'
+import { Portal } from 'solid-js/web'
 import type { PlacedTask } from '../taskPlacement'
 import { isWritableTask, taskRowRef } from '../taskPlacement'
-import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
+import { startTaskDrag, taskDragGhost } from '../taskPointerDrag'
+import { DragGhost } from '../../shell/DragGhost'
 import { openTaskStatusMenu } from '../../taskStatusMenu'
 import { taskKey } from '../taskChipKeys'
 import { chipKeyAction } from '../../ui/chipKeys'
@@ -75,6 +77,10 @@ function checkStatus(char: string): TaskCheckStatus {
 const FOCUSABLE_SELECTOR =
     'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
 
+/** The drag ghost sits below and right of the cursor, so the day it is over stays visible. */
+const GHOST_OFFSET = 12
+const GHOST_WIDTH = 160
+
 function focusWasLost(): boolean {
     const active = document.activeElement
     if (!active || active === document.body) return true
@@ -114,7 +120,7 @@ const TaskChip: Component<TaskChipProps> = props => {
             class={[styles.chip, props.task.late > 0 ? styles.carried : '', props.class ?? '']
                 .filter(Boolean)
                 .join(' ')}
-            draggable={writable()}
+            data-dragging={taskDragGhost()?.key === key() ? '' : undefined}
             aria-keyshortcuts={
                 writable()
                     ? 'Enter Space Shift+F10 Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown'
@@ -142,12 +148,13 @@ const TaskChip: Component<TaskChipProps> = props => {
                 requestTaskFocus(key(), { scroll: true })
                 props.onReschedule?.(action.days)
             }}
-            onDragStart={e => {
-                const ref = taskRowRef(props.task)
-                if (!ref || !e.dataTransfer) return
-                e.dataTransfer.effectAllowed = 'move'
-                e.dataTransfer.setData(TASK_DRAG_MIME, encodeTaskDrag(ref))
+            onPointerDown={e => {
+                // Pointer events, not HTML5 drag-and-drop, which the app's WKWebView never delivers.
+                const ref = writable() ? taskRowRef(props.task) : null
+                if (ref) startTaskDrag(e, ref, key(), String(props.task.row.note.description ?? ''))
             }}
+            // A link inside the title would start the browser's own drag and cancel the pointer drag.
+            onDragStart={e => e.preventDefault()}
         >
             <TaskCheck
                 class={styles.marker}
@@ -186,6 +193,19 @@ const TaskChip: Component<TaskChipProps> = props => {
             >
                 <TaskText text={String(props.task.row.note.description ?? '')} />
             </Text>
+            <Show when={taskDragGhost()?.key === key() ? taskDragGhost() : null}>
+                {g => (
+                    <Portal>
+                        <DragGhost
+                            label={g().label}
+                            pane={false}
+                            x={g().x + GHOST_OFFSET}
+                            y={g().y + GHOST_OFFSET}
+                            width={GHOST_WIDTH}
+                        />
+                    </Portal>
+                )}
+            </Show>
             <Show when={props.task.late > 0}>
                 <Text
                     as="span"

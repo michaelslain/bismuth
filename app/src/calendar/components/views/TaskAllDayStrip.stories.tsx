@@ -5,7 +5,8 @@
 // `calendar/state.ts`.
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
+import { dragTo, releaseAt } from '../../../ui/_pointerDrag'
 import { TaskAllDayStrip } from './TaskAllDayStrip'
 import CalendarFrame from '../CalendarFrame'
 import type { PlacedTask } from '../../taskPlacement'
@@ -450,5 +451,61 @@ export const ComposerKeepsScroll: Story = {
         await userEvent.type(input, 'buy stamps{Enter}')
         await frame()
         expect(strip.scrollTop, 'committing scrolled the strip').toBe(before)
+    },
+}
+
+/** Dragging a task chip to another day of the week strip reschedules it there, on pointer events
+ *  (the app's WKWebView never delivers HTML5 drag-and-drop). Try it: drag `call the bank` to any
+ *  day — the day under the cursor wears the accent ring, the drop moves the chip, and the readout
+ *  names the write. State is a real signal; the drop opens no composer. */
+export const DragRescheduleToAnotherDay: Story = {
+    render: () => {
+        const [day, setDay] = createSignal('2026-09-09')
+        const [openDate, setOpenDate] = createSignal<string | null>(null)
+        const [moved, setMoved] = createSignal('nothing yet')
+        const placed = () => {
+            const t = task('call the bank', day(), 0)
+            t.row.note.line = 2
+            t.field = 'scheduled'
+            return new Map([[day(), [t]]])
+        }
+        return (
+            <CalendarFrame>
+                <TaskAllDayStrip
+                    dates={dates(7)}
+                    placed={placed()}
+                    onToggleTask={() => {}}
+                    onOpenTask={() => {}}
+                    onRescheduleTask={(ref, date) => {
+                        setMoved(`${ref.path}:${ref.line}->${date}`)
+                        setDay(date)
+                    }}
+                    compose={{
+                        date: openDate(),
+                        destination: 'General Tasks',
+                        targets: [],
+                        target: '',
+                        setTarget: () => {},
+                        open: d => setOpenDate(d),
+                        commit: () => setOpenDate(null),
+                        cancel: () => setOpenDate(null),
+                    }}
+                />
+                <output data-testid="moved">{moved()}</output>
+            </CalendarFrame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cells = () => [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="allday-cell"]')]
+        const chip = canvasElement.querySelector<HTMLElement>('[role="button"][aria-label^="call the bank"]')!
+        const target = cells()[3]
+        const at = dragTo(chip, target)
+        await waitFor(() => expect(target.hasAttribute('data-task-over')).toBe(true))
+        releaseAt(at)
+        await waitFor(() =>
+            expect(canvasElement.querySelector('[data-testid="moved"]')!.textContent).toBe('tasks.md:2->2026-09-12'),
+        )
+        await waitFor(() => expect(cells()[3].textContent).toContain('call the bank'))
+        expect(canvasElement.querySelector('[data-testid="task-cell-composer-input"]')).toBeNull()
     },
 }

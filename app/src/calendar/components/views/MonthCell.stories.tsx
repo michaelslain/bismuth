@@ -9,7 +9,7 @@ import { expect, fireEvent, within } from 'storybook/test'
 import MonthCell from './MonthCell'
 import Text from '../../../ui/Text'
 import { fitTiles, whenAsciiGlyphTilesInstalled } from '../../../ui/ascii/asciiGlyphTiles'
-import { encodeTaskDrag, TASK_DRAG_MIME } from '../../taskDrag'
+import { TASK_DROP_EVENT } from '../../taskPointerDrag'
 
 const meta = {
     title: 'Calendar/Views/MonthCell',
@@ -145,10 +145,12 @@ export const TasksCellAcceptsADrop: Story = {
     },
     play: async ({ canvasElement }) => {
         const c = within(canvasElement)
-        const dataTransfer = new DataTransfer()
-        dataTransfer.setData(TASK_DRAG_MIME, encodeTaskDrag({ path: 'todo.md', line: 3, field: 'due' }))
-        c.getByTestId('month-cell').dispatchEvent(
-            new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }),
+        const cell = c.getByTestId('month-cell')
+        expect(cell.getAttribute('data-task-drop')).toBe('2026-01-20')
+        cell.dispatchEvent(
+            new CustomEvent(TASK_DROP_EVENT, {
+                detail: { ref: { path: 'todo.md', line: 3, field: 'due' }, date: '2026-01-20' },
+            }),
         )
         expect(c.getByTestId('dropped').textContent).toBe('todo.md:3->2026-01-20')
     },
@@ -161,9 +163,8 @@ export const EventsCellIgnoresADrop: Story = {
         </Frame>
     ),
     play: async ({ canvasElement }) => {
+        // An events-register cell carries no drop date, so a dragged task chip never resolves to it.
         const cell = within(canvasElement).getByTestId('month-cell')
-        const ev = new Event('dragover', { bubbles: true, cancelable: true })
-        cell.dispatchEvent(ev)
-        expect(ev.defaultPrevented).toBe(false)
+        expect(cell.hasAttribute('data-task-drop')).toBe(false)
     },
 }

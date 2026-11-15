@@ -1,6 +1,5 @@
 import { createSignal, onCleanup, type Component } from 'solid-js'
 import { todayISO } from '../../../../../core/src/dates'
-import { readTaskDrop } from '../../taskDrag'
 import DayHeaderRow from './DayHeaderRow'
 import AllDayRow from './AllDayRow'
 import TaskDayCell from './TaskDayCell'
@@ -44,14 +43,7 @@ export const TaskAllDayStrip: Component<TaskAllDayStripProps> = props => {
                 fill
                 gutter={false}
                 dates={props.dates}
-                onCellDragOver={e => {
-                    e.preventDefault()
-                    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                }}
-                onCellDrop={(e, ds) => {
-                    const ref = readTaskDrop(e)
-                    if (ref) props.onRescheduleTask?.(ref, ds)
-                }}
+                onDropTask={(ref, ds) => props.onRescheduleTask?.(ref, ds)}
                 cell={ds => (
                     // AllDayRow owns the outer `.cell` box and only forwards drag/drop
                     // callbacks — a plain click has nowhere to land there, so this wrapper

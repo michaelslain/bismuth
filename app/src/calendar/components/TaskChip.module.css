@@ -108,3 +108,9 @@
 .chip:focus-visible {
     outline: none;
 }
+
+/* The chip being dragged stays in its day in a quieter ink while its ghost follows the cursor
+   (DESIGN.md: no state is shown by opacity). */
+.chip[data-dragging] { color: var(--text-muted); background: var(--hover-bg); }
+/* design-system-ignore globalReach: <html> is the document root, outside any component's tree — taskPointerDrag.ts toggles task-dragging on document.documentElement itself */
+:global(html.task-dragging), :global(html.task-dragging) * { cursor: grabbing !important; user-select: none !important; }
