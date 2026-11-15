@@ -92,7 +92,7 @@ bun bench/invariants.ts --story ui-        # a prefix; repeat the flag or comma-
 bun bench/invariants.ts --json             # machine-readable output
 ```
 
-It exits 1 on any finding or any story that rendered blank.
+It exits 1 on any finding or any story that rendered blank. It waits for Storybook to report each story mounted (`--load-timeout`, default 60000 ms), then for paint (`--ready-timeout`, default 6000 ms), and re-checks a blank story alone before reporting it; a story that throws while rendering is reported blank with the error.
 `bun run visual` (`bench/checkChanged.ts`) runs it over only the stories `bench/affected.ts` maps from your diff: a `Foo.tsx` or `Foo.module.css` maps to `Foo.stories.tsx`.
 When `app/src/global.css`, `core/src/theme/tokens.ts` or `app/.storybook/preview.ts` changed, it prints that no scoping is possible and checks every story.
 `--base <ref>` diffs against another ref, and `--all` ignores the diff.
@@ -287,7 +287,7 @@ The launcher passes the three `--disable-*background*` flags and calls `Emulatio
 `--concurrency` overrides it.
 The ceiling stays low because a CPU-starved story mounts late, and a late mount produces a mid-mount capture.
 
-**Readiness is polled, not slept.** `bench/storyReady.ts` exports the page expression that counts painted elements in the story root and in portals under `document.body` (modals render there), excluding Storybook's own dormant chrome. `invariants` and `storyAudit` poll it before measuring. The same file exports a hook on Storybook's addons channel (`STORY_LIFECYCLE_INJECT`) that records when a story finishes rendering or throws; `storyAudit` waits on it before it polls for paint.
+**Readiness is polled, not slept.** `bench/storyReady.ts` exports the page expression that counts painted elements in the story root and in portals under `document.body` (modals render there), excluding Storybook's own dormant chrome. `invariants` and `storyAudit` poll it before measuring. The same file exports a hook on Storybook's addons channel (`STORY_LIFECYCLE_INJECT`) that records when a story mounts, when it finishes rendering and `play()`, and when it throws; `waitForStoryLifecycle` polls it. `invariants` waits for the mount and `storyAudit` for the finish before either polls for paint.
 
 **Shared helpers.** `bench/args.ts` reads flags (`arg`, `has`, `argAll`) and loads the story index from `<base>/index.json`; a value that starts with `--` is never taken as a flag's value.
 `bench/verifyReport.ts` holds the pure half of `verify`: argument parsing, the shot-hash diff, the verdict rule and the summary text, unit-tested in `bench/verifyReport.test.ts`.

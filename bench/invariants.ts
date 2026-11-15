@@ -22,7 +22,7 @@
  */
 import { launchChrome } from './chromeSession'
 import { poolSize } from './poolSize'
-import { STORY_READY_EXPRESSION } from './storyReady'
+import { STORY_LIFECYCLE_INJECT, STORY_READY_EXPRESSION, waitForStoryLifecycle } from './storyReady'
 import { arg, argAll, BASE, has, loadStoryIndex } from './args'
 
 
@@ -35,6 +35,10 @@ const H = Number(arg('height', '900'))
  *  Vite's module graph and the webfonts. Measured: on a fresh Chrome profile a story that renders in
  *  ~300ms warm shows ZERO elements at 3.5s cold — which a fixed settle records as "renders nothing".
  *  Polling until the root is non-empty costs the fast stories nothing and lets the slow ones finish. */
+// How long to wait for Storybook to report the story mounted (bench/storyReady.ts's lifecycle hook)
+// before going on without it. Generous: a cold heavy module under load is waited out, and only a
+// story that hangs runs it out. The paint deadline below starts after it.
+const LOAD_TIMEOUT = Number(arg('load-timeout', '60000'))
 const READY_TIMEOUT = Number(arg('ready-timeout', '6000'))
 const QUIET_AFTER_FIRST_PAINT = Number(arg('settle', '400'))
 /** How many stories to check at once, in ONE Chrome with N tabs.
@@ -286,6 +290,7 @@ const preparePage = async (p: Awaited<ReturnType<typeof s.newPage>>) => {
     await p('Emulation.setDeviceMetricsOverride', {
         width: W, height: H, deviceScaleFactor: 1, mobile: false,
     })
+    await p('Page.addScriptToEvaluateOnNewDocument', { source: STORY_LIFECYCLE_INJECT })
     return p
 }
 
@@ -317,6 +322,8 @@ const worker = async (initial: (typeof pool)[number]) => {
         handled++
         try {
             await p('Page.navigate', { url: `${BASE}/iframe.html?id=${id}&viewMode=story` })
+            const life = await waitForStoryLifecycle(p, 'rendered', LOAD_TIMEOUT)
+            if (life.error) { blank.push(`${id} (story threw: ${life.error.slice(0, 80)})`); done++; continue }
             // Wait for the story to actually paint rather than sleeping a fixed amount. A story that
             // never paints still exits this loop and is reported as blank — it must never be silently
             // treated as "checked and clean".
@@ -363,9 +370,10 @@ if (blank.length) {
     const suspects = blank.splice(0, blank.length)
     const solo = pool[0]!
     for (const id of suspects) {
-        if (id.includes('probe failed')) { blank.push(id); continue }
+        if (id.includes(' (')) { blank.push(id); continue } // probe failed or story threw: no retry
         try {
         await solo('Page.navigate', { url: `${BASE}/iframe.html?id=${id}&viewMode=story` })
+        await waitForStoryLifecycle(solo, 'rendered', LOAD_TIMEOUT)
         const deadline = Date.now() + READY_TIMEOUT * 2
         let painted = false
         for (;;) {

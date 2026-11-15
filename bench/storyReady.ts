@@ -42,20 +42,46 @@ export const STORY_READY_EXPRESSION = `(()=>{
 // paint. Install with Page.addScriptToEvaluateOnNewDocument so it runs before the page's own
 // scripts and again after any reload (a Vite dep re-optimise reloads the frame).
 export const STORY_LIFECYCLE_INJECT = `(function () {
-    window.__storyLife = { done: false, error: null };
+    window.__storyLife = { rendered: false, done: false, error: null };
     ;(function poll() {
         var ch = window.__STORYBOOK_ADDONS_CHANNEL__;
         if (!ch) return setTimeout(poll, 10);
-        ch.on('storyFinished', function () { window.__storyLife.done = true; });
+        ch.on('storyRenderPhaseChanged', function (e) {
+            if (/^(playing|played|afterEach|completed|finished)$/.test((e && e.newPhase) || '')) window.__storyLife.rendered = true;
+        });
+        ch.on('storyFinished', function () { window.__storyLife.rendered = true; window.__storyLife.done = true; });
         ['storyThrewException', 'storyErrored'].forEach(function (n) {
             ch.on(n, function (e) {
                 e = e || {};
                 window.__storyLife.error = n + ': ' + String(e.message || e.description || e.title || JSON.stringify(e)).slice(0, 200);
+                window.__storyLife.rendered = true;
                 window.__storyLife.done = true;
             });
         });
     })();
 })();`
 
-/** `{ done, error }` from STORY_LIFECYCLE_INJECT, as a JSON string; `null` before the hook exists. */
+/** `{ rendered, done, error }` from STORY_LIFECYCLE_INJECT, as a JSON string; `null` before the
+ *  hook exists. `rendered` turns true once the story has mounted (play() may still be running);
+ *  `done` once render and play() are both over. A throw sets both, with `error`. */
 export const STORY_LIFECYCLE_EXPRESSION = `JSON.stringify(window.__storyLife || null)`
+
+/** Polls STORY_LIFECYCLE_EXPRESSION on a page that has STORY_LIFECYCLE_INJECT installed until the
+ *  story reaches `until` or throws, or `timeoutMs` passes. storyAudit waits for `done` (it shoots
+ *  the frame play() leaves); invariants waits for `rendered` (it measures the mounted story, as it
+ *  did when it waited on paint alone). */
+export const waitForStoryLifecycle = async (
+    p: (method: string, params?: any) => Promise<any>,
+    until: 'rendered' | 'done',
+    timeoutMs: number,
+): Promise<{ ms: number; timedOut: boolean; error: string | null }> => {
+    const start = Date.now()
+    for (;;) {
+        const q = await p('Runtime.evaluate', { expression: STORY_LIFECYCLE_EXPRESSION, returnByValue: true })
+        const life = q?.exceptionDetails ? null : JSON.parse(q?.result?.value ?? 'null')
+        if (life?.error) return { ms: Date.now() - start, timedOut: false, error: life.error }
+        if (life?.[until]) return { ms: Date.now() - start, timedOut: false, error: null }
+        if (Date.now() - start > timeoutMs) return { ms: Date.now() - start, timedOut: true, error: null }
+        await new Promise(r => setTimeout(r, 250))
+    }
+}

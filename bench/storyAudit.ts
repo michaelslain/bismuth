@@ -32,9 +32,9 @@ import { launchChrome } from './chromeSession'
 import { CLIP_BOX_SRC } from './clipBox'
 import { poolSize } from './poolSize'
 import {
-    STORY_LIFECYCLE_EXPRESSION,
     STORY_LIFECYCLE_INJECT,
     STORY_READY_EXPRESSION,
+    waitForStoryLifecycle,
 } from './storyReady'
 import { arg, BASE, loadStoryIndex } from './args'
 
@@ -325,26 +325,11 @@ const captureStory = async (
     // First wait for Storybook to finish loading and rendering the story (module load, mount, and
     // play() when the story has one). The paint deadline below starts only after that, so a slow
     // cold module load no longer eats it. See STORY_LIFECYCLE_INJECT for why.
-    const loadStart = Date.now()
-    let loadTimedOut = false
-    let threw: string | null = null
-    for (;;) {
-        const q = await p('Runtime.evaluate', {
-            expression: STORY_LIFECYCLE_EXPRESSION,
-            returnByValue: true,
-        })
-        const life = q?.exceptionDetails ? null : JSON.parse(q?.result?.value ?? 'null')
-        if (life?.done) {
-            threw = life.error
-            break
-        }
-        if (Date.now() - loadStart > LOAD_TIMEOUT) {
-            loadTimedOut = true
-            break
-        }
-        await sleep(250)
-    }
-    const loadMs = Date.now() - loadStart
+    const {
+        ms: loadMs,
+        timedOut: loadTimedOut,
+        error: threw,
+    } = await waitForStoryLifecycle(p, 'done', LOAD_TIMEOUT)
 
     // Wait for the story's own subtree to paint SOMETHING before trusting the converge loop below.
     // A pre-mount page (Storybook's own chrome excluded, per STORY_READY_EXPRESSION) is a perfectly
