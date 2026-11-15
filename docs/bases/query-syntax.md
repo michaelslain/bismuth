@@ -40,7 +40,7 @@ A name resolves in this order: a lambda parameter, then the roots `file`, `note`
 
 | Root | Holds | Examples |
 |---|---|---|
-| `file` | The row's file metadata | `file.name` (no extension), `file.path`, `file.folder`, `file.ext`, `file.size`, `file.ctime`, `file.mtime`, `file.tags`, `file.links` |
+| `file` | The row's file metadata | `file.name` (no extension), `file.path`, `file.folder`, `file.ext`, `file.size`, `file.ctime`, `file.mtime`, `file.tags`, `file.links`, `file.embeds`, `file.backlinks`, `file.properties` |
 | `note` | The row's frontmatter | `note.status`, `note.price` |
 | `formula` | The base's computed values for this row | `formula.ppu` |
 | `this` | The embedding note's frontmatter, when the base is embedded; otherwise undefined | `this.minPrice`, `this.file` |

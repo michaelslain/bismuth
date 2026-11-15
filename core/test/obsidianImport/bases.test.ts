@@ -119,12 +119,19 @@ views:
 
     test('undefined functions still write the base and add a decide item quoting the expression', () => {
         const r = run({
-            'B.base': `filters: 'file.backlinks.length > 2'\nformulas:\n  f: 'file.linksTo(this)'\nviews:\n  - type: table\n`,
+            'B.base': `filters: 'file.name != ""'\nformulas:\n  f: 'file.linksTo(this)'\nviews:\n  - type: table\n`,
         })
         expect(edit(r, 'B.base.jsonl')).toBeTruthy()
         const d = r.items.filter(i => i.section === 'decide').map(i => i.detail)
-        expect(d.some(x => x.includes('file.backlinks.length > 2'))).toBe(true)
         expect(d.some(x => x.includes('file.linksTo(this)'))).toBe(true)
+        expect(d.some(x => x.includes('file.name'))).toBe(false)
+    })
+
+    test('backlinks, embeds, properties and asFile raise no decide item', () => {
+        const r = run({
+            'B.base': `filters: 'file.backlinks.length > 2'\nformulas:\n  e: 'if(file.embeds[0].containsAny("jpg"), file.embeds[0])'\n  i: 'list(type)[0].asFile().properties.icon'\n  p: 'file.properties.status'\nviews:\n  - type: table\n`,
+        })
+        expect(r.items.filter(i => i.section === 'decide')).toEqual([])
     })
 
     test('supported functions raise no decide item', () => {

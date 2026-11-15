@@ -275,6 +275,6 @@ interface Row {
 
 `index` and `derived` are write-back handles, not data, so they sit beside `note`. `POST /row/update` and `POST /row/delete` address a stored row by `index`; a row without one gets no write affordance. A write strips exactly the keys `derived` names, so a computed value such as `resolved` is never saved as a stale column, and a user column with the same name always wins.
 
-`FileMeta.name` is the basename without extension, `path` is vault-relative, `folder` is empty at the root, `tags` have no leading `#`, and `links` are wikilink targets without `.md`, heading or alias.
+`FileMeta.name` is the basename without extension, `path` is vault-relative, `folder` is empty at the root, `tags` have no leading `#`, and `links` are wikilink targets without `.md`, heading or alias. `embeds` holds `![[...]]` targets the same way, and `backlinks` the names of the vault notes linking to or embedding the file, set over the whole vault by `fillBacklinks`.
 
 Source: `core/src/bases/types.ts`, `core/src/bases/baseFile.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/parse.ts`, `core/src/bases/flattenViews.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/query.ts`, `app/src/FileView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/bases/prefetchedBody.ts`

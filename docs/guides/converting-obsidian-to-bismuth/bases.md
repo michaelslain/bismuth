@@ -46,9 +46,9 @@ An Obsidian base is a `.base` file of pure YAML with top-level `filters`, `formu
 | `this` (the base file, or the embedding note) | the host note's frontmatter when embedded |
 | ` ```base ` fence | ` ```query ` fence holding a flat inline config |
 
-The filter grammar is shared: operators `== != > < >= <= && || !` and `+ - * / %`; file fields `file.name path folder ext size ctime mtime tags links`; file methods `hasTag hasLink inFolder hasProperty asLink`. A bare name means `note.<name>`.
+The filter grammar is shared: operators `== != > < >= <= && || !` and `+ - * / %`; file fields `file.name path folder ext size ctime mtime tags links embeds backlinks properties`; file methods `hasTag hasLink inFolder hasProperty asLink asFile`; `map`, `filter` and `reduce` take `value`, `index` and `acc` as Obsidian writes them. A bare name means `note.<name>`.
 
-Obsidian function names that `docs/bases/functions.md` does not list include `asFile escapeHTML html icon image isType keys linksTo relative repeat time values`, plus the properties `file.backlinks`, `file.embeds` and `file.properties`. Recompute the list by diffing the function headings on https://obsidian.md/help/bases/functions against `docs/bases/functions.md`.
+Obsidian function names that `docs/bases/functions.md` does not list include `escapeHTML html icon image isType keys linksTo relative repeat time values`. Recompute the list by diffing the function headings on https://obsidian.md/help/bases/functions against `docs/bases/functions.md`.
 
 ## What the command reports
 

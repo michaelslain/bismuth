@@ -103,6 +103,13 @@ export function evaluate(node: Expr, ctx: EvalContext): unknown {
 
         case 'member': {
             const obj = evaluate(node.object, ctx)
+            // The row's own file reads its frontmatter as `file.properties`, and a row built
+            // without links data (a task, a base's stored row) reads empty lists, not nothing.
+            if (obj === ctx.file && obj) {
+                if (node.name === 'properties') return ctx.note
+                if (node.name === 'backlinks' || node.name === 'embeds')
+                    return ctx.file[node.name] ?? []
+            }
             return getMember(obj, node.name)
         }
 
@@ -122,7 +129,14 @@ export function evaluate(node: Expr, ctx: EvalContext): unknown {
 
         case 'call': {
             const callee = node.callee
-            const args = node.args.map(a => evaluate(a, ctx))
+            const args = node.args.map((a, i) =>
+                evaluate(
+                    i === 0 && callee.type === 'member'
+                        ? implicitLambda(callee.name, a)
+                        : a,
+                    ctx,
+                ),
+            )
             if (callee.type === 'ident')
                 return callFunction(callee.name, args, ctx)
             if (callee.type === 'member') {
@@ -135,6 +149,49 @@ export function evaluate(node: Expr, ctx: EvalContext): unknown {
         case 'binary':
             return evalBinary(node.op, node.left, node.right, ctx)
     }
+}
+
+// Obsidian's list methods bind their item without an arrow: `filter(value > 2)`,
+// `map(value.name)`, `reduce(acc + value, 0)`, with `index` beside them. An argument that names
+// one of those runs as the arrow `(value, index) => …` (`(acc, value, index) => …` for reduce),
+// so an Obsidian formula evaluates per item instead of once with `value` undefined.
+const IMPLICIT_PARAMS: Record<string, string[]> = {
+    map: ['value', 'index'],
+    filter: ['value', 'index'],
+    reduce: ['acc', 'value', 'index'],
+}
+
+function mentions(node: Expr, names: string[]): boolean {
+    switch (node.type) {
+        case 'ident':
+            return names.includes(node.name)
+        case 'member':
+            return mentions(node.object, names)
+        case 'index':
+            return mentions(node.object, names) || mentions(node.index, names)
+        case 'call':
+            return (
+                mentions(node.callee, names) ||
+                node.args.some(a => mentions(a, names))
+            )
+        case 'unary':
+            return mentions(node.operand, names)
+        case 'binary':
+            return mentions(node.left, names) || mentions(node.right, names)
+        case 'lambda':
+            return mentions(
+                node.body,
+                names.filter(n => !node.params.includes(n)),
+            )
+        default:
+            return false
+    }
+}
+
+function implicitLambda(method: string, arg: Expr): Expr {
+    const params = IMPLICIT_PARAMS[method]
+    if (!params || arg.type === 'lambda' || !mentions(arg, params)) return arg
+    return { type: 'lambda', params, body: arg }
 }
 
 function evalBinary(

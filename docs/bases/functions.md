@@ -51,6 +51,7 @@ The receiver is a file's metadata: `file`, or `this.file` for the note embedding
 | `file.inFolder(folder)` | boolean | True when `file.folder` equals `folder` or sits below it. |
 | `file.hasProperty(name)` | boolean | True when the frontmatter has `name` as its own key. |
 | `file.asLink(display?)` | link | A link to this file; the display text defaults to the file name. |
+| `file.asFile()` | file | The file itself. |
 
 ```text
 file.hasTag("a", "b")           // true if either tag is present
@@ -58,6 +59,32 @@ file.hasLink(this.file)         // true when this note links to the embedding no
 file.inFolder("reading")        // true for reading and reading/quotes
 file.asLink()                   // a link to this file, showing its name
 ```
+
+## Read the notes that link to a file, and what it embeds
+
+`file.backlinks` lists the names of the notes that link to or embed the file, sorted by path, each note once. `file.embeds` lists the targets of the file's `![[...]]` embeds as written, without a `|size` or `#heading`. Both are lists, so list methods apply:
+
+```yaml
+formulas:
+  backlinkCount: 'file.backlinks.length'
+  cover: 'if(file.embeds[0].containsAny("jpg", "png", "webp"), file.embeds[0])'
+```
+
+`file.backlinks` counts every note in the vault, including notes a base's filters leave out, and resolves links the way the graph does: an exact path wins, then the shallowest note with that name. A `[[link]]` in frontmatter counts as a link. A task row or a row stored in a base has empty lists.
+
+`file.properties` is the file's frontmatter, so `file.properties.status` and `status` read the same value.
+
+## Get the file a link names with asFile()
+
+`asFile()` called on a link, or on link text such as a frontmatter value `"[[Restaurants]]"`, returns that note's file metadata with its frontmatter under `properties`. It returns `null` when no row of the base is that note.
+
+```yaml
+formulas:
+  icon: 'list(type)[0].asFile().properties.icon'
+  typeFolder: 'link("Restaurants").asFile().folder'
+```
+
+`asFile()` finds the note among the rows the base reads. A base with no `source:` reads every note, so any note is found; a base whose `source:` narrows its rows finds only those rows.
 
 ## Which methods does every value have?
 
@@ -115,17 +142,19 @@ title.length                  // 11; a member, no parentheses
 | `a.slice(start, end?)` | list | A sub-list. |
 | `a.flat()` | list | Flattens one level. |
 | `a.isEmpty()` | boolean | True for an empty list. |
-| `a.map(f)`, `a.filter(f)` | list | Projects or keeps elements with a lambda or a property path. |
-| `a.reduce(f, seed?)` | any | A true reduce with a two-parameter lambda; otherwise sums a projection. |
+| `a.map(f)`, `a.filter(f)` | list | Projects or keeps elements with a lambda, an expression on `value` and `index`, or a property path. |
+| `a.reduce(f, seed?)` | any | A true reduce with a two-parameter lambda or an expression on `acc` and `value`; otherwise sums a projection. |
 
 `sort` and `reverse` leave the original untouched. A layout's `sort:` key, by contrast, orders numbers numerically and dates chronologically.
 
-`map`, `filter` and `reduce` take either form:
+`map`, `filter` and `reduce` take a lambda, an expression that names the item as `value` (and its position as `index`, the running total as `acc`), as Obsidian writes them, or a property path:
 
 ```text
 items.map(x => x.title)                      // ["a", "b", "c"]
 items.filter(x => x.price > 1).length        // 2
 items.reduce((acc, x) => acc + x.price, 0)   // 6
+items.filter(value.price > 1).length         // 2, the same filter written the Obsidian way
+items.reduce(acc + value.price, 0)           // 6
 items.map("title")                           // the same projection as a path string
 items.filter("_.price")                      // keeps items whose price is truthy
 items.reduce("price", 0)                     // sums each item's price
@@ -177,8 +206,10 @@ The property id is normalised, so `price` and `note.price` name the same column.
 
 ## How it works
 
-`callFunction(name, args, ctx)` and `callMethod(receiver, name, args, ctx)` in `core/src/bases/functions.ts` are the two dispatch surfaces that `evaluate` calls. `callMethod` picks the table from the receiver: an object with `path` and `tags` is a file, then number, string, list, date. `callArrayReduce` chooses between the true-reduce and the summing mode by the callback's declared parameter count, and `compileItemAccessor` compiles a property-path string. `parseDurationMs` holds the duration grammar.
+`callFunction(name, args, ctx)` and `callMethod(receiver, name, args, ctx)` in `core/src/bases/functions.ts` are the two dispatch surfaces that `evaluate` calls. `callMethod` picks the table from the receiver: an object with `path` and `tags` is a file, then number, string, list, date. `callArrayReduce` chooses between the true-reduce and the summing mode by the callback's declared parameter count, and `compileItemAccessor` compiles a property-path string. `evaluate` turns a `map`, `filter` or `reduce` argument that names `value`, `index` or `acc` into a lambda over those names (`implicitLambda`), and reads `file.properties`, `file.backlinks` and `file.embeds` on the row's own file.
+
+`file.embeds` comes from `extractEmbeds` (`core/src/embeds.ts`) when a note is parsed. `fillBacklinks` (`core/src/bases/fileLinks.ts`) sets every vault row's `file.backlinks` after the rows feed is built and after each incremental patch, resolving targets like `resolveLinkTarget` in `core/src/vault.ts`. `runView` builds a `fileLookup` over the rows it is given for `asFile()`, and takes the host note's `this.file` from its row there when the host is one of them. `parseDurationMs` holds the duration grammar.
 
 Conversion helpers are in `core/src/bases/values.ts`: `truthy` (the rule is in [filters](./filters.md#what-makes-a-row-pass)), `toNumber`, `asString` (null becomes `""`, a date becomes its ISO text, a link becomes its display text or path), `looseEquals` and `compare`. A link value is `{ __link: true, path, display? }`. `summarize(name, values)` in `core/src/bases/query.ts` computes the summaries.
 
-Source: `core/src/bases/functions.ts`, `core/src/bases/values.ts`, `core/src/bases/query.ts`, `core/src/bases/evaluate.ts`, `core/test/bases/functions.test.ts`, `core/test/bases/query.test.ts`
+Source: `core/src/bases/functions.ts`, `core/src/bases/values.ts`, `core/src/bases/query.ts`, `core/src/bases/evaluate.ts`, `core/src/bases/fileLinks.ts`, `core/src/embeds.ts`, `core/src/basesData.ts`, `core/test/bases/functions.test.ts`, `core/test/bases/query.test.ts`

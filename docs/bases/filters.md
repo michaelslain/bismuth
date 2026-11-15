@@ -77,7 +77,7 @@ A filter sees one row at a time:
 
 | Name | Holds |
 |---|---|
-| `file.name`, `file.path`, `file.folder`, `file.tags`, `file.links`, `file.size`, `file.ctime`, `file.mtime` | File metadata. `name` has no extension, `path` is vault-relative, `folder` is empty at the root, `tags` have no `#`. |
+| `file.name`, `file.path`, `file.folder`, `file.tags`, `file.links`, `file.embeds`, `file.backlinks`, `file.size`, `file.ctime`, `file.mtime` | File metadata. `name` has no extension, `path` is vault-relative, `folder` is empty at the root, `tags` have no `#`. `backlinks` names the notes linking to the file ([functions](./functions.md#read-the-notes-that-link-to-a-file-and-what-it-embeds)). |
 | `note.<key>` or a bare `<key>` | A frontmatter value. |
 | `formula.<name>` | A value from the base's `formulas`, computed before filtering, so a filter can use it. |
 | `this.<key>`, `this.file` | The frontmatter and file of the note that embeds the base; see [embedded bases](#how-does-a-filter-use-the-note-it-is-embedded-in). |

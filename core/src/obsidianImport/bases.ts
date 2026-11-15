@@ -47,6 +47,7 @@ const METHODS = new Set([
     'inFolder',
     'hasProperty',
     'asLink',
+    'asFile',
     'toFixed',
     'round',
     'floor',
@@ -80,7 +81,6 @@ const METHODS = new Set([
 export const KNOWN_FUNCTIONS = GLOBAL_FNS
 export const KNOWN_METHODS = METHODS
 export const KNOWN_SUMMARIES = SUMMARY_NAMES
-const UNSUPPORTED_PROPS = /\bfile\.(backlinks|embeds|properties)\b/g
 
 type ViewConf = { name: string; conf: Raw }
 type ParsedBase = {
@@ -110,7 +110,7 @@ function exprStrings(node: unknown, out: string[] = []): string[] {
     return out
 }
 
-/** Names of functions / properties in `expr` that Bismuth does not define. */
+/** Names of functions in `expr` that Bismuth does not define. */
 function unsupportedIn(expr: string): string[] {
     const bare = expr.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""')
     const found: string[] = []
@@ -118,7 +118,6 @@ function unsupportedIn(expr: string): string[] {
         const known = m[1] ? METHODS.has(m[2]) : GLOBAL_FNS.has(m[2])
         if (!known) found.push(m[2])
     }
-    for (const m of bare.matchAll(UNSUPPORTED_PROPS)) found.push(m[0])
     return found
 }
 

@@ -11,6 +11,7 @@ import { mapWithConcurrency } from './concurrency'
 import { getFileAccess, type FileAccess, type FileStat } from './fileAccess'
 import { parseFrontmatter } from './frontmatter'
 import { extractTags } from './tags'
+import { extractEmbeds } from './embeds'
 import { extractWikilinks } from './wikilinks'
 
 export type ParsedNote = {
@@ -22,6 +23,8 @@ export type ParsedNote = {
     /** The text after the frontmatter; null together with `raw`. */
     readonly body: string | null
     readonly links: readonly string[]
+    /** Targets of the note's `![[...]]` embeds (`links` leaves embeds out). */
+    readonly embeds: readonly string[]
     readonly tags: readonly string[]
     readonly fingerprint: Fingerprint
 }
@@ -70,9 +73,11 @@ function parse(rel: string, stat: FileStat, raw: string): ParsedNote {
     const jsonl = isBasePath(rel) && baseFormatOf(raw) === 'jsonl'
     const { data, body } = jsonl ? { data: {}, body: raw } : parseFrontmatter(raw)
     const links = jsonl ? [] : extractWikilinks(raw)
+    const embeds = jsonl ? [] : extractEmbeds(raw)
     const tags = jsonl ? [] : extractTags(data, body)
     Object.freeze(data)
     Object.freeze(links)
+    Object.freeze(embeds)
     Object.freeze(tags)
     return {
         rel,
@@ -81,6 +86,7 @@ function parse(rel: string, stat: FileStat, raw: string): ParsedNote {
         data,
         body,
         links,
+        embeds,
         tags,
         fingerprint: fingerprintOfParsed(raw, data, links, tags),
     }

@@ -210,3 +210,13 @@ test('a GLOBAL regex is never cached — each row gets an independent instance',
         expect(re.test('abc')).toBe(true) // would alternate false on row 1 if instance were shared+cached
     }
 })
+
+test("Obsidian's implicit value, index and acc in map, filter and reduce", () => {
+    expect(run('list(1, 2, 3).filter(value > 1)')).toEqual([2, 3])
+    expect(run('list(1, 2, 3).map(value * 10 + index)')).toEqual([10, 21, 32])
+    expect(run('list(1, 2, 3).reduce(acc + value, 0)')).toBe(6)
+    expect(run('list("a", "b").filter(list("b").containsAny(value))')).toEqual(['b'])
+    // an explicit arrow keeps its own parameter; an argument naming none of them is unchanged
+    expect(run('list(1, 2).map(x => x + 1)')).toEqual([2, 3])
+    expect(run('list(1, 2).filter(price > 5)')).toEqual([1, 2])
+})

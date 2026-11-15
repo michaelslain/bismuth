@@ -290,6 +290,12 @@ export interface FileMeta {
     mtime: number // epoch ms
     tags: string[] // without leading '#'
     links: string[] // wikilink targets (no .md, no #heading, no |alias)
+    /** `![[...]]` embed targets, written the way `links` are. Set on vault note rows. */
+    embeds?: string[]
+    /** Names of the vault notes that link to or embed this file, sorted by path. Set on vault
+     *  note rows; built over the whole vault, so a base filtered to a few rows still counts
+     *  every note. */
+    backlinks?: string[]
 }
 
 /** Shared base for synthetic FileMeta rows (base-file rows, not distinct notes). */
@@ -363,7 +369,14 @@ export interface EvalContext {
     formula: Record<string, unknown>
     this?: Record<string, unknown> // properties of the embedding/host note (optional)
     scope?: Scope // lambda parameter scope chain
+    /** Finds a file among the rows a view runs over, for `asFile()`. */
+    files?: FileLookup
 }
+
+/** A row's file and frontmatter, found by a link target (`Note`, `folder/Note`, `[[Note]]`). */
+export type FileLookup = (
+    target: string,
+) => { file: FileMeta; note: Record<string, unknown> } | undefined
 
 export interface Scope {
     bindings: Record<string, unknown>

@@ -120,6 +120,10 @@ export function callMethod(
     ) {
         return callFileMethod(receiver as FileMeta, name, args, ctx)
     }
+    // `asFile()`: the file a link names, found among the rows the view runs over. A link
+    // property in frontmatter is plain text (`"[[Note]]"`), so text resolves too.
+    if (name === 'asFile' && (isLink(receiver) || typeof receiver === 'string'))
+        return asFile(receiver, ctx)
     // Methods every value has, as in Obsidian Bases: its text form and its truthiness.
     if (name === 'toString') return receiver === null || receiver === undefined ? '' : asString(receiver)
     if (name === 'isTruthy') return truthy(receiver)
@@ -188,6 +192,8 @@ function callFileMethod(
                       asString(args[0]),
                   )
                 : false
+        case 'asFile':
+            return f
         case 'asLink':
             // A Link to this file with optional custom display text (Obsidian's file.asLink).
             return {
@@ -197,6 +203,13 @@ function callFileMethod(
             } as Link
     }
     return undefined
+}
+
+/** The file a link or link text names, with its frontmatter under `properties` (Obsidian's
+ *  `file.properties`); null when no row has that file. */
+function asFile(v: unknown, ctx: EvalContext): unknown {
+    const hit = ctx.files?.(isLink(v) ? v.path : asString(v))
+    return hit ? { ...hit.file, properties: hit.note } : null
 }
 
 function callNumberMethod(n: number, name: string, args: unknown[]): unknown {

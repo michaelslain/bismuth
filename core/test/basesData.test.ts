@@ -170,3 +170,25 @@ test('buildVaultRows with the raw-bytes budget spent still returns every row, te
     expect(a.note.status).toBe('open')
     expect(rows.find(r => r.file.name === 'b')!.note.title).toBe('B')
 })
+
+test('rows carry embeds, and backlinks follow a patch the way a rebuild has them', async () => {
+    const vault = tempDir('bismuth-backlinks-')
+    await writeNote(vault, 'a.md', 'see [[b]] and ![[pic.png]]')
+    await writeNote(vault, 'b.md', 'plain')
+    await writeNote(vault, 'c.md', '![[b]]')
+    const cache = await seededCache(vault)
+    const rows = (await cache.get())!
+    const of = (rs: any[], name: string) => rs.find(r => r.file.name === name).file
+    expect(of(rows, 'a').embeds).toEqual(['pic.png'])
+    expect(of(rows, 'b').backlinks).toEqual(['a', 'c'])
+
+    await writeNote(vault, 'a.md', 'no links now')
+    await patchVaultRows(vault, ['a.md'], cache)
+    const patched = cache.peek()!
+    expect(of(patched, 'b').backlinks).toEqual(['c'])
+    expect(norm(patched)).toBe(norm(await buildVaultRows(vault)))
+
+    await writeNote(vault, 'd.md', '[[b]]')
+    await patchVaultRows(vault, ['d.md'], cache)
+    expect(of(cache.peek()!, 'b').backlinks).toEqual(['c', 'd'])
+})

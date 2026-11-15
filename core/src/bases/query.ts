@@ -1,6 +1,7 @@
 import type {
     BaseConfig,
     EvalContext,
+    FileLookup,
     Row,
     ViewConfig,
     ViewResult,
@@ -14,6 +15,7 @@ import { evaluate } from './evaluate'
 import { passesFilter } from './filters'
 import { compare, toNumber } from './values'
 import { declaredFormulas } from './properties'
+import { fileLookup } from './fileLinks'
 
 // Declared-formula source text -> its parsed AST (or null on a parse failure), so a
 // formula shared across many runView() calls (e.g. the same base rendered repeatedly)
@@ -25,19 +27,35 @@ const formulaAstCache = new Map<string, Expr | null>()
 export function toContext(
     row: Row,
     hostThis?: Record<string, unknown>,
+    files?: FileLookup,
 ): EvalContext {
     return {
         file: row.file,
         note: row.note,
         formula: row.formula,
         this: hostThis,
+        files,
     }
+}
+
+/** The host note's `this`, with `this.file` taken from the host's own row when the view runs
+ *  over it (a base with no `source:` reads every note), so `this.file.links`, `.embeds` and
+ *  `.backlinks` hold the host's real lists instead of the bare identity the host passes in. */
+function withHostRow(
+    hostThis: Record<string, unknown> | undefined,
+    files: FileLookup,
+): Record<string, unknown> | undefined {
+    const f = hostThis?.file as { path?: unknown } | undefined
+    if (!f || typeof f.path !== 'string') return hostThis
+    const hit = files(f.path)
+    return hit && hit.file.path === f.path ? { ...hostThis, file: hit.file } : hostThis
 }
 
 function computeFormulas(
     rows: Row[],
     formulas: Record<string, string> | undefined,
     hostThis?: Record<string, unknown>,
+    files?: FileLookup,
 ): void {
     if (!formulas) return
     const compiled = Object.entries(formulas).map(([name, src]) => {
@@ -53,7 +71,7 @@ function computeFormulas(
         return [name, ast] as const
     })
     for (const row of rows) {
-        const ctx = toContext(row, hostThis)
+        const ctx = toContext(row, hostThis, files)
         for (const [name, ast] of compiled) {
             if (!ast) {
                 row.formula[name] = undefined
@@ -298,11 +316,13 @@ export function runView(
     //    an explicit `formulas:` entry of the same name wins over a declared one.
     const rows = allRows.map(r => ({ ...r, formula: { ...r.formula } }))
     const formulas = { ...declaredFormulas(base), ...base.formulas }
-    computeFormulas(rows, formulas, hostThis)
+    const files = fileLookup(allRows)
+    hostThis = withHostRow(hostThis, files)
+    computeFormulas(rows, formulas, hostThis, files)
 
     // 2. Filter
     let filtered = rows.filter(r =>
-        passesFilter(base.filters, toContext(r, hostThis)),
+        passesFilter(base.filters, toContext(r, hostThis, files)),
     )
 
     // 3. Sort

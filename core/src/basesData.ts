@@ -2,12 +2,14 @@ import { getFileAccess, type FileStat } from './fileAccess'
 import { getParsedNote, getParsedNotes, type ParsedNote } from './parsedNotes'
 import { pathParts } from './vault'
 import type { FileMeta, Row } from './bases/types'
+import { fillBacklinks } from './bases/fileLinks'
 
 function fileMeta(
     rel: string,
     st: FileStat | null,
     tags: string[],
     links: string[],
+    embeds: string[],
 ): FileMeta {
     const { name, ext, folder } = pathParts(rel)
 
@@ -32,6 +34,8 @@ function fileMeta(
         mtime,
         tags,
         links,
+        embeds,
+        backlinks: [],
     }
 }
 
@@ -43,7 +47,7 @@ function fileMeta(
  *  not be mutated. */
 function rowFor(p: ParsedNote): Row {
     return {
-        file: fileMeta(p.rel, p.stat, [...p.tags], [...p.links]),
+        file: fileMeta(p.rel, p.stat, [...p.tags], [...p.links], [...p.embeds]),
         note: p.data as Row['note'],
         formula: {},
     }
@@ -54,7 +58,11 @@ export async function buildVaultRows(root: string): Promise<Row[]> {
     // Parsed notes come from the shared cache (a note deleted since the listing is skipped);
     // its stat is the one the cache validated against, so there is no second stat loop.
     const notes = await getParsedNotes(root, await listMarkdown(root))
-    return notes.map(rowFor)
+    const rows = notes.map(rowFor)
+    // Backlinks span the whole vault, so they are set after every row exists, and again on
+    // every patch below: an edit to one note changes the backlinks of the notes it links to.
+    fillBacklinks(rows)
+    return rows
 }
 
 /**
@@ -135,6 +143,7 @@ export async function patchVaultRows(
             !cache.patch(rows => {
                 rows.length = 0
                 rows.push(...rebuilt)
+                fillBacklinks(rows)
             })
         ) {
             cache.invalidate()
@@ -150,6 +159,7 @@ export async function patchVaultRows(
                 rows.splice(i, 1) // deleted
             else rows[i] = next // edited → in-place replace
         }
+        fillBacklinks(rows)
     })
     if (!applied) cache.invalidate() // raced with an invalidation → rebuild next read
 }
