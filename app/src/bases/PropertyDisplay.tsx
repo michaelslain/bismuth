@@ -5,7 +5,8 @@ import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { renderInline, renderMarkdown } from './markdown'
 import { createTypedTables } from '../ui/table/typeTables'
 import { formatNumberDisplay } from './numberFormat'
-import { multiselectValues } from './propertyEdit'
+import { multiselectValues, propertyEditKind } from './propertyEdit'
+import { rowSchema } from '../propertyRegistry'
 import { formatDateValue, isEmptyValue } from './valueDisplay'
 import {
     renderStars,
@@ -39,8 +40,9 @@ export type PropertyDisplayProps = {
  * Read-only, type-aware display of ONE property on ONE row — the single spelling every Bases
  * view shares, so a declared type looks the same in Table, List, Cards and Kanban.
  *
- * Branch order: declared number (through its format) -> declared multiselect (a bracket chip per
- * value) -> declared boolean (`[ ]` / `[x]`) -> declared markdown (a block, or one line when
+ * Branch order: a blank checkbox-typed value (unchecked `[ ]`) -> any other blank (the em dash) ->
+ * declared number (through its format) -> declared multiselect (a bracket chip per value) ->
+ * declared boolean (`[ ]` / `[x]`) -> declared markdown (a block, or one line when
  * `inline`) -> everything else is the heuristic renderers + `renderValue` (status dots, `#tags`, stars, links, dates…),
  * so an UNDECLARED value keeps the look it always had (status / tags / rating heuristics first).
  */
@@ -49,9 +51,17 @@ const PropertyDisplay: Component<PropertyDisplayProps> = props => {
     const declared = () =>
         props.config ? propertyType(props.config, props.id) : undefined
 
+    const typedCheckbox = () =>
+        propertyEditKind(props.id, undefined, rowSchema(props.row), [], declared())
+            .kind === 'boolean'
+
     const body = (): JSX.Element => {
         const kind = declared()?.kind
         const v = value()
+        // A blank checkbox is an unchecked box, not the em dash: a property typed as a checkbox
+        // (in the base or the vault's property registry) reads `[ ]` until it is ticked, the
+        // same as a kanban card's.
+        if (isEmptyValue(v) && typedCheckbox()) return <BooleanValue value={false} />
         // One empty look: null, '' and [] are all the em dash (see isEmptyValue).
         if (isEmptyValue(v)) return <EmptyValue />
         if (kind === 'number' && typeof v === 'number') {

@@ -923,7 +923,10 @@ export function BaseView(props: {
                                                 basePath={data()!.basePath}
                                                 mode={activeMode()}
                                                 ownsRows={ownsRows()}
-                                                onChange={refetchAll}
+                                                // A cell's own write: refetch in a transition so the
+                                                // view stays painted. `refetchAll` suspends the pane,
+                                                // which detaches the table and resets its scroll.
+                                                onChange={revalidateAfterWrite}
                                                 onToggle={toggleTaskRow}
                                                 onSetStatus={setTaskRowStatus}
                                                 onOpen={props.onOpen}

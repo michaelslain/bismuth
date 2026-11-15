@@ -2,29 +2,24 @@ import { describe, expect, test } from 'bun:test'
 import { nextCheckboxValue } from './checkboxCycle'
 
 describe('nextCheckboxValue', () => {
-    test('absent becomes checked', () => {
+    test('blank becomes checked', () => {
         expect(nextCheckboxValue(null)).toBe(true)
         expect(nextCheckboxValue(undefined)).toBe(true)
     })
     test('checked becomes unchecked', () => {
         expect(nextCheckboxValue(true)).toBe(false)
     })
-    test('unchecked clears to unanswered', () => {
-        expect(nextCheckboxValue(false)).toBe(null)
+    test('unchecked becomes checked', () => {
+        expect(nextCheckboxValue(false)).toBe(true)
     })
     test('a non-boolean value is checked', () => {
         expect(nextCheckboxValue('yes')).toBe(true)
         expect(nextCheckboxValue(3)).toBe(true)
         expect(nextCheckboxValue('')).toBe(true)
     })
-    test('three clicks return to unanswered', () => {
+    test('two clicks from blank leave it unchecked, never blank again', () => {
         let v: unknown = null
-        for (let i = 0; i < 3; i++) v = nextCheckboxValue(v)
-        expect(v).toBe(null)
-    })
-    test('an untyped column toggles and never clears', () => {
-        expect(nextCheckboxValue(false, false)).toBe(true)
-        expect(nextCheckboxValue(true, false)).toBe(false)
-        expect(nextCheckboxValue(null, false)).toBe(true)
+        for (let i = 0; i < 2; i++) v = nextCheckboxValue(v)
+        expect(v).toBe(false)
     })
 })

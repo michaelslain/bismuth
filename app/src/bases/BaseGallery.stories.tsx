@@ -320,7 +320,7 @@ export const AllKinds: Story = {
  *    through the fake's create path) and its row editor opens → typing a name shows on the pin;
  *  - a left-click on an existing pin opens ITS editor, and a rename there relabels the pin;
  *  - the map's right-click `place <title> here` places an existing row with no coordinates.
- *  Each write goes through BaseView's `onChange={refetchAll}`, which only reaches the transport
+ *  Each write goes through BaseView's `onChange` refetch, which only reaches the transport
  *  because the write also bumps the server version (`versioned: true`) — otherwise BaseView's
  *  version-gated row cache answers with the pre-write rows. The zoom and centre the user chose
  *  survive every step. */

@@ -1,14 +1,9 @@
-// The click order of a checkbox cell. A column TYPED as a checkbox (declared in the base, or in
-// the vault's property registry) cycles unanswered -> checked -> unchecked -> unanswered.
-// `null` is the answer "clear": the row write deletes the property, because an absent property
-// means unanswered and is not the same as `false`. An untyped column is a checkbox only while it
-// holds a boolean, so clearing it would turn the next click into a text edit: it toggles
-// checked <-> unchecked instead.
+// The click order of a checkbox cell: checked <-> unchecked. A blank value draws as an unchecked
+// box (PropertyDisplay), so it is unchecked here too and a click checks it; unchecking writes
+// `false`. Clearing back to blank would look like a click that did nothing.
 
-/** The value a click commits. Any stored value that is not a boolean (a string, a number) counts
- *  as unanswered, so the click checks it. */
-export function nextCheckboxValue(current: unknown, typed = true): true | false | null {
-    if (current === true) return false
-    if (current === false) return typed ? null : true
-    return true
+/** The value a click commits. Any stored value that is not `true` (blank, `false`, a string, a
+ *  number) counts as unchecked, so the click checks it. */
+export function nextCheckboxValue(current: unknown): boolean {
+    return current !== true
 }

@@ -63,7 +63,7 @@ Summary keys accept the bare and the `note.` spelling interchangeably, so `price
 
 ### Column labels and hidden columns
 
-A header shows the property's `displayName` when its base declares one, else the id without its prefix (`note.price` shows `price`). A property marked `hidden: true` is left out of the auto-derived columns, but an explicit `order` always wins and can show it.
+A header shows the property's `displayName` when its base declares one, under either spelling (`price:` or `note.price:` both label the column `note.price`), else the id without its prefix (`note.price` shows `price`). A property marked `hidden: true` is left out of the auto-derived columns, but an explicit `order` always wins and can show it.
 
 ```yaml
 ---
@@ -100,7 +100,7 @@ The first column is the title cell: the value as a link that opens the note. A r
 | `tags`, `tag` | A plain teal `#tag` list. |
 | `rating`, `stars`, `score` (numeric value) | Five gold stars. |
 
-Every other cell shows the value as text: links as links, booleans as a `[ ]` or `[x]` glyph, dates as `YYYY-MM-DD`, lists joined with commas, and empty values as `—`.
+Every other cell shows the value as text: links as links, booleans as a `[ ]` or `[x]` glyph, dates as `YYYY-MM-DD`, lists joined with commas, and empty values as `—`. A blank cell in a column declared `boolean` (or `checkbox`) shows an unchecked `[ ]`, not `—`.
 
 ## Tasks mode
 
@@ -117,7 +117,7 @@ A saved base file supports every row operation from the table itself.
 
 - **Add a row.** Click **New row** in the toolbar. A collection appends a row to its body, seeded from the declared property defaults. A base sourced from notes creates an `Untitled` note in the base's folder and opens its row editor. If the base's filters would hide the new row, a toast says so. In `tasks` mode the bar offers **New task** instead.
 - **Edit a cell.** Click it. The editor matches the property's declared type, or the value's own shape when no type is declared. Enter or blur saves; Escape cancels.
-- **Toggle a boolean.** Click a boolean cell. It flips immediately and never opens an editor.
+- **Toggle a boolean.** Click a boolean cell. It flips between checked and unchecked immediately, never opens an editor, and the table keeps its scroll position.
 - **Edit tags.** A tags cell opens as one comma-separated line with tag completion from the column's own values, then every tag in the vault. Tab or Enter takes the highlighted suggestion, and Enter with no popup saves the list.
 - **Edit or delete a whole row.** Right-click the row to open the row editor, which lists every column and has a delete action. Both a deleted stored row and a trashed note offer an Undo toast.
 

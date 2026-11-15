@@ -83,7 +83,7 @@ A property's `type` is functional: it selects the editor and the display.
 | `text` | Plain single-line text. |
 | `markdown` | A multiline markdown body. |
 | `number` | A number, formatted by `number` and `unit`. |
-| `boolean` | A checkbox. In a table cell of a column declared `boolean` (or `checkbox`), a click cycles unanswered, checked, unchecked, then back to unanswered; unanswered removes the property from the note, so an absent property stays distinct from `false`. A column with no declared type toggles checked and unchecked. |
+| `boolean` | A checkbox. A blank value shows as an unchecked `[ ]` when the property is declared `boolean` (or `checkbox`) in the base or the vault's property registry. In a table cell, a click flips checked and unchecked: a blank cell checks to `true`, and unchecking writes `false`. |
 | `select` | One choice from `options`. |
 | `multiselect` | Any subset of `options`. |
 | `date` | A calendar date, `YYYY-MM-DD`. |
@@ -172,7 +172,7 @@ The kanban card's inline editor (`app/src/bases/KanbanCard.tsx`, `PropertyValueE
 | `text` | single-line input |
 | `markdown` | multiline textarea, rendered as block markdown |
 | `number` | numeric input, displayed through `numberFormat.ts` |
-| `boolean` | chip toggle; a table cell cycles through `checkboxCycle.ts` |
+| `boolean` | chip toggle; a table cell flips through `checkboxCycle.ts` |
 | `date`, `datetime` | date or datetime-local input |
 | `select` | dropdown |
 | `multiselect` | the comma-separated field in `app/src/ui/TagsField.tsx` |

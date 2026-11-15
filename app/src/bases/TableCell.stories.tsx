@@ -78,7 +78,7 @@ export const EditInPlace: Story = {
 }
 
 /** A boolean cell never becomes an `editing` state — a click commits the next step immediately,
- *  with no `PropertyValueEditor`/input ever mounted. The cell starts unanswered, so the first
+ *  with no `PropertyValueEditor`/input ever mounted. A blank cell counts as unchecked, so the first
  *  click checks it (`x`) and the second unchecks it (blank here: this story shows only checked). */
 export const BooleanToggle: Story = {
     render: () => {

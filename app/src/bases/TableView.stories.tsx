@@ -430,9 +430,8 @@ export const EditableBooleanAndSelect: Story = {
         expect(widths()).toEqual(before)
 
         // The boolean cell: one click flips it, immediately, with no `input` ever appearing —
-        // and the flip survives because the row store above is real. `done` has no declared
-        // type, so it toggles and never clears to unanswered (a cleared untyped cell would stop
-        // being a checkbox).
+        // and the flip survives because the row store above is real. A click only ever flips
+        // checked <-> unchecked; it never clears the value.
         const boolBtn = () =>
             firstRowCells()[doneIdx]!.querySelector<HTMLElement>('button')!
         // The boolean is the `[ ]` / `[x]` BooleanValue glyph: false is drawn, not blank.
@@ -686,7 +685,7 @@ export const RightClickOpensRowEditor: Story = {
 // A habit tracker over REAL day notes: one row per day, one checkbox column per habit, and an
 // in-memory note store behind `/set-property` + `/delete-property`, so each click visibly sticks
 // and the frontmatter under the table shows exactly what the note on disk now holds. A habit
-// nobody has logged yet is ABSENT from the note (the `—` cell), not `false`.
+// nobody has logged yet is ABSENT from the note, and its cell is an unchecked `[ ]`.
 const HABITS = ['meditate', 'read', 'workout']
 const HABIT_CONFIG: BaseConfig = {
     declaredProperties: HABITS,
@@ -704,8 +703,9 @@ const dayRow = (date: string, note: Record<string, unknown>): Row => ({
     formula: {},
 })
 
-/** Click a habit cell three times: `—` (not logged) → `[x]` (done) → `[ ]` (missed) → `—`
- *  again, and the note's frontmatter below follows: `true`, `false`, then the line is gone. */
+/** Click a habit cell three times: `[ ]` (not logged) → `[x]` (done) → `[ ]` (missed) → `[x]`,
+ *  and the note's frontmatter below follows: `true`, `false`, `true`. A blank cell is never a
+ *  `—`, and a click never clears the value. */
 export const HabitTableCheckboxes: Story = {
     render: () => {
         const [notes, setNotes] = createSignal<Row[]>([
@@ -768,17 +768,21 @@ export const HabitTableCheckboxes: Story = {
         const cell = () =>
             canvasElement.querySelectorAll<HTMLElement>('tbody tr:last-child td')[col]!
         const glyph = () => (cell().textContent ?? '').trim()
+        const state = () => cell().querySelector('[aria-label]')?.getAttribute('aria-label')
         const disk = () => canvasElement.querySelector('[data-testid="frontmatter"]')!.textContent ?? ''
         const lastNote = () => disk().split('days/2026-11-12.md')[1] ?? ''
-        expect(glyph()).toBe('—')
+        expect(glyph()).not.toBe('—')
+        expect(state()).toBe('no')
         expect(lastNote()).not.toContain('read')
         cell().querySelector<HTMLElement>('button')!.click()
         await waitFor(() => expect(lastNote()).toContain('read: true'))
+        expect(state()).toBe('yes')
         cell().querySelector<HTMLElement>('button')!.click()
         await waitFor(() => expect(lastNote()).toContain('read: false'))
+        expect(state()).toBe('no')
         cell().querySelector<HTMLElement>('button')!.click()
-        await waitFor(() => expect(lastNote()).not.toContain('read'))
-        expect(glyph()).toBe('—')
+        await waitFor(() => expect(lastNote()).toContain('read: true'))
+        expect(state()).toBe('yes')
     },
 }
 

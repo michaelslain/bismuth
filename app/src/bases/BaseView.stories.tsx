@@ -12,6 +12,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
 import {
+    disarmFakeServerVersion,
     fakeTransport,
     type FakeTransportSeed,
 } from '../ui/_fakeTransport'
@@ -2253,5 +2254,132 @@ export const TwoCalendarsKeepTheirOwnPeriod: Story = {
         expect(monthGrid(left())).toBeNull()
         expect(pressedPeriod(right)).toBe('month')
         expect(monthGrid(right)).toBeTruthy()
+    },
+}
+
+// ---- a habit table: wide, checkbox-typed, ticked daily -----------------------------------------
+
+const HABITS = [
+    'sunlight', 'workout', 'homeCooked', 'hygiene', 'meditation', 'journal',
+    'reading', 'stretch', 'litter', 'catWater', 'noSugar', 'inbox',
+]
+const HABIT_PATH = 'self/Habit Tracker.md'
+const HABIT_BODY =
+    '---\ntype: base\nview: table\nsource: notes where file.inFolder("days")\norder:\n' +
+    ['note.date', ...HABITS.map(h => `note.${h}`)].map(c => `  - ${c}\n`).join('') +
+    'sort:\n  - property: note.date\n    direction: DESC\nproperties:\n' +
+    '  date: {displayName: Day, type: date}\n' +
+    HABITS.map(h => `  ${h}: {displayName: ${h}, type: checkbox}\n`).join('') +
+    // Saved widths, as a table the user has sized carries: what makes it wider than the pane.
+    'columnWidths:\n' +
+    ['note.date', ...HABITS.map(h => `note.${h}`)].map(c => `  ${c}: 110\n`).join('') +
+    '---\n'
+
+function habitRow(day: string, note: Record<string, unknown>): Row {
+    return {
+        file: {
+            name: day,
+            basename: day,
+            path: `days/${day}.md`,
+            folder: 'days',
+            ext: 'md',
+            size: 64,
+            ctime: 0,
+            mtime: 0,
+            tags: [],
+            links: [],
+        },
+        note: { date: day, ...note },
+        formula: {},
+    }
+}
+
+/** A habit table as it is used every day: twelve checkbox columns, wider than the pane, a new
+ *  day row with nothing ticked yet. Scroll right and tick a box: the table stays where it is
+ *  (the cell's write refetches in a transition, so the pane never swaps to its Suspense fallback,
+ *  which detached the table and reset its scroll to the start), and every blank checkbox reads
+ *  as an unchecked `[ ]`, never the em dash. Each click flips one box, checked <-> unchecked. */
+export const TableCheckboxKeepsScroll: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                versioned: true,
+                files: { [HABIT_PATH]: HABIT_BODY },
+                rows: [
+                    habitRow('2026-11-14', {}),
+                    habitRow('2026-11-13', { sunlight: true, journal: false }),
+                    habitRow('2026-11-12', { sunlight: true, workout: true, inbox: true }),
+                    habitRow('2026-11-11', { meditation: true }),
+                ],
+            }),
+        )
+        onCleanup(disarmFakeServerVersion)
+        return (
+            <div
+                style={{
+                    width: '520px',
+                    height: '320px',
+                    display: 'flex',
+                    'flex-direction': 'column',
+                    overflow: 'hidden',
+                }}
+            >
+                <Suspense fallback={<div data-testid="story-suspense-fallback" />}>
+                    <BaseView path={HABIT_PATH} body={HABIT_BODY} />
+                </Suspense>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const table = await waitFor(() => {
+            const el = canvasElement.querySelector('table')
+            expect(el?.querySelectorAll('tbody tr').length).toBe(4)
+            return el!
+        })
+        const header = [...table.querySelectorAll('thead th')]
+        const col = header.findIndex(th => /inbox/.test(th.textContent ?? ''))
+        expect(col).toBeGreaterThan(0)
+        const cell = (r: number) =>
+            table.querySelectorAll('tbody tr')[r].children[col] as HTMLElement
+        // The new day's blank checkboxes are unchecked boxes, not dashes.
+        const today = table.querySelectorAll('tbody tr')[0]
+        expect(today.textContent).not.toContain('—')
+        expect(today.querySelectorAll('[aria-label="no"]').length).toBe(HABITS.length)
+
+        let scroller: HTMLElement | null = table.parentElement
+        while (
+            scroller &&
+            !(
+                scroller.scrollWidth > scroller.clientWidth &&
+                /auto|scroll/.test(getComputedStyle(scroller).overflowX)
+            )
+        )
+            scroller = scroller.parentElement
+        expect(scroller, 'the table is wider than its pane').toBeTruthy()
+        scroller!.scrollLeft = scroller!.scrollWidth
+        const left = scroller!.scrollLeft
+        expect(left).toBeGreaterThan(100)
+
+        let everDetached = false
+        const observer = new MutationObserver(() => {
+            if (!table.isConnected) everDetached = true
+        })
+        observer.observe(canvasElement, { childList: true, subtree: true })
+        await userEvent.click(cell(0).querySelector('button')!)
+        await waitFor(() =>
+            expect(cell(0).querySelector('[aria-label="yes"]')).toBeTruthy(),
+        )
+        observer.disconnect()
+        expect(everDetached, 'the table was detached by the write').toBe(false)
+        expect(scroller!.scrollLeft).toBe(left)
+        // A second click unchecks it: a click never leaves a box blank-looking with no change.
+        await userEvent.click(cell(0).querySelector('button')!)
+        await waitFor(() =>
+            expect(cell(0).querySelector('[aria-label="no"]')).toBeTruthy(),
+        )
+        expect(scroller!.scrollLeft).toBe(left)
+        // Leave the story at rest for a person to try it: scrolled to the start, nothing focused.
+        scroller!.scrollLeft = 0
+        ;(document.activeElement as HTMLElement | null)?.blur()
     },
 }
