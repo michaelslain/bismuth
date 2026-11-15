@@ -47,7 +47,13 @@ const ChatTurnLabel: Component<ChatTurnLabelProps> = props => {
                 )}
             </Show>
             {avatar()}
-            <Text as="span" eyebrow size="micro" tone="faint">
+            <Text
+                as="span"
+                eyebrow
+                size="micro"
+                tone="faint"
+                class={styles['name']}
+            >
                 {props.label.toLowerCase()}
             </Text>
             {props.trailing}

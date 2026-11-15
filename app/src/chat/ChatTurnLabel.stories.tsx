@@ -97,5 +97,13 @@ export const Folded: Story = {
         await expect(button).toHaveAttribute('aria-expanded', 'false')
         await expect(getComputedStyle(button).opacity).toBe('1')
         await expect(canvas.getByText(/What changed/)).toBeInTheDocument()
+        // The long preview gives way, never the name: "you" stays on one line, not "yo" over "u".
+        const name = canvas.getByText('you')
+        const range = document.createRange()
+        range.selectNodeContents(name)
+        const lineTops = new Set(
+            [...range.getClientRects()].map(r => Math.round(r.top)),
+        )
+        await expect(lineTops.size).toBe(1)
     },
 }

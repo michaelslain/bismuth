@@ -15,6 +15,15 @@
     gap: var(--sp-4);
 }
 
+/* The speaker name keeps its natural width on one line. Text's size step sets
+   `overflow-wrap: anywhere`, which makes a shrinkable flex item's min-content one character
+   wide, so a folded row's long preview squeezed "you" to "yo" over "u". The preview, not the
+   name, is what gives way. */
+.name {
+    flex: none;
+    white-space: nowrap;
+}
+
 /* A folded turn's first line, after the label: fills the rest of the row and ellipsises. */
 .preview {
     flex: 1 1 auto;
