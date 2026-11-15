@@ -125,6 +125,15 @@ export async function listBases(root: string): Promise<string[]> {
     return out
 }
 
+/** Every file under the vault whatever its extension (dot-dirs and dotfiles skipped, like
+ *  listMarkdown): the raw listing a `source: files` base filters. */
+export async function listFiles(root: string): Promise<string[]> {
+    const glob = new Bun.Glob('**/*')
+    const out: string[] = []
+    for await (const rel of glob.scan({ cwd: root, dot: false, onlyFiles: true })) out.push(rel)
+    return out
+}
+
 // Per-note icon+visibility cache, keyed by absolute path → { mtime, icon, visibility }.
 // listTree otherwise reads + frontmatter-parses every .md just to pull the optional
 // `icon`/`visibility` fields; this skips that work for notes whose mtime is unchanged

@@ -10,6 +10,7 @@ import type { ParsedNote } from '../src/parsedNotes'
 function memAccess(vault: Record<string, string>): FileAccess {
     return {
         listBases: async () => [],
+        listFiles: async () => [],
         listMarkdown: async () => Object.keys(vault),
         listTree: async () =>
             Object.keys(vault).map(path => ({ path, kind: 'file' as const })),

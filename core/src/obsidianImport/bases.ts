@@ -206,7 +206,7 @@ function fromDoc(path: string, doc: unknown, items: ReportItem[]): ParsedBase | 
 function flatConfig(
     b: ParsedBase,
     v: ViewConf,
-    opts: { source: 'notes' } | { ref: string },
+    opts: { source: 'files' } | { ref: string },
     tags: string[],
     items: ReportItem[],
     where: string,
@@ -215,7 +215,7 @@ function flatConfig(
     if ('ref' in opts) {
         out.source = 'base'
         out.ref = opts.ref
-    } else out.source = 'notes'
+    } else out.source = 'files' // an Obsidian base lists every file in the vault, attachments included
 
     const g = b.global.filters
     const own = v.conf.filters
@@ -258,6 +258,11 @@ function flatConfig(
                 else note(`summary "${String(s)}" on ${prop} dropped; Bismuth computes only ${SUMMARY_NAMES.join(', ')}`, 'lossy')
             }
             if (Object.keys(kept).length) out.summaries = kept
+            continue
+        }
+        // `file.file` is Obsidian's file object; as a card image it means the row's own file.
+        if (k === 'image' && val === 'file.file') {
+            out[k] = 'file.path'
             continue
         }
         out[k] = val
@@ -362,7 +367,7 @@ export function convertBases(
         const written: string[] = []
         const targets = [first]
 
-        const c1 = flatConfig(b, v1, { source: 'notes' }, tags, items, path)
+        const c1 = flatConfig(b, v1, { source: 'files' }, tags, items, path)
         if (isMerge) {
             const body = mdText!
                 .split('\n')
@@ -445,7 +450,7 @@ export function convertBases(
             if (!hit) return null
             v = hit
         }
-        return flatConfig(b, v, { source: 'notes' }, tags, [], where)
+        return flatConfig(b, v, { source: 'files' }, tags, [], where)
     }
 
     for (const [path] of files) {
@@ -467,7 +472,7 @@ export function convertBases(
                         }
                     })()
                     if (!b) return seg.text
-                    const conf = flatConfig(b, b.views[0], { source: 'notes' }, tags, items, path)
+                    const conf = flatConfig(b, b.views[0], { source: 'files' }, tags, items, path)
                     if (b.views.length > 1)
                         items.push({ section: 'decide', area: 'bases', path, detail: `a base fence with ${b.views.length} views keeps only view 1; dropped views: ${b.views.slice(1).map(v => `"${v.name}"`).join(', ')}` })
                     items.push({ section: 'converted', area: 'bases', path, detail: 'base fence -> query fence' })

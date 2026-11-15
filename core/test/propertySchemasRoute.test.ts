@@ -71,6 +71,7 @@ function settingsOnly(raw: string | null): FileAccess {
     }
     return {
         listBases: async () => [],
+        listFiles: async () => [],
         listMarkdown: async () => [],
         listTree: async () => [],
         readNote: async (_root, rel) =>

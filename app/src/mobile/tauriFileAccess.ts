@@ -69,6 +69,7 @@ export function tauriFileAccess(): FileAccess {
     return {
         listMarkdown: root => collectByExt(root, '.md'),
         listBases: root => collectByExt(root, '.base.jsonl'),
+        listFiles: root => collectByExt(root, ''),
 
         listTree: async root => {
             const out: TreeEntry[] = []

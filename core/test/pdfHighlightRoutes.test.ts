@@ -302,6 +302,7 @@ describe('in-process backend', () => {
         const seen: string[] = []
         const fa: FileAccess = {
             listBases: async () => [],
+            listFiles: async () => [],
             listMarkdown: async () => [],
             listTree: async () => [],
             readNote: async (_r, rel) => {

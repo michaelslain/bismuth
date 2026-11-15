@@ -52,6 +52,13 @@ export function companionPathFor(binaryPath: string): string {
     return `${binaryPath}.md`
 }
 
+/** The note a row's properties are written to: a note itself, an image's or PDF's companion
+ *  note, or null for a file that has no properties (a drawing, a sheet, a base). */
+export function propertyNoteFor(path: string): string | null {
+    if (extOfPath(path) === 'md') return path
+    return isCompanionable(path) ? companionPathFor(path) : null
+}
+
 /** The ink-annotation sidecar for a binary file — `photo.png` → `photo.png.draw`. */
 export function inkSidecarFor(binaryPath: string): string {
     return `${binaryPath}.draw`

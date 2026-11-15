@@ -55,7 +55,7 @@ describe('convertBases', () => {
         const r = run({ 'P/Books.base': BOOKS })
         const c = config(r, 'P/Books.base.jsonl')
         expect(c).toMatchObject({
-            source: 'notes',
+            source: 'files',
             filters: { and: ['file.hasTag("book")'] },
             formulas: { left: 'pages - read' },
             properties: { status: { displayName: 'Status' } },
@@ -69,6 +69,21 @@ describe('convertBases', () => {
         const conv = r.items.find(i => i.section === 'converted')!
         expect(conv.detail).toContain('P/Books.base')
         expect(conv.detail).toContain('P/Books.base.jsonl')
+    })
+
+    test("a cards image of `file.file` (the row's own file) becomes file.path", () => {
+        const r = run({
+            'Attachments.base': `filters:
+  and:
+    - '!file.ext.containsAny("base", "md", "pdf", "canvas")'
+views:
+  - type: cards
+    name: All images
+    image: file.file
+`,
+        })
+        const c = config(r, 'Attachments.base.jsonl')
+        expect(c).toMatchObject({ source: 'files', view: 'cards', image: 'file.path' })
     })
 
     test('a view with its own filters is ANDed with the global ones', () => {
@@ -159,7 +174,7 @@ views:
         const md = edit(r, 'P/Books.md') as string
         expect(md).toContain('aliases:')
         expect(md).toContain('type: base')
-        expect(md).toContain('source: notes')
+        expect(md).toContain('source: files')
         expect(md).toContain('view: table')
         expect(md).toContain('Some prose')
         expect(md).not.toContain('![[Books.base]]')
@@ -179,7 +194,7 @@ views:
         const note = 'a\n\n```base\nfilters: \'file.hasTag("x")\'\nviews:\n  - type: cards\n    limit: 3\n```\n\n````md\n```base\nviews: []\n```\n![[Books.base]] [[Books.base]]\n````\n'
         const out = edit(run({ 'n.md': note }), 'n.md') as string
         expect(out).toContain('```query\n')
-        expect(out).toContain('source: notes')
+        expect(out).toContain('source: files')
         expect(out).toContain('view: cards')
         expect(out).toContain('limit: 3')
         expect(out).toContain('````md\n```base\nviews: []\n```\n![[Books.base]] [[Books.base]]\n````')
@@ -197,7 +212,7 @@ views:
             'n.md': 'x\n\n![[Books.base]]\n\n![[Books.base#Shelf]]\n\nsee [[Books.base]] and [[P/Books.base|t]] and `[[Books.base]]`\n',
         }
         const out = edit(run(files), 'n.md') as string
-        expect(out).toContain('```query\ntype: base\nsource: notes\nview: table\n```')
+        expect(out).toContain('```query\ntype: base\nsource: files\nview: table\n```')
         expect(out).toContain('view: cards\nlimit: 5\n```')
         expect(out).toContain('see [[Books]] and [[P/Books|t]] and `[[Books.base]]`')
     })

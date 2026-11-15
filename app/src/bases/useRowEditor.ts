@@ -10,6 +10,7 @@
 //   useRowEditor(props: { config, view, columns?, onChanged?, siblingValues? }): { editable, open }
 import type { BaseConfig, Row, ViewConfig } from '../../../core/src/bases/types'
 import { isStoredPlaceholder } from './taskWrite'
+import { propertyNoteFor } from '../../../core/src/fileKinds'
 import { pushToast } from '../ui/toastStore'
 
 export type RowEditorProps = {
@@ -24,15 +25,28 @@ export type RowEditorProps = {
 }
 
 export type RowEditor = {
-    /** False for a task-line row (a checkbox in a note, edited by its own task editor) and for
-     *  a pending placeholder (an optimistic add with no handle to write to yet). */
+    /** False for a task-line row (a checkbox in a note, edited by its own task editor), for
+     *  a pending placeholder (an optimistic add with no handle to write to yet), and for a file
+     *  row with no property note (a drawing, a sheet, a base). */
     editable: (row: Row) => boolean
     open: (row: Row, focusTarget?: string) => void
 }
 
+/** A stored row, a note, an image or a PDF holds properties; a files-source row for a drawing,
+ *  a sheet or a base has nowhere to write them, so it opens its file instead. */
+function hasProperties(row: Row): boolean {
+    return (
+        Number.isInteger(row.index) ||
+        !row.file.path ||
+        propertyNoteFor(row.file.path) !== null
+    )
+}
+
 export function useRowEditor(props: RowEditorProps): RowEditor {
     const editable = (row: Row): boolean =>
-        typeof row.note.line !== 'number' && !isStoredPlaceholder(row)
+        typeof row.note.line !== 'number' &&
+        !isStoredPlaceholder(row) &&
+        hasProperties(row)
     return {
         editable,
         open: (row, focusTarget) => {

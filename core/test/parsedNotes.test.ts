@@ -241,6 +241,7 @@ test('a FileAccess with only list/read/stat serves the cache (the mobile seam)',
     let reads = 0
     setFileAccess({
         listBases: async () => [],
+        listFiles: async () => [],
         listMarkdown: async () => Object.keys(files),
         listTree: async () => [],
         readNote: async (_r, rel) => {

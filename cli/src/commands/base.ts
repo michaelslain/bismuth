@@ -298,19 +298,27 @@ export const commands: CommandMap = {
 
     rows: {
         summary:
-            'Resolve a source (base | notes | tasks) to rows, following composition',
-        usage: "[--of '[[Base]]' | --where EXPR | --tasks DSL]",
+            'Resolve a source (base | notes | files | tasks) to rows, following composition',
+        usage: "[--of '[[Base]]' | --where EXPR | --files [EXPR] | --tasks DSL]",
         run: async args => {
             const vault = requireVault(args)
             const of = flag(args, 'of')
             const where = flag(args, 'where')
             const tasks = flag(args, 'tasks')
+            // `--files` may stand alone (every file) or carry a where-expression.
+            const filesArg = flag(args, 'files')
+            const files = bool(args, 'files') || filesArg !== undefined
+                ? filesArg && !filesArg.startsWith('--') ? filesArg : ''
+                : undefined
 
             // Construct a SourceSpec from exactly one selector. `--of` composes another base;
-            // `--tasks` runs a task DSL (its value is the where-expression); `--where` filters
-            // vault notes. With no selector, default to all vault notes (kind: notes).
+            // `--tasks` runs a task DSL (its value is the where-expression); `--files` lists every
+            // vault file (notes and attachments), its value an optional where-expression;
+            // `--where` filters vault notes. With no selector, default to all vault notes.
             let spec: SourceSpec
             if (of !== undefined) spec = { kind: 'base', ref: of }
+            else if (files !== undefined)
+                spec = { kind: 'files', where: files || undefined }
             else if (tasks !== undefined)
                 spec = { kind: 'tasks', where: tasks || undefined }
             else if (where !== undefined) spec = { kind: 'notes', where }

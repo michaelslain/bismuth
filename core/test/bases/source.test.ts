@@ -295,6 +295,7 @@ describe('resolveBaseRows realPath rooting (FileAccess seam)', () => {
         const asked: string[] = []
         const stub = (): FileAccess => ({
             listBases: async () => [],
+            listFiles: async () => [],
             listMarkdown: async () => ['A.md'],
             listTree: async () => [],
             readNote: async () => '---\ntype: base\n---\n',

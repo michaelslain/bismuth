@@ -12,20 +12,21 @@
 import type { SourceSpec } from '../../../core/src/bases/types'
 import { formToWhere, whereToForm, type FilterForm } from './filterForm'
 
-export type SourceChoice = 'own' | 'notes' | 'tasks' | 'base'
+export type SourceChoice = 'own' | 'notes' | 'files' | 'tasks' | 'base'
 
 export const SOURCE_CHOICES: { value: SourceChoice; label: string }[] = [
     { value: 'own', label: "this base's own rows" },
     { value: 'notes', label: 'vault notes' },
+    { value: 'files', label: 'vault files' },
     { value: 'tasks', label: 'vault tasks' },
     { value: 'base', label: 'another base' },
 ]
 
 export interface SourceForm {
     kind: SourceChoice
-    /** notes / tasks: the row filter. */
+    /** notes / files / tasks: the row filter. */
     where: FilterForm
-    /** notes / tasks: `[[Base]]` whose notes scope the source ('' = the whole vault). */
+    /** notes / files / tasks: `[[Base]]` whose notes scope the source ('' = the whole vault). */
     from: string
     /** base: `[[Other Base]]` to render. */
     ref: string
@@ -61,7 +62,7 @@ export function formToSource(form: SourceForm): SourceSpec | undefined {
         const ref = form.ref.trim()
         return ref ? { kind: 'base', ref } : { kind: 'base' }
     }
-    const out: { kind: 'notes' | 'tasks'; where?: string; from?: string } = {
+    const out: { kind: 'notes' | 'files' | 'tasks'; where?: string; from?: string } = {
         kind: form.kind,
     }
     const where = formToWhere(form.where)

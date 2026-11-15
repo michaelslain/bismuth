@@ -8,6 +8,7 @@ import TaskRow from './TaskRow'
 import CardFrame from './CardFrame'
 import CardBodyInner from './CardBodyInner'
 import CardCover from './CardCover'
+import { isImagePath } from '../../../core/src/fileKinds'
 import { autoGroupColor, claimedSlots } from './groupHue'
 import { useRowEditor } from './useRowEditor'
 import GroupHeader from '../ui/GroupHeader'
@@ -87,6 +88,9 @@ export function CardsView(props: {
         if (v == null || typeof v === 'object') return null
         const s = String(v).trim()
         if (!s) return null
+        // A files-source card whose cover is its own file (`image: file.path`) shows a picture
+        // only for an image; a PDF or a note keeps the generated cover.
+        if (s === row.file.path && !isImagePath(s)) return null
         return isDirectUrl(s) ? s : api.assetUrl(s)
     }
 

@@ -132,6 +132,9 @@ export interface FakeTransportSeed {
     tree?: TreeEntry[]
     /** POST /rows (api.resolveRows): a fixed Row[] for every spec, or a resolver keyed by spec. */
     rows?: Row[] | ((spec: SourceSpec) => Row[])
+    /** `api.assetUrl(path)` per vault path, so a story's vault image (a card cover drawn from
+     *  `file.path`) loads a real src; an unmapped path is returned as-is. */
+    assets?: Record<string, string>
     /** Called on every `uploadAsset(targetPath, bytes)` instead of throwing, so a story can
      *  CAPTURE what an upload flow (e.g. a file-tree OS drop) tried to write without a real
      *  backend. Return the path actually written (defaults to `targetPath`, matching the real
@@ -953,7 +956,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         },
         fetchAsset: async (_url: string, targetPath: string): Promise<string> =>
             targetPath,
-        assetUrl: (target: string) => target,
+        assetUrl: (target: string) => seed.assets?.[target] ?? target,
         eventsUrl: () => '',
         base: () => 'fake://storybook',
     }

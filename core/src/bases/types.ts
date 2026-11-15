@@ -41,6 +41,7 @@ export function isValidType(t: unknown): t is ViewType {
 export type SourceSpec =
     | { kind: 'base'; ref?: string } // ref = "[[Other Base]]"; resolves that base's OWN source (composition)
     | { kind: 'notes'; where?: string; from?: string } // vault notes filtered by a Bases expression; from = "[[Base]]" scopes to that base's notes
+    | { kind: 'files'; where?: string; from?: string } // every vault file (notes, images, PDFs, any other file) filtered by a Bases expression; from scopes like notes
     | { kind: 'tasks'; where?: string; from?: string } // vault checkbox tasks; from = "[[Base]]" scopes tasks to that base's notes (not the whole vault)
 
 export interface ViewConfig {

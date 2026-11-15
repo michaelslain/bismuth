@@ -19,6 +19,8 @@ import { placeholderFile } from '../../../core/src/bases/types'
 import { declaredDefaults } from '../../../core/src/bases/properties'
 import { baseNameOf } from '../../../core/src/bases/baseFile'
 import { fileBasename } from '../../../core/src/pathUtils'
+import { propertyNoteFor } from '../../../core/src/fileKinds'
+import { BASE_EXT, isBasePath } from '../../../core/src/bases/baseFile'
 import { canWriteStoredRow, storedNote } from './taskWrite'
 import { restoreRowAt } from './restoreRow'
 import { storedTitleColumn, writableKey } from './kanbanMeta'
@@ -42,6 +44,24 @@ export function safeFilename(title: string): string {
         .replace(/^\.+/, '')
         .trim()
     return s.slice(0, 120) || 'Untitled'
+}
+
+/** The extension a rename keeps: `.md` for a note, the file's own for an attachment
+ *  (`.png`, `.pdf`), and `.base.jsonl` whole for a base. */
+function extOf(path: string): string {
+    if (isBasePath(path)) return BASE_EXT
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const dot = name.lastIndexOf('.')
+    return dot > 0 ? name.slice(dot) : ''
+}
+
+/** A typed title that already ends in the file's extension (`photo.png` for an image whose
+ *  name shows it) is not given it twice. */
+function stripExt(title: string, path: string): string {
+    const ext = extOf(path)
+    return ext && ext !== '.md' && title.toLowerCase().endsWith(ext.toLowerCase())
+        ? title.slice(0, -ext.length)
+        : title
 }
 
 /** Returns the row's note path AFTER a successful rename (or the unchanged path when nothing
@@ -70,7 +90,7 @@ export async function commitRename(
     }
     if (t === row.file.name) return row.file.path
     const dir = parentOf(row.file.path)
-    const desired = `${dir ? dir + '/' : ''}${safeFilename(t)}.md`
+    const desired = `${dir ? dir + '/' : ''}${safeFilename(stripExt(t, row.file.path))}${extOf(row.file.path)}`
     if (desired === row.file.path) return row.file.path
     try {
         await api.move(row.file.path, desired)
@@ -107,10 +127,26 @@ export async function commitMeta(
             if (next === null) delete note[key]
             else note[key] = next
             await api.rowUpdate(row.file.path, row.index!, note)
-        } else if (next === null) {
-            await api.deleteProperty(row.file.path, key)
         } else {
-            await api.setProperty(row.file.path, key, next)
+            // An image's or PDF's properties live in its companion note, made on the first
+            // write; a file with no property note (a drawing, a sheet, a base) takes none.
+            const target = propertyNoteFor(row.file.path)
+            if (target === null) return
+            const existing =
+                target === row.file.path
+                    ? ''
+                    : await api.read(target).then(
+                          t => t,
+                          () => null,
+                      )
+            if (existing === null) {
+                if (next === null) return
+                await api.write(target, `---\n${yamlStringify({ [key]: next })}---\n`)
+            } else if (next === null) {
+                await api.deleteProperty(target, key)
+            } else {
+                await api.setProperty(target, key, next)
+            }
         }
         onChanged?.()
     } catch (e) {

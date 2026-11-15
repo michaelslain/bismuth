@@ -22,6 +22,9 @@ export interface FileAccess {
     listMarkdown(root: string): Promise<string[]>
     /** Every `*.base.jsonl` base under the vault, vault-relative; dot-dirs skipped like listMarkdown. */
     listBases(root: string): Promise<string[]>
+    /** Every file under the vault whatever its extension, vault-relative; dotfiles and dot-dirs
+     *  skipped like listMarkdown. Feeds a `source: files` base. */
+    listFiles(root: string): Promise<string[]>
     /** The full file/folder tree (md + .base + .sheet + .draw + folders) for the sidebar. */
     listTree(root: string): Promise<TreeEntry[]>
     /** Read one note's UTF-8 contents (vault-relative path). */
@@ -64,6 +67,7 @@ export async function getFileAccess(): Promise<FileAccess> {
     access = {
         listMarkdown: files.listMarkdown,
         listBases: files.listBases,
+        listFiles: files.listFiles,
         listTree: files.listTree,
         readNote: files.readNote,
         writeNote: files.writeNote,

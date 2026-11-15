@@ -26,8 +26,8 @@ export type SourceFieldsProps = {
 const stripLink = (v: string) => v.replace(/^\[\[|\]\]$/g, '')
 
 /**
- * Where a base's rows come from: this base's own body rows, vault notes, vault tasks, or
- * another base — with the notes/tasks `where` filter built from condition rows and the
+ * Where a base's rows come from: this base's own body rows, vault notes, every vault file
+ * (attachments too), vault tasks, or another base — with the notes/files/tasks `where` filter built from condition rows and the
  * `from` / `ref` base pickers. Writes the canonical object form (sourceForm.ts).
  */
 const SourceFields: Component<SourceFieldsProps> = props => {
@@ -45,7 +45,9 @@ const SourceFields: Component<SourceFieldsProps> = props => {
         withCurrent(props.bases, props.value.ref, stripLink),
     )
     const scoped = () =>
-        props.value.kind === 'notes' || props.value.kind === 'tasks'
+        props.value.kind === 'notes' ||
+        props.value.kind === 'files' ||
+        props.value.kind === 'tasks'
 
     return (
         <SettingsGrid class={props.class}>
@@ -54,7 +56,9 @@ const SourceFields: Component<SourceFieldsProps> = props => {
                 hint={
                     props.value.kind === 'own'
                         ? "rows come from the table in this base's body — with no table, every note in the vault."
-                        : undefined
+                        : props.value.kind === 'files'
+                          ? 'every file the sidebar lists: notes, images, pdfs, drawings, sheets and bases. an image or pdf reads its properties from its companion note.'
+                          : undefined
                 }
             >
                 <Select
@@ -99,7 +103,9 @@ const SourceFields: Component<SourceFieldsProps> = props => {
                         emptyHint={
                             props.value.kind === 'tasks'
                                 ? 'no conditions — every task is included.'
-                                : 'no conditions — every note is included.'
+                                : props.value.kind === 'files'
+                                  ? 'no conditions — every file is included.'
+                                  : 'no conditions — every note is included.'
                         }
                     />
                 </SettingsField>

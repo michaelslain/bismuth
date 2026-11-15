@@ -3,6 +3,9 @@ import { getParsedNote, getParsedNotes, type ParsedNote } from './parsedNotes'
 import { pathParts } from './vault'
 import type { FileMeta, Row } from './bases/types'
 import { fillBacklinks } from './bases/fileLinks'
+import { isCompanionable, isTreeListedName, companionPathFor, inkSidecarFor } from './fileKinds'
+import { mapWithConcurrency } from './concurrency'
+import { baseNameOf, isBasePath } from './bases/baseFile'
 
 function fileMeta(
     rel: string,
@@ -61,6 +64,76 @@ export async function buildVaultRows(root: string): Promise<Row[]> {
     const rows = notes.map(rowFor)
     // Backlinks span the whole vault, so they are set after every row exists, and again on
     // every patch below: an edit to one note changes the backlinks of the notes it links to.
+    fillBacklinks(rows)
+    return rows
+}
+
+/** Generated sidecars that never stand as rows of their own: a drawing's export
+ *  (`x.draw.png`, `x.draw.pdf`). */
+const isExportSidecar = (rel: string) => rel.endsWith('.draw.png') || rel.endsWith('.draw.pdf')
+
+/**
+ * The rows of a `source: files` base: every file the sidebar lists (notes, images, PDFs,
+ * drawings, sheets, bases), the way an Obsidian base lists the files Obsidian knows. A file of
+ * any other kind (a `LICENSE`, an audio file) is no row. A note is its ordinary row; any other
+ * file gets a row whose `file.ext`, `file.size` and timestamps are its own. An image's or PDF's
+ * companion note `<file>.md` is folded into the file's row (its frontmatter is the row's
+ * properties, its tags and links the row's), so a companion with its binary present is not a row
+ * of its own; neither is an ink sidecar `<file>.draw` or a drawing export. Backlinks are filled
+ * across the whole set, so an image embedded by a note lists that note.
+ *
+ * `noteRows` is the vault notes feed (`buildVaultRows`, or its server cache). Its rows are copied,
+ * never mutated: the backlinks here differ from the notes-only feed's.
+ */
+export async function buildFileRows(root: string, noteRows: readonly Row[]): Promise<Row[]> {
+    const fa = await getFileAccess()
+    const all = (await fa.listFiles(root))
+        .filter(rel => isTreeListedName(rel) && !isExportSidecar(rel))
+        .sort()
+    const notes = new Map(noteRows.map(r => [r.file.path, r] as const))
+    // A companion or ink sidecar hides only while its binary is present; an orphaned companion
+    // is an ordinary note row.
+    const hidden = new Set<string>()
+    for (const rel of all) {
+        if (!isCompanionable(rel)) continue
+        hidden.add(companionPathFor(rel))
+        hidden.add(inkSidecarFor(rel))
+    }
+    const others = all.filter(
+        rel => !rel.toLowerCase().endsWith('.md') && !hidden.has(rel),
+    )
+    const stats = new Map<string, FileStat | null>()
+    await mapWithConcurrency(others, 32, async rel => {
+        stats.set(rel, await fa.statNote(root, rel).catch(() => null))
+    })
+    const rows: Row[] = []
+    for (const rel of all) {
+        if (hidden.has(rel)) continue
+        if (rel.toLowerCase().endsWith('.md')) {
+            const r = notes.get(rel)
+            if (r) rows.push({ ...r, file: { ...r.file } })
+            continue
+        }
+        const companion = isCompanionable(rel) ? notes.get(companionPathFor(rel)) : undefined
+        const meta = fileMeta(
+            rel,
+            stats.get(rel) ?? null,
+            companion ? [...companion.file.tags] : [],
+            companion ? [...companion.file.links] : [],
+            companion ? [...(companion.file.embeds ?? [])] : [],
+        )
+        // An attachment's name keeps its extension (`photo.png`), as Obsidian shows it, so
+        // `photo.png` and `photo.jpg` stay apart; `file.basename` is the name without it.
+        const slash = rel.lastIndexOf('/')
+        meta.name = slash >= 0 ? rel.slice(slash + 1) : rel
+        // A base's extension is `base` (its file ends `.base.jsonl`), so a filter written
+        // against Obsidian's `.base` files (`file.ext == "base"`) finds it.
+        if (isBasePath(rel)) {
+            meta.ext = 'base'
+            meta.basename = baseNameOf(rel)
+        }
+        rows.push({ file: meta, note: companion?.note ?? {}, formula: {} })
+    }
     fillBacklinks(rows)
     return rows
 }

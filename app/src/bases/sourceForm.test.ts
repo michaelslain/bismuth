@@ -31,6 +31,17 @@ describe('sourceToForm ⇄ formToSource', () => {
         expect(formToSource(f)).toEqual({ kind: 'tasks', from: '[[Keep]]' })
     })
 
+    test('a files source round-trips its where and from', () => {
+        const spec = { kind: 'files' as const, where: 'file.ext == "png"', from: '[[Keep]]' }
+        const f = sourceToForm(spec)
+        expect(f.kind).toBe('files')
+        expect(f.from).toBe('[[Keep]]')
+        expect(formToSource(patchSource(f, { from: '' }))).toEqual({
+            kind: 'files',
+            where: 'file.ext == "png"',
+        })
+    })
+
     test('notes where edited through the filter rows', () => {
         const f0 = sourceToForm({ kind: 'notes', where: 'price > 5' })
         const f = {

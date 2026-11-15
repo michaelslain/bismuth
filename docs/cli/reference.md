@@ -187,7 +187,7 @@ Reads, validates and edits Bases, and resolves a source to rows. A base is a `<n
 | `base render` | `<path>` | Resolves the rows and runs the layout's grouping, sorting and summaries. The charts (`bar`, `line`, `stat`, `heatmap`) return a computed series. | no |
 | `base migrate` | `<basePath> \| --all [--dry-run]` | Converts a markdown base to `<name>.base.jsonl` and moves the `.md` to the vault trash. `--all` converts every markdown base in the vault. `--dry-run` prints the plan and writes nothing. | no |
 | `base migrate-queries` | `[--dry-run]` | Rewrites `query` blocks whose `tasks:` holds Tasks-query text into `tasks:` plus `where:` and `sort:`. | no |
-| `rows` | `[--of '[[Base]]' \| --where EXPR \| --tasks EXPR]` | Resolves one source to rows. Without a selector it returns every note. | no |
+| `rows` | `[--of '[[Base]]' \| --where EXPR \| --files [EXPR] \| --tasks EXPR]` | Resolves one source to rows. `--files` lists every file the sidebar lists (images and PDFs too), filtered by an optional expression. Without a selector it returns every note. | no |
 | `row add` | `<basePath> --json '{...}'` | Appends a row to a collection. | no |
 | `row update` | `<basePath> <index> --json '{...}'` | Replaces the row at a 0-based index. | no |
 | `row set` | `<basePath> --match <field>=<value> --json '{...}'` | Merges the fields into the one row of a collection whose `<field>` equals `<value>` and keeps the fields it does not name. A `null` value removes that field. Exits `1` when no row or several rows match, or when the base is a view. | no |

@@ -31,6 +31,17 @@ test('a pending placeholder is not editable', () => {
     expect(editor.editable(row({ index: -1 }))).toBe(false)
 })
 
+test('an image or PDF row is editable: its properties live in its companion note', () => {
+    expect(editor.editable(row({ file: placeholderFile('p', 'img/p.png') }))).toBe(true)
+    expect(editor.editable(row({ file: placeholderFile('d', 'd.pdf') }))).toBe(true)
+})
+
+test('a file row with no property note (a drawing, a sheet, a base) is not editable', () => {
+    expect(editor.editable(row({ file: placeholderFile('s', 's.draw') }))).toBe(false)
+    expect(editor.editable(row({ file: placeholderFile('m', 'm.mp3') }))).toBe(false)
+    expect(editor.editable(row({ file: placeholderFile('b', 'b.base.jsonl') }))).toBe(false)
+})
+
 test('open forwards siblingValues to openRowEditor', async () => {
     const calls: Array<Record<string, unknown>> = []
     // Mocked so the real .tsx (JSX runtime unresolvable from the gate's cwd) is never loaded.

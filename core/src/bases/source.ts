@@ -1,5 +1,5 @@
 import type { BaseConfig, Row, SourceSpec } from './types'
-import { buildVaultRows } from '../basesData'
+import { buildFileRows, buildVaultRows } from '../basesData'
 import { buildTaskRows } from './tasksData'
 import { parseBaseFile } from './parse'
 import { passesFilter } from './filters'
@@ -128,7 +128,7 @@ export async function resolveBaseRows(
     return resolveSource(config.source, { ...ctx, seen })
 }
 
-/** Resolve any source (base | notes | tasks) to a uniform Row[]. */
+/** Resolve any source (base | notes | files | tasks) to a uniform Row[]. */
 export async function resolveSource(
     spec: SourceSpec,
     ctx: SourceCtx,
@@ -140,8 +140,9 @@ export async function resolveSource(
         return resolveBaseRows(await resolveRefPath(ctx.root, spec.ref), ctx)
     }
 
-    if (spec.kind === 'notes') {
-        let rows = await (ctx.vaultRows?.() ?? buildVaultRows(ctx.root))
+    if (spec.kind === 'notes' || spec.kind === 'files') {
+        const notes = await (ctx.vaultRows?.() ?? buildVaultRows(ctx.root))
+        let rows = spec.kind === 'files' ? await buildFileRows(ctx.root, notes) : notes
         if (spec.from) {
             const scoped = await resolveBaseRows(await resolveRefPath(ctx.root, spec.from), ctx)
             const paths = new Set(scoped.map(r => r.file.path))

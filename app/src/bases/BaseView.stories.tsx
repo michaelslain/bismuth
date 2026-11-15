@@ -2383,3 +2383,149 @@ export const TableCheckboxKeepsScroll: Story = {
         ;(document.activeElement as HTMLElement | null)?.blur()
     },
 }
+
+// ---- a `source: files` base: attachments as rows ----------------------------------------------
+//
+// The rows a files source resolves to (core/src/basesData.ts buildFileRows, pinned by
+// core/test/bases/fileRows.test.ts): notes as ordinary rows, every other file a row of its own
+// with its real extension, an image's name keeping its extension, a PDF's companion note folded
+// into its row, backlinks counted across all of them.
+
+const swatch = (fill: string) =>
+    `data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="100%" height="100%" fill="${fill}"/><circle cx="210" cy="70" r="34" fill="#f2e6c9"/><path d="M0 200 L110 90 L190 160 L240 120 L300 180 L300 200 Z" fill="#2e3b44"/></svg>`,
+    )}`
+
+const ATTACHMENT_ASSETS: Record<string, string> = {
+    'attachments/harbour.png': swatch('#6f8fa8'),
+    'attachments/dunes.jpg': swatch('#c49a6c'),
+    'attachments/forest.webp': swatch('#5f7f5a'),
+    'attachments/old scan.png': swatch('#8a8a8a'),
+}
+
+function fileRow(
+    path: string,
+    over: { note?: Record<string, unknown>; backlinks?: string[]; size?: number; links?: string[] } = {},
+): Row {
+    const slash = path.lastIndexOf('/')
+    const file = slash >= 0 ? path.slice(slash + 1) : path
+    const dot = file.lastIndexOf('.')
+    const ext = file.slice(dot + 1)
+    const isNote = ext === 'md'
+    return {
+        file: {
+            name: isNote ? file.slice(0, dot) : file,
+            basename: file.slice(0, dot),
+            path,
+            folder: slash >= 0 ? path.slice(0, slash) : '',
+            ext,
+            size: over.size ?? 120_000,
+            ctime: Date.UTC(2026, 9, 1),
+            mtime: Date.UTC(2026, 10, 2),
+            tags: [],
+            links: over.links ?? [],
+            embeds: [],
+            backlinks: over.backlinks ?? [],
+        },
+        note: over.note ?? {},
+        formula: {},
+    }
+}
+
+const FILE_ROWS: Row[] = [
+    fileRow('trips/coast walk.md', { links: ['harbour.png', 'dunes.jpg'] }),
+    fileRow('reading/field guide.md', { links: ['forest.webp'] }),
+    fileRow('attachments/harbour.png', { backlinks: ['coast walk'], size: 812_000 }),
+    fileRow('attachments/dunes.jpg', { backlinks: ['coast walk'], size: 640_000 }),
+    fileRow('attachments/forest.webp', { backlinks: ['field guide'], size: 455_000 }),
+    fileRow('attachments/old scan.png', { size: 2_300_000 }),
+    fileRow('papers/tides.pdf', { note: { author: 'Ada' }, backlinks: ['field guide'] }),
+]
+
+const filesTransport = () =>
+    fakeTransport({
+        rows: (spec: SourceSpec) => (spec.kind === 'files' ? FILE_ROWS : SAMPLE_ROWS),
+        assets: ATTACHMENT_ASSETS,
+    })
+
+const IMAGES_JSONL =
+    JSON.stringify({
+        type: 'base',
+        source: 'files',
+        filters: { and: ['!file.ext.containsAny("base", "md", "pdf", "canvas")'] },
+        view: 'cards',
+        image: 'file.path',
+        order: ['file.name', 'file.folder'],
+    }) + '\n'
+
+/** A base whose rows come from `source: files`: every image in the vault as a card, its own
+ *  picture as the cover. Notes and the PDF are rows of the same source but the filter keeps
+ *  only images, the way an Obsidian attachments base does. */
+export const FilesSourceImages: Story = {
+    render: () => {
+        setTransport(filesTransport())
+        return <BaseView path="attachments/Images.base.jsonl" body={IMAGES_JSONL} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => {
+            for (const n of ['harbour.png', 'dunes.jpg', 'forest.webp', 'old scan.png'])
+                expect(canvas.getAllByText(n).length).toBeGreaterThan(0)
+        })
+        expect(canvas.queryByText('tides.pdf')).toBeNull()
+        expect(canvas.queryByText('coast walk')).toBeNull()
+        const covers = [...canvasElement.querySelectorAll('img')].map(i => i.getAttribute('src'))
+        expect(covers).toContain(ATTACHMENT_ASSETS['attachments/harbour.png'])
+    },
+}
+
+const UNUSED_JSONL =
+    JSON.stringify({
+        type: 'base',
+        source: 'files',
+        filters: {
+            and: [
+                '!file.ext.containsAny("base", "md", "pdf", "canvas")',
+                'file.backlinks.isEmpty()',
+            ],
+        },
+        view: 'table',
+        order: ['file.name', 'file.size', 'file.backlinks'],
+    }) + '\n'
+
+/** Kepano's "unused attachments": the images no note links or embeds. */
+export const FilesSourceUnused: Story = {
+    render: () => {
+        setTransport(filesTransport())
+        return <BaseView path="attachments/Unused.base.jsonl" body={UNUSED_JSONL} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => expect(canvas.getByText('old scan.png')).toBeInTheDocument())
+        expect(canvas.queryByText('harbour.png')).toBeNull()
+    },
+}
+
+const ALL_FILES_JSONL =
+    JSON.stringify({
+        type: 'base',
+        source: 'files',
+        view: 'table',
+        order: ['file.name', 'file.ext', 'file.folder', 'author', 'file.backlinks'],
+    }) + '\n'
+
+/** Every file, unfiltered: notes, images and a PDF whose `author` comes from its companion note. */
+export const FilesSourceAll: Story = {
+    render: () => {
+        setTransport(filesTransport())
+        return <BaseView path="All files.base.jsonl" body={ALL_FILES_JSONL} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => {
+            expect(canvas.getByText('tides.pdf')).toBeInTheDocument()
+            expect(canvas.getAllByText('coast walk').length).toBeGreaterThan(0)
+            expect(canvas.getByText('Ada')).toBeInTheDocument()
+        })
+    },
+}

@@ -100,6 +100,6 @@ bismuth card decks --vault "$OUT" --pretty               # one deck per flashcar
 - If a base filters on `#x`, it matches nothing. The tag filter is `file.hasTag("x")`, and tags are case-sensitive in Bismuth (`#Foo` is not `#foo`).
 - If a filter calls a function Bismuth does not define, `bismuth base validate` still passes and the function evaluates to nothing, so a filter on it matches no rows. Check names against `docs/bases/functions.md`.
 - If a base is left as a `.base` file, Bismuth never reads it. The command converts every `.base` file that parses; one that does not is listed under Needs a decision.
-- If a ` ```query ` fence has no `source:`, it renders empty. The command writes `source: notes` in every converted fence.
+- If a ` ```query ` fence has no `source:`, it renders empty. The command writes `source: files` in every converted base and fence, so images, PDFs and other attachments are rows the way they are in Obsidian (see [base sources](../bases/sources.md#how-do-i-list-images-pdfs-and-other-attachments)).
 - If an image or PDF's tags are written to a `<file>.md` that embeds the file, that note is a duplicate. Tags for an image or PDF live in its companion note `<file>.<ext>.md` (`photo.png.md`).
 - If a ` ```tasks ` fence stays as written, Bismuth renders nothing for it; the item is under Needs a decision.

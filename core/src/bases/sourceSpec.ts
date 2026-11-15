@@ -2,7 +2,7 @@ import type { SourceSpec } from './types'
 import { BASE_EXT, isBasePath } from './baseFile'
 import { pickByBase } from '../linkTarget'
 
-const KINDS = ['base', 'notes', 'tasks'] as const
+const KINDS = ['base', 'notes', 'files', 'tasks'] as const
 
 /**
  * Coerce a frontmatter `source` value (string OR object) plus the surrounding
@@ -11,6 +11,7 @@ const KINDS = ['base', 'notes', 'tasks'] as const
  * Accepts:
  *   source: notes                          -> { kind: "notes" }
  *   source: notes where <expr>             -> { kind: "notes", where }
+ *   source: files    (+ where/from)        -> { kind: "files", ... }
  *   source: tasks    (+ from: [[X]])       -> { kind: "tasks", from }
  *   source: base     (+ ref: [[X]])        -> { kind: "base", ref }
  *   source: { kind: tasks, from: "[[X]]" } -> passthrough
@@ -35,7 +36,7 @@ export function normalizeSource(
         }) as SourceSpec
     }
     if (typeof raw === 'string') {
-        const m = raw.trim().match(/^(base|notes|tasks)(?:\s+where\s+(.+))?$/i)
+        const m = raw.trim().match(/^(base|notes|files|tasks)(?:\s+where\s+(.+))?$/i)
         if (!m) return undefined
         const kind = m[1].toLowerCase() as SourceSpec['kind']
         return prune({

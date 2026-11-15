@@ -1,5 +1,6 @@
 // Visual spec for <SourceFields> — where a base's rows come from: this base's own body rows,
-// vault notes (+ a `where` filter and an optional "limit to base"), vault tasks, or another base.
+// vault notes or every vault file (+ a `where` filter and an optional "limit to base"), vault
+// tasks, or another base.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { createSignal } from 'solid-js'
@@ -67,6 +68,24 @@ export const TasksFromBase: Story = {
             spec={{ kind: 'tasks', from: '[[Keep]]', where: 'not done' }}
         />
     ),
+}
+
+/** Every file the sidebar lists (notes, images, PDFs, drawings, sheets, bases) filtered to the
+ *  images: the source an attachments base reads. */
+export const FilesImages: Story = {
+    render: () => (
+        <Harness
+            spec={{
+                kind: 'files',
+                where: '!file.ext.containsAny("md", "pdf", "base")',
+            }}
+        />
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(await canvas.findByText(/every file the sidebar lists/)).toBeInTheDocument()
+        await expect(canvas.getByText('limit to base')).toBeInTheDocument()
+    },
 }
 
 /** Another base's rows (composition) — how a second view of the same rows is made. */

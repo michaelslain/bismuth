@@ -16,6 +16,7 @@ function memVault(initial: Record<string, string>): {
     const files = { ...initial }
     const fa: FileAccess = {
         listBases: async () => [],
+        listFiles: async () => [],
         listMarkdown: async () =>
             Object.keys(files).filter(p => p.endsWith('.md')),
         listTree: async () =>

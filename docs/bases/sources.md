@@ -1,6 +1,6 @@
 # Base sources
 
-A base's `source` says where its rows come from: the notes in the vault, the checkbox tasks in them, or the rows of another base. Every other part of a base, from filters to the layout, works on the rows the source produces. This page is for anyone writing a `source:`, and for the person debugging a base that shows too many, too few or the wrong rows.
+A base's `source` says where its rows come from: the notes in the vault, every file in it (images and PDFs too), the checkbox tasks in the notes, or the rows of another base. Every other part of a base, from filters to the layout, works on the rows the source produces. This page is for anyone writing a `source:`, and for the person debugging a base that shows too many, too few or the wrong rows.
 
 ```json
 {"type":"base","source":"notes where file.hasTag(\"book\")","view":"table"}
@@ -10,18 +10,19 @@ That line is the whole of `Books.base.jsonl`. A markdown base holds the same key
 
 ## What can a source be?
 
-A source's `kind` is `notes`, `tasks` or `base`. In a base's config it is a string, or an object with the same fields.
+A source's `kind` is `notes`, `files`, `tasks` or `base`. In a base's config it is a string, or an object with the same fields.
 
 | `kind` | Rows | Fields |
 |---|---|---|
 | `notes` | Vault notes, one row each. | `where`, `from` |
+| `files` | Every file the sidebar lists, one row each: notes, images, PDFs, drawings, sheets and bases. | `where`, `from` |
 | `tasks` | Checkbox tasks found in vault notes, one row each. | `where`, `from` |
 | `base` | The rows of another base. | `ref` |
 
 | Field | `kind` values | Meaning |
 |---|---|---|
-| `where` | `notes`, `tasks` | A [Bases expression](./query-syntax.md) that keeps the rows where it is true. |
-| `from` | `notes`, `tasks` | A wikilink to a base. Limits the source to the notes that base selects. |
+| `where` | `notes`, `files`, `tasks` | A [Bases expression](./query-syntax.md) that keeps the rows where it is true. |
+| `from` | `notes`, `files`, `tasks` | A wikilink to a base. Limits the source to the notes that base selects. |
 | `ref` | `base` | A wikilink to the base whose rows to use. |
 
 These spellings are equivalent where they overlap:
@@ -30,6 +31,7 @@ These spellings are equivalent where they overlap:
 |---|---|
 | `source: notes` | Every note. |
 | `source: notes where folder == "Keep"` | Notes where the expression is true. |
+| `source: files where file.ext == "pdf"` | Every PDF in the vault. |
 | `source: tasks` with `from: "[[Keep]]"` and `where: not done` | Tasks in the notes `Keep` selects, filtered. |
 | `source: base` with `ref: "[[X]]"` | The rows of base `X`. |
 | `source: { kind: notes, where: 'file.hasTag("book")' }` | The object form of `notes where ...`. |
@@ -40,6 +42,31 @@ In the string form, `from`, `ref` and `where` can also sit as top-level keys bes
 ## What happens when a base has no source?
 
 A base with no recognised `source` is a collection when the file holds rows, and otherwise shows every note in the vault. A collection's rows are the lines after line 1 of a `.base.jsonl` file, or the body of a markdown base. So the empty base `type: base` shows the whole vault, and a collection shows only its stored rows. Set `source:` explicitly when you want to narrow the vault.
+
+## How do I list images, PDFs and other attachments?
+
+A `files` source lists every file the sidebar lists, so attachments become rows beside the notes. Filter on `file.ext` to keep one kind, and on `file.backlinks` to find the files no note links or embeds:
+
+```json
+{"type":"base","source":"files","filters":{"and":["!file.ext.containsAny(\"md\", \"pdf\", \"base\")"]},"view":"cards","image":"file.path"}
+```
+
+That base shows every image as a card with the image itself as its cover. Add `file.backlinks.isEmpty()` to the filters to keep only the unused ones.
+
+An attachment's row has these fields:
+
+| Field | Value on an attachment row |
+|---|---|
+| `file.name` | The file name with its extension (`photo.png`), so `photo.png` and `photo.jpg` stay apart. A note's `file.name` has no `.md`. |
+| `file.basename` | The name without its extension (`photo`). |
+| `file.ext` | The extension, lowercase as written (`png`, `pdf`). A base's is `base`, though its file ends in `.base.jsonl`. |
+| `file.size`, `file.ctime`, `file.mtime` | The file's own size and timestamps. |
+| `file.backlinks` | The notes that link to or embed the file. |
+| properties, `file.tags`, `file.links` | An image's or PDF's come from its companion note `<file>.md`; other attachments have none. |
+
+An image's or PDF's companion note is folded into the file's row, so in a `files` source it is not a row of its own. A companion with no image or PDF beside it is an ordinary note row. A file of a kind the sidebar does not list (a `LICENSE`, an audio file) and a drawing's exported `.draw.png` or `.draw.pdf` are no rows. An Obsidian base lists every file too, so `bismuth import obsidian` writes `source: files` for every base it converts.
+
+Editing a property on an image's or PDF's row writes to its companion note, which the first such write creates. A drawing, sheet or base row has nowhere to store properties, so clicking it opens the file instead of the row editor. Renaming a row keeps the file's extension.
 
 ## How do I list tasks from one set of notes?
 
@@ -102,6 +129,7 @@ Open **Settings** in the pane's toolbar and use the **source** section. Its "row
 |---|---|
 | this base's own rows (a collection) | removes `source:` |
 | vault notes | `source: { kind: notes, where?, from? }` |
+| vault files | `source: { kind: files, where?, from? }` |
 | vault tasks | `source: { kind: tasks, where?, from? }` |
 | another base | `source: { kind: base, ref: "[[Other]]" }` |
 
@@ -126,15 +154,17 @@ A `source` is parsed into a `SourceSpec` (`core/src/bases/types.ts`) by `normali
 type SourceSpec =
   | { kind: 'base'; ref?: string }
   | { kind: 'notes'; where?: string; from?: string }
+  | { kind: 'files'; where?: string; from?: string }
   | { kind: 'tasks'; where?: string; from?: string }
 ```
 
-A string is matched against `/^(base|notes|tasks)(?:\s+where\s+(.+))?$/i`, and the sibling keys `from`, `ref` and `where` come from the surrounding frontmatter. `wikiStr` rebuilds `"[[X]]"` from the nested array YAML produces for an unquoted link. `refToPath` turns a wikilink into a vault path by appending `.md` unless the name already ends in `.md`, `.base` or `.base.jsonl`. `resolveRefPath` in `core/src/bases/source.ts` lists the vault's `.base.jsonl` and `.md` files and passes them to `pickRefPath` in `sourceSpec.ts`, which applies the exact-path-then-name rule above. The app's `wikilinkOpenPath` in `app/src/editor/wikilink.ts` applies the same rule to a clicked wikilink.
+A string is matched against `/^(base|notes|files|tasks)(?:\s+where\s+(.+))?$/i`, and the sibling keys `from`, `ref` and `where` come from the surrounding frontmatter. `wikiStr` rebuilds `"[[X]]"` from the nested array YAML produces for an unquoted link. `refToPath` turns a wikilink into a vault path by appending `.md` unless the name already ends in `.md`, `.base` or `.base.jsonl`. `resolveRefPath` in `core/src/bases/source.ts` lists the vault's `.base.jsonl` and `.md` files and passes them to `pickRefPath` in `sourceSpec.ts`, which applies the exact-path-then-name rule above. The app's `wikilinkOpenPath` in `app/src/editor/wikilink.ts` applies the same rule to a clicked wikilink.
 
 A `SourceSpec` also comes from a flat ` ```query ` block (`of:` becomes `base`, `tasks:` becomes `tasks`; see [the query block](./query-block.md)). `resolveSource(spec, ctx)` returns `Row[]`:
 
 - `base`: no `ref` gives `[]`; otherwise `resolveBaseRows` on the referenced file.
 - `notes`: the vault notes feed, intersected with `from`'s paths when set, then filtered by `where` through `passesFilter`.
+- `files`: `buildFileRows(root, notes)` in `core/src/basesData.ts` lists every file with `FileAccess.listFiles`, keeps the kinds `isTreeListedName` (`core/src/fileKinds.ts`) admits, copies the notes feed's rows, adds a row per other file with its stat and its companion note's frontmatter, tags and links, and fills backlinks across the whole set; then `from` and `where` apply as for `notes`. It is built per request from the cached notes feed, with no cache of its own, so an added or deleted attachment shows on the next refetch.
 - `tasks`: with `from`, `buildTaskRows(root, paths)` extracts tasks from only those files, always fresh; without it, the global task feed, which a caller may cache. `where` then filters through the same `passesFilter`.
 
 `resolveBaseRows(path, ctx)` reads the base file, parses it (cached by file content, not mtime), and resolves its `source` recursively. With no `source`, it returns its stored rows, or every note when it has none. `ctx.seen` holds the real, symlink-resolved path of every base entered, so a config cycle or a symlink loop returns `[]` instead of throwing. A missing or unreadable base also returns `[]`. `SourceCtx` carries the vault `root`, an ISO `today` for relative dates, `seen`, and optional `vaultRows` and `vaultTasks` providers that let a server serve the unscoped feeds from a cache.
@@ -162,4 +192,4 @@ parseRows('- front: q\n  back: |-\n    line 1\n    line 2', meta)   // back === 
 parseRows('| title | rating |\n| --- | --- |\n| Capital | 4 |', meta) // rating === 4
 ```
 
-Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/baseFile.ts`, `core/src/bases/source.ts`, `app/src/editor/wikilink.ts`, `core/src/bases/rows.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/tasksData.ts`, `core/src/basesData.ts`, `core/src/asyncCache.ts`, `core/src/routes/bases.ts`, `app/src/api.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/SourceFields.tsx`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`
+Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/baseFile.ts`, `core/src/bases/source.ts`, `app/src/editor/wikilink.ts`, `core/src/bases/rows.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `core/src/bases/tasksData.ts`, `core/src/basesData.ts`, `core/src/asyncCache.ts`, `core/src/routes/bases.ts`, `app/src/api.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/SourceFields.tsx`, `app/src/bases/rowWrites.ts`, `core/src/fileKinds.ts`, `core/test/bases/fileRows.test.ts`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`
