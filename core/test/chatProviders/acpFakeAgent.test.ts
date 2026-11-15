@@ -122,6 +122,7 @@ describeOrSkipSlow(
         // guard against.
         let pidFile: string | undefined
         let savedPath: string | undefined
+        let savedClineDir: string | undefined
         let savedShape: string | undefined
         let savedEchoFile: string | undefined
         // Set only by the setModel test (below), which is the one test that needs an echo file — cleaned
@@ -142,6 +143,7 @@ describeOrSkipSlow(
             // would then strip PATH from the shared `bun test` process for every LATER test that spawns a
             // subprocess.
             savedPath = process.env.PATH
+            savedClineDir = process.env.CLINE_DIR
             savedShape = process.env.FAKE_ACP_MODEL_SHAPE
             savedEchoFile = process.env.FAKE_ACP_ECHO_FILE
             echoDir = undefined
@@ -159,11 +161,16 @@ describeOrSkipSlow(
             // Prepended, not appended: must win over any real `cline` this machine happens to have
             // installed elsewhere on PATH.
             process.env.PATH = `${stubDir}:${savedPath ?? ''}`
+            // A cline spawn writes its Bismuth tool under CLINE_DIR: keep it inside the stub dir so no
+            // test touches the real ~/.cline.
+            process.env.CLINE_DIR = join(stubDir, 'cline-home')
         })
 
         afterEach(async () => {
             for (const id of chatIds.splice(0))
                 CHAT_BACKENDS.cline.closeChat(id)
+            if (savedClineDir === undefined) delete process.env.CLINE_DIR
+            else process.env.CLINE_DIR = savedClineDir
             if (savedPath === undefined) delete process.env.PATH
             else process.env.PATH = savedPath
             if (savedShape === undefined)

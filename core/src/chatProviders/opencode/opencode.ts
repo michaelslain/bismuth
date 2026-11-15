@@ -73,6 +73,7 @@ import {
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import { titleFromPrompt } from '../titleFromPrompt'
 import { chatInstructionParts } from '../../chatInstructions'
+import { vaultSkillNote } from './opencodeSkills'
 import { installedMcpLaunch } from '../../bismuthInstall'
 import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import {
@@ -227,9 +228,15 @@ interface OpencodeSession {
     lastActivityAt: number
     /** The chat's private toggle (setPrivate): erase the session from opencode's store on close. */
     private?: boolean
+    /** The chat's permission mode (setPermissionMode); absent is `default`. It decides which
+     *  permission asks the driver answers by itself (opencodeAutoPermission). */
+    permissionMode?: string
     /** Permission ids this session has asked about and not yet answered (server mode only) — guards
      *  respondPermission against answering an id twice or one from a stale/foreign session. */
     pendingPermissions: Set<string>
+    /** Permission ids the chat's mode already answered (autoAnswered), so a repeated ask is not
+     *  answered twice. */
+    autoAnswered: Set<string>
     /** opencode 2 only: the model and variant the server session currently runs (`provider/model#
      *  variant`; its model is per session, not per prompt), so a turn switches only on a change. */
     serverModel?: string
@@ -466,6 +473,11 @@ async function openDefaultServerOnce(
         limits: rememberedLimits,
         profile: 'default',
         mcp: opencodeMcp(cwd),
+        // A file edit asks; the chat's mode answers asks it allows (opencodeAutoPermission). Only
+        // opencode 2 reads the `permissions` key, so an opencode 1 server never sees it.
+        permissionMode: usesBackgroundService(await opencodeMajor(bin))
+            ? 'default'
+            : undefined,
     }
     let input = base
     let server = await ensureOpencodeServer(bin, configEnv(input)).catch(
@@ -799,17 +811,15 @@ function ensureOpenInfo(
 /** The manifest frame for an opencode session: the command registry rides `slashCommands` (so the
  *  composer's "/" popover autocompletes opencode commands exactly like Claude's) with per-command
  *  blurbs in `commandDetails`; tools/MCP stay empty (nothing to report — the frontend hides those
- *  pills) and permissionMode is nominal — server-mode sessions CAN answer a live permission ask (see
- *  `permission` frames below), but there is still no drivable mode-switch, so the header's
- *  mode-picker string stays "default" either way (the picker itself is gated on the separate
- *  `permissionModes` capability, which stays false). */
+ *  pills). permissionMode is the chat's mode (setPermissionMode), which decides the permission asks
+ *  the driver answers by itself; the header's picker is gated on the `permissionModes` capability. */
 function manifestFrame(s: OpencodeSession): ChatFrame {
     const commands = commandsCache ?? []
     return {
         type: 'manifest',
         manifest: {
             model: s.model ?? '',
-            permissionMode: 'default',
+            permissionMode: s.permissionMode ?? 'default',
             slashCommands: commands.map(c => c.name),
             tools: [],
             mcpServers: [],
@@ -1124,11 +1134,17 @@ async function getOrCreateSession(
         buffer: [],
         lastActivityAt: Date.now(),
         pendingPermissions: new Set(),
+        autoAnswered: new Set(),
     }
     if (server?.version === 2 && resume) {
         const agent = await server.client.session(resume).then(
             r => r.agent,
-            () => undefined,
+            e => {
+                // This server does not hold the session: the first turn adopts it afresh (a new
+                // session, announced) rather than sending model and agent switches into a void.
+                if (isSessionMissing(e)) session.slotServer = undefined
+                return undefined
+            },
         )
         if (agent) {
             session.agent = agent
@@ -1189,10 +1205,21 @@ async function getOrCreateSession(
  *  (opencodeBudget.ts) decides whether the brain block rides along: `joinSystem`. opencode 1 sends
  *  the text as the prompt's `system`; opencode 2 stores it in a session instructions entry before
  *  the prompt. */
-type SystemParts = { head: string[]; brain: string; recall: string }
+type SystemParts = {
+    head: string[]
+    brain: string
+    recall: string
+    /** The vault's skill names (opencodeSkills.ts): carried on the compact profile only, which
+     *  denies opencode's own skill tool. */
+    skills?: string
+}
 
 function joinSystem(p: SystemParts, tier: InjectTier): string {
-    const parts = [tierHasBrain(tier) ? p.brain : '', p.recall].filter(Boolean)
+    const parts = [
+        tierProfile(tier) === 'compact' ? (p.skills ?? '') : '',
+        tierHasBrain(tier) ? p.brain : '',
+        p.recall,
+    ].filter(Boolean)
     return [...p.head, ...parts].join('\n\n')
 }
 
@@ -1260,7 +1287,8 @@ async function turnSystemParts(
     // message (chatLineRefNote.ts; '' with line numbers off).
     const lineRefNote = await chatLineRefNoteFor(s.cwd)
     const head = opencodeInstructionHead(s.cwd, lineRefNote)
-    if (!s.memoryDir) return { head, brain: '', recall: '' }
+    const skills = vaultSkillNote(s.cwd)
+    if (!s.memoryDir) return { head, brain: '', recall: '', skills }
     // `system` is per-call (fresh every turn), so the session ledger would wrongly suppress notes
     // on later turns: reset it before each recall.
     const svc = recallServiceFor(s.cwd, s.memoryDir)
@@ -1297,7 +1325,7 @@ async function turnSystemParts(
         if (b?.context && b.context.includes('# Vault map'))
             brainBySession.set(s, b.context)
     }
-    return { head, brain: brainText, recall: recalled?.context ?? '' }
+    return { head, brain: brainText, recall: recalled?.context ?? '', skills }
 }
 
 /** opencode 1's `session.prompt` body: the model split into provider and model ids, the agent only
@@ -1356,6 +1384,7 @@ async function runTurnServer(
             for (const frame of translateOpencodeServerEvent(ev, state))
                 emit(s, frame)
             const asked = parseOpencodePermissionAsk(ev)
+            if (asked && autoAnswered(s, asked)) return
             if (asked && !s.pendingPermissions.has(asked.id)) {
                 s.pendingPermissions.add(asked.id)
                 emit(s, {
@@ -1505,6 +1534,7 @@ function endServerTurn(
         }
     }
     s.turnActive = false
+    s.pendingPermissions.clear()
     s.lastActivityAt = Date.now()
     const next = s.queue.shift()
     if (next) void runTurn(s, next.text, next.images)
@@ -1533,6 +1563,17 @@ type V2Attempt = {
     prompted: boolean
 }
 
+/** Whether a session lookup failed because the server holds no such session. A server may answer
+ *  that with a status other than 404, so the message and tag count too. */
+export function isSessionMissing(e: unknown): boolean {
+    return (
+        e instanceof OpencodeV2Error &&
+        (e.status === 404 ||
+            /session not found/i.test(e.message) ||
+            /notfound/i.test(e.tag ?? ''))
+    )
+}
+
 /** Make sure the opencode session exists on this server slot. A real opencode keeps sessions in one
  *  store every server reads; a server that does not know the id gets a fresh session, announced so
  *  the chat follows it. */
@@ -1547,7 +1588,7 @@ async function adoptSessionOnSlot(
     const client = server.client
     const known = await client.session(s.sessionId as string).then(
         () => true,
-        e => !(e instanceof OpencodeV2Error && e.status === 404),
+        e => !isSessionMissing(e),
     )
     let announced = false
     if (!known) {
@@ -1569,6 +1610,30 @@ async function adoptSessionOnSlot(
     return announced
 }
 
+/** How long a prompted turn may go without a single event from the session before it is ended with
+ *  an error. Every step, delta and tool event resets it, so a slow but working turn never trips it.
+ *  A model that accepts a request and never answers (a local server queued behind other jobs, a
+ *  wedged runtime) otherwise leaves the chat waiting forever: opencode itself has no such timer. */
+export const OPENCODE_NO_PROGRESS_MS = 120_000
+/** The same window for a local model's first turn in a chat: the server may be loading the model
+ *  into memory before it emits anything, which takes minutes for a large one. */
+export const OPENCODE_NO_PROGRESS_FIRST_LOAD_MS = 600_000
+
+/** The no-progress window for a turn: longer for a local model's first turn. */
+export function opencodeNoProgressMs(local: boolean, firstTurn: boolean): number {
+    const override = Number(process.env.BISMUTH_OPENCODE_NO_PROGRESS_MS)
+    if (Number.isFinite(override) && override > 0) return override
+    return local && firstTurn
+        ? OPENCODE_NO_PROGRESS_FIRST_LOAD_MS
+        : OPENCODE_NO_PROGRESS_MS
+}
+
+/** The error a silent model ends its turn with. */
+export function opencodeSilentMessage(model: string | null | undefined, ms: number): string {
+    const secs = Math.round(ms / 1000)
+    return `${model || 'The model'} sent nothing for ${secs} s, so the turn was stopped. Is the local model server busy or still loading?`
+}
+
 async function v2Attempt(
     s: OpencodeSession,
     text: string,
@@ -1578,6 +1643,7 @@ async function v2Attempt(
     system: string,
     model: string | null | undefined,
     slash: { command: string; args: string } | null,
+    retry = false,
 ): Promise<V2Attempt> {
     const client = server.client
     s.turnProfile = profile
@@ -1604,9 +1670,34 @@ async function v2Attempt(
 
     let ended!: () => void
     const whenEnded = new Promise<void>(resolve => (ended = resolve))
+    // The no-progress timer runs from the prompt to the turn's end; every event resets it.
+    const noProgress = opencodeNoProgressMs(
+        injectedWindows.has(model ?? ''),
+        s.turnCount <= 1,
+    )
+    let silence: ReturnType<typeof setTimeout> | null = null
+    const armSilence = () => {
+        if (silence) clearTimeout(silence)
+        silence = setTimeout(() => {
+            if (att.gaveUp || state.outcome) return
+            // The turn waits on the user's answer to a permission card or on a running tool, not on
+            // the model.
+            const toolRunning = [...state.toolsStarted].some(
+                id => !state.toolsFinished.has(id),
+            )
+            if (s.pendingPermissions.size > 0 || toolRunning) {
+                armSilence()
+                return
+            }
+            att.gaveUp = opencodeSilentMessage(model, noProgress)
+            void client.interrupt(sessionId).catch(() => {})
+            ended()
+        }, noProgress)
+    }
     const unregister = registerOpencodeServerListener(
         sessionId,
         ev => {
+            if (silence) armSilence()
             if ((ev as { type?: unknown }).type === OPENCODE_STREAM_CLOSED) {
                 att.streamLost = true
                 ended()
@@ -1614,7 +1705,9 @@ async function v2Attempt(
             }
             for (const frame of translateOpencodeV2Event(ev, state)) out(frame)
             const asked = parseOpencodeV2PermissionAsk(ev)
-            if (asked && !s.pendingPermissions.has(asked.id)) {
+            if (asked && autoAnswered(s, asked)) {
+                // Answered by the chat's mode: no card.
+            } else if (asked && !s.pendingPermissions.has(asked.id)) {
                 s.pendingPermissions.add(asked.id)
                 out({
                     type: 'permission',
@@ -1635,6 +1728,11 @@ async function v2Attempt(
 
     try {
         // Best-effort: the entries route is experimental, and a turn without its system text still runs.
+        // A retry replaces the entry the failed attempt left, so the lean text is the one in force.
+        if (retry)
+            await client
+                .removeInstruction(sessionId, SYSTEM_ENTRY_KEY)
+                .catch(() => {})
         await client
             .putInstruction(sessionId, SYSTEM_ENTRY_KEY, system)
             .catch(() => {})
@@ -1666,11 +1764,14 @@ async function v2Attempt(
                     files: opencodeV2Files(images),
                 })
             att.prompted = true
+            armSilence()
             await whenEnded
         }
     } catch (e) {
         if (!s.aborting) att.thrown = e instanceof Error ? e.message : String(e)
     } finally {
+        if (silence) clearTimeout(silence)
+        silence = null
         unregister()
     }
     return att
@@ -1802,7 +1903,17 @@ async function runTurnServerV2(
             // Through the compact server: every server shares the store, and the default one may
             // have been replaced (and killed) while the compact one spawned.
             if (att.prompted) await dropFailedAttempt(c, s.sessionId)
-            att = await v2Attempt(s, text, images, c, profile, system, model, slash)
+            att = await v2Attempt(
+                s,
+                text,
+                images,
+                c,
+                profile,
+                system,
+                model,
+                slash,
+                true,
+            )
         }
     } else if (v2OverflowOf(att)) {
         compactModels.add(key)
@@ -1863,6 +1974,7 @@ function refuseTurn(
     emit(s, { type: 'result', isError: true, numTurns: 1, costUsd: null })
     emit(s, { type: 'done' })
     s.turnActive = false
+    s.pendingPermissions.clear()
     s.lastActivityAt = Date.now()
     const next = s.queue.shift()
     if (next) void runTurn(s, next.text, next.images)
@@ -2118,6 +2230,7 @@ async function runTurnLegacy(
         }
     }
     s.turnActive = false
+    s.pendingPermissions.clear()
     s.lastActivityAt = Date.now()
 
     // Dispatch the next staged turn, if any (the exit handler is the serialization point).
@@ -2331,6 +2444,8 @@ export function abortTurn(chatId: string): void {
     if (!s.turnActive || !s.sessionId) return
     s.aborting = true
     s.queue = []
+    // A card left open by the stopped turn must not hold the next turn's silence timer.
+    s.pendingPermissions.clear()
     void ensureOpencodeServer(s.bin, undefined, s.turnProfile ?? 'default')
         .then(async server => {
             if (server?.version === 2)
@@ -2364,7 +2479,62 @@ export function respondPermission(
     )
         return
     s.pendingPermissions.delete(id)
-    const response = opencodePermissionResponse(behavior, always)
+    sendPermissionReply(s, id, opencodePermissionResponse(behavior, always))
+}
+
+/** The permission modes a chat can be in (ChatManifest.permissionMode). */
+const PERMISSION_MODES = new Set([
+    'default',
+    'plan',
+    'acceptEdits',
+    'bypassPermissions',
+])
+
+/** The tools opencode asks about before it changes a file. */
+const EDIT_TOOLS = new Set(['edit', 'write', 'patch', 'apply_patch', 'multiedit'])
+
+/** How a chat in `mode` answers an opencode permission ask by itself: `bypassPermissions` allows
+ *  every ask, `acceptEdits` allows file edits. Null (every other mode and tool) shows the ask as a
+ *  card. The shared server's config asks before every edit, so the mode is applied here per chat
+ *  rather than by replacing the server every chat shares. */
+export function opencodeAutoPermission(
+    mode: string | undefined,
+    toolName: string,
+): 'once' | null {
+    if (mode === 'bypassPermissions') return 'once'
+    if (mode === 'acceptEdits' && EDIT_TOOLS.has(toolName.toLowerCase()))
+        return 'once'
+    return null
+}
+
+/** The chat's permission mode for future asks; an unknown mode is ignored. */
+export function setPermissionMode(chatId: string, mode: string): void {
+    const s = sessions.get(chatId)
+    if (!s || !PERMISSION_MODES.has(mode)) return
+    s.permissionMode = mode === 'default' ? undefined : mode
+    emit(s, manifestFrame(s))
+}
+
+/** Answer an ask the chat's mode allows, once per id. True when it was answered here. */
+function autoAnswered(
+    s: OpencodeSession,
+    asked: { id: string; toolName: string },
+): boolean {
+    const response = opencodeAutoPermission(s.permissionMode, asked.toolName)
+    if (!response) return false
+    if (!s.autoAnswered.has(asked.id)) {
+        s.autoAnswered.add(asked.id)
+        sendPermissionReply(s, asked.id, response)
+    }
+    return true
+}
+
+/** Send a permission answer to the server the turn runs on. */
+function sendPermissionReply(
+    s: OpencodeSession,
+    id: string,
+    response: 'once' | 'always' | 'reject',
+): void {
     void ensureOpencodeServer(s.bin, undefined, s.turnProfile ?? 'default')
         .then(async server => {
             if (server?.version === 2)

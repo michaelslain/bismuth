@@ -84,6 +84,7 @@ describeOrSkipSlow(
         // file sharing this `bun test` process (mirrors acpResumeFakeAgent.test.ts's identical list).
         const ENV_KEYS = [
             'PATH',
+            'CLINE_DIR',
             'FAKE_ACP_TOOL_CALL',
             'FAKE_ACP_MODEL_SHAPE',
             'FAKE_ACP_AUTH_GATE',
@@ -128,6 +129,9 @@ describeOrSkipSlow(
 
             // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.
             process.env.PATH = `${stubDir}:${savedEnv.PATH ?? ''}`
+            // A cline spawn writes its Bismuth tool under CLINE_DIR: point it inside the stub dir (removed
+            // with it) so no test ever touches the real ~/.cline.
+            process.env.CLINE_DIR = join(stubDir, 'cline-home')
             // Hermetic against ambient env — a stray FAKE_ACP_* var exported in the shell running
             // `bun test` (or left behind by another test file in the same process) must not leak in here.
             delete process.env.FAKE_ACP_TOOL_CALL

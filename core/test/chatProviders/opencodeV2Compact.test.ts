@@ -2,13 +2,14 @@
 // on) and a stand-in LM Studio: the injected window limits, the invisible compact retry and the
 // overflow error, agents, the default model, model groups, stale picks and the saved-server refresh.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChatFrame } from '../../src/chat'
 import { CHAT_RENDERING_NOTE } from '../../src/chatRenderingNote'
 import { whichBinary } from '../../src/claudeWhich'
 import * as oc from '../../src/chatProviders/opencode/opencode'
 import { ensureOpencodeServer } from '../../src/chatProviders/opencode/opencodeServer'
+import { OpencodeV2Error } from '../../src/chatProviders/opencode/opencodeV2Client'
 import { contextOverflowMessage } from '../../src/chatProviders/opencode/opencodeOverflow'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
 import { pidAlive } from '../support/acpFakeAgentProcess'
@@ -299,6 +300,73 @@ describe('opencode 2 driver: windows, compact, agents', () => {
         oc.closeChat(c.id)
     })
 
+    test('a model that sends nothing ends the turn with an error naming it and the window', async () => {
+        process.env.BISMUTH_OPENCODE_NO_PROGRESS_MS = '1000'
+        try {
+            const c = await open(QWEN)
+            const t0 = Date.now()
+            const frames = await turn(c, 'SILENT please')
+            expect(Date.now() - t0).toBeLessThan(8000)
+            const errors = frames.filter(f => f.type === 'error') as Extract<
+                ChatFrame,
+                { type: 'error' }
+            >[]
+            expect(errors).toHaveLength(1)
+            expect(errors[0]!.message).toContain(QWEN)
+            expect(errors[0]!.message).toContain('1 s')
+            expect(frames.some(f => f.type === 'result')).toBe(true)
+            oc.closeChat(c.id)
+        } finally {
+            delete process.env.BISMUTH_OPENCODE_NO_PROGRESS_MS
+        }
+    })
+
+    test('a card left open by Stop does not hold the next turn from the no-progress error', async () => {
+        process.env.BISMUTH_OPENCODE_NO_PROGRESS_MS = '1000'
+        try {
+            const c = await open(QWEN)
+            oc.sendMessage(c.id, 'PERM', vault, c.sink)
+            await c.waitFor(f => f.type === 'permission')
+            oc.abortTurn(c.id)
+            await c.waitFor(f => f.type === 'done')
+            const t0 = Date.now()
+            const frames = await turn(c, 'SILENT please')
+            expect(Date.now() - t0).toBeLessThan(8000)
+            const errors = frames.filter(f => f.type === 'error')
+            expect(errors.length).toBeGreaterThan(0)
+            expect(JSON.stringify(errors)).toContain('sent nothing')
+            oc.closeChat(c.id)
+        } finally {
+            delete process.env.BISMUTH_OPENCODE_NO_PROGRESS_MS
+        }
+    })
+
+    test('the compact turn names the vault skills in its text, and its retry replaces the entry with the lean one', async () => {
+        const skillVault = tempDir('bismuth-opencode2c-skill-')
+        mkdirSync(join(skillVault, '.claude/skills/bench-skill'), { recursive: true })
+        writeFileSync(
+            join(skillVault, '.claude/skills/bench-skill/SKILL.md'),
+            '---\nname: bench-skill\ndescription: Use when the bench asks for the bench skill.\n---\n',
+        )
+        // A window no earlier test overflowed on, so the first attempt runs on the default profile.
+        window = 49152
+        const c = await open(QWEN, skillVault)
+        await turn(c, 'OVERFLOW skills', skillVault)
+        window = 8192
+        const log = (await journal('compact')).filter(
+            e => e.path.includes(c.sessionId) && e.path.includes('/instructions/entries/'),
+        )
+        const methods = log.map(e => e.method)
+        // The failed first attempt may have written an entry on the default server; on the compact
+        // one the old entry goes before the lean one is put.
+        expect(methods.indexOf('DELETE')).toBeGreaterThanOrEqual(0)
+        expect(methods.indexOf('DELETE')).toBeLessThan(methods.indexOf('PUT'))
+        const put = log.find(e => e.method === 'PUT')!
+        expect(JSON.stringify(put.body)).toContain('bench-skill')
+        expect(JSON.stringify(put.body)).toContain('.claude/skills/bench-skill/SKILL.md')
+        oc.closeChat(c.id)
+    })
+
     test('a compact turn that still overflows ends with the window error', async () => {
         const c = await open(QWEN)
         const frames = await turn(c, 'OVERFLOW_ALWAYS')
@@ -488,4 +556,163 @@ describe('opencode 2 driver: windows, compact, agents', () => {
         oc.closeChat(id)
         rmSync(join(vault, '.settings'))
     })
+})
+
+type SessionFrame = Extract<ChatFrame, { type: 'session' }>
+
+/** Resume `sessionId` as chat `id` and wait for its header. */
+async function resume(id: string, sessionId: string) {
+    const r = makeChatFrameCollector(10_000)
+    oc.resumeSession(id, sessionId, vault, r.sink)
+    await r.waitFor(f => f.type === 'agents')
+    return r
+}
+
+/** Both servers' journals: a chat whose window is small runs its turns on the compact one. */
+async function journals(): Promise<LogEntry[]> {
+    const [a, b] = await Promise.all([journal('default'), journal('compact')])
+    return [...a, ...b]
+}
+
+/** Wait until a server's journal holds an entry `pick` matches. */
+async function journalWait(pick: (e: LogEntry) => boolean): Promise<void> {
+    for (let i = 0; i < 50; i++) {
+        if ((await journals()).some(pick)) return
+        await Bun.sleep(100)
+    }
+    throw new Error('journal never held the entry')
+}
+
+describe('opencode 2 driver: resume, permission modes, a waiting permission', () => {
+    test('a public chat resumed by id keeps its session and its agent', async () => {
+        const c = await open()
+        oc.setAgent(c.id, 'plan')
+        await turn(c, 'hello')
+        oc.closeChat(c.id)
+        const r = await resume('v2c-keep', c.sessionId)
+        const before = (await journal('default')).length
+        oc.sendMessage('v2c-keep', 'hello again', vault, r.sink)
+        await r.waitFor(f => f.type === 'done')
+        const log = (await journal('default')).slice(before)
+        expect(
+            log.some(e => e.method === 'POST' && e.path === '/api/session'),
+        ).toBe(false)
+        expect(prompts(log).map(e => e.path)).toEqual([
+            `/api/session/${c.sessionId}/prompt`,
+        ])
+        expect(log.some(e => e.path.endsWith('/agent'))).toBe(false)
+        const moved = r.frames.filter(
+            f => f.type === 'session' && f.sessionId !== c.sessionId,
+        )
+        expect(moved).toHaveLength(0)
+        oc.closeChat('v2c-keep')
+    })
+
+    test('a private chat is erased at close, so its resume adopts a fresh session and sends nothing to the old id', async () => {
+        const c = await open()
+        oc.setPrivate(c.id, true)
+        await turn(c, 'hello')
+        oc.closeChat(c.id)
+        await journalWait(
+            e =>
+                e.method === 'DELETE' &&
+                e.path === `/api/session/${c.sessionId}`,
+        )
+        const r = await resume('v2c-gone', c.sessionId)
+        const before = (await journal('default')).length
+        oc.sendMessage('v2c-gone', 'hello again', vault, r.sink)
+        await r.waitFor(f => f.type === 'done')
+        const fresh = r.frames.findLast(f => f.type === 'session') as
+            | SessionFrame
+            | undefined
+        expect(fresh?.sessionId).toBeTruthy()
+        expect(fresh?.sessionId).not.toBe(c.sessionId)
+        const log = (await journal('default')).slice(before)
+        expect(
+            log.some(
+                e =>
+                    e.method !== 'GET' &&
+                    e.path.startsWith(`/api/session/${c.sessionId}/`),
+            ),
+        ).toBe(false)
+        expect(prompts(log).map(e => e.path)).toEqual([
+            `/api/session/${fresh?.sessionId}/prompt`,
+        ])
+        expect(r.frames.some(f => f.type === 'error')).toBe(false)
+        oc.closeChat('v2c-gone')
+    })
+
+    test('a missing session is known by its status, its message or its tag', () => {
+        expect(oc.isSessionMissing(new OpencodeV2Error('gone', 404))).toBe(true)
+        expect(
+            oc.isSessionMissing(
+                new OpencodeV2Error('Session not found: ses_1', 500),
+            ),
+        ).toBe(true)
+        expect(
+            oc.isSessionMissing(
+                new OpencodeV2Error('gone', 400, 'SessionNotFoundError'),
+            ),
+        ).toBe(true)
+        expect(oc.isSessionMissing(new OpencodeV2Error('boom', 500))).toBe(
+            false,
+        )
+        expect(oc.isSessionMissing(new Error('Session not found'))).toBe(false)
+    })
+
+    test('bypassPermissions allows every ask, acceptEdits allows edits, other modes ask', () => {
+        expect(oc.opencodeAutoPermission('bypassPermissions', 'shell')).toBe(
+            'once',
+        )
+        expect(oc.opencodeAutoPermission('acceptEdits', 'edit')).toBe('once')
+        expect(oc.opencodeAutoPermission('acceptEdits', 'write')).toBe('once')
+        expect(oc.opencodeAutoPermission('acceptEdits', 'shell')).toBeNull()
+        expect(oc.opencodeAutoPermission('default', 'edit')).toBeNull()
+        expect(oc.opencodeAutoPermission('plan', 'edit')).toBeNull()
+        expect(oc.opencodeAutoPermission(undefined, 'edit')).toBeNull()
+    })
+
+    test('a chat in bypassPermissions answers the ask itself: no card, and the tool runs', async () => {
+        const c = await open()
+        oc.setPermissionMode(c.id, 'bypassPermissions')
+        oc.setPermissionMode(c.id, 'nonsense')
+        const manifest = c.frames.findLast(f => f.type === 'manifest') as
+            | Extract<ChatFrame, { type: 'manifest' }>
+            | undefined
+        expect(manifest?.manifest.permissionMode).toBe('bypassPermissions')
+        const frames = await turn(c, 'PERM please')
+        expect(frames.some(f => f.type === 'permission')).toBe(false)
+        expect(frames.some(f => f.type === 'error')).toBe(false)
+        const isReply = (e: LogEntry) =>
+            e.method === 'POST' &&
+            e.path === `/api/session/${c.sessionId}/permission/per_1/reply`
+        await journalWait(isReply)
+        const replies = (await journals()).filter(isReply)
+        expect(replies.map(e => e.body)).toEqual([{ decision: 'once' }])
+        oc.closeChat(c.id)
+    })
+
+    test('a card answered after the no-progress window still finishes the turn', async () => {
+        process.env.BISMUTH_OPENCODE_NO_PROGRESS_MS = '1000'
+        try {
+            const c = await open()
+            oc.setPermissionMode(c.id, 'acceptEdits')
+            const from = c.frames.length
+            oc.sendMessage(c.id, 'PERM please', vault, c.sink)
+            const ask = (await c.waitFor(
+                f => f.type === 'permission' && c.frames.indexOf(f) >= from,
+            )) as Extract<ChatFrame, { type: 'permission' }>
+            await Bun.sleep(2500)
+            oc.respondPermission(c.id, ask.id, 'allow')
+            await c.waitFor(
+                f => f.type === 'done' && c.frames.indexOf(f) >= from,
+            )
+            const frames = c.frames.slice(from)
+            expect(frames.some(f => f.type === 'error')).toBe(false)
+            expect(frames.some(f => f.type === 'result')).toBe(true)
+            oc.closeChat(c.id)
+        } finally {
+            delete process.env.BISMUTH_OPENCODE_NO_PROGRESS_MS
+        }
+    }, 15_000)
 })

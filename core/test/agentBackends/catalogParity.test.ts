@@ -51,6 +51,15 @@ describe('agent backend catalog <-> CHAT_BACKENDS parity', () => {
     /** Every id where the catalog's capability flag and the driver's actual verb disagree, for one
      *  flag/verb pair. Returns human-readable strings (not booleans) so a failure names exactly
      *  which backend(s) disagree and how, rather than failing silently on the first mismatch found. */
+    /** A named exception to a flag/verb pairing: the id and why the pairing does not hold for it. */
+    const PAIRING_EXCEPTIONS: Record<string, string> = {
+        // openclaw asks only before shell commands (never before a write), so the catalog does not
+        // promise approvals (permissionPrompts false); its driver still has respondPermission to answer
+        // the exec approval its bridge sends.
+        'openclaw:permissionPrompts:respondPermission':
+            'asks only before shell commands',
+    }
+
     function disagreements(
         flag: 'permissionPrompts' | 'permissionModes' | 'effort' | 'agents',
         verb:
@@ -73,6 +82,7 @@ describe('agent backend catalog <-> CHAT_BACKENDS parity', () => {
             }
             const claims = BACKENDS[id].capabilities[flag]
             const has = typeof backend[verb] === 'function'
+            if (PAIRING_EXCEPTIONS[`${id}:${flag}:${verb}`]) continue
             if (claims !== has) {
                 out.push(
                     `${id}: capabilities.${flag}=${claims} but ${verb} is ${has ? 'IMPLEMENTED' : 'NOT implemented'}`,
@@ -81,6 +91,11 @@ describe('agent backend catalog <-> CHAT_BACKENDS parity', () => {
         }
         return out
     }
+
+    test('openclaw keeps respondPermission for its shell approvals while permissionPrompts is false', () => {
+        expect(BACKENDS.openclaw.capabilities.permissionPrompts).toBe(false)
+        expect(typeof CHAT_BACKENDS.openclaw.respondPermission).toBe('function')
+    })
 
     test('permissionPrompts <-> respondPermission', () => {
         // A backend that can raise a live approval request mid-turn must implement the verb that
@@ -109,16 +124,21 @@ describe('agent backend catalog <-> CHAT_BACKENDS parity', () => {
         expect(disagreements('agents', 'setAgent')).toEqual([])
     })
 
-    test('permissionModes <-> respondQuestion', () => {
-        // respondQuestion has no capability flag of its own (catalog.ts's ACP_SHARED_CAPABILITIES doc
-        // comment: "respondQuestion is likewise unimplemented ... but no capability advertises it, so
-        // nothing renders for it") — but chatProviders/backends.ts's OWN doc comment on the verb ties
-        // it to permissionModes anyway ("Answer a `question` frame (AskUserQuestion). Present iff
-        // capabilities.permissionModes."). That makes it a real, code-stated pair to check, not an
-        // invented one: today it holds vacuously (claude is the only backend with permissionModes
-        // true, and the only one implementing respondQuestion), but a future backend that sets
-        // permissionModes:true without wiring respondQuestion — or vice versa — should fail here.
-        expect(disagreements('permissionModes', 'respondQuestion')).toEqual([])
+    test('respondQuestion implies permissionModes', () => {
+        // respondQuestion has no capability flag of its own, and backends.ts ties it to the
+        // permission-mode picker. The pairing is one-way: a backend raises question frames only
+        // together with a picker (claude), but a picker needs no question frames. opencode and goose
+        // have a picker (their chat mode decides which asks they raise) and no AskUserQuestion
+        // equivalent, so the old two-way check (permissionModes <-> respondQuestion) failed them for
+        // a verb they cannot implement. `permissionModes <-> setPermissionMode` above stays two-way.
+        const orphans = (BACKEND_IDS as readonly BackendId[]).filter(id => {
+            const backend = CHAT_BACKENDS[id]
+            return (
+                typeof backend?.respondQuestion === 'function' &&
+                !BACKENDS[id].capabilities.permissionModes
+            )
+        })
+        expect(orphans).toEqual([])
     })
 
     // Deliberately NOT asserted: `mcp` and `memory`. Both are read nowhere outside catalog.ts today
@@ -136,4 +156,10 @@ describe('agent backend catalog <-> CHAT_BACKENDS parity', () => {
     // on every backend unconditionally regardless of the flag's value — sessionHistoryFrames is
     // explicitly documented "Tolerant: any failure yields []" — so the method's mere presence carries
     // no capability signal to check the flag against.
+})
+
+describe('hermes install hint', () => {
+    test('names the acp and mcp extras', () => {
+        expect(BACKENDS.hermes.installHint).toContain('hermes-agent[acp,mcp]')
+    })
 })

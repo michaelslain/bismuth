@@ -59,12 +59,24 @@
 // no third argument) is completely unaffected.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { ensureClineMcp } from '../../src/agentBackends/mcpRegistrars'
+import { clineContextSettings } from '../../src/chatProviders/acp/clineSizing'
+import { buildMcpServers } from '../../src/chatProviders/acp/driver'
+import type { AcpMcpServerStdio } from '../../src/chatProviders/acp/protocol'
 
 export function backendMockEnv(
     backendId: string,
     mockUrl: string,
     workDir?: string,
     openclawGatewayPort?: number,
+    opts: {
+        /** The model window the mock enforces; cline's provider settings carry it. */
+        window?: number
+        /** The Bismuth MCP server cline's settings file registers; default the installed one. */
+        mcp?: AcpMcpServerStdio | null
+        /** The vault the default MCP server works in (its tools resolve paths there). */
+        vaultRoot?: string
+    } = {},
 ): Record<string, string> {
     switch (backendId) {
         // --------------------------------------------------------------------------------------
@@ -111,14 +123,8 @@ export function backendMockEnv(
         // "assistant-text":"Hello!" frame arrived, with the mock's own /metrics showing exactly one
         // hit on POST /v1/responses.
         //
-        // KNOWN COSMETIC QUIRK (also live-verified, not a real failure): codex logs a benign
-        // `item.completed` of type "error" reading "Model metadata for `mock` not found. Defaulting to
-        // fallback metadata..." for ANY model under a custom (non-built-in) provider — codex's model
-        // metadata registry is keyed by (provider, model) and has no entry for one it doesn't own.
-        // chatProviders/codex/protocol.ts's translator (correctly, by its own contract) treats any
-        // "error"-typed item as `sawErrorFrame`, so the turn's final `result` frame reports
-        // `isError:true` even though the assistant's actual text came back correctly — codexMocked.test.ts
-        // asserts on the text, not on `result.isError`, and documents this finding inline.
+        // codex logs a benign "Model metadata for `mock` not found" item for any model under a custom
+        // provider; the driver drops it (driver.ts isModelMetadataWarning), so the turn is not an error.
         // --------------------------------------------------------------------------------------
         case 'codex': {
             if (!workDir) {
@@ -288,6 +294,41 @@ export function backendMockEnv(
             }
 
         // --------------------------------------------------------------------------------------
+        // Hermes Agent (read from hermes-agent 0.19.0's source, hermes_cli/config.py and
+        // runtime_provider.py; VERIFIED by the `hermes@mock reply` cell): `HERMES_HOME` replaces ~/.hermes, and the
+        // main model is the top-level `model:` block of `$HERMES_HOME/config.yaml`, where `provider:
+        // custom` + `base_url` + `api_key` is a direct OpenAI-compatible endpoint and the model id key
+        // is `default` (runtime_provider.py reads `model_cfg.get("default")`). OPENAI_BASE_URL and
+        // OPENAI_API_KEY are the env fallbacks hermes also reads.
+        // --------------------------------------------------------------------------------------
+        case 'hermes': {
+            if (!workDir) {
+                throw new Error(
+                    'backendMockEnv: "hermes" requires a third `workDir` argument — its mock mechanism is a ' +
+                        '$HERMES_HOME/config.yaml file. Pass a throwaway temp directory this call may write into.',
+                )
+            }
+            const home = join(workDir, 'hermes')
+            mkdirSync(home, { recursive: true })
+            writeFileSync(
+                join(home, 'config.yaml'),
+                [
+                    'model:',
+                    '  provider: custom',
+                    `  base_url: ${mockUrl}/v1`,
+                    '  api_key: mock',
+                    '  default: mock-model',
+                    '',
+                ].join('\n'),
+            )
+            return {
+                HERMES_HOME: home,
+                OPENAI_BASE_URL: `${mockUrl}/v1`,
+                OPENAI_API_KEY: 'mock',
+            }
+        }
+
+        // --------------------------------------------------------------------------------------
         // FIXED again, this later task ("close the cline coverage gap" — see REPORT-cline.md), CORRECTING
         // Task 4's own "no bypass exists" conclusion directly below (kept, struck through by this note
         // rather than deleted, because it documents what was actually checked and why the earlier
@@ -396,6 +437,7 @@ export function backendMockEnv(
                                     apiKey: 'mock',
                                     model: 'mock-model',
                                     baseUrl: `${mockUrl}/v1`,
+                                    ...clineContextSettings(opts.window ?? null),
                                 },
                                 updatedAt: new Date().toISOString(),
                                 tokenSource: 'manual',
@@ -406,6 +448,9 @@ export function backendMockEnv(
                     2,
                 ),
             )
+            // cline ignores session/new.mcpServers, so the Bismuth server goes in its settings file.
+            const mcp = opts.mcp === undefined ? buildMcpServers(opts.vaultRoot ?? workDir)[0] : opts.mcp
+            if (mcp) ensureClineMcp(workDir, mcp)
             return {
                 CLINE_DIR: workDir,
                 CLINE_PROVIDER: 'openai-compatible',
@@ -524,7 +569,7 @@ export function backendMockEnv(
                             mode: 'local',
                             port: openclawGatewayPort,
                             bind: 'loopback',
-                            auth: { mode: 'none' },
+                            auth: { mode: 'token', token: 'bench-token' },
                         },
                         plugins: {
                             entries: {
@@ -570,6 +615,9 @@ export function backendMockEnv(
                                             },
                                             contextWindow: 32768,
                                             maxTokens: 4096,
+                                            // openclaw sends a thought level as reasoning_effort only for
+                                            // a model its config marks as reasoning.
+                                            reasoning: true,
                                         },
                                     ],
                                 },

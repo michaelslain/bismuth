@@ -43,9 +43,13 @@ export type OpencodeConfigInput = {
     servers: OpencodeInjectedServer[]
     limits: OpencodeModelLimit[]
     profile: 'default' | 'compact'
-    /** The installed Bismuth MCP server, declared as opencode's `bismuth` MCP on the default
-     *  profile; the compact profile reaches Bismuth through the shell and the CLI note instead. */
+    /** The installed Bismuth MCP server, declared as opencode's `bismuth` MCP on both
+     *  profiles. */
     mcp?: { command: string[]; environment: Record<string, string> } | null
+    /** The chat's permission mode (the header's): `bypassPermissions` lets opencode edit without
+     *  asking; any other mode asks before a file edit, so a write raises a permission frame. Absent
+     *  adds no rule. */
+    permissionMode?: string
 }
 
 /** Tools the compact profile removes from the schema (`r/d3.json`): read, edit, write, shell, grep
@@ -108,8 +112,10 @@ export function buildOpencodeConfig(
         }
     }
     if (Object.keys(provider).length > 0) out.provider = provider
-    if (input.mcp && input.profile === 'default')
-        // Code Mode off: the tools are called directly, as a Claude chat calls them.
+    if (input.mcp)
+        // On both profiles: the compact one keeps the tool (a ~200-token schema) so a small window
+        // still reaches Bismuth. Code Mode off: the tools are called directly, as a Claude chat
+        // calls them.
         out.mcp = {
             bismuth: {
                 type: 'local',
@@ -118,8 +124,17 @@ export function buildOpencodeConfig(
                 codemode: false,
             },
         }
+    const rules: Record<string, unknown>[] = []
+    if (input.profile === 'compact')
+        rules.push(...COMPACT_PERMISSIONS.map(p => ({ ...p })))
+    if (input.permissionMode)
+        rules.push({
+            action: 'edit',
+            resource: '*',
+            effect: input.permissionMode === 'bypassPermissions' ? 'allow' : 'ask',
+        })
+    if (rules.length > 0) out.permissions = rules
     if (input.profile === 'compact') {
-        out.permissions = COMPACT_PERMISSIONS.map(p => ({ ...p }))
         out.agents = {
             build: { system: COMPACT_AGENT_SYSTEM },
             plan: { system: COMPACT_AGENT_SYSTEM },
@@ -176,10 +191,20 @@ export function withInjectedConfig(
     const out = { ...base, ...(extra ?? {}) }
     const inherited = parseConfigObject(base.OPENCODE_CONFIG_CONTENT)
     const injected = parseConfigObject(extra?.OPENCODE_CONFIG_CONTENT)
-    if (inherited && injected)
-        out.OPENCODE_CONFIG_CONTENT = JSON.stringify(
-            mergeOpencodeConfig(inherited, injected),
+    if (inherited && injected) {
+        const merged = mergeOpencodeConfig(inherited, injected)
+        // Permission rules are ordered and the last match wins: Bismuth's go first so the user's own
+        // rules sit over them (a rule of theirs for `edit` is not overwritten).
+        if (
+            Array.isArray(inherited.permissions) &&
+            Array.isArray(injected.permissions)
         )
+            merged.permissions = [
+                ...injected.permissions,
+                ...inherited.permissions,
+            ]
+        out.OPENCODE_CONFIG_CONTENT = JSON.stringify(merged)
+    }
     return out
 }
 

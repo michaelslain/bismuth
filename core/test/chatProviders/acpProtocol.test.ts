@@ -1234,3 +1234,101 @@ describe('choosePermissionOption', () => {
         ).toBeNull() // no optionId — unusable
     })
 })
+
+describe('tool results that arrive only as rawOutput (cline)', () => {
+    const resultOf = (update: Record<string, unknown>) =>
+        translateSessionUpdate(
+            { sessionUpdate: 'tool_call_update', toolCallId: 'r1', ...update },
+            newAcpTranslateState(blankManifest()),
+        )
+    test('a string rawOutput is the result text', () => {
+        expect(resultOf({ status: 'completed', rawOutput: 'sentinel' })).toEqual([
+            { type: 'tool-result', id: 'r1', content: 'sentinel', isError: false },
+        ])
+    })
+    test('an MCP result object joins its text parts', () => {
+        expect(
+            resultOf({
+                status: 'completed',
+                rawOutput: { content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] },
+            }),
+        ).toMatchObject([{ content: 'a\nb' }])
+    })
+    test('any other object is JSON, and a failed call keeps isError', () => {
+        expect(resultOf({ status: 'failed', rawOutput: { code: 3 } })).toEqual([
+            { type: 'tool-result', id: 'r1', content: '{"code":3}', isError: true },
+        ])
+    })
+    test('content still wins over rawOutput', () => {
+        expect(
+            resultOf({
+                status: 'completed',
+                rawOutput: 'raw',
+                content: [{ type: 'content', content: { type: 'text', text: 'body' } }],
+            }),
+        ).toMatchObject([{ content: 'body' }])
+    })
+    test('an instantly-resolved tool_call falls back too', () => {
+        const frames = translateSessionUpdate(
+            { sessionUpdate: 'tool_call', toolCallId: 'r2', title: 't', status: 'completed', rawOutput: 'out' },
+            newAcpTranslateState(blankManifest()),
+        )
+        expect(frames.find(f => f.type === 'tool-result')).toMatchObject({ content: 'out' })
+    })
+})
+
+describe('codex-acp shell output rides _meta', () => {
+    const run = (exitCode: number) => {
+        const state = newAcpTranslateState(blankManifest())
+        const send = (u: Record<string, unknown>) =>
+            translateSessionUpdate(
+                { toolCallId: 'c1', ...u },
+                state,
+            )
+        send({ sessionUpdate: 'tool_call', title: 'Run bismuth read', kind: 'execute', status: 'in_progress' })
+        send({
+            sessionUpdate: 'tool_call_update',
+            _meta: { terminal_output_delta: { data: 'bismuth-sentinel-7Q4Z', terminal_id: 't' } },
+        })
+        return send({
+            sessionUpdate: 'tool_call_update',
+            status: 'completed',
+            _meta: { terminal_exit: { exit_code: exitCode } },
+        })
+    }
+    test('the delta text is the result', () => {
+        expect(run(0)).toEqual([
+            { type: 'tool-result', id: 'c1', content: 'bismuth-sentinel-7Q4Z', isError: false },
+        ])
+    })
+    test('a non-zero exit code is an error', () => {
+        expect(run(1)).toMatchObject([{ isError: true }])
+    })
+})
+
+describe('an effort list of only off', () => {
+    const levels = (names: string[]) =>
+        detectModelShape({
+            configOptions: [
+                {
+                    type: 'select',
+                    id: 'model',
+                    category: 'model',
+                    currentValue: 'm',
+                    options: [{ value: 'm', name: 'M' }],
+                },
+                {
+                    type: 'select',
+                    id: 'thinking_effort',
+                    category: 'thought_level',
+                    options: names.map(n => ({ value: n, name: n })),
+                },
+            ],
+        }).models[0].effortLevels
+    test('is no effort levels', () => {
+        expect(levels(['off'])).toEqual([])
+    })
+    test('off beside real levels is kept', () => {
+        expect(levels(['off', 'low'])).toEqual(['off', 'low'])
+    })
+})

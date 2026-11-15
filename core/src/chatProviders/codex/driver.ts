@@ -46,7 +46,7 @@
 // `--experimental-json`, and whichever spelling works is cached for the rest of the session. This
 // mirrors ../acp/driver.ts's `fallbackArgs` retry-once pattern for the identical kind of
 // version-uncertain flag spelling (Gemini CLI's `--experimental-acp`/`--acp`).
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -61,7 +61,20 @@ import {
 } from '../sessionSink'
 import { claudeSpawnEnv, whichBinary } from '../../claudeWhich'
 import type { ChatBackend, ChatTurnContext } from '../backends'
+import { buildMcpServers } from '../acp/driver'
+import { readCodexModels, withExtraModel, type CodexModelOption } from './models'
 import { chatInstructions } from '../../chatInstructions'
+import { bismuthHome } from '../../bismuthHome'
+import {
+    codexLeanArgs,
+    codexLeanBasePrompt,
+    codexSeededPrompt,
+    codexSummaryBudget,
+    codexTier,
+    condenseChat,
+    isCodexWindowOverflow,
+    type CodexChatLine,
+} from './codexBudget'
 import { codexHistoryFrames } from './codexHistory'
 import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import { readCodexOptIns } from '../../settings'
@@ -80,19 +93,9 @@ import {
     type CodexTranslateState,
 } from './protocol'
 
-/** Codex's five reasoning-effort levels — a small, stable enum unlike model ids, which churn
- *  (confirmed from the CLI's own --config reference: `model_reasoning_effort`). */
-type ModelReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
-const EFFORT_VALUES: readonly ModelReasoningEffort[] = [
-    'minimal',
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-]
-function isModelReasoningEffort(v: string): v is ModelReasoningEffort {
-    return (EFFORT_VALUES as readonly string[]).includes(v)
-}
+/** A reasoning-effort level: whatever the selected model lists in `codex debug models`
+ *  (low, medium, high, xhigh, max, ...), sent as `model_reasoning_effort`. */
+type ModelReasoningEffort = string
 
 type JsonFlag = '--json' | '--experimental-json'
 function fallbackJsonFlag(flag: JsonFlag): JsonFlag {
@@ -131,6 +134,17 @@ interface CodexSession {
     closeTimer?: ReturnType<typeof setTimeout>
     titleSent: boolean
     lastActivityAt: number
+    /** The models frame's entries, once read (the effort levels each model lists). */
+    models?: CodexModelOption[]
+    modelsSent?: boolean
+    /** The chat's messages so far, kept to seed a fresh session when codex's own compaction overflows
+     *  a small window (codexBudget.ts condenseChat). */
+    history: CodexChatLine[]
+    /** Where this turn's new message sits in `history` plus one: the entries before `turnStart - 1`
+     *  are the earlier chat, and a seed that lands late shifts it. */
+    turnStart: number
+    /** The tools this turn's codex run has used so far, so a condensed retry does not repeat them. */
+    turnTools: string[]
 }
 
 const sessions = new Map<string, CodexSession>()
@@ -159,8 +173,8 @@ function blankManifest(model: string): ChatManifest {
 
 /** codex reports, as an `error` item, that it has no metadata for any model outside its own catalog
  *  ("Model metadata for `qwen3` not found. Defaulting to fallback metadata…") — which is every local
- *  model. It is a warning (the turn goes on and completes), so a local turn must not surface it as an
- *  error or end flagged `isError`. */
+ *  model, and any custom provider's. It is a warning (the turn goes on and completes), so no turn
+ *  surfaces it as an error or ends flagged `isError`. */
 export function isModelMetadataWarning(frame: ChatFrame): boolean {
     return (
         frame.type === 'error' &&
@@ -208,9 +222,17 @@ interface CodexExecArgsInput {
     /** Local-model provider `--config` overrides (agentBackends/localModel.ts), inserted right after
      *  `--skip-git-repo-check`. Absent = the user's own codex config decides. */
     localArgs?: string[]
+    /** Bismuth's MCP server for this chat (acp/driver.ts buildMcpServers), as per-invocation
+     *  `--config mcp_servers.bismuth.*` overrides. Never writes ~/.codex. */
+    mcpServers?: { name: string; command: string; args: string[]; env: { name: string; value: string }[] }[]
     /** CHAT_LINE_REF_NOTE when the vault's editor shows line numbers, else '' or absent
      *  (chatLineRefNote.ts); joined into chatInstructions for `developer_instructions`. */
     lineRefNote?: string
+    /** The lean profile's extra `--config` args (codexBudget.ts codexLeanArgs), after the local
+     *  model's. When `leanBase` is set the shared instructions ride the base prompt file, so
+     *  `developer_instructions` is not sent twice. */
+    leanArgs?: string[]
+    leanBase?: boolean
 }
 
 /** A TOML basic string: `JSON.stringify` covers `"`, `\\` and the C0 control chars; TOML also wants
@@ -234,6 +256,20 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     args.push('--cd', a.cwd)
     args.push('--skip-git-repo-check')
     if (a.localArgs) args.push(...a.localArgs)
+    if (a.leanArgs) args.push(...a.leanArgs)
+    for (const m of a.mcpServers ?? []) {
+        const key = `mcp_servers.${m.name}`
+        args.push('--config', `${key}.command=${tomlBasicString(m.command)}`)
+        args.push(
+            '--config',
+            `${key}.args=[${m.args.map(tomlBasicString).join(', ')}]`,
+        )
+        for (const e of m.env)
+            args.push(
+                '--config',
+                `${key}.env.${e.name}=${tomlBasicString(e.value)}`,
+            )
+    }
     if (a.effort) args.push('--config', `model_reasoning_effort="${a.effort}"`)
     // `codex exec` has no TTY to prompt on anyway (there is no session/request_permission-shaped
     // event in the ThreadEvent union) — explicit for determinism, matching opencode.ts's `--auto`
@@ -241,12 +277,13 @@ export function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
     args.push('--config', 'approval_policy="never"')
     // The instructions every backend shares (chatInstructions.ts), on every call, new and resume:
     // codex exec has no system-prompt flag, and `developer_instructions` is the string key it reads.
-    args.push(
-        '--config',
-        `developer_instructions=${tomlBasicString(
-            chatInstructions(a.cwd, a.lineRefNote),
-        )}`,
-    )
+    if (!a.leanBase)
+        args.push(
+            '--config',
+            `developer_instructions=${tomlBasicString(
+                chatInstructions(a.cwd, a.lineRefNote),
+            )}`,
+        )
     if (a.threadId) args.push('resume', a.threadId)
     for (const p of a.imagePaths) args.push('--image', p)
     return args
@@ -323,12 +360,29 @@ function createSession(
         aborting: false,
         proc: null,
         queue: [],
+        history: [],
+        turnStart: 0,
+        turnTools: [],
         detached: false,
         buffer: [],
         titleSent: false,
         lastActivityAt: Date.now(),
     }
     sessions.set(chatId, s)
+    // A resumed thread's messages seed `history`, so an overflow condenses the whole chat and not
+    // only what was typed since the resume. Prepended, and only while this session is still current.
+    if (resumeId)
+        void codexHistoryFrames(resumeId).then(frames => {
+            if (sessions.get(chatId) !== s) return
+            const seed: CodexChatLine[] = []
+            for (const f of frames) {
+                if (f.type === 'user-message') seed.push({ role: 'user', text: f.text })
+                else if (f.type === 'assistant-text')
+                    seed.push({ role: 'assistant', text: f.text })
+            }
+            s.history = [...seed, ...s.history]
+            s.turnStart += seed.length
+        })
     emit(s, { type: 'manifest', manifest: blankManifest(s.model ?? '') })
     // origin "user", always: the daemon's Codex backend (daemon/src/daemon/codexSession.ts) records
     // its OWN thread ids under <vault>/.daemon — a different store in a different id namespace, so a
@@ -337,6 +391,7 @@ function createSession(
         emit(s, { type: 'session', sessionId: s.threadId, origin: 'user' })
     void applyCodexOptIns(cwd)
     void showLocalModel(s)
+    void emitModels(s)
     return s
 }
 
@@ -346,6 +401,20 @@ async function showLocalModel(s: CodexSession): Promise<void> {
     const resolved = await resolveLocalSpawn('codex', s.cwd, s.model).catch(() => null)
     if (resolved?.kind !== 'ready' || s.model || sessions.get(s.id) !== s) return
     emit(s, { type: 'manifest', manifest: blankManifest(resolved.local.model) })
+}
+
+/** The header's model picker: `codex debug models`, plus the local or configured model when the
+ *  catalog lacks it. Once per session; each model carries the effort levels it lists. */
+async function emitModels(s: CodexSession): Promise<void> {
+    if (s.modelsSent) return
+    s.modelsSent = true
+    const catalog = await readCodexModels(s.bin, buildCodexEnv(), s.cwd)
+    const resolved = await resolveLocalSpawn('codex', s.cwd, s.model).catch(() => null)
+    const extra = resolved?.kind === 'ready' ? resolved.local.model : undefined
+    const models = withExtraModel(catalog, extra)
+    if (sessions.get(s.id) !== s || models.length === 0) return
+    s.models = models
+    emit(s, { type: 'models', models })
 }
 
 /** Write each image attachment's base64 payload to a temp file — `--image` takes a PATH, not raw
@@ -400,7 +469,13 @@ async function runTurn(
     text: string,
     images?: ChatImage[],
     useFallbackFlag = false,
+    condensed = false,
 ): Promise<void> {
+    if (!useFallbackFlag && !condensed) {
+        s.history.push({ role: 'user', text })
+        s.turnStart = s.history.length
+        s.turnTools = []
+    }
     s.turnActive = true
     s.lastActivityAt = Date.now()
     // A fresh turn's item ids are not confirmed to be globally unique across a whole thread (see
@@ -428,10 +503,42 @@ async function runTurn(
         return
     }
     const local = resolved.kind === 'ready' ? resolved.local : undefined
+    // A pick the local server does not serve (a catalog model while the local model pins the chat)
+    // is refused, not silently run on another model.
+    if (local && s.model && s.model.replace(/^local\//, '') !== local.model) {
+        emit(s, { type: 'model-refused', model: s.model, current: local.model })
+        s.model = undefined
+    }
     // Show the model in the header without writing it to s.model: if the setting is later turned off,
     // a remembered local id would be sent to the cloud account.
     if (local && !s.model)
         emit(s, { type: 'manifest', manifest: blankManifest(local.model) })
+
+    // A small loaded window gets the lean opening (codexBudget.ts): features off, a short base prompt
+    // written under Bismuth's own home (never ~/.codex) that carries the shared instructions.
+    const window = local ? local.windows[local.model] : null
+    const lineRefNote = await chatLineRefNoteFor(s.cwd)
+    let leanArgs: string[] = []
+    if (window && codexTier(window) === 'lean') {
+        try {
+            const text = codexLeanBasePrompt(chatInstructions(s.cwd, lineRefNote))
+            const dir = bismuthHome('codex-lean')
+            const file = join(
+                dir,
+                `${new Bun.CryptoHasher('sha1').update(text).digest('hex').slice(0, 16)}.md`,
+            )
+            mkdirSync(dir, { recursive: true })
+            // content-addressed and written once: a rewrite truncates the file a second codex may be reading
+            if (!existsSync(file)) {
+                const tmp = `${file}.${process.pid}`
+                writeFileSync(tmp, text)
+                renameSync(tmp, file)
+            }
+            leanArgs = codexLeanArgs(window, file)
+        } catch {
+            /* best-effort: the full profile runs */
+        }
+    }
 
     const { paths, cleanup } = materializeImages(images)
     const jsonFlag = useFallbackFlag ? fallbackJsonFlag(s.jsonFlag) : s.jsonFlag
@@ -443,7 +550,10 @@ async function runTurn(
         threadId: s.threadId,
         imagePaths: paths,
         localArgs: local?.args,
-        lineRefNote: await chatLineRefNoteFor(s.cwd),
+        mcpServers: buildMcpServers(s.cwd),
+        lineRefNote,
+        leanArgs,
+        leanBase: leanArgs.length > 0,
     })
 
     let proc: ReturnType<typeof Bun.spawn>
@@ -479,6 +589,9 @@ async function runTurn(
 
     let sawErrorFrame = false
     let parsedAnyLine = false
+    // On a local model with a known window, codex's compaction overflow is held back: the turn is
+    // retried once in a fresh session (below), so the first failure is never shown.
+    let heldOverflow: ChatFrame | null = null
     try {
         const decoder = new TextDecoder()
         let pending = ''
@@ -500,9 +613,26 @@ async function runTurn(
                     ev,
                     s.translateState,
                 )) {
-                    if (local && isModelMetadataWarning(frame)) continue
+                    if (isModelMetadataWarning(frame)) continue
                     if (isSkillsBudgetNotice(frame)) continue
+                    if (
+                        window &&
+                        !condensed &&
+                        frame.type === 'error' &&
+                        isCodexWindowOverflow(frame.message)
+                    ) {
+                        heldOverflow = frame
+                        continue
+                    }
                     if (frame.type === 'error') sawErrorFrame = true
+                    if (frame.type === 'tool-use') s.turnTools.push(frame.name)
+                    if (frame.type === 'assistant-text') {
+                        // deltas of one reply: grow the last assistant entry of this turn
+                        const last = s.history.at(-1)
+                        if (s.history.length > s.turnStart && last?.role === 'assistant')
+                            last.text += frame.text
+                        else s.history.push({ role: 'assistant', text: frame.text })
+                    }
                     emit(s, frame)
                 }
             }
@@ -527,6 +657,43 @@ async function runTurn(
         emit(s, { type: 'session', sessionId: threadIdNow, origin: 'user' })
     }
 
+    // Codex keeps every earlier user message verbatim through its own compaction, so a few long ones
+    // overflow a small window. Start a fresh session seeded with a short summary of the chat, retry
+    // the turn once and show one status line; a second overflow is a plain error.
+    if (
+        window &&
+        !condensed &&
+        !wasAborting &&
+        exitCode !== 0 &&
+        s.turnStart > 1 &&
+        (heldOverflow || isCodexWindowOverflow(stderr))
+    ) {
+        // The chat before this turn: the new message rides the prompt itself, and whatever the failed
+        // attempt already replied is dropped (the retry says what tools it ran).
+        const earlier = s.history.slice(0, s.turnStart - 1)
+        s.history.length = s.turnStart // the turn's own message stays for later turns
+        s.threadId = null
+        s.translateState = newCodexTranslateState()
+        s.aborting = false
+        emit(s, {
+            type: 'retry',
+            attempt: 2,
+            maxAttempts: 2,
+            note: "chat condensed to fit the model's window",
+        })
+        const ran = s.turnTools.length
+            ? `Already run this turn (do not repeat): ${s.turnTools.join(', ')}.`
+            : ''
+        const seeded = codexSeededPrompt(
+            [condenseChat(earlier, codexSummaryBudget(window)), ran]
+                .filter(Boolean)
+                .join('\n'),
+            text,
+        )
+        return runTurn(s, seeded, images, false, true)
+    }
+    if (heldOverflow) emit(s, heldOverflow)
+
     // Defensive fallback for the --json / --experimental-json spelling uncertainty (see file header):
     // zero parseable JSON lines + a non-zero exit is specifically "the flag was never recognized, so
     // nothing ever started" — retry ONCE with the other spelling before reporting a hard failure.
@@ -542,6 +709,7 @@ async function runTurn(
 
     s.aborting = false
     const failed = exitCode !== 0 && !wasAborting
+    if (heldOverflow) sawErrorFrame = true
     if (failed && !sawErrorFrame) {
         const tail = stderr.trim().split('\n').slice(-3).join('\n').trim()
         emit(s, {
@@ -634,7 +802,13 @@ export function setModel(chatId: string, model: string): void {
 export function setEffort(chatId: string, effort: string): void {
     const s = sessions.get(chatId)
     if (!s) return
-    s.effort = isModelReasoningEffort(effort) ? effort : undefined
+    const level = effort.trim()
+    // Any level the selected model lists; before the list is read, any plain lowercase word.
+    const listed = s.models?.find(m => m.value === s.model)?.effortLevels
+    s.effort =
+        level && (listed?.length ? listed.includes(level) : /^[a-z]+$/.test(level))
+            ? level
+            : undefined
 }
 
 export function closeChat(chatId: string): void {

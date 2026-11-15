@@ -401,9 +401,14 @@ export function detectModelShape(newSessionResult: unknown): AcpModelShapeInfo {
             o =>
                 o && o.category === 'thought_level' && Array.isArray(o.options),
         )
-        const effortLevels = flattenSelectOptions(thoughtOpt?.options)
+        const rawLevels = flattenSelectOptions(thoughtOpt?.options)
             .map(selectOptionLabel)
             .filter(Boolean)
+        // `off` means no reasoning: a list of only off/none is no effort choice (goose on a model
+        // it does not know as reasoning-capable).
+        const effortLevels = rawLevels.every(l => l === 'off' || l === 'none')
+            ? []
+            : rawLevels
         const models: AcpModelEntry[] = flattenSelectOptions(modelOpt.options)
             .map(o => ({ id: selectOptionValue(o), name: o.name }))
             .filter(o => o.id.length > 0)
@@ -504,6 +509,38 @@ export function contentBlockText(block: unknown): string {
             return '[embedded resource]'
         default:
             return ''
+    }
+}
+
+/**
+ * The text of a finished tool call: its `content` blocks, else its `rawOutput` (cline sends a
+ * finished tool as `rawOutput` alone). A string stays as is, an MCP result `{content:[{type:'text',
+ * text}]}` joins its text parts, anything else is JSON-stringified.
+ */
+export function toolResultText(content: unknown, rawOutput: unknown): string {
+    const text = toolCallContentText(content)
+    if (text) return text
+    if (rawOutput == null) return ''
+    if (typeof rawOutput === 'string') return rawOutput
+    if (typeof rawOutput === 'object') {
+        const inner = (rawOutput as { content?: unknown }).content
+        if (Array.isArray(inner)) {
+            const parts = inner
+                .map(c =>
+                    c &&
+                    typeof c === 'object' &&
+                    typeof (c as { text?: unknown }).text === 'string'
+                        ? (c as { text: string }).text
+                        : '',
+                )
+                .filter(Boolean)
+            if (parts.length) return parts.join('\n')
+        }
+    }
+    try {
+        return JSON.stringify(rawOutput)
+    } catch {
+        return ''
     }
 }
 
@@ -624,6 +661,8 @@ export interface AcpTranslateState {
     manifest: AcpManifestBaseline
     toolCalls: Map<string, { name: string }>
     toolsResolved: Set<string>
+    /** Shell output codex-acp sends only in `_meta.terminal_output_delta` / `terminal_output`. */
+    toolOutput: Map<string, string>
     costUsd: number | null
     usedTokens: number | null
     maxTokens: number | null
@@ -636,10 +675,38 @@ export function newAcpTranslateState(
         manifest,
         toolCalls: new Map(),
         toolsResolved: new Set(),
+        toolOutput: new Map(),
         costUsd: null,
         usedTokens: null,
         maxTokens: null,
     }
+}
+
+/** Record terminal output a tool call carries in `_meta` (delta appends, full replaces). */
+function noteTerminalOutput(
+    u: Record<string, unknown>,
+    id: string,
+    state: AcpTranslateState,
+) {
+    const meta = u._meta
+    if (!meta || typeof meta !== 'object') return
+    const m = meta as Record<string, unknown>
+    const read = (v: unknown) =>
+        v && typeof v === 'object' && typeof (v as { data?: unknown }).data === 'string'
+            ? (v as { data: string }).data
+            : null
+    const delta = read(m.terminal_output_delta)
+    if (delta != null)
+        state.toolOutput.set(id, (state.toolOutput.get(id) ?? '') + delta)
+    const full = read(m.terminal_output)
+    if (full != null) state.toolOutput.set(id, full)
+}
+
+/** A tool call's `_meta.terminal_exit.exit_code` when it is a non-zero number. */
+function terminalExitFailed(u: Record<string, unknown>): boolean {
+    const exit = (u._meta as { terminal_exit?: { exit_code?: unknown } } | undefined)
+        ?.terminal_exit
+    return typeof exit?.exit_code === 'number' && exit.exit_code !== 0
 }
 
 function str(v: unknown): string {
@@ -683,6 +750,7 @@ export function translateSessionUpdate(
             const kind = str(u.kind)
             const name = toolCallName(u)
             state.toolCalls.set(id, { name })
+            noteTerminalOutput(u, id, state)
             const frames: ChatFrame[] = [
                 {
                     type: 'tool-use',
@@ -703,8 +771,10 @@ export function translateSessionUpdate(
                 frames.push({
                     type: 'tool-result',
                     id,
-                    content: toolCallContentText(u.content),
-                    isError: status === 'failed',
+                    content:
+                        toolResultText(u.content, u.rawOutput) ||
+                        (state.toolOutput.get(id) ?? ''),
+                    isError: status === 'failed' || terminalExitFailed(u),
                 })
             }
             return frames
@@ -713,6 +783,7 @@ export function translateSessionUpdate(
         case 'tool_call_update': {
             const id = str(u.toolCallId)
             if (!id) return []
+            noteTerminalOutput(u, id, state)
             const status = str(u.status)
             // Only completed/failed carries a result — pending/in_progress updates have nothing new to
             // show the user (the chip is already up from the initial tool_call).
@@ -723,8 +794,10 @@ export function translateSessionUpdate(
                 {
                     type: 'tool-result',
                     id,
-                    content: toolCallContentText(u.content),
-                    isError: status === 'failed',
+                    content:
+                        toolResultText(u.content, u.rawOutput) ||
+                        (state.toolOutput.get(id) ?? ''),
+                    isError: status === 'failed' || terminalExitFailed(u),
                 },
             ]
         }

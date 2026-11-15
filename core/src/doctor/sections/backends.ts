@@ -8,6 +8,12 @@ export function backendFindings(reports: BackendReport[]): Finding[] {
     const out: Finding[] = []
     for (const r of reports) {
         if (r.adapterPackage) continue
+        if (r.id === 'hermes' && r.installed && r.missingMcpExtra)
+            out.push({
+                id: 'backends.hermes-mcp',
+                severity: 'warn',
+                title: "hermes is missing its MCP extra, so Bismuth's tool is skipped in hermes chats // fix: uv tool install --reinstall 'hermes-agent[acp,mcp]'",
+            })
         if (r.installed && r.problem) {
             out.push({
                 id: `backends.${r.id}`,

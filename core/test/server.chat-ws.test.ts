@@ -210,6 +210,7 @@ describeOrSkipSlow(
     () => {
         let stubDir: string
         let savedPath: string | undefined
+        let savedClineDir: string | undefined
         let savedShape: string | undefined
         let savedGrace: string | undefined
         let savedEchoFile: string | undefined
@@ -226,12 +227,16 @@ describeOrSkipSlow(
             // `bun test` process for every later test that spawns a subprocess. Same ordering fix
             // acpFakeAgent.test.ts records for itself.
             savedPath = process.env.PATH
+            savedClineDir = process.env.CLINE_DIR
             savedShape = process.env.FAKE_ACP_MODEL_SHAPE
             savedGrace = process.env.BISMUTH_CHAT_GRACE_MS
             savedEchoFile = process.env.FAKE_ACP_ECHO_FILE
             echoDir = undefined
             stubDir = makeStubBinDir()
             process.env.PATH = `${stubDir}:${savedPath ?? ''}`
+            // A cline spawn writes its Bismuth tool under CLINE_DIR: keep it inside the stub dir so no
+            // test touches the real ~/.cline.
+            process.env.CLINE_DIR = join(stubDir, 'cline-home')
             // The fake agent's OLD model shape (models.availableModels/currentModelId). Either shape works
             // for everything this file asserts — the chosen one just has to be pinned so the session
             // handshake is deterministic rather than inheriting whatever a previous file left set.
@@ -248,6 +253,8 @@ describeOrSkipSlow(
             }
             for (const id of chatIds.splice(0))
                 CHAT_BACKENDS.cline.closeChat(id)
+            if (savedClineDir === undefined) delete process.env.CLINE_DIR
+            else process.env.CLINE_DIR = savedClineDir
             if (savedPath === undefined) delete process.env.PATH
             else process.env.PATH = savedPath
             if (savedShape === undefined)

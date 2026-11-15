@@ -54,6 +54,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import type { AcpMcpServerStdio } from '../chatProviders/acp/protocol'
 import { parseDocument } from 'yaml'
 import { whichBinary } from '../claudeWhich'
 import { isBismuthOwnedPath } from '../ownership'
@@ -732,6 +733,49 @@ export function createClineRegistrar(
         },
         io,
     )
+}
+
+/** One MCP server as the ACP driver builds it (`buildMcpServers`). */
+export type McpServerSpec = AcpMcpServerStdio
+
+/**
+ * Cline ignores the `mcpServers` a client sends in `session/new`, so its Bismuth tool has to be in
+ * its own settings file, `<clineDir>/data/settings/cline_mcp_settings.json`. Writes or replaces the
+ * `server.name` entry (default `bismuth`) and keeps every other server and key the file holds.
+ * `clineDir` is `$CLINE_DIR` or `~/.cline`, the folder cline itself reads.
+ */
+export function ensureClineMcp(clineDir: string, server: McpServerSpec): void {
+    const file = join(clineDir, 'data', 'settings', 'cline_mcp_settings.json')
+    let parsed: Record<string, unknown> = {}
+    let indent = '  '
+    if (existsSync(file)) {
+        const text = readFileSync(file, 'utf8')
+        try {
+            const v = JSON.parse(text)
+            if (v && typeof v === 'object' && !Array.isArray(v)) parsed = v
+            else throw new Error('not an object')
+        } catch {
+            // Never overwrite a file we cannot read: the user's other servers live in it.
+            throw new Error(`${file} is not a JSON object; left untouched`)
+        }
+        indent = detectIndent(text)
+    }
+    const servers =
+        parsed.mcpServers &&
+        typeof parsed.mcpServers === 'object' &&
+        !Array.isArray(parsed.mcpServers)
+            ? (parsed.mcpServers as Record<string, unknown>)
+            : {}
+    const env: Record<string, string> = {}
+    for (const e of server.env ?? []) env[e.name] = e.value
+    servers[server.name || 'bismuth'] = {
+        command: server.command,
+        args: server.args ?? [],
+        env,
+    }
+    parsed.mcpServers = servers
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify(parsed, null, indent) + '\n')
 }
 
 /** OpenClaw. `mcp set` is a single-shot JSON payload (command+args+env all at once) — the

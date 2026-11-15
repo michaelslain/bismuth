@@ -41,7 +41,7 @@ Four backends honor `localModel`: the ones whose catalog entry has the `localMod
 
 Each backend is wired at spawn time:
 
-- Claude Code gets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and every model-role variable (`ANTHROPIC_MODEL`, the `ANTHROPIC_DEFAULT_*_MODEL` family, `CLAUDE_CODE_SUBAGENT_MODEL`) set to the chosen model, so background and subagent calls never name a Claude model the server has never heard of. When the server reports the model's loaded window, `CLAUDE_CODE_MAX_CONTEXT_TOKENS` carries it, so Claude Code auto-compacts within that window instead of the larger one it assumes for a model it does not know.
+- Claude Code gets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and every model-role variable (`ANTHROPIC_MODEL`, the `ANTHROPIC_DEFAULT_*_MODEL` family, `CLAUDE_CODE_SUBAGENT_MODEL`) set to the chosen model, `CLAUDE_CODE_MAX_RETRIES=2` unless you set it (a local server's error is not transient), so background and subagent calls never name a Claude model the server has never heard of. When the server reports the model's loaded window, `CLAUDE_CODE_MAX_CONTEXT_TOKENS` carries it, so Claude Code auto-compacts within that window instead of the larger one it assumes for a model it does not know.
 - Codex gets `--config` overrides that define a custom `bismuth_local` provider with `wire_api="responses"` and the chosen `--model`; the key rides `BISMUTH_LOCAL_MODEL_KEY`. When the server reports the model's loaded window, `--config model_context_window=<window>` carries it, so Codex sizes its prompt and compacts within that window instead of the fallback it assumes for a model outside its catalog. Codex keeps 5% of the window in reserve, so a 12,345-token window reports as 11,727. Codex prints a "Model metadata not found" warning for any model outside its catalog, and on a small window a "skills context budget" notice when it drops its skill descriptions; a chat shows neither as an error.
 - opencode gets an inline `OPENCODE_CONFIG_CONTENT` declaring a `local` provider, which outranks your own opencode config without replacing it.
 - Goose gets `GOOSE_PROVIDER=openai` plus `OPENAI_HOST`, `OPENAI_BASE_PATH`, `GOOSE_MODEL` and `OPENAI_API_KEY`. When the server reports the model's loaded window, `GOOSE_CONTEXT_LIMIT` carries it, so goose fits its per-turn context and compacts within that window. Goose's opening request carries its system prompt with every agent in your `~/.claude/agents` and every skill it finds, so it can run to tens of thousands of tokens; the section on fitting goose to a small window covers how Bismuth handles that.
@@ -71,9 +71,25 @@ Before a goose chat on a local model starts, Bismuth measures goose's opening re
 | full | your own goose setup (by default developer, apps, analyze, extension manager and summon, which lists your agents) | its opening request leaves room for a chat's first exchange |
 | lean | developer only: the shell and reading and editing files | the full profile does not leave that room |
 
-Both profiles keep Bismuth's tool and goose's skills list, which goose always sends. When even the lean opening request is larger than the window, the chat shows an error naming the window and the opening size instead of sending a prompt the server would cut. The lean profile is set through goose's `EXTENSIONS` environment variable for the goose process Bismuth starts; your goose config file is never edited.
+Both profiles keep Bismuth's tool. The lean profile runs goose with `HOME` set to `~/.bismuth/goose-home`, which links every entry of your home except `.claude` and `.agents`, so your own skills and agents are left out and the vault's stay. A file goose creates directly in `~` there is refused; files inside your existing folders resolve as usual. When even the lean opening request is larger than the window, the chat shows an error naming the window and the opening size instead of sending a prompt the server would cut. The lean profile is set through goose's `EXTENSIONS` environment variable for the goose process Bismuth starts; your goose config file is never edited.
 
 The measurement runs goose once per profile against a stand-in model inside Bismuth, with your goose config, and is kept until Bismuth restarts. A model with no reported window runs goose's own setup.
+
+## How does a codex chat fit a small context window?
+
+At a small loaded window, codex runs with multi-agent, goals and web search off, a short base prompt that Bismuth writes under `~/.bismuth/codex-lean`, and an explicit auto-compact limit. A model with no reported window, or a window that holds codex's own opening and a chat's growth, runs codex's full profile.
+
+## How does a claude chat fit a small context window?
+
+A Claude Code chat on a local model opens with the richest profile that leaves room for a chat's first exchange in the model's loaded window:
+
+| Profile | What the chat opens with | Picked when |
+|---------|--------------------------|-------------|
+| full | your own Claude Code setup: user CLAUDE.md and rules, plugins, every tool, Claude Code's own prompt, and the brain block | the window holds that opening and a chat's growth; a model with no reported window, such as a cloud model, always runs full |
+| brain | the vault's own `CLAUDE.md` and skills, Bismuth's tool, the shell and file tools, and the brain block | the window holds that |
+| lean | the same without the brain block, and without Claude Code's own prompt: the chat instructions and the working directory stand in for it | the window is smaller still |
+
+Every profile keeps the memory recalled for the message, except that lean skips the session-start brain block. The reply length is capped to what the window leaves: a window of 8,192 tokens allows 512 tokens of reply, 32,768 allows 8,192, and 65,536 allows 16,384. A value you set in `CLAUDE_CODE_MAX_OUTPUT_TOKENS` wins.
 
 ## What happens when the prompt does not fit the context window?
 
@@ -159,4 +175,4 @@ The tier comes from `pickTier` (`opencodeBudget.ts`), which weighs `OPENCODE_BAS
 
 For goose, `sizeGooseChat` (`gooseSizing.ts`) runs before the ACP driver spawns goose: `measureGooseOpening` (`gooseMeasure.ts`) reads goose's opening request per profile from a `goose run` against an in-process stand-in model, and `pickGooseProfile` (`gooseBudget.ts`) weighs it, plus Bismuth's chat instructions at `CHARS_PER_TOKEN`, against the window and `CHAT_GROWTH_TOKENS`. `loadOllamaModel` (`contextWindowProbe.ts`) loads an Ollama model that is not running so `resolveLocalSpawn` can read its window.
 
-Source: `core/src/agentBackends/localModel.ts`, `core/src/agentBackends/contextWindowProbe.ts`, `core/src/chatProviders/opencode/opencodeConfig.ts`, `core/src/chatProviders/opencode/opencodeBudget.ts`, `core/src/chatProviders/opencode/opencodeOverflow.ts`, `core/src/agentBackends/localModelProbe.ts`, `core/src/agentBackends/catalog.ts` (`localModel` capability), `core/src/schema/settingsSchema.ts`, `core/src/chatProviders/acp/gooseSizing.ts`, `core/src/chatProviders/acp/gooseMeasure.ts`, `core/src/chatProviders/acp/gooseBudget.ts`
+Source: `core/src/agentBackends/localModel.ts`, `core/src/agentBackends/contextWindowProbe.ts`, `core/src/chatProviders/claudeBudget.ts`, `core/src/chatProviders/opencode/opencodeConfig.ts`, `core/src/chatProviders/opencode/opencodeBudget.ts`, `core/src/chatProviders/opencode/opencodeOverflow.ts`, `core/src/agentBackends/localModelProbe.ts`, `core/src/agentBackends/catalog.ts` (`localModel` capability), `core/src/schema/settingsSchema.ts`, `core/src/chatProviders/acp/gooseSizing.ts`, `core/src/chatProviders/acp/gooseMeasure.ts`, `core/src/chatProviders/acp/gooseBudget.ts`

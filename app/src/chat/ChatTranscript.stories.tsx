@@ -433,6 +433,33 @@ export const AwaitingReply: Story = {
     },
 }
 
+/** The backend is retrying a failed model call: a muted line under the working row. */
+export const Retrying: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '520px', display: 'flex' }}>
+            <ChatTranscript
+                items={[
+                    ...CONVERSATION_ITEMS,
+                    { role: 'user', text: 'Summarize the vault.' },
+                ]}
+                persona="bismuth"
+                awaitingReply
+                turnError={null}
+                retryNote="retrying // attempt 2 of 3"
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await noteProseReady(canvasElement)
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText(/working/)).toBeInTheDocument()
+        const note = canvas.getByText('retrying // attempt 2 of 3')
+        await expect(note).toBeInTheDocument()
+        await expect(note.closest('[role="alert"]')).toBeNull()
+    },
+}
+
 /** A recoverable per-turn error, shown after the last turn. */
 export const TurnError: Story = {
     render: () => (

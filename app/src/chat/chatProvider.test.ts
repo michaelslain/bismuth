@@ -54,11 +54,11 @@ describe('header gating + options', () => {
         expect(providerCan('claude', 'effort')).toBe(true)
     })
     test('opencode hides exactly the controls neither server nor run mode can drive', () => {
-        // permissionModes/computerUse stay hidden either way (no drivable mode switch, no --chrome
-        // equivalent). opencode 2 lists its sessions, so the history picker shows. images
+        // computerUse stays hidden (no --chrome equivalent); the permission-mode picker is shown, since
+        // the chat's mode decides which asks the driver answers. opencode 2 lists its sessions, so the history picker shows. images
         // flipped to true once server mode's real FilePartInput attachment path was verified live —
         // see catalog.ts's OPENCODE descriptor.
-        expect(providerCan('opencode', 'permissionModes')).toBe(false)
+        expect(providerCan('opencode', 'permissionModes')).toBe(true)
         expect(providerCan('opencode', 'computerUse')).toBe(false)
         expect(providerCan('opencode', 'sessionPicker')).toBe(true)
         expect(providerCan('opencode', 'effort')).toBe(true)
@@ -79,14 +79,21 @@ describe('header gating + options', () => {
         // `permission` frame but has no mode picker, so the single flag rendered a picker whose
         // selections silently went nowhere — a capability claiming something the backend cannot do.
         // Claude has both. opencode's server mode raises a real `permission` ask/respond cycle
-        // (verified live for both allow and deny) but still has no MODE-switch equivalent, so it now
-        // matches ACP's split exactly: prompts true, modes false.
+        // (verified live for both allow and deny), and its chat mode decides which asks it answers, so it
+        // has both. goose has both too (its approval is a session mode); every other ACP backend has
+        // prompts but no mode picker.
         expect(providerCan('claude', 'permissionPrompts')).toBe(true)
         expect(providerCan('claude', 'permissionModes')).toBe(true)
         expect(providerCan('opencode', 'permissionPrompts')).toBe(true)
-        expect(providerCan('opencode', 'permissionModes')).toBe(false)
+        expect(providerCan('opencode', 'permissionModes')).toBe(true)
+        expect(providerCan('goose', 'permissionModes')).toBe(true)
         expect(providerCan('cline', 'permissionPrompts')).toBe(true)
         expect(providerCan('cline', 'permissionModes')).toBe(false)
+        // hermes, codex-acp and claude-code-acp take the chat's mode as a session mode; openclaw's
+        // bridge never asks before a write.
+        for (const id of ['hermes', 'codex-acp', 'claude-code-acp'] as const)
+            expect(providerCan(id, 'permissionModes')).toBe(true)
+        expect(providerCan('openclaw', 'permissionPrompts')).toBe(false)
     })
     test("an unknown backend id degrades to the default's capabilities instead of throwing", () => {
         expect(providerCan('gpt-cli' as never, 'permissionModes')).toBe(true)

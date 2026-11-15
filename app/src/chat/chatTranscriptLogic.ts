@@ -281,6 +281,7 @@ export function applyChatFrame(
         case 'context': // → header context-usage pill
         case 'subagent': // → ChatSession.subagents (the strip above the composer), never a transcript item
         case 'error': // → setup / visibility-refusal / per-turn error signals
+        case 'retry': // → ChatSession.retryNote (the muted line under the working row)
             return false
 
         default: {

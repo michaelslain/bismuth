@@ -674,6 +674,152 @@ describe("spawnChatQuery wiring (does the real call site actually use buildChatS
     })
 })
 
+describe('spawnChatQuery retry cap and retry frame', () => {
+    test('a cloud chat caps retries at 3, keeps the full profile, and an api_retry message becomes a retry frame', async () => {
+        const sdk = await import('@anthropic-ai/claude-agent-sdk')
+        const originalExports = { ...sdk }
+        const savedRetries = process.env.CLAUDE_CODE_MAX_RETRIES
+        delete process.env.CLAUDE_CODE_MAX_RETRIES
+        let captured: Record<string, unknown> | undefined
+        mock.module('@anthropic-ai/claude-agent-sdk', () => ({
+            ...originalExports,
+            query: (args: { options: Record<string, unknown> }) => {
+                captured = args.options
+                async function* stream() {
+                    yield {
+                        type: 'system',
+                        subtype: 'api_retry',
+                        attempt: 2,
+                        max_retries: 3,
+                        retry_delay_ms: 1600,
+                        error: 'server_error',
+                    }
+                }
+                return Object.assign(stream(), {
+                    supportedModels: async () => [],
+                    initializationResult: async () => ({ commands: [] }),
+                    mcpServerStatus: async () => [],
+                    setModel: () => Promise.resolve(),
+                    setPermissionMode: () => Promise.resolve(),
+                    interrupt: () => Promise.resolve(),
+                    close: () => {},
+                })
+            },
+        }))
+        const vault = tempDir('bismuth-chat-retry-')
+        const chatId = newChatId()
+        const frames: Record<string, unknown>[] = []
+        try {
+            await openSession(chatId, vault, f => frames.push(f as never))
+            for (let i = 0; i < 50 && !frames.some(f => f.type === 'retry'); i++)
+                await new Promise(r => setTimeout(r, 20))
+            expect(
+                (captured?.env as Record<string, string>).CLAUDE_CODE_MAX_RETRIES,
+            ).toBe('3')
+            // The full profile: no lean options on a cloud chat.
+            expect(captured?.settingSources).toBeUndefined()
+            expect(captured?.strictMcpConfig).toBeUndefined()
+            expect(frames.find(f => f.type === 'retry')).toEqual({
+                type: 'retry',
+                attempt: 2,
+                maxAttempts: 3,
+                delayMs: 1600,
+                error: 'server_error',
+            })
+        } finally {
+            if (savedRetries !== undefined)
+                process.env.CLAUDE_CODE_MAX_RETRIES = savedRetries
+            closeChat(chatId)
+            mock.module('@anthropic-ai/claude-agent-sdk', () => originalExports)
+            await rm(vault, { recursive: true, force: true })
+        }
+    })
+})
+
+describe('spawnChatQuery on a small local window', () => {
+    test('an 8192 window gets the lean options, the output cap, the small prompt and no brain block', async () => {
+        const sdk = await import('@anthropic-ai/claude-agent-sdk')
+        const probe = await import('../src/agentBackends/localModelProbe')
+        const originalExports = { ...sdk }
+        const originalProbe = { ...probe }
+        let captured: Record<string, unknown> | undefined
+        mock.module('@anthropic-ai/claude-agent-sdk', () => ({
+            ...originalExports,
+            query: (args: { options: Record<string, unknown> }) => {
+                captured = args.options
+                async function* empty() {
+                    /* no messages */
+                }
+                return Object.assign(empty(), {
+                    supportedModels: async () => [],
+                    initializationResult: async () => ({ commands: [] }),
+                    mcpServerStatus: async () => [],
+                    setModel: () => Promise.resolve(),
+                    setPermissionMode: () => Promise.resolve(),
+                    interrupt: () => Promise.resolve(),
+                    close: () => {},
+                })
+            },
+        }))
+        mock.module('../src/agentBackends/localModelProbe', () => ({
+            ...originalProbe,
+            resolveLocalSpawn: async () => ({
+                kind: 'ready',
+                local: {
+                    env: {},
+                    args: [],
+                    model: 'tiny',
+                    lm: {},
+                    models: ['tiny'],
+                    windows: { tiny: 8192 },
+                    kind: null,
+                },
+            }),
+        }))
+        const savedOut = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
+        delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
+        const vault = tempDir('bismuth-chat-small-')
+        const chatId = newChatId()
+        try {
+            await openSession(chatId, vault, () => {})
+            expect(captured?.settingSources).toEqual(['project'])
+            expect(captured?.tools).toEqual([
+                'Bash',
+                'Read',
+                'Edit',
+                'Write',
+                'Skill',
+            ])
+            expect(captured?.strictMcpConfig).toBe(true)
+            expect(
+                (captured?.env as Record<string, string>)
+                    .CLAUDE_CODE_MAX_OUTPUT_TOKENS,
+            ).toBe('512')
+            // The preset is dropped: a plain string ending in the working directory.
+            expect(typeof captured?.systemPrompt).toBe('string')
+            expect(captured?.systemPrompt as string).toContain(
+                `Working directory: ${vault}`,
+            )
+            // The brain gate: the SessionStart hook injects nothing on the lean tier.
+            const hooks = captured?.hooks as
+                | Record<string, { hooks: ((i: unknown) => Promise<unknown>)[] }[]>
+                | undefined
+            for (const m of hooks?.SessionStart ?? [])
+                for (const h of m.hooks)
+                    expect(
+                        await h({ hook_event_name: 'SessionStart' }),
+                    ).toEqual({})
+        } finally {
+            if (savedOut !== undefined)
+                process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = savedOut
+            closeChat(chatId)
+            mock.module('@anthropic-ai/claude-agent-sdk', () => originalExports)
+            mock.module('../src/agentBackends/localModelProbe', () => originalProbe)
+            await rm(vault, { recursive: true, force: true })
+        }
+    })
+})
+
 // These are real round-trips: they spawn the user's `claude` binary (machine-login auth, no API
 // key) against a TEMP dir — NEVER the vault. Opt-in, not opt-out: `bun test` on a machine with
 // `claude` installed must not touch the user's Anthropic account. Set BISMUTH_LIVE_TESTS=1 to run

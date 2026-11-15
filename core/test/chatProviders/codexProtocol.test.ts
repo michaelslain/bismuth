@@ -573,3 +573,24 @@ describe('resetCodexTurnState', () => {
         expect(state.threadId).toBe('th_abc')
     })
 })
+
+describe('Reconnecting retries', () => {
+    test('retry events are dropped and turn.failed is the single error', () => {
+        const state = newCodexTranslateState(null)
+        const frames = [
+            { type: 'error', message: 'Reconnecting... 1/5 (high demand)' },
+            { type: 'error', message: 'Reconnecting... 2/5 (high demand)' },
+            { type: 'turn.failed', error: { message: 'high demand' } },
+        ].flatMap(e => translateThreadEvent(e, state))
+        expect(frames).toEqual([
+            { type: 'error', code: 'error', message: 'high demand' },
+        ])
+    })
+    test('a non-retry error event still surfaces', () => {
+        const frames = translateThreadEvent(
+            { type: 'error', message: 'stream disconnected' },
+            newCodexTranslateState(null),
+        )
+        expect(frames).toHaveLength(1)
+    })
+})

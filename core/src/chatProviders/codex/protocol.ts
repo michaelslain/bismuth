@@ -272,15 +272,21 @@ export function translateThreadEvent(
                     : 'Codex turn failed.'
             return [{ type: 'error', code: 'error', message }]
         }
-        case 'error':
+        case 'error': {
+            // codex retries a failed request and reports each attempt as an `error` event
+            // ("Reconnecting... 2/5 (...)") before the turn's own `turn.failed`. An attempt is a
+            // notice, not a failure: turn.failed stays the one error.
+            const text = str(event.message)
+            if (text && /^Reconnecting\.\.\. \d+\/\d+/.test(text)) return []
             return [
                 {
                     type: 'error',
                     code: 'error',
                     message:
-                        str(event.message) ?? 'Codex reported a fatal error.',
+                        text ?? 'Codex reported a fatal error.',
                 },
             ]
+        }
         default:
             // turn.started (nothing of its own to show — the driver resets per-turn state itself before
             // the loop starts) / turn.completed (usage bookkeeping the driver doesn't currently surface,

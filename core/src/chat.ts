@@ -50,6 +50,17 @@ import {
 import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
 import { agentShellEnv } from './agentEnvFile'
 import { chatInstructions } from './chatInstructions'
+import {
+    claudeLeanOptions,
+    claudeOutputEnv,
+    claudeSkillsEnv,
+    claudeRetryEnv,
+    claudeTier,
+    retryFrameOf,
+    tierHasBrain,
+    tierIsLean,
+} from './chatProviders/claudeBudget'
+import { claudeMcpServers } from './chatProviders/claudeMcp'
 import { chatLineRefNoteFor } from './chatLineRefNote'
 import { findVaultRoot } from './findVaultRoot'
 import {
@@ -215,6 +226,19 @@ export type ChatFrame =
           percentage: number
           totalTokens: number
           maxTokens: number
+      }
+    /** The model API failed and the backend is trying again: a non-terminal status the transcript shows
+     *  as one muted line ("retrying // attempt 2 of 3") until the next text or the result clears it.
+     *  Only claude emits it today (the CLI's `api_retry` status message); ACP and codex drivers may. */
+    | {
+          type: 'retry'
+          attempt: number
+          maxAttempts?: number
+          delayMs?: number
+          error?: string
+          /** A short status shown in place of the attempt count ("chat condensed to fit the model's
+           *  window"). */
+          note?: string
       }
     /** Provider credential state (opencode-only today — `opencode auth list`, re-fetched per session
      *  open). Powers the header's auth pill: which providers hold stored credentials, so the user can
@@ -1438,6 +1462,13 @@ function spawnChatQuery(
     // blocking it closed nothing and left a chat with no way into Bismuth.
     const disallowedTools = denyEntries.length > 0 ? ['Grep', 'Glob'] : []
 
+    // How much this chat opens with: the loaded window of a local model picks the profile (full or
+    // lean), so a small window's first request fits (claudeBudget.ts). Cloud and unknown windows are full.
+    const localWindow = session.local
+        ? session.local.windows[session.local.model]
+        : null
+    const tier = claudeTier(localWindow)
+
     let q: Query
     try {
         q = query({
@@ -1462,6 +1493,11 @@ function spawnChatQuery(
                             : process.env,
                     ),
                     ...session.local?.env,
+                    // Cap the CLI's own retries (default 10, minutes of backoff on a 500) unless the
+                    // user set it; each retry reaches the chat as a `retry` frame.
+                    ...claudeRetryEnv(!!session.local, process.env),
+                    ...claudeOutputEnv(tier, localWindow, process.env),
+                    ...claudeSkillsEnv(tier, process.env),
                     // CLAUDE_ENV_FILE puts `bismuth` back on the Bash tool's PATH, which Claude Code
                     // replaces with the login shell's; BISMUTH_VAULT aims a flagless command (and the
                     // visibility gate) at this chat's vault (core/src/agentEnvFile.ts).
@@ -1472,6 +1508,16 @@ function spawnChatQuery(
                     BISMUTH_AGENT_CHANNEL: 'chat',
                 },
                 includePartialMessages: true,
+                // The lean profile (small window): the vault's own CLAUDE.md and skills, Bismuth's MCP
+                // server alone, five tools (claudeBudget.ts).
+                ...(tierIsLean(tier)
+                    ? claudeLeanOptions(
+                          claudeMcpServers(
+                              findVaultRoot(session.cwd) ?? session.cwd,
+                              session.memoryDir ?? undefined,
+                          ),
+                      )
+                    : {}),
                 // resume an existing Claude Code session (keeps its history + session_id) when asked; a
                 // brand-new session simply omits it.
                 ...(resume ? { resume } : {}),
@@ -1518,10 +1564,12 @@ function spawnChatQuery(
                 // then how to cite a note's lines when the editor shows line numbers
                 // (chatLineRefNote.ts), and, in a vault, who the agent is and that the `bismuth` CLI
                 // is the way into Bismuth: chatInstructions.ts, which every backend shares.
-                systemPrompt: claudeChatSystemPrompt(
-                    session.cwd,
-                    session.lineRefNote,
-                ),
+                systemPrompt: tierHasBrain(tier)
+                    ? claudeChatSystemPrompt(session.cwd, session.lineRefNote)
+                    : claudeSmallWindowSystemPrompt(
+                          session.cwd,
+                          session.lineRefNote,
+                      ),
                 // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
                 // closure to it. (canUseTool ALSO carries the AskUserQuestion interactive-question flow — see
                 // the ASK_USER_QUESTION_TOOL branch above.)
@@ -1634,6 +1682,8 @@ function spawnChatQuery(
                                                       'SessionStart'
                                               )
                                                   return {}
+                                              // A small window leaves no room for the brain block.
+                                              if (!tierHasBrain(tier)) return {}
                                               const { context } =
                                                   await recallWithin(
                                                       recallServiceFor(
@@ -1953,6 +2003,16 @@ export function claudeChatSystemPrompt(
         preset: 'claude_code',
         append: chatInstructions(cwd, lineRefNote),
     }
+}
+
+/** The `lean` tier's system prompt: the instructions every backend shares plus the working
+ *  directory, in place of Claude Code's preset (8.4k characters, over a 8192 window's room once the
+ *  Bismuth MCP server's own instructions are counted: claudeBudget.ts). */
+export function claudeSmallWindowSystemPrompt(
+    cwd: string,
+    lineRefNote = '',
+): string {
+    return `${chatInstructions(cwd, lineRefNote)}\n\nWorking directory: ${cwd}`
 }
 
 export async function listChatSessions(
@@ -2570,7 +2630,17 @@ async function drain(session: ChatSession): Promise<void> {
                     .catch(() => {})
                 continue
             }
-            // Other message kinds (status/retry/hooks/etc.) carry no UI frame — ignore.
+            // The CLI retrying a failed model call: one muted status line until the next output.
+            if (msg.type === 'system') {
+                const retry = retryFrameOf(
+                    msg as Parameters<typeof retryFrameOf>[0],
+                )
+                if (retry) {
+                    emit(session, retry)
+                    continue
+                }
+            }
+            // Other message kinds (status/hooks/etc.) carry no UI frame — ignore.
         }
     } catch (e) {
         drainError = (e as Error).message

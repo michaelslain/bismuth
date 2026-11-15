@@ -131,6 +131,7 @@ Ids are unique within a report. The human report pads the id column to at most 3
 | `<section>.check-failed` | A section threw while checking (for example, unreadable folder). | none |
 | `backends.<backendId>` | An agent CLI is installed but its probe failed. | none |
 | `backends.claude` | `claude` is not on PATH. | none |
+| `backends.hermes-mcp` | hermes is installed but its own Python cannot import the MCP SDK, so hermes skips Bismuth's tool; the fix line gives the `uv tool install --reinstall` command, which doctor never runs. | none |
 | `install.not-installed` | Bismuth's machine-wide CLI and MCP are not installed (a dev checkout, usually). | none |
 | `install.version-skew` | The installed CLI/MCP tools differ from the ones bundled with this app. | reruns the installer (safe) |
 | `install.cli-link-missing` | The `bismuth` command is not linked onto PATH. | relinks it (safe) |

@@ -16,6 +16,8 @@ import {
     type BackendCapabilities,
     type BackendDescriptor,
 } from './catalog'
+import { existsSync, readFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { whichBinary } from '../claudeWhich'
 import { spawnWithTimeout } from './spawnWithTimeout'
 import { ACP_AGENTS } from '../chatProviders/acp/agents'
@@ -53,6 +55,9 @@ export interface BackendReport {
         localModel: boolean
     }
     installHint?: string
+    /** Set for hermes when its own Python cannot `import mcp`: hermes then skips the MCP servers a
+     *  chat hands it, so Bismuth's tool never appears in a hermes chat. */
+    missingMcpExtra?: boolean
 }
 
 /** Pure: project a descriptor's capabilities into the report's surface summary. */
@@ -138,6 +143,70 @@ export async function probeVersion(
     })
 }
 
+/** Pure: the interpreter a launcher script names on its `#!` line, or null for a binary or a
+ *  shebang that goes through `env` (which names no fixed Python). */
+export function shebangPython(firstLine: string): string | null {
+    const m = /^#!\s*(\S+)\s*$/.exec(firstLine.trim())
+    if (!m || m[1].endsWith('/env')) return null
+    return /^python[\d.]*$/.test(basename(m[1])) ? m[1] : null
+}
+
+export interface HermesMcpDeps {
+    /** First line of the hermes launcher, or null when unreadable. */
+    readFirstLine(path: string): string | null
+    /** `uv tool dir`, or null when uv is absent. */
+    uvToolDir(): Promise<string | null>
+    exists(path: string): boolean
+    /** Run `<python> -I -c "from mcp import ClientSession"`; true when it exits 0. `-I` keeps the
+     *  working directory off sys.path: a repo with an `mcp/` folder otherwise satisfies a bare
+     *  `import mcp` as a namespace package, which is not the SDK. */
+    importMcp(python: string): Promise<boolean>
+}
+
+const realHermesDeps: HermesMcpDeps = {
+    readFirstLine: p => {
+        try {
+            return readFileSync(p, 'utf8').split('\n', 1)[0]
+        } catch {
+            return null
+        }
+    },
+    uvToolDir: async () => {
+        const uv = whichBinary('uv')
+        if (!uv) return null
+        const r = await spawnWithTimeout([uv, 'tool', 'dir'], PROBE_TIMEOUT_MS)
+        return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null
+    },
+    exists: existsSync,
+    importMcp: async python =>
+        (
+            await spawnWithTimeout(
+                [python, '-I', '-B', '-c', 'from mcp import ClientSession'],
+                PROBE_TIMEOUT_MS,
+            )
+        ).code === 0,
+}
+
+/**
+ * True when hermes is installed without its MCP extra. Finds hermes's own Python from the launcher's
+ * shebang, else from `uv tool dir`, and imports the MCP SDK with it. Returns false (silent) when the
+ * Python cannot be found: no evidence, no finding. Never runs the reinstall.
+ */
+export async function hermesMissingMcp(
+    hermesPath: string,
+    deps: HermesMcpDeps = realHermesDeps,
+): Promise<boolean> {
+    let python = shebangPython(deps.readFirstLine(hermesPath) ?? '')
+    if (python && !deps.exists(python)) python = null
+    if (!python) {
+        const dir = await deps.uvToolDir()
+        const cand = dir ? join(dir, 'hermes-agent', 'bin', 'python') : null
+        if (cand && deps.exists(cand)) python = cand
+    }
+    if (!python) return false
+    return !(await deps.importMcp(python))
+}
+
 /**
  * Probe every backend in the catalog. Concurrent — these are independent 5s-bounded spawns, and
  * doing them in series would make the command feel broken with a dozen backends.
@@ -168,7 +237,14 @@ export async function checkBackends(): Promise<BackendReport[]> {
             }
             if (!path) return { ...base, installHint: d.installHint }
             const { version, problem } = await probeVersion(path)
-            return { ...base, version, ...(problem ? { problem } : {}) }
+            const missingMcpExtra =
+                d.id === 'hermes' ? await hermesMissingMcp(path) : false
+            return {
+                ...base,
+                version,
+                ...(problem ? { problem } : {}),
+                ...(missingMcpExtra ? { missingMcpExtra } : {}),
+            }
         }),
     )
 }

@@ -182,6 +182,7 @@ describeOrSkipSlow(
         const savedEnv: Record<string, string | undefined> = {}
         const ENV_KEYS = [
             'PATH',
+            'CLINE_DIR',
             'FAKE_ACP_PROMPT_HOLD',
             'FAKE_ACP_PERMISSION_OPTIONS',
             'FAKE_ACP_ECHO_FILE',
@@ -223,6 +224,9 @@ describeOrSkipSlow(
 
             // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.
             process.env.PATH = `${stubDir}:${savedEnv.PATH ?? ''}`
+            // A cline spawn writes its Bismuth tool under CLINE_DIR: point it inside the stub dir (removed
+            // with it) so no test ever touches the real ~/.cline.
+            process.env.CLINE_DIR = join(stubDir, 'cline-home')
             process.env.FAKE_ACP_ECHO_FILE = echoFile
             process.env.FAKE_ACP_PROMPT_HOLD = 'permission'
             // Hermetic against ambient env — the same finding acpPermissionFakeAgent.test.ts's beforeEach

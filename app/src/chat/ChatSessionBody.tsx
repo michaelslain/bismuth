@@ -83,6 +83,7 @@ const ChatSessionBody: Component<ChatSessionBodyProps> = props => {
             avatarMood={props.avatarMood}
             awaitingReply={s.awaitingReply()}
             turnError={s.turnError()}
+            retryNote={s.retryNote()}
             empty={props.empty}
             onAnswerPermission={s.answerPermission}
             onAnswerQuestion={s.answerQuestion}

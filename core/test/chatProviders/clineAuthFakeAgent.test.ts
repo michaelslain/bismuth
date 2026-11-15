@@ -82,6 +82,7 @@ describeOrSkipSlow(
     () => {
         let stubDir: string
         let savedPath: string | undefined
+        let savedClineDir: string | undefined
         let savedAuthGate: string | undefined
         let savedAuthed: string | undefined
         let savedModelShape: string | undefined
@@ -93,11 +94,18 @@ describeOrSkipSlow(
             // a first-test throw here can never leave a later test's PATH/env corrupted by an `undefined`
             // "saved" value that afterEach would then wrongly `delete` instead of restore.
             savedPath = process.env.PATH
+            savedClineDir = process.env.CLINE_DIR
             savedAuthGate = process.env.FAKE_ACP_AUTH_GATE
             savedAuthed = process.env.FAKE_ACP_CLINE_AUTHED
             savedModelShape = process.env.FAKE_ACP_MODEL_SHAPE
             stubDir = makeStubBinDir()
             process.env.PATH = `${stubDir}:${savedPath ?? ''}`
+            // A cline spawn writes its Bismuth tool under CLINE_DIR: keep it inside the stub dir so no
+            // test touches the real ~/.cline.
+            process.env.CLINE_DIR = join(stubDir, 'cline-home')
+            // A cline spawn writes its Bismuth tool under CLINE_DIR: keep it inside the stub dir so no
+            // test touches the real ~/.cline.
+            process.env.CLINE_DIR = join(stubDir, 'cline-home')
             process.env.FAKE_ACP_AUTH_GATE = 'cline'
             // Hermetic against ambient env (a code-review finding on this task): the gate-CLOSED test's
             // whole meaning depends on this being unset, but only `savedAuthed` was snapshotted here, never
@@ -117,6 +125,8 @@ describeOrSkipSlow(
             // restoring env before anything that can itself throw closes that gap without needing a
             // try/finally. closeChat doesn't need the stub PATH to already be gone (it only tears down a
             // process handle recorded earlier), so this reordering changes nothing about what's torn down.
+            if (savedClineDir === undefined) delete process.env.CLINE_DIR
+            else process.env.CLINE_DIR = savedClineDir
             if (savedPath === undefined) delete process.env.PATH
             else process.env.PATH = savedPath
             if (savedAuthGate === undefined)
@@ -142,6 +152,8 @@ describeOrSkipSlow(
             // at whatever this file's OWN beforeEach had set, not restored to absent. Reproduced live: with
             // this bug in place, exporting FAKE_ACP_AUTH_GATE=cline and running acpFakeAgent.test.ts gave 0
             // pass / 3 fail. Fixed to `delete` (not just leave alone) exactly like afterEach does above.
+            if (savedClineDir === undefined) delete process.env.CLINE_DIR
+            else process.env.CLINE_DIR = savedClineDir
             if (savedPath === undefined) delete process.env.PATH
             else process.env.PATH = savedPath
             if (savedAuthGate === undefined)

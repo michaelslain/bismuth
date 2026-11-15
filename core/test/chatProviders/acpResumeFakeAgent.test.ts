@@ -137,6 +137,7 @@ describeOrSkipSlow(
         const savedEnv: Record<string, string | undefined> = {}
         const ENV_KEYS = [
             'PATH',
+            'CLINE_DIR',
             'FAKE_ACP_REJECT_SESSION_LOAD',
             'FAKE_ACP_REJECT_SESSION_LOAD_CODE',
             'FAKE_ACP_REJECT_SESSION_LOAD_MESSAGE',
@@ -183,6 +184,9 @@ describeOrSkipSlow(
 
             // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.
             process.env.PATH = `${stubDir}:${savedEnv.PATH ?? ''}`
+            // A cline spawn writes its Bismuth tool under CLINE_DIR: point it inside the stub dir (removed
+            // with it) so no test ever touches the real ~/.cline.
+            process.env.CLINE_DIR = join(stubDir, 'cline-home')
             process.env.FAKE_ACP_ECHO_FILE = echoFile
             // Hermetic against ambient env — the same finding every sibling fake-agent test file's beforeEach
             // documents: a stray FAKE_ACP_AUTH_GATE (or a leftover prompt-hold var) exported in the shell

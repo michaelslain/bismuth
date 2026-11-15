@@ -98,7 +98,12 @@ export function parseCodexRollout(text: string): CodexRollout | null {
         }
         if (!role) continue
         if (role === 'user') {
-            const clean = stripEditorContext(body).trim()
+            const clean = stripEditorContext(
+                body.replace(
+                    /^<bismuth-condensed-chat>\n[\s\S]*?\n<\/bismuth-condensed-chat>\n\n/,
+                    '',
+                ),
+            ).trim()
             if (clean) frames.push({ type: 'user-message', text: clean })
         } else if (body.trim()) frames.push({ type: 'assistant-text', text: body })
     }

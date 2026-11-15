@@ -6,6 +6,7 @@
 //   "PERM"  ask permission for a shell call, then run or decline it by the reply
 //   "FAIL"  the provider keeps failing: session.retry.scheduled attempts 2, 3, 4, …
 //   "LONG"  stream deltas until interrupted
+//   "SILENT"  start the execution and send nothing until interrupted
 //   "OVERFLOW"  the turn fails with LM Studio's context-overflow message unless this server carries
 //               the compact profile (OPENCODE_CONFIG_CONTENT denies `opencode_*`); "OVERFLOW_ALWAYS"
 //               fails on either profile
@@ -204,6 +205,14 @@ async function runPrompt(sid: string, text: string) {
         })
         return
     }
+    if (text.includes('SILENT')) {
+        while (!interrupted.has(sid)) await tick()
+        send('session.execution.interrupted', {
+            sessionID: sid,
+            reason: 'user',
+        })
+        return
+    }
     if (text.includes('LONG')) {
         while (!interrupted.has(sid)) {
             send('session.text.delta', {
@@ -235,6 +244,12 @@ async function runPrompt(sid: string, text: string) {
         })
         const decision = await new Promise<string>(resolve => {
             permissionWaiters.set('per_1', resolve)
+            // A Stop ends the wait, as the real server does.
+            const watch = setInterval(() => {
+                if (!interrupted.has(sid)) return
+                clearInterval(watch)
+                resolve('reject')
+            }, 25)
             send('permission.asked', {
                 id: 'per_1',
                 sessionID: sid,

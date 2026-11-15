@@ -342,13 +342,11 @@ const OPENCODE: BackendDescriptor = {
         // user rejected permission..."). Run mode's `--auto` still can't park on a prompt at all — a
         // session that falls back to run mode simply never raises a `permission` frame, same as before.
         permissionPrompts: true,
-        // NOT raised: no verified way to switch a live session's permission MODE (there is no
-        // Default/Plan/AcceptEdits/Bypass vocabulary in the server API — only per-permission-kind
-        // ask/allow/deny rules in config, which is a different axis). Raising this without a real
-        // set_permission_mode-equivalent would render a picker whose selections silently do nothing —
-        // exactly the ACP `permissionModes` defect this flag split exists to prevent (see
-        // ACP_SHARED_CAPABILITIES's comment above).
-        permissionModes: false,
+        // The chat's permission mode decides which asks the driver answers itself
+        // (opencode.ts setPermissionMode), so the header's picker drives a real switch. The app's
+        // default mode is bypassPermissions, pushed on the first manifest, so a default chat asks for
+        // nothing, as a default claude chat does.
+        permissionModes: true,
         computerUse: false,
         // opencode's own command registry rides the manifest — server mode reads it off the typed
         // `GET /command`; run mode still parses `opencode debug config`.
@@ -441,12 +439,10 @@ const OPENCODE: BackendDescriptor = {
  *  - streaming: "part" — item.started/updated/completed carry whole (cumulative) text per item,
  *    not token-level deltas; the driver diffs cumulative text into a delta so the UI still streams,
  *    but the underlying granularity is item-sized, same tier as opencode.
- *  - effort: true — `--config model_reasoning_effort=…` is a real, stable 5-value enum
- *    (minimal/low/medium/high/xhigh) — unlike model ids, this doesn't churn.
- *  - models: FALSE — no `codex models`/model-list subcommand exists (confirmed: an open GitHub
- *    feature request, still unresolved at research time), so there is nothing honest to populate a
- *    picker from. Model ids are still settable as a free-form string via setModel (no UI surfaces
- *    it without the picker).
+ *  - effort: true — `--config model_reasoning_effort=…`, with the levels each model lists in
+ *    `codex debug models` (low/medium/high/xhigh/max, ultra on some).
+ *  - models: true — `codex debug models` prints the catalog (chatProviders/codex/models.ts); the
+ *    driver sends it as the models frame.
  *  - images: true — `--image <path>` is a real CLI flag; the driver writes each attachment's
  *    base64 payload to a temp file (the flag takes a path, not raw bytes) and cleans it up after
  *    the turn.
@@ -492,7 +488,7 @@ const CODEX: BackendDescriptor = {
         // codex 0.158: the vault's threads list in history and a reopened one replays its messages.
         historyReplay: true,
         sessionPicker: true,
-        models: false,
+        models: true,
         effort: true,
         images: true,
         permissionPrompts: false,
@@ -561,15 +557,16 @@ const CODEX: BackendDescriptor = {
  *
  *  - effort: true — the driver implements session/set_config_option for a "thought_level" category
  *    option (see driver.ts setEffort).
- *  - permissionPrompts: true, permissionModes: FALSE. The driver parks session/request_permission as
- *    a live `permission` frame, so approval prompts work; but there is no ACP-verified equivalent of
- *    Claude's permission-MODE picker, and `setPermissionMode` is deliberately not implemented. These
- *    started as ONE flag set to `true`, which rendered a mode picker whose selections silently went
- *    nowhere — a capability claiming something the backend cannot do, which is worse than a missing
- *    control. Splitting the flag is the fix. (ACP does define session/set_mode with `modes` on the
- *    session/new result; wiring that up is the way to make this `true` honestly, later.)
- *  - respondQuestion is likewise unimplemented — ACP has no AskUserQuestion equivalent — but no
- *    capability advertises it, so nothing renders for it.
+ *  - permissionPrompts: true, permissionModes: false. The driver parks session/request_permission as
+ *    a live `permission` frame, so approval prompts work. ACP has no Default/Plan/Accept-Edits mode
+ *    vocabulary, and a mode picker whose selections go nowhere is worse than none, so the flag stays
+ *    false and `setPermissionMode` is not implemented, except for an agent whose approval is a session
+ *    mode (goose, hermes, codex-acp: `askMode`; claude-code-acp: `passModeNames`, in agents.ts): its
+ *    own descriptor sets `permissionModes: true` and the driver maps the chat's mode to
+ *    `session/set_mode`. openclaw's bridge never asks before a write, so its descriptor sets
+ *    `permissionPrompts: false` and the driver has no `respondPermission` for it.
+ *  - respondQuestion is unimplemented — ACP has no AskUserQuestion equivalent — and no capability
+ *    advertises it, so nothing renders for it.
  */
 const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
     chat: true,
@@ -634,7 +631,13 @@ const GOOSE: BackendDescriptor = {
     label: 'Goose',
     binary: 'goose',
     installHint: 'Install Goose (goose-docs.ai) to use this provider.',
-    capabilities: { ...ACP_SHARED_CAPABILITIES, localModel: true },
+    capabilities: {
+        ...ACP_SHARED_CAPABILITIES,
+        localModel: true,
+        // goose's approval is a session mode: the chat's permission mode picks approve or auto
+        // (driver.ts setPermissionMode).
+        permissionModes: true,
+    },
 }
 
 /** OpenClaw — `openclaw acp`. Confirmed identical wire format to Zed's ACP (OpenClaw's own docs:
@@ -659,7 +662,14 @@ const OPENCLAW: BackendDescriptor = {
     binary: 'openclaw',
     installHint:
         'Install OpenClaw to use this provider — it runs against your own configured Gateway/model.',
-    capabilities: { ...ACP_SHARED_CAPABILITIES, mcp: 'none' },
+    // permissionPrompts false: its ACP bridge asks only before shell commands, never a write, so the
+    // chat cannot promise an approval. The driver still parks a shell approval it sends as a
+    // `permission` frame and has respondPermission for it (catalogParity names this exception).
+    capabilities: {
+        ...ACP_SHARED_CAPABILITIES,
+        mcp: 'none',
+        permissionPrompts: false,
+    },
 }
 
 /** Hermes Agent (Nous Research) — native ACP via `hermes acp` (docs:
@@ -674,8 +684,9 @@ const HERMES: BackendDescriptor = {
     label: 'Hermes Agent',
     binary: 'hermes',
     installHint:
-        'Install Hermes Agent (hermes-agent.nousresearch.com) with its ACP extra — Bismuth spawns `hermes acp` automatically when you pick this provider.',
-    capabilities: { ...ACP_SHARED_CAPABILITIES },
+        "Install Hermes Agent (hermes-agent.nousresearch.com) with its ACP and MCP extras (`uv tool install 'hermes-agent[acp,mcp]'`) — Bismuth spawns `hermes acp` automatically when you pick this provider.",
+    // permissionModes: session modes `default` / `dont_ask` (askMode/autoMode in agents.ts).
+    capabilities: { ...ACP_SHARED_CAPABILITIES, permissionModes: true },
 }
 
 /** Claude Code via Zed's `@zed-industries/claude-code-acp` adapter — an ADAPTER, not native ACP
@@ -696,7 +707,12 @@ const CLAUDE_CODE_ACP: BackendDescriptor = {
     // (Seatbelt profiles don't nest), Bismuth's wrapper can never apply around it — see DESIGN's
     // finding on both ACP adapter entries. visibilityGate stays {chat:"none",daemon:"none"}: no
     // policy layer is reachable THROUGH the ACP bridge itself either way.
-    capabilities: { ...ACP_SHARED_CAPABILITIES, selfSandboxes: true },
+    // permissionModes: the chat's mode names are the adapter's session mode ids (passModeNames).
+    capabilities: {
+        ...ACP_SHARED_CAPABILITIES,
+        selfSandboxes: true,
+        permissionModes: true,
+    },
 }
 
 /** Codex CLI via `@agentclientprotocol/codex-acp` — an ADAPTER bridging Codex's App Server onto
@@ -711,7 +727,12 @@ const CODEX_ACP: BackendDescriptor = {
     hidden: true,
     // selfSandboxes: true — see CLAUDE_CODE_ACP's identical override above; this adapter bridges
     // Codex's App Server, which self-sandboxes per CODEX's own `selfSandboxes` entry above.
-    capabilities: { ...ACP_SHARED_CAPABILITIES, selfSandboxes: true },
+    // permissionModes: `read-only` asks, `agent-full-access` never asks (askMode/autoMode in agents.ts).
+    capabilities: {
+        ...ACP_SHARED_CAPABILITIES,
+        selfSandboxes: true,
+        permissionModes: true,
+    },
 }
 
 /** Every backend, keyed by id. */

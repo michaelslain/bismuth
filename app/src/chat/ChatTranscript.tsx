@@ -61,6 +61,9 @@ export type ChatTranscriptProps = {
     avatarMood?: DaemonMood
     awaitingReply: boolean
     turnError: string | null
+    /** The backend is retrying a failed model call: one muted line under the working row
+     *  (chatRetry.ts words it); null when no retry is in flight. */
+    retryNote?: string | null
     /** Shown when items is empty; omit for nothing. */
     empty?: JSX.Element
     onAnswerPermission: (
@@ -377,6 +380,9 @@ const ChatTranscript: Component<ChatTranscriptProps> = props => {
                                 working
                                 <Caret />
                             </ChatNote>
+                            <Show when={props.retryNote}>
+                                {note => <ChatNote>{note()}</ChatNote>}
+                            </Show>
                         </ChatTurnColumn>
                     </Show>
                     <Show when={!(props.items.length === 0 && empty())}>

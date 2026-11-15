@@ -84,6 +84,7 @@ describeOrSkipSlow(
         // list).
         const ENV_KEYS = [
             'PATH',
+            'CLINE_DIR',
             'FAKE_ACP_MODEL_SHAPE',
             'FAKE_ACP_AUTH_GATE',
             'FAKE_ACP_CLINE_AUTHED',
@@ -132,6 +133,9 @@ describeOrSkipSlow(
 
             // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.
             process.env.PATH = `${stubDir}:${savedEnv.PATH ?? ''}`
+            // A cline spawn writes its Bismuth tool under CLINE_DIR: point it inside the stub dir (removed
+            // with it) so no test ever touches the real ~/.cline.
+            process.env.CLINE_DIR = join(stubDir, 'cline-home')
             delete process.env.FAKE_ACP_AUTH_GATE
             delete process.env.FAKE_ACP_CLINE_AUTHED
             delete process.env.FAKE_ACP_PROMPT_HOLD

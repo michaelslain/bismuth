@@ -48,6 +48,7 @@ import {
     type UserItem,
 } from './chatTranscriptLogic'
 import { getAppSelection } from './appSelection'
+import { retryLabel } from './chatRetry'
 import {
     getEditorTabs,
     addChatReference,
@@ -228,6 +229,9 @@ export type ChatSession = {
     setupError: Accessor<ChatProviderChoice | null>
     gateRefusal: Accessor<ChatGateRefusal | null>
     turnError: Accessor<string | null>
+    /** The muted "retrying // attempt 2 of 3" line while the backend retries a failed model call;
+     *  null once the next text or the result arrives (chatRetry.ts). */
+    retryNote: Accessor<string | null>
     models: Accessor<ChatModelOption[]>
     authProviders: Accessor<{ name: string; kind: string }[] | null>
     provider: Accessor<ChatProviderChoice>
@@ -369,6 +373,7 @@ export function createChatSession(
         null,
     )
     const [turnError, setTurnError] = createSignal<string | null>(null)
+    const [retryNote, setRetryNote] = createSignal<string | null>(null)
     const [models, setModels] = createSignal<ChatModelOption[]>([])
     const [authProviders, setAuthProviders] = createSignal<
         { name: string; kind: string }[] | null
@@ -703,6 +708,9 @@ export function createChatSession(
                 }
                 break
             }
+            case 'retry':
+                setRetryNote(retryLabel(frame))
+                break
             case 'user-message':
             case 'assistant-text':
             case 'thinking':
@@ -710,6 +718,8 @@ export function createChatSession(
             case 'tool-result':
             case 'permission':
             case 'question':
+                // Any model output means the retry succeeded.
+                setRetryNote(null)
                 applyFrameToTranscript(frame)
                 break
             case 'subagent':
@@ -719,6 +729,7 @@ export function createChatSession(
                 break
             case 'result':
                 // Don't clobber the specific message an earlier `error` frame already set.
+                setRetryNote(null)
                 if (frame.isError && !turnError())
                     setTurnError('The turn ended with an error.')
                 applyFrameToTranscript(frame)
@@ -735,6 +746,7 @@ export function createChatSession(
                 const gate = gateDone(staleDones, frame.idle)
                 staleDones = gate.stale
                 if (!gate.finished) break // the stopped turn's done — a newer turn may be running
+                setRetryNote(null)
                 setStreaming(false)
                 dispatchQueued()
                 break
@@ -784,6 +796,7 @@ export function createChatSession(
                 })
                 break
             case 'error':
+                setRetryNote(null)
                 staleDones = gateError() // an error ends the turn with no `done`; nothing stale can still arrive
                 releaseUndelivered()
                 setStreaming(false)
@@ -1276,6 +1289,7 @@ export function createChatSession(
             return
         }
         staleDones = gateStop(staleDones, streaming())
+        setRetryNote(null)
         setStreaming(false)
         // Stop cancels the queue too, restoring the queued text + images into the composer (Row 83).
         const queued = queuedTurns()
@@ -1808,6 +1822,7 @@ export function createChatSession(
         setupError,
         gateRefusal,
         turnError,
+        retryNote,
         models,
         authProviders,
         provider,

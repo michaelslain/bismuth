@@ -64,6 +64,8 @@ Every chat starts in **Bypass**, which lets the agent run tools, including write
 
 Plan and Accept edits follow Claude Code's own meanings. Your last pick carries over to new chats. Closing a chat denies any prompt still open.
 
+The picker shows for Claude Code, opencode and Goose. On opencode, Bypass answers every approval itself, Accept edits answers file edits, and Default and Plan show each approval as a card. On Goose, Bypass runs goose's `auto` mode, which never asks, and every other mode runs `approve`, which asks before each tool call. Other backends raise approval cards where they can and show no picker.
+
 ## How do I keep a conversation private?
 
 Click the eye-slash icon in the controls row. While it is bracketed, the conversation is erased when it ends: when you close the tab, press `new chat`, or open another conversation from `history`. Each click confirms itself with a toast, `Private: this conversation is erased when it ends` or `This conversation will be kept`, and the header shows `private` beside its readouts and an eye-slash glyph.
@@ -201,6 +203,7 @@ A table you type or paste in the message box renders as the same editable grid a
 - `<agent> isn't installed`: Install the CLI, then reopen the chat, or switch with the row on the setup screen.
 - A refusal screen about hidden notes. The vault restricts notes and the chosen backend cannot enforce that. Switch to Claude Code or lift the restriction ([visibility](../vault/visibility.md#per-backendper-channel-enforcement)).
 - `No local model server answered at <url>`: `localModel` is on and the server is down or lists no models. Start it, or turn the setting off ([local models](local-models.md)).
+- A muted `retrying // attempt 2 of 3` line under the working row. The model server failed a call and the backend is trying again. The line clears when output arrives; when the attempts run out the turn ends with the server's error.
 - Every tool call prompts, or none do. The permission mode decides: chats start in Bypass. Pick Default for prompts.
 - A reply stops after a reload. The session survives an abnormal disconnect for 30 seconds and the tab reconnects by itself. After that the session is closed; resume the conversation from `history`.
 
@@ -221,6 +224,8 @@ When the chat's `cwd` sits in a vault, the `append` continues with `AGENT_CLI_NO
 - Permission mode: `permissionMode` is not set at spawn, so the SDK resolves the starting mode from your Claude Code config, and the client then enforces the app default (Bypass) or your last pick with `set_permission_mode`.
   `allowDangerouslySkipPermissions: true` is required for that: without it the CLI silently refuses to enter bypass and every tool call still prompts. The visibility deny rules are policy-tier, so they hold under Bypass.
 - Effort is applied live with `Query.applyFlagSettings({ effortLevel })` and kept on the session so a visibility respawn re-applies it.
+- Retries. The spawn env sets `CLAUDE_CODE_MAX_RETRIES` to 2 for a chat on a local model and 3 otherwise (`claudeRetryEnv`), since the CLI's own default of 10 with exponential backoff takes minutes to give up on a failing server. A value you set yourself wins. The CLI's `api_retry` status message becomes a `retry` frame (`retryFrameOf`).
+- Small windows. A chat on a local model whose loaded window is small opens with less (`claudeTier` in `claudeBudget.ts`, the window from `session.local.windows`). `full` is the CLI's own profile; `brain` is the lean profile with the session-start brain block; `lean` is the lean profile without the brain block and without Claude Code's preset prompt, whose 8.4k characters do not fit a small window, so the system prompt is `chatInstructions` plus the working directory (`claudeSmallWindowSystemPrompt`). The lean profile sets `settingSources: ['project']`, which keeps the vault's own `CLAUDE.md` and `.claude/skills` and drops your user-level CLAUDE.md, rules, plugins and MCP servers; it passes Bismuth's MCP server alone with `strictMcpConfig`, and allows `Bash`, `Read`, `Edit`, `Write` and `Skill`. The lean profile also sets `CLAUDE_CODE_MAX_OUTPUT_TOKENS` (`claudeOutputEnv`) to the room the window leaves past the opening and a chat's growth, at most a quarter of the window and at least 512 tokens, because the CLI refuses a prompt locally when it plus its reserved reply exceeds the window; a value you set wins. The brain and lean tiers set `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1` (`claudeSkillsEnv`) unless you set it yourself, so the CLI's bundled skills stay out of the opening. The thresholds and the measurements behind them are in the header of `claudeBudget.ts`; [local-models.md](local-models.md#how-does-a-claude-chat-fit-a-small-context-window) says what you see.
 - Browser use: `--chrome` is passed (as `extraArgs: { chrome: null }`) whenever the catalog says the backend supports computer use, which today means Claude Code. There is no setting or toggle for it, and it needs a Chromium-based browser on the machine.
 - Subagents: `chatSubagentRoster.ts` turns an `Agent` or `Task` tool call into a `running` `subagent` frame, its tool result into `done` or `failed`, and keeps a backgrounded call `running` until the SDK's `task_notification` for its `tool_use_id`. The opencode translators feed the same roster from opencode's `task` tool. Only live turns feed it, never history replay.
 - The drain loop: `drain(session)` iterates the `query()` generator and translates each SDK message into frames. An error, including "Reached maximum number of turns", becomes an `error` frame rather than a crash, and a session that ended on its own is evicted so the next send respawns it.
@@ -267,6 +272,7 @@ The server answers with `ChatFrame` messages, exported from `core/src/chat.ts`:
 | `title` | The conversation summary, which names the tab |
 | `session` | `{sessionId, origin}`; the client stores it by tab id so reopening resumes the conversation |
 | `context` | `{percentage, totalTokens, maxTokens}` after each turn |
+| `retry` | `{attempt, maxAttempts?, delayMs?, error?}`: the backend is trying a failed model call again. The transcript shows one muted `retrying // attempt N of M` line (`retrying // attempt N` when no cap is named) until the next output or the result clears it |
 | `auth` | opencode credential state; stored, not rendered |
 | `error` | `{code, message, binary?, restrictedCount?}` with `code` one of `no-claude`, `no-opencode`, `no-binary`, `visibility-refused`, `local-model-unreachable`, `spawn`, `exit` or `error` |
 

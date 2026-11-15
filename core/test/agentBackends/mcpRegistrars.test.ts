@@ -8,7 +8,7 @@ import { tempDir } from '../helpers'
 // ~/.copilot, ~/.config/amp, ~/.factory, ~/.config/crush, or ~/.config/goose. `which`/`run` are
 // always fully faked — no test spawns a real agent CLI.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { rmSync, existsSync, readFileSync } from 'node:fs'
+import { rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     createCodexRegistrar,
@@ -21,6 +21,7 @@ import {
     createDroidRegistrar,
     createCrushRegistrar,
     createGooseRegistrar,
+    ensureClineMcp,
     MCP_REGISTRARS,
     defaultRegistrarIO,
     patchJsonMcpServerEnv,
@@ -811,4 +812,64 @@ test('Qwen: an env block that cannot be patched in comes back as a warning', asy
         warning:
             'qwen mcp add succeeded but its env block could not be patched in',
     })
+})
+
+// ── ensureClineMcp ────────────────────────────────────────────────────────────────────────────
+
+const clineServer = {
+    name: 'bismuth',
+    command: '/bin/bismuth-mcp',
+    args: [],
+    env: [{ name: 'BISMUTH_CLI', value: '/bin/bismuth' }],
+}
+
+test('ensureClineMcp creates cline_mcp_settings.json under the given dir', () => {
+    const dir = tempDir('cline-mcp-')
+    try {
+        ensureClineMcp(dir, clineServer)
+        const f = join(dir, 'data', 'settings', 'cline_mcp_settings.json')
+        expect(JSON.parse(readFileSync(f, 'utf8'))).toEqual({
+            mcpServers: {
+                bismuth: {
+                    command: '/bin/bismuth-mcp',
+                    args: [],
+                    env: { BISMUTH_CLI: '/bin/bismuth' },
+                },
+            },
+        })
+    } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
+})
+
+test('ensureClineMcp keeps the user other servers and keys, and replaces a stale bismuth entry', () => {
+    const dir = tempDir('cline-mcp-')
+    try {
+        const f = join(dir, 'data', 'settings', 'cline_mcp_settings.json')
+        mkdirSync(join(dir, 'data', 'settings'), { recursive: true })
+        writeFileSync(
+            f,
+            JSON.stringify({ extra: 1, mcpServers: { mine: { command: 'x' }, bismuth: { command: 'old' } } }),
+        )
+        ensureClineMcp(dir, clineServer)
+        const out = JSON.parse(readFileSync(f, 'utf8'))
+        expect(out.extra).toBe(1)
+        expect(out.mcpServers.mine).toEqual({ command: 'x' })
+        expect(out.mcpServers.bismuth.command).toBe('/bin/bismuth-mcp')
+    } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
+})
+
+test('ensureClineMcp leaves an unparseable file untouched and throws', () => {
+    const dir = tempDir('cline-mcp-')
+    try {
+        const f = join(dir, 'data', 'settings', 'cline_mcp_settings.json')
+        mkdirSync(join(dir, 'data', 'settings'), { recursive: true })
+        writeFileSync(f, '{ nope')
+        expect(() => ensureClineMcp(dir, clineServer)).toThrow()
+        expect(readFileSync(f, 'utf8')).toBe('{ nope')
+    } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
 })

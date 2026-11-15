@@ -255,6 +255,14 @@ describeOrSkip(
                     text: 'please list the bismuth docs',
                 })
 
+                // A default-mode chat runs goose in approve, which asks before the tool runs.
+                const asked = await waitFor(f => f.type === 'permission')
+                if (asked.type === 'permission')
+                    CHAT_BACKENDS.goose.respondPermission?.(
+                        chatId,
+                        asked.id,
+                        'allow',
+                    )
                 await waitFor(f => f.type === 'done')
 
                 // Exactly one of each — never "at least one".

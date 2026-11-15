@@ -15,6 +15,7 @@ import {
     opencodeServerId,
     parseOpencodeServers,
     windowLimit,
+    withInjectedConfig,
     type OpencodeConfigInput,
 } from '../../src/chatProviders/opencode/opencodeConfig'
 
@@ -263,13 +264,75 @@ describe('the Bismuth MCP', () => {
         })
     })
 
-    test('the compact profile leaves it out', () => {
-        expect(buildOpencodeConfig(input('compact'))?.mcp).toBeUndefined()
+    test('the compact profile declares it too', () => {
+        expect(
+            (buildOpencodeConfig(input('compact'))?.mcp as any).bismuth.command,
+        ).toEqual(['/x/bismuth-mcp'])
     })
 
     test('no installed MCP, no entry', () => {
         expect(
             buildOpencodeConfig({ ...input('default'), mcp: null }),
         ).toBeNull()
+    })
+})
+
+describe('the edit permission follows the chat mode', () => {
+    const base = { local: null, servers: [], limits: [] }
+
+    test('default asks before an edit, on both profiles', () => {
+        const d = buildOpencodeConfig({
+            ...base,
+            profile: 'default',
+            permissionMode: 'default',
+        })!
+        expect(d.permissions).toEqual([
+            { action: 'edit', resource: '*', effect: 'ask' },
+        ])
+        const c = buildOpencodeConfig({
+            ...base,
+            profile: 'compact',
+            permissionMode: 'default',
+        })!
+        expect((c.permissions as any[]).slice(0, -1)).toEqual(COMPACT_PERMISSIONS)
+        expect((c.permissions as any[]).at(-1)).toEqual({
+            action: 'edit',
+            resource: '*',
+            effect: 'ask',
+        })
+    })
+
+    test('bypassPermissions allows it', () => {
+        const d = buildOpencodeConfig({
+            ...base,
+            profile: 'default',
+            permissionMode: 'bypassPermissions',
+        })!
+        expect(d.permissions).toEqual([
+            { action: 'edit', resource: '*', effect: 'allow' },
+        ])
+    })
+
+    test('a user rule from an inherited config sits over the injected one', () => {
+        const env = withInjectedConfig(
+            {
+                OPENCODE_CONFIG_CONTENT: JSON.stringify({
+                    permissions: [
+                        { action: 'edit', resource: 'notes/*', effect: 'allow' },
+                    ],
+                }),
+            },
+            {
+                OPENCODE_CONFIG_CONTENT: opencodeConfigContent({
+                    ...base,
+                    profile: 'default',
+                    permissionMode: 'default',
+                })!,
+            },
+        )
+        expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).permissions).toEqual([
+            { action: 'edit', resource: '*', effect: 'ask' },
+            { action: 'edit', resource: 'notes/*', effect: 'allow' },
+        ])
     })
 })

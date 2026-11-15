@@ -33,6 +33,7 @@ export type StubChatSessionInit = Partial<{
     setupError: ChatProviderChoice | null
     gateRefusal: ChatGateRefusal | null
     turnError: string | null
+    retryNote?: string | null
     models: ChatModelOption[]
     authProviders: { name: string; kind: string }[] | null
     provider: ChatProviderChoice
@@ -112,6 +113,7 @@ export function makeStubChatSession(
         init.gateRefusal ?? null,
     )
     const [turnError] = createSignal<string | null>(init.turnError ?? null)
+    const [retryNote] = createSignal<string | null>(init.retryNote ?? null)
     const [models] = createSignal<ChatModelOption[]>(init.models ?? [])
     const [authProviders] = createSignal<
         { name: string; kind: string }[] | null
@@ -232,6 +234,7 @@ export function makeStubChatSession(
         setupError,
         gateRefusal,
         turnError,
+        retryNote,
         models,
         authProviders,
         provider,

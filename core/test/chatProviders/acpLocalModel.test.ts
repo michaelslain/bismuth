@@ -69,6 +69,7 @@ const describeOrSkipSlow = shouldRunSlowTests(process.env)
 
 describeOrSkipSlow('ACP spawn env from the localModel setting', () => {
     let savedPath: string | undefined
+    let savedClineDir: string | undefined
     let stubDir: string
     let outDir: string
     let vault: string
@@ -95,6 +96,7 @@ describeOrSkipSlow('ACP spawn env from the localModel setting', () => {
 
     beforeEach(() => {
         savedPath = process.env.PATH
+        savedClineDir = process.env.CLINE_DIR
         stubDir = tempDir('bismuth-acplm-stub-')
         outDir = tempDir('bismuth-acplm-out-')
         vault = tempDir('bismuth-acplm-vault-')
@@ -106,11 +108,15 @@ describeOrSkipSlow('ACP spawn env from the localModel setting', () => {
         writeStub('goose')
         writeStub('cline')
         process.env.PATH = `${stubDir}:${savedPath ?? ''}`
+        // A cline spawn writes its Bismuth tool under CLINE_DIR: keep it in the stub dir, never ~/.cline.
+        process.env.CLINE_DIR = join(stubDir, 'cline-home')
     })
 
     afterEach(async () => {
         for (const c of chatIds.splice(0))
             CHAT_BACKENDS[c.backend].closeChat(c.id)
+        if (savedClineDir === undefined) delete process.env.CLINE_DIR
+        else process.env.CLINE_DIR = savedClineDir
         if (savedPath === undefined) delete process.env.PATH
         else process.env.PATH = savedPath
         await server?.stop(true)

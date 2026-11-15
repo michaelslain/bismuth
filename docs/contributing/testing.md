@@ -326,6 +326,8 @@ The default `bun test` never calls a real model API or spends anyone's quota. Tw
 It checks four things: a first turn that starts on the compact prompt, sends no request over the window and leaves one user message, the agent list and an agent switch, the model list's names, groups and detected window, and thinking turned off and on.
 With the variable set, a missing prerequisite fails the run instead of skipping it.
 
+**The backend benchmark is not part of the gate or CI.** `bun bench/backendBench.ts` spawns every installed chat backend's real CLI and compares it with a reference; [How do I check a backend works end to end?](../chat/backends.md#how-do-i-check-a-backend-works-end-to-end) has the labels, flags and verdicts.
+
 **The backend contract runs by default.** `core/test/chatProviders/backendContract.test.ts` walks every chat backend in the catalog and checks the instructions it sends (the daemon's name and the `bismuth` CLI note), the Bismuth MCP it wires, a history source matching its `sessionPicker`, and window sizing when it runs local models. A backend with no probe in its tables fails, and a local-model backend that sizes nothing must be named in its `UNSIZED` list with the reason.
 
 **Mocked-CLI tests run by default.** Each `core/test/chatProviders/<backend>Mocked.test.ts` (`claude`, `opencode`, `codex`, `goose`, `gemini`, `cline`, `openclaw`) drives a real agent binary through Bismuth's production chat driver, with the binary's base URL pointed at a local mock LLM server.

@@ -33,20 +33,49 @@ export interface AcpAgentSpec {
      */
     supportsSessionMcpServers?: boolean
     /**
-     * Extra argv appended AFTER `args`, computed from the chat id — for an agent whose spawn needs a
+     * Extra argv appended AFTER `args`, computed from the chat id (and, on resume, the session key the
+     * first chat bound: openclaw's gateway session is chosen by this argv, so a resumed chat must pass
+     * the original key or it opens a new empty session) — for an agent whose spawn needs a
      * value only available per-chat (currently only openclaw's `--session`, see its own comment for
      * why a STATIC session key is unsafe, not just unfair). driver.ts's createSession calls this with
      * its own `chatId` parameter (already in scope there — see the call site) and spreads the result
      * onto argv. Omitted for every other agent: they get an isolated `acp:<uuid>` session per chat for
      * free from the CLI's own default, so no per-chat argv is needed.
      */
-    sessionKeyArgs?: (chatId: string) => string[]
+    sessionKeyArgs?: (chatId: string, key?: string) => string[]
     /** A private conversation sends `session/delete` before its process is stopped. */
     privateDeleteRpc?: boolean
     /** Which eraser in ../privateErase.ts removes what a private chat left in the agent's own store,
      *  run after its process exits. Named, not imported, so this table stays free of fs code. Every
      *  agent names one, so every chat's private toggle works. */
     privateErase?: PrivateEraser
+    /**
+     * The session mode (`session/set_mode`) that sends `session/request_permission` before an edit
+     * or command. The driver sets it for every chat mode except bypassPermissions, at session start
+     * (mode `default`) and again on each setPermissionMode. Omitted for an agent whose approval is
+     * not a session mode; such an agent has no setPermissionMode.
+     */
+    askMode?: string
+    /** The session mode that never asks: the chat's bypassPermissions mode sets it. */
+    autoMode?: string
+    /** The session mode for the chat's acceptEdits mode (edits go through, commands still ask), when
+     *  the agent has one; setPermissionMode falls back to askMode without it. */
+    editsMode?: string
+    /** The chat's own permission mode names (default, acceptEdits, plan, dontAsk, bypassPermissions)
+     *  are the agent's session mode ids (claude-code-acp): each goes straight through as the mode,
+     *  when the agent advertises it. Replaces askMode/autoMode. */
+    passModeNames?: boolean
+    /** A turn that ends `end_turn` with no assistant text and no tool call is a failed turn
+     *  (openclaw's bridge drops the gateway's error and ends the turn empty). */
+    emptyTurnIsError?: boolean
+    /** A turn whose reply starts with one of these is a failed turn (hermes returns a failed model
+     *  call as an ordinary reply). Matched at the start of the turn's text, when no tool ran. */
+    failureTextPrefixes?: string[]
+    /** argv (after the binary) that prints the agent's models as JSON, for an agent whose ACP
+     *  session offers no model list (openclaw). Read by ./openclawModels.ts. */
+    modelListCommand?: string[]
+    /** Env laid over the spawn env for this agent. */
+    spawnEnv?: Record<string, string>
 }
 
 export type PrivateEraser =
@@ -58,9 +87,11 @@ export type PrivateEraser =
     | 'openclaw'
     | 'hermes'
 
+export const OPENCLAW_KEY_PREFIX = 'agent:main:bismuth-'
+
 /** The openclaw Gateway session key for a chat (`--session`), also what its eraser deletes. */
 export function openclawSessionKey(chatId: string): string {
-    return `agent:main:bismuth-${chatId}`
+    return `${OPENCLAW_KEY_PREFIX}${chatId}`
 }
 
 export const ACP_AGENTS: readonly AcpAgentSpec[] = [
@@ -89,6 +120,16 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         args: ['--experimental-acp'],
         fallbackArgs: ['--acp'],
         privateErase: 'gemini',
+        // Gemini starts MCP servers only in a trusted folder, and a vault the user never trusted in
+        // gemini's own UI is untrusted, so Bismuth's session MCP server never started. The chat's
+        // vault is the folder the user chose to chat in, so the spawn trusts it.
+        spawnEnv: { GEMINI_CLI_TRUST_WORKSPACE: 'true' },
+        // gemini retries a 5xx up to 10 times (minutes of silence before the prompt fails), and its
+        // `general.maxAttempts` cap has no env var. A Bismuth-owned GEMINI_CLI_SYSTEM_SETTINGS_PATH
+        // file is skipped: gemini loads a system settings file only when the file and every parent dir
+        // are owned by root and not group/world-writable (`checkPosixStatsSecurity`), which a user
+        // process cannot create. The only places the cap can go are ~/.gemini/settings.json and the
+        // vault's .gemini/settings.json, and a spawn writes to neither.
     },
     {
         // goose's own docs (goose-docs.ai) confirm `goose acp` and that it MERGES our session/new
@@ -99,6 +140,9 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         args: ['acp'],
         privateDeleteRpc: true,
         privateErase: 'goose-logs',
+        // Goose starts in `auto` and never asks; smart_approve lets a text-editor write through, approve asks before every tool call.
+        askMode: 'approve',
+        autoMode: 'auto',
     },
     {
         // Confirmed live (`openclaw --help` / `openclaw acp --help`, v2026.3.23-2): OpenClaw's own label
@@ -194,9 +238,15 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         label: 'OpenClaw',
         binary: 'openclaw',
         args: ['acp'],
-        sessionKeyArgs: chatId => ['--session', openclawSessionKey(chatId)],
+        // `key` is the gateway key a resumed chat binds (its first chat's); a new chat gets its own.
+        sessionKeyArgs: (chatId, key) => [
+            '--session',
+            key ?? openclawSessionKey(chatId),
+        ],
         privateErase: 'openclaw',
         supportsSessionMcpServers: false,
+        emptyTurnIsError: true,
+        modelListCommand: ['models', 'list', '--json'],
     },
     {
         // Hermes Agent (Nous Research): `hermes acp`. DOC-CONFIRMED only
@@ -210,6 +260,19 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         binary: 'hermes',
         args: ['acp'],
         privateErase: 'hermes',
+        // Session modes `default` ("Ask before edits") and `dont_ask`.
+        askMode: 'default',
+        editsMode: 'accept_edits',
+        autoMode: 'dont_ask',
+        // hermes returns a failed model call as an ordinary reply, ending the turn `end_turn`.
+        failureTextPrefixes: [
+            'API call failed after',
+            'Invalid API response after',
+            'Billing or credits exhausted',
+            'Request payload too large',
+            'Context length exceeded',
+            'Model generated invalid tool call',
+        ],
     },
     {
         // ADAPTER, not a native agent: this package bridges Claude Code (via Anthropic's own Claude
@@ -224,6 +287,7 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         args: ['-y', '@zed-industries/claude-code-acp'],
         privateErase: 'claude',
         adapter: true,
+        passModeNames: true,
     },
     {
         // ADAPTER, not a native agent: bridges the Codex CLI's App Server onto ACP (already listed in
@@ -234,5 +298,11 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
         args: ['-y', '@agentclientprotocol/codex-acp'],
         privateErase: 'codex',
         adapter: true,
+        // `read-only` asks before an edit; `workspace-write` takes edits in the workspace and asks
+        // outside it; `agent` (auto review) keeps codex's OS sandbox, as native codex does in every
+        // mode; `agent-full-access` drops the sandbox, so bypass does not use it.
+        askMode: 'read-only',
+        editsMode: 'workspace-write',
+        autoMode: 'agent',
     },
 ]

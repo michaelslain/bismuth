@@ -38,9 +38,11 @@
 //   4. The subprocess is killed on closeChat/abort-timeout/an unexpected exit, and on process
 //      "exit" (shutdownAll below) — never left running past its chat.
 import { chatInstructions } from '../../chatInstructions'
+import { claudeRetryEnv } from '../claudeBudget'
 import { sizeGooseChat } from './gooseSizing'
 import { chatLineRefNoteFor } from '../../chatLineRefNote'
 import { existsSync } from 'node:fs'
+import { ensureClineMcp } from '../../agentBackends/mcpRegistrars'
 import { bismuthHome } from '../../bismuthHome'
 import type { ChatFrame, ChatImage, ChatSink } from '../../chat'
 import {
@@ -58,7 +60,17 @@ import {
     resolveLocalSpawn,
     type ResolvedLocal,
 } from '../../agentBackends/localModelProbe'
-import { ACP_AGENTS, type AcpAgentSpec } from './agents'
+import {
+    ACP_AGENTS,
+    OPENCLAW_KEY_PREFIX,
+    openclawSessionKey,
+    type AcpAgentSpec,
+} from './agents'
+import {
+    listAgentModels,
+    modelEntries,
+    thoughtLevels,
+} from './openclawModels'
 import type { FileSink } from 'bun'
 import { titleFromPrompt } from '../titleFromPrompt'
 import { PRIVATE_ERASERS } from '../privateErase'
@@ -82,6 +94,7 @@ import {
     translateSessionUpdate,
     type AcpManifestBaseline,
     type AcpMcpServerStdio,
+    type AcpModelEntry,
     type AcpModelShapeInfo,
     type AcpNewSessionResult,
     type AcpOutboundContentBlock,
@@ -274,6 +287,27 @@ export function acceptsModelPick(
     return !local || local.models.includes(model.replace(/^local\//, ''))
 }
 
+/** The models frame while the vault's local model pins the chat: the local server's ids, not the
+ *  agent's own catalog (goose lists its whole cloud catalog and would drop every pick but the local
+ *  ones). Each entry carries the effort levels the agent reported for the current model; the rest
+ *  are filled in when a switch to them reports its own. */
+export function localModelEntries(
+    local: ResolvedLocal,
+    shape: AcpModelShapeInfo,
+): AcpModelEntry[] {
+    const levels =
+        shape.models.find(m => m.value === shape.currentModelId)
+            ?.effortLevels ??
+        shape.models[0]?.effortLevels ??
+        []
+    return local.models.map(id => ({
+        value: id,
+        label: id,
+        description: '',
+        effortLevels: id === shape.currentModelId ? levels : [],
+    }))
+}
+
 /** The env an ACP agent is spawned with: the base, with the vault's local-model env (goose's
  *  `GOOSE_PROVIDER`/`OPENAI_HOST`/… from `localSpawnFor`) laid over it when the setting resolved
  *  for this agent. Pure — `null` (setting off, or an agent with no local mechanism) is `base`. */
@@ -282,6 +316,31 @@ export function acpSpawnEnv(
     local: ResolvedLocal | null,
 ): Record<string, string> {
     return local ? { ...base, ...local.env } : base
+}
+
+/** How long a prompted ACP turn may go without a single message from the agent before it is ended
+ *  with an error. Every update and permission ask resets it, so a slow but working turn never trips
+ *  it. The window exists for an agent stuck retrying a failing model server inside the turn (gemini
+ *  retries a 500 ten times over minutes and sends nothing meanwhile) or wedged, not to meet a
+ *  deadline: real cloud turns stay silent for a long while (hermes streams no tool-call arguments,
+ *  gemini sends a call's arguments whole, codex-acp sends reasoning summaries at the end, a large
+ *  prompt on a slow provider waits close to a minute for its first token). */
+export const ACP_NO_PROGRESS_MS = 120_000
+/** The same window while the vault's local model pins the chat: the server may be loading the model
+ *  into memory before it answers, which takes minutes for a large one. */
+export const ACP_NO_PROGRESS_LOCAL_MS = 600_000
+
+/** The no-progress window for a turn; `BISMUTH_ACP_NO_PROGRESS_MS` overrides it. */
+export function acpNoProgressMs(local: boolean): number {
+    const override = Number(process.env.BISMUTH_ACP_NO_PROGRESS_MS)
+    if (Number.isFinite(override) && override > 0) return override
+    return local ? ACP_NO_PROGRESS_LOCAL_MS : ACP_NO_PROGRESS_MS
+}
+
+/** The error a silent agent ends its turn with. */
+export function acpSilentMessage(label: string, ms: number): string {
+    const secs = Math.round(ms / 1000)
+    return `${label} sent nothing for ${secs} s, so the turn was stopped. Its model server may be failing or still loading.`
 }
 
 // ── Session state ───────────────────────────────────────────────────────────────────────────────
@@ -333,6 +392,32 @@ interface AcpSession {
     /** The local-model resolution this session was created under (null = the setting is off for it),
      *  kept so the fallbackArgs respawn gets the same env as the first spawn. */
     local: ResolvedLocal | null
+    /** Settles once session setup ends (true) or the chat closes first (false): a turn sent while a
+     *  resume is still loading waits on it, so its `session/prompt` never carries a null session id. */
+    ready: Promise<boolean>
+    settleReady: (ok: boolean) => void
+    /** Config calls (set model, effort, mode) run one after another; a prompt waits for the tail. */
+    configChain: Promise<void>
+    /** The effort the user chose, re-sent after a model switch (goose resets it to the new model's). */
+    effort: string | null
+    /** Mode ids the agent advertised (`modes.availableModes`), so only a real one is set. */
+    modeIds: string[]
+    /** True for a session opened by session/load or session/resume: its reply may omit `modes`. */
+    resumed: boolean
+    /** Set when an adapter gave up retrying the model server during the current turn. */
+    turnError?: string
+    /** What the current turn has shown so far: the reply text and how many tool calls. */
+    turnText: string
+    turnTools: number
+    /** Tool calls the agent has started this turn and not yet resolved: a running tool is not silence. */
+    openTools: Set<string>
+    /** The no-progress timer of the current turn, and the settle hook that ends it. */
+    silence?: ReturnType<typeof setTimeout>
+    silentStop?: (message: string) => void
+    /** The agent's own session key for this chat (openclaw's gateway key), when it has one. */
+    sessionKey?: string
+    /** The chat id the agent's store is keyed on: this chat's id, or on resume the first chat's. */
+    storeChatId: string
 }
 
 function blankManifest(
@@ -374,6 +459,17 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         cwd: string,
         local: ResolvedLocal | null,
     ): ReturnType<typeof Bun.spawn> | null {
+        let spawnEnv = acpSpawnEnv(
+            claudeSpawnEnv(process.env, 'chat') as Record<string, string>,
+            local,
+        )
+        // claude-code-acp runs the Claude Code CLI, whose own model-call retries default to 10 with
+        // exponential backoff (minutes on a 500). The native claude path caps them (chat.ts); the
+        // adapter's child gets the same cap. The user's own value wins.
+        if (agent.id === 'claude-code-acp')
+            spawnEnv = { ...claudeRetryEnv(!!local, spawnEnv), ...spawnEnv }
+        // The user's own value wins over the agent's default.
+        if (agent.spawnEnv) spawnEnv = { ...agent.spawnEnv, ...spawnEnv }
         try {
             return Bun.spawn([bin, ...args], {
                 cwd,
@@ -383,13 +479,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
                 // "chat": every ACP agent here is a chat backend. Stamps BISMUTH_AGENT_CHANNEL so a
                 // `bismuth` invocation from THIS process's own shell/tool-use (not just through the MCP
                 // server above) is gated by core/src/visibilityCliGate.ts.
-                env: acpSpawnEnv(
-                    claudeSpawnEnv(process.env, 'chat') as Record<
-                        string,
-                        string
-                    >,
-                    local,
-                ),
+                env: spawnEnv,
             })
         } catch {
             return null
@@ -465,34 +555,97 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         )
     }
 
+    /** (Re)start the turn's no-progress timer. While a permission card is open or a tool runs the
+     *  turn waits on the user or the tool, not on the model, so the timer just starts over. */
+    function armSilence(s: AcpSession): void {
+        if (s.silence) clearTimeout(s.silence)
+        const ms = acpNoProgressMs(!!s.local)
+        s.silence = setTimeout(() => {
+            s.silence = undefined
+            if (!s.turnActive || s.aborting) return
+            if (s.pendingPermissions.size > 0 || s.openTools.size > 0) {
+                armSilence(s)
+                return
+            }
+            s.silentStop?.(acpSilentMessage(agent.label, ms))
+        }, ms)
+    }
+
     function handleInbound(s: AcpSession, msg: JsonRpcInbound): void {
         if (isJsonRpcResponse(msg)) {
             const id = typeof msg.id === 'number' ? msg.id : Number(msg.id)
             const pending = s.pendingCalls.get(id)
             if (!pending) return
             s.pendingCalls.delete(id)
-            if ('error' in msg)
+            if ('error' in msg) {
+                // openclaw flattens every thrown error to -32603 "Internal error"; the reason survives
+                // only in `error.data.details`.
+                const details = (msg.error.data as { details?: unknown } | null)?.details
                 pending.reject(
-                    new AcpRpcError(msg.error.code, msg.error.message),
+                    new AcpRpcError(
+                        msg.error.code,
+                        typeof details === 'string' && details
+                            ? `${msg.error.message}: ${details}`
+                            : msg.error.message,
+                    ),
                 )
+            }
             else pending.resolve(msg.result)
             return
         }
+        if (s.silence && (isJsonRpcNotification(msg) || isJsonRpcRequest(msg)))
+            armSilence(s)
         if (isJsonRpcNotification(msg)) {
             if (msg.method === 'session/update') {
                 const params =
                     msg.params && typeof msg.params === 'object'
                         ? (msg.params as Record<string, unknown>)
                         : {}
+                noteRetryExhausted(s, params.update)
+                const upd = params.update as
+                    | { sessionUpdate?: unknown; currentModeId?: unknown }
+                    | undefined
+                if (
+                    upd?.sessionUpdate === 'current_mode_update' &&
+                    typeof upd.currentModeId === 'string' &&
+                    !s.modeIds.includes(upd.currentModeId)
+                )
+                    s.modeIds.push(upd.currentModeId)
                 for (const frame of translateSessionUpdate(
                     params.update,
                     s.translateState,
-                ))
+                )) {
+                    if (frame.type === 'assistant-text') s.turnText += frame.text
+                    else if (frame.type === 'tool-use') {
+                        s.turnTools++
+                        s.openTools.add(frame.id)
+                    } else if (frame.type === 'tool-result')
+                        s.openTools.delete(frame.id)
                     emit(s, frame)
+                }
             }
             return
         }
         if (isJsonRpcRequest(msg)) handleAgentRequest(s, msg)
+    }
+
+    /** An adapter that retries a failing model server (codex-acp: `_meta.codex.error`, "Reconnecting...
+     *  n/m") ends the turn with a normal stop once the retries run out. The last attempt is the
+     *  failure the user needs to see, so it is kept for the turn's end. */
+    function noteRetryExhausted(s: AcpSession, update: unknown): void {
+        const meta = (update as { _meta?: Record<string, unknown> } | null)?._meta
+        if (!meta || typeof meta !== 'object') return
+        for (const v of Object.values(meta)) {
+            const err = (v as { error?: Record<string, unknown> } | null)?.error
+            if (!err || typeof err !== 'object') continue
+            const m = /(\d+)\/(\d+)/.exec(String(err.message ?? ''))
+            if (!m || m[1] !== m[2]) continue
+            const detail = err.additionalDetails
+            s.turnError =
+                typeof detail === 'string' && detail.trim()
+                    ? detail.trim()
+                    : `${agent.label} could not reach the model after ${m[2]} tries.`
+        }
     }
 
     function startReadLoop(
@@ -607,7 +760,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         // agent ever needs both.
         const fallbackSpawnArgs = [
             ...agent.fallbackArgs,
-            ...(agent.sessionKeyArgs?.(s.id) ?? []),
+            ...(agent.sessionKeyArgs?.(s.id, s.sessionKey) ?? []),
         ]
         const proc = spawnAcpProcess(bin, fallbackSpawnArgs, s.cwd, s.local)
         if (!proc) return false
@@ -672,9 +825,29 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             }
             local = sized.local
         }
+        if (agentId === 'cline') {
+            // cline ignores session/new's mcpServers, so its Bismuth tool goes in its own settings. Only
+            // a dir Bismuth owns (CLINE_DIR: the bench, tests) is written: with it unset cline runs
+            // against the user's real ~/.cline, which a spawn never touches. The product's Bismuth tool
+            // for cline comes from the opt-in registrar (createClineRegistrar).
+            const clineDir = process.env.CLINE_DIR
+            const server = buildMcpServers(cwd, memoryDir)[0]
+            try {
+                if (clineDir && server) ensureClineMcp(clineDir, server)
+            } catch {
+                /* an unreadable settings file stays untouched; cline runs without the tool */
+            }
+        }
+        // openclaw's gateway session is chosen by the spawn argv: a resumed chat binds the key its
+        // first chat was given (what the session frame reported), not one built from this chat id.
+        const sessionKey = agent.sessionKeyArgs
+            ? resumeId?.startsWith(OPENCLAW_KEY_PREFIX)
+                ? resumeId
+                : openclawSessionKey(chatId)
+            : undefined
         const spawnArgs = [
             ...agent.args,
-            ...(agent.sessionKeyArgs?.(chatId) ?? []),
+            ...(agent.sessionKeyArgs?.(chatId, sessionKey) ?? []),
         ]
         const proc = spawnAcpProcess(bin, spawnArgs, cwd, local)
         if (!proc) {
@@ -693,6 +866,8 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             agent.supportsSessionMcpServers === false
                 ? []
                 : buildMcpServers(cwd, memoryDir)
+        let settleReady: (ok: boolean) => void = () => {}
+        const ready = new Promise<boolean>(r => (settleReady = r))
         const s: AcpSession = {
             id: chatId,
             cwd,
@@ -701,6 +876,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             nextId: createIdMinter(),
             pendingCalls: new Map(),
             pendingPermissions: new Map(),
+            openTools: new Set(),
             sessionId: null,
             modelShape: {
                 shape: 'none',
@@ -728,9 +904,34 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             stdoutPending: '',
             usedFallbackArgs: false,
             local,
+            ready,
+            settleReady,
+            configChain: Promise.resolve(),
+            effort: null,
+            modeIds: [],
+            resumed: !!resumeId,
+            turnText: '',
+            turnTools: 0,
+            sessionKey,
+            storeChatId: sessionKey?.startsWith(OPENCLAW_KEY_PREFIX)
+                ? sessionKey.slice(OPENCLAW_KEY_PREFIX.length)
+                : chatId,
         }
         sessions.set(chatId, s)
         attachProc(s, proc)
+        // An agent whose session lists no models: its own command lists them, started now so it runs
+        // beside the handshake.
+        const listed = agent.modelListCommand
+            ? listAgentModels(
+                  bin,
+                  agent.modelListCommand,
+                  acpSpawnEnv(
+                      claudeSpawnEnv(process.env, 'chat') as Record<string, string>,
+                      local,
+                  ),
+                  cwd,
+              )
+            : null
 
         const handshakeOk = await handshake(s)
         if (sessions.get(chatId) !== s) return null // closed while we awaited
@@ -752,6 +953,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
                         sessionId: resumeId,
                         cwd,
                         mcpServers,
+                        ...(sessionKey && { _meta: { sessionKey } }),
                     })
                 } catch (e) {
                     if (!isMethodNotFoundError(e)) throw e
@@ -759,6 +961,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
                         sessionId: resumeId,
                         cwd,
                         mcpServers,
+                        ...(sessionKey && { _meta: { sessionKey } }),
                     })
                 }
                 s.sessionId = resumeId
@@ -775,7 +978,28 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             }
             if (sessions.get(chatId) !== s) return null // closed while we awaited
             s.modelShape = detectModelShape(result)
+            if (listed) {
+                // openclaw: models from its own command, effort from the bridge's thought_level.
+                const list = await listed
+                const thought = thoughtLevels(result)
+                if (list.models.length)
+                    s.modelShape = {
+                        ...s.modelShape,
+                        models: modelEntries(list, thought.levels),
+                        currentModelId: list.current,
+                    }
+                if (thought.id && !s.modelShape.effortConfigId)
+                    s.modelShape = { ...s.modelShape, effortConfigId: thought.id }
+                if (sessions.get(chatId) !== s) return null // closed while we awaited
+            }
+            if (s.local)
+                s.modelShape = {
+                    ...s.modelShape,
+                    models: localModelEntries(s.local, s.modelShape),
+                }
             s.translateState.manifest.model = s.modelShape.currentModelId ?? ''
+            s.modeIds = modeIdsOf(result)
+            applyMode(s)
         } catch (e) {
             emit(s, {
                 type: 'error',
@@ -795,9 +1019,86 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         // origin "user", always: the daemon runs on the Claude Code SDK and records ITS session ids in
         // <vault>/.daemon/session-ids — an ACP session id comes from a per-agent id namespace that can
         // never be the daemon's (mirrors opencode.ts's emitOpenFrames reasoning).
-        if (s.sessionId)
-            emit(s, { type: 'session', sessionId: s.sessionId, origin: 'user' })
+        // openclaw reports its gateway key, which a resume binds (see sessionKey above).
+        const reported = s.sessionKey ?? s.sessionId
+        if (reported)
+            emit(s, { type: 'session', sessionId: reported, origin: 'user' })
+        s.settleReady(true)
         return s
+    }
+
+    /** Append a config call to the session's chain: calls run in order, never overlap, and a failed
+     *  one does not stop the next. */
+    function queueConfig(s: AcpSession, job: () => Promise<void>): void {
+        s.configChain = s.configChain.then(job).catch(() => {})
+    }
+
+    function modeIdsOf(result: unknown): string[] {
+        const modes = (result as { modes?: { availableModes?: unknown } } | null)
+            ?.modes
+        if (!Array.isArray(modes?.availableModes)) return []
+        return modes.availableModes
+            .map(m => (m as { id?: unknown })?.id)
+            .filter((id): id is string => typeof id === 'string')
+    }
+
+    /** For an agent whose approval is a session mode (goose): put the session in the mode its chat's
+     *  permission mode names. bypassPermissions is the agent's auto mode, acceptEdits its editsMode when
+     *  it has one; every other mode asks. */
+    function applyMode(s: AcpSession): void {
+        const mode = s.translateState.manifest.permissionMode
+        const modeId = agent.passModeNames
+            ? mode
+            : mode === 'bypassPermissions'
+              ? agent.autoMode
+              : mode === 'acceptEdits'
+                ? (agent.editsMode ?? agent.askMode)
+                : agent.askMode
+        if (!modeId || !s.sessionId) return
+        // A resumed session's load reply may carry no `modes`: send the mode anyway (a failure is
+        // swallowed by queueConfig), since an agent that has it would otherwise never get it.
+        if (!s.modeIds.includes(modeId) && !(s.resumed && !s.modeIds.length))
+            return
+        const sessionId = s.sessionId
+        queueConfig(s, async () => {
+            await call(s, 'session/set_mode', { sessionId, modeId })
+        })
+    }
+
+    /** Take the effort config id a model switch's reply names, since a model can change its options,
+     *  and the levels it reports for `model`: each model has its own, and the frame lists them. */
+    function refreshEffort(s: AcpSession, model: string, result: unknown): void {
+        const r = result as { configOptions?: unknown } | null
+        if (!Array.isArray(r?.configOptions)) return
+        const shape = detectModelShape(result)
+        const id = shape.effortConfigId
+        if (id) s.modelShape = { ...s.modelShape, effortConfigId: id }
+        if (shape.shape !== 'new') return
+        const levels = shape.models[0]?.effortLevels ?? []
+        const entry = s.modelShape.models.find(m => m.value === model)
+        if (!entry || entry.effortLevels.join() === levels.join()) return
+        s.modelShape = {
+            ...s.modelShape,
+            models: s.modelShape.models.map(m =>
+                m.value === model ? { ...m, effortLevels: levels } : m,
+            ),
+        }
+        emit(s, { type: 'models', models: s.modelShape.models })
+    }
+
+    /** The error for a turn that ended normally but failed: openclaw's bridge drops the gateway's
+     *  error and ends the turn empty; hermes sends a failed model call as the reply. Null otherwise. */
+    function failedTurnMessage(s: AcpSession, result: unknown): string | null {
+        if (s.turnTools > 0) return null
+        const stop =
+            result && typeof result === 'object'
+                ? (result as Record<string, unknown>).stopReason
+                : null
+        const text = s.turnText.trim()
+        if (agent.emptyTurnIsError && stop === 'end_turn' && !text)
+            return `${agent.label} ended the turn without a reply; the model request likely failed (see \`${agent.binary} logs\`).`
+        if (agent.failureTextPrefixes?.some(p => text.startsWith(p))) return text
+        return null
     }
 
     function runOrQueue(
@@ -819,6 +1120,13 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
     ): Promise<void> {
         s.turnActive = true
         s.lastActivityAt = Date.now()
+        // A resume may still be loading, and a model, effort or mode change may still be in flight.
+        if (!(await s.ready)) {
+            s.turnActive = false
+            return
+        }
+        await s.configChain
+        if (sessions.get(s.id) !== s) return
         const prompt: AcpOutboundContentBlock[] = acpInstructionBlocks(
             s.cwd,
             !s.instructed,
@@ -836,15 +1144,44 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
 
         let result: unknown = null
         let hardError: string | null = null
+        s.turnError = undefined
+        s.turnText = ''
+        s.turnTools = 0
+        s.openTools.clear()
         try {
-            result = await call(s, 'session/prompt', {
-                sessionId: s.sessionId,
-                prompt,
+            const silent = new Promise<never>((_, reject) => {
+                s.silentStop = message => {
+                    // Stop the agent's own retries, then end the turn here: its prompt may never settle.
+                    if (s.sessionId)
+                        writeToProc(
+                            s,
+                            encodeJsonRpcNotification('session/cancel', {
+                                sessionId: s.sessionId,
+                            }),
+                        )
+                    s.pendingPermissions.clear()
+                    reject(new Error(message))
+                }
             })
+            silent.catch(() => {})
+            armSilence(s)
+            result = await Promise.race([
+                call(s, 'session/prompt', {
+                    sessionId: s.sessionId,
+                    prompt,
+                }),
+                silent,
+            ])
         } catch (e) {
             hardError = e instanceof Error ? e.message : String(e)
+        } finally {
+            if (s.silence) clearTimeout(s.silence)
+            s.silence = undefined
+            s.silentStop = undefined
         }
         if (sessions.get(s.id) !== s) return // torn down mid-turn (closeChat, or watchExit already reported it)
+        hardError ??= s.turnError ?? null
+        if (!hardError && !s.aborting) hardError = failedTurnMessage(s, result)
 
         s.aborting = false
         if (hardError) {
@@ -889,6 +1226,8 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         const s = sessions.get(chatId)
         if (!s) return
         sessions.delete(chatId)
+        s.settleReady(false)
+        if (s.silence) clearTimeout(s.silence)
         if (s.closeTimer) clearTimeout(s.closeTimer)
         s.queue = []
         for (const [, p] of s.pendingCalls) p.reject(new Error('chat closed'))
@@ -922,7 +1261,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         if (!agent.privateErase) return
         await PRIVATE_ERASERS[agent.privateErase]({
             sessionId: s.sessionId ?? '',
-            chatId: s.id,
+            chatId: s.storeChatId,
             cwd: s.cwd,
             startedAt: s.startedAt,
             env: process.env,
@@ -1023,41 +1362,51 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         setModel: (chatId: string, model: string) => {
             const s = sessions.get(chatId)
             if (!s || !s.sessionId) return
-            if (!acceptsModelPick(s.local, model)) return
-            if (s.modelShape.shape === 'new' && s.modelShape.modelConfigId) {
-                const configId = s.modelShape.modelConfigId
-                void call(s, 'session/set_config_option', {
-                    sessionId: s.sessionId,
-                    configId,
-                    value: model,
+            const refuse = () => {
+                if (model === s.modelShape.currentModelId) return
+                emit(s, {
+                    type: 'model-refused',
+                    model,
+                    current: s.modelShape.currentModelId ?? s.local?.model ?? '',
                 })
-                    .then(() => {
-                        s.modelShape = {
-                            ...s.modelShape,
-                            currentModelId: model,
-                        }
-                        s.translateState.manifest.model = model
-                    })
-                    .catch(() => {
-                        /* best-effort — a rejected switch just leaves the previous model active */
-                    })
-            } else if (s.modelShape.shape === 'old') {
-                // GUESS: session/set_model's param shape is not otherwise confirmed beyond the method name
-                // itself — mirrored off NewSessionResponse.models.currentModelId's field naming. Untested
-                // against a real 0.14.x-era agent (claude-code-acp/cline).
-                void call(s, 'session/set_model', {
-                    sessionId: s.sessionId,
-                    modelId: model,
-                })
-                    .then(() => {
-                        s.modelShape = {
-                            ...s.modelShape,
-                            currentModelId: model,
-                        }
-                        s.translateState.manifest.model = model
-                    })
-                    .catch(() => {})
             }
+            if (!acceptsModelPick(s.local, model)) return refuse()
+            const shape = s.modelShape.shape
+            const configId = s.modelShape.modelConfigId
+            if (!(shape === 'old' || (shape === 'new' && configId))) {
+                // openclaw lists models its bridge cannot switch to.
+                if (agent.modelListCommand) refuse()
+                return
+            }
+            const sessionId = s.sessionId
+            queueConfig(s, async () => {
+                let result: unknown
+                if (shape === 'new') {
+                    result = await call(s, 'session/set_config_option', {
+                        sessionId,
+                        configId,
+                        value: model,
+                    })
+                } else {
+                    // GUESS: session/set_model's param shape is not otherwise confirmed beyond the method
+                    // name, mirrored off NewSessionResponse.models.currentModelId's field naming.
+                    result = await call(s, 'session/set_model', {
+                        sessionId,
+                        modelId: model,
+                    })
+                }
+                s.modelShape = { ...s.modelShape, currentModelId: model }
+                s.translateState.manifest.model = model
+                refreshEffort(s, model, result)
+                // goose rebuilds its provider on a model switch and drops the effort back to the new
+                // model's default, so the user's choice is sent again.
+                if (s.effort && s.modelShape.effortConfigId)
+                    await call(s, 'session/set_config_option', {
+                        sessionId,
+                        configId: s.modelShape.effortConfigId,
+                        value: s.effort,
+                    }).catch(() => {})
+            })
         },
 
         closeChat,
@@ -1100,27 +1449,43 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
                 ? { outcome: 'selected', optionId }
                 : { outcome: 'cancelled' }
             writeToProc(s, encodeJsonRpcResult(pending.rpcId, { outcome }))
+            // The agent now owes the turn an update; the wait for the user is over.
+            if (s.silence) armSilence(s)
         },
 
-        // Deliberately NOT implemented here: setPermissionMode and respondQuestion. ACP's
-        // `session/set_mode` is a generic session-mode concept (verified to exist), but not documented
-        // as the same Default/Plan/Accept-Edits/Bypass vocabulary Claude's permission-mode picker
-        // offers, and no ACP session/update kind carries an AskUserQuestion-style multi-choice prompt
-        // (only session/request_permission, implemented above as respondPermission) — mapping either
-        // onto ACP would be a guess with no research backing. Net effect: catalog.ts's
-        // ACP_SHARED_CAPABILITIES declares permissionPrompts:true (respondPermission above answers those
-        // live prompts) and permissionModes:false, so the header's permission-mode picker does not
-        // render at all for any ACP backend — rendering as a no-op picker was the ORIGINAL shape of this
-        // same gap, fixed by splitting the one flag into two (see ACP_SHARED_CAPABILITIES's own comment).
+        // setPermissionMode is implemented only for an agent whose approval is a session mode
+        // (agent.askMode: goose, hermes, codex-acp; agent.passModeNames: claude-code-acp): the chat's
+        // mode reaches the agent as `session/set_mode` (applyMode),
+        // so the catalog's permissionModes is true for exactly those agents. respondQuestion is not
+        // implemented: no ACP session/update kind carries an AskUserQuestion-style multi-choice prompt
+        // (only session/request_permission, answered by respondPermission above).
+        ...(agent.askMode || agent.passModeNames
+            ? {
+                  setPermissionMode: (chatId: string, mode: string) => {
+                      const s = sessions.get(chatId)
+                      if (!s) return
+                      s.translateState.manifest.permissionMode = mode
+                      applyMode(s)
+                      emit(s, {
+                          type: 'manifest',
+                          manifest: { ...s.translateState.manifest },
+                      })
+                  },
+              }
+            : {}),
         setEffort: (chatId: string, effort: string) => {
             const s = sessions.get(chatId)
             if (!s || !s.sessionId || !s.modelShape.effortConfigId) return
-            const configId = s.modelShape.effortConfigId
-            void call(s, 'session/set_config_option', {
-                sessionId: s.sessionId,
-                configId,
-                value: effort,
-            }).catch(() => {})
+            s.effort = effort
+            const sessionId = s.sessionId
+            queueConfig(s, async () => {
+                if (!s.modelShape.effortConfigId) return
+                await call(s, 'session/set_config_option', {
+                    sessionId,
+                    configId: s.modelShape.effortConfigId,
+                    value: effort,
+                })
+            })
         },
     }
 }

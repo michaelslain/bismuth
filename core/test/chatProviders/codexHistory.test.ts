@@ -13,6 +13,7 @@ import {
     searchCodexChats,
     trashCodexChats,
 } from '../../src/chatProviders/codex/codexHistory'
+import { codexSeededPrompt } from '../../src/chatProviders/codex/codexBudget'
 import { tempDir } from '../tempDirs'
 
 const home = tempDir('codex-history-')
@@ -99,6 +100,12 @@ describe('codex history', () => {
             { type: 'assistant-text', text: 'hello' },
         ])
         expect(parseCodexRollout('{"type":"turn_context"}')).toBeNull()
+    })
+
+    test('a condensed-chat seed in the first message is not replayed as typed text', () => {
+        const seeded = codexSeededPrompt('earlier chat', 'the new question')
+        const r = parseCodexRollout([meta(A, vault), item('UserMessage', seeded)].join('\n'))
+        expect(r?.frames).toEqual([{ type: 'user-message', text: 'the new question' }])
     })
 
     test("lists the vault's own threads newest first, titled, without subagents or other folders", async () => {

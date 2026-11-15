@@ -84,13 +84,15 @@ export interface ChatBackend {
         behavior: 'allow' | 'deny',
         always?: boolean,
     ): void
-    /** Answer a `question` frame (AskUserQuestion). Present iff capabilities.permissionModes. */
+    /** Answer a `question` frame (AskUserQuestion). Present only on a backend that raises question frames
+     *  (claude); a backend may have a permission-mode picker without it (opencode, goose). */
     respondQuestion?(
         chatId: string,
         id: string,
         answers: Record<string, string> | null,
     ): void
-    /** Switch permission mode live. Present iff capabilities.permissionModes. */
+    /** Switch permission mode live. Present iff capabilities.permissionModes. The app's default mode is
+     *  bypassPermissions, pushed on the first manifest, so a backend that asks by default must follow it. */
     setPermissionMode?(chatId: string, mode: string): void
     /** Switch reasoning effort live. Present iff capabilities.effort. */
     setEffort?(chatId: string, effort: string): void
@@ -198,11 +200,12 @@ const claudeBackend = moduleBackend('claude', claude, {
  *  `opencode serve` shared across every opencode chat) falls back to the original one
  *  `opencode run --format json` subprocess per turn when the installed opencode can't serve.
  *  respondPermission is a real, live-verified server-mode surface (permissionPrompts:true) — see
- *  catalog.ts. setEffort picks an opencode 2 model's reasoning variant. No setPermissionMode/
- *  respondQuestion: opencode has no drivable permission MODE switch (permissionModes stays false)
- *  and no AskUserQuestion equivalent. */
+ *  catalog.ts. setEffort picks an opencode 2 model's reasoning variant. setPermissionMode sets which
+ *  asks the driver answers itself (permissionModes:true). No respondQuestion: opencode has no
+ *  AskUserQuestion equivalent. */
 const opencodeBackend = moduleBackend('opencode', opencode, {
     respondPermission: opencode.respondPermission,
+    setPermissionMode: opencode.setPermissionMode,
     setEffort: opencode.setEffort,
     setAgent: opencode.setAgent,
 })
