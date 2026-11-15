@@ -316,7 +316,9 @@ describe('backendMockEnv', () => {
         // to complete at all, not just test hygiene.
         expect(config.agents.defaults.workspace).toBe(join(dir, 'workspace'))
         expect(config.agents.defaults.skipBootstrap).toBe(true)
-        expect(config.canvasHost.enabled).toBe(false)
+        expect(config.agents.entries.main).toBeDefined()
+        expect(config.canvasHost).toBeUndefined()
+        expect(config.plugins.entries.canvas.config.host.enabled).toBe(false)
         expect(config.browser.enabled).toBe(false)
         expect(config.update.checkOnStart).toBe(false)
     })

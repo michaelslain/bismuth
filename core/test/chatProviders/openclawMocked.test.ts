@@ -55,6 +55,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test'
 import { rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
+import { join } from 'node:path'
 import { whichBinary } from '../../src/claudeWhich'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
 import { backendMockEnv } from '../support/backendEnv'
@@ -74,6 +75,19 @@ import { shouldRunSlowTests } from '../slowGate'
 import { tempDir } from '../tempDirs'
 
 const HAS_OPENCLAW = whichBinary('openclaw') !== null
+
+/** openclaw sends the user's prompt and then its own runtime-context block ("OpenClaw runtime
+ *  context: … End OpenClaw runtime context.") as a separate, FINAL user message, and aimock's
+ *  `userMessage` matcher reads only the last user message — so the shared `fixtures/llm/` "hello"
+ *  fixture never matches an openclaw turn and aimock answers 404. This directory keys the same
+ *  "Hello!" reply on that trailing block instead; the session-isolation test below proves the
+ *  prompt itself reaches the model, from the captured request body. */
+const OPENCLAW_FIXTURE_DIR = join(
+    import.meta.dir,
+    '..',
+    'fixtures',
+    'llm-openclaw',
+)
 // Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
 const describeOrSkip =
     HAS_OPENCLAW && shouldRunSlowTests(process.env) ? describe : describe.skip
@@ -283,7 +297,7 @@ describeOrSkip(
             // --metrics: aimock only exposes GET /metrics with this flag (confirmed live — omitting it
             // yields a plain 404 on /metrics, which is exactly why this file's path-specific hit-count
             // assertion below needs it, matching geminiMocked.test.ts's own setup).
-            mock = await startMockLlm(undefined, ['--metrics'])
+            mock = await startMockLlm(OPENCLAW_FIXTURE_DIR, ['--metrics'])
             const workDir = await newTempDir('bismuth-openclaw-workdir-')
             const port = await getFreePort()
             const mockEnv = backendMockEnv('openclaw', mock.url, workDir, port)
@@ -294,7 +308,7 @@ describeOrSkip(
             // is what guarantees that; see openclawGateway.ts's own header for why a shared config file,
             // not a shared port arg, is the actual synchronization mechanism. `port` is also passed directly
             // so startOpenclawGateway can verify its OWN readiness banner reports that same port (see
-            // openclawGateway.ts's LISTEN_BANNER_RE doc comment for why the comparison matters).
+            // openclawGateway.ts's READY_LINE_RE doc comment for why the comparison matters).
             gateway = await startOpenclawGateway(process.env, port)
             // Assigned only once startOpenclawGateway has RESOLVED (review round 2 finding): its own
             // readiness protocol confirms a real banner was observed on stdout AND that banner's own port
@@ -481,7 +495,7 @@ describeOrSkip(
                 await fetch(`${mock!.url}/metrics`).then(r => r.text()),
             )
             expect(after).toBeGreaterThan(before)
-        }, 60_000)
+        }, 180_000) // above openclawGateway.ts's 120s STARTUP_TIMEOUT_MS, which setup() spends inside the test
 
         test("session isolation: a brand-new second chat's upstream request carries NO content from a completed first chat (closes the cross-chat leak a fixed session key would reopen)", async () => {
             // Reproduces the exact scenario review caught against a first (reverted) version of this fix,
@@ -552,6 +566,6 @@ describeOrSkip(
             // session key this test was written to catch (chat A's text arrived inside chat B's first-ever
             // request when both resolved to the same Gateway session).
             expect(chatBRequest).not.toContain(MARKER_A)
-        }, 60_000)
+        }, 180_000) // above openclawGateway.ts's 120s STARTUP_TIMEOUT_MS, which setup() spends inside the test
     },
 )

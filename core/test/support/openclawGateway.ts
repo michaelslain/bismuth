@@ -19,11 +19,13 @@
 // different lifecycle shape for what is the same spawn+banner problem" — this is the same problem
 // again, just a different child binary).
 //
-// READINESS SIGNAL: observed live, `openclaw gateway run` prints
-// "[gateway] listening on ws://127.0.0.1:<port>, ws://[::1]:<port> (PID <pid>)" to stdout once its
-// WebSocket server is actually accepting connections — that is what LISTEN_BANNER_RE waits for below,
-// exactly the same "watch stdout for a banner within a timeout" technique mockLlm.ts/opencodeServer.ts
-// already use for their own child processes.
+// READINESS SIGNAL: `openclaw gateway run` (2026.11.3) prints "[gateway] http server listening
+// (<plugin ids>; <duration>)" and then, once channels and sidecars are up, "[gateway] ready" to stdout,
+// wrapped in ANSI colour codes even when stdout is a pipe. Neither line names a port (the listening
+// line is built in the package's `dist/server-startup-log-*.mjs` from plugin ids only), so READY_LINE_RE
+// waits for the "ready" line and startOpenclawGateway then proves the requested port accepts a TCP
+// connection. Same "watch stdout for a banner within a timeout" technique mockLlm.ts/opencodeServer.ts
+// use for their own child processes.
 //
 // PROCESS TREE: `openclaw gateway run` is NOT a single process — it's a short-lived `openclaw`
 // launcher (the direct child Bun.spawn returns a handle to) that itself spawns/execs a
@@ -46,33 +48,21 @@
 // writes specifically to suppress this; confirmed live that no such log line appears once set. This
 // module does not re-verify that itself (it only owns the process, not the config content) — it
 // relies on the caller (openclawMocked.test.ts, via backendMockEnv) having done so.
-import { createServer } from 'node:net'
+import { connect, createServer } from 'node:net'
 import { whichBinary } from '../../src/claudeWhich'
 
-/** Observed live: "[gateway] listening on ws://127.0.0.1:<port>, ws://[::1]:<port> (PID <pid>)" — a
- *  plain console log tag, not a documented contract, so this only anchors on the stable "listening on
- *  <url>" fragment, same defensiveness as mockLlm.ts's own LISTEN_BANNER_RE. Captures the FIRST
- *  URL's port specifically (group 1) — startOpenclawGateway compares it against the port the caller
- *  actually asked for (the same one written into `gateway.port` in the shared config) and fails loud
- *  on a mismatch, rather than reporting ready on any "listening on" line regardless of which port.
- *  Readiness itself is genuinely observed (a real banner from a real process, not a fixed timer), but
- *  without this comparison a gateway that silently ignored the configured port would still report
- *  ready here and only surface later as an opaque ACP-connect error with no link back to the cause.
- *
- *  The trailing `[,\s]` is REQUIRED, not decorative — this regex runs against `pending`, a buffer
- *  accumulated across `for await` stdout CHUNKS, so it can be tested mid-write, before the full port
- *  number has arrived. Without a delimiter after `(\d+)`, a chunk boundary landing inside the port
- *  digits (e.g. the real banner is "...:53911, ws://..." but only "...:539" has arrived so far) makes
- *  `(\d+)` match the truncated prefix "539" and this module wrongly rejects a healthy gateway as
- *  "listening on port 539, not the requested 53911" — reproduced live. Requiring a comma or
- *  whitespace immediately after the digits means an in-flight truncation simply doesn't match yet
- *  (the loop reads the next chunk and retries) instead of matching a partial number early. */
-const LISTEN_BANNER_RE =
-    /\[gateway\][^\n]*listening on\s+wss?:\/\/[^:\s]+:(\d+)[,\s]/
+/** The "[gateway] ready" stdout line, matched only as a COMPLETE line (trailing newline required) of
+ *  the ANSI-stripped buffer, because `pending` accumulates across stdout chunks and a chunk boundary
+ *  can split a line. Stderr's "startup phase: …readiness" lines never reach this buffer. */
+const READY_LINE_RE = /\[gateway\]\s+ready\r?\n/
 
-/** Generous relative to opencodeServer.ts's 8s / mockLlm.ts's 15s — the Gateway does more startup
- *  work (heartbeat, health monitor, model-provider registration) than either of those. */
-const STARTUP_TIMEOUT_MS = 20_000
+/** ANSI SGR colour codes, which openclaw's console logger emits even into a pipe. */
+const ANSI_RE = /\x1b\[[0-9;]*m/g
+
+/** Generous relative to opencodeServer.ts's 8s / mockLlm.ts's 15s: the Gateway does more startup
+ *  work (plugins, workers, model catalog, channels), observed at 5-16s on an idle machine and past 30s
+ *  at load average 18 on 15 cores, which is where this machine sits during gates. */
+const STARTUP_TIMEOUT_MS = 120_000
 
 /** How long stop() waits for a graceful exit (SIGTERM) before escalating to SIGKILL. */
 const STOP_GRACE_MS = 5_000
@@ -136,9 +126,9 @@ export function getFreePort(): Promise<number> {
 
 /**
  * Spawn `openclaw gateway run` pointed at the given (already-isolated) config/state env, resolving
- * once its readiness banner has been observed on stdout AND that banner's own port matches
- * `expectedPort` (see LISTEN_BANNER_RE's doc comment for why the comparison matters, not just the
- * banner's presence). Rejects (never resolves a broken handle) on a spawn failure, a missing binary,
+ * once its "[gateway] ready" line has been observed on stdout AND `expectedPort` accepts a TCP
+ * connection (without that check, a gateway that ignored the configured port would report ready here
+ * and surface later as an opaque ACP-connect error). Rejects (never resolves a broken handle) on a spawn failure, a missing binary,
  * a startup timeout, or a port mismatch — same fail-loud contract as mockLlm.ts's startMockLlm.
  *
  * `env` must already carry `OPENCLAW_CONFIG_PATH`/`OPENCLAW_STATE_DIR` pointed at throwaway temp
@@ -203,7 +193,7 @@ export function startOpenclawGateway(
         const timer = setTimeout(() => {
             finishFail(
                 new Error(
-                    `openclaw gateway did not print its listening banner within ${STARTUP_TIMEOUT_MS}ms`,
+                    `openclaw gateway did not print "[gateway] ready" within ${STARTUP_TIMEOUT_MS}ms`,
                 ),
             )
         }, STARTUP_TIMEOUT_MS)
@@ -224,33 +214,37 @@ export function startOpenclawGateway(
 
         void (async () => {
             let pending = ''
+            let sawReady = false
             const decoder = new TextDecoder()
             try {
+                // Keeps reading after "ready" for the gateway's whole life: once nothing drains this
+                // pipe, the gateway blocks on its own console writes and stops answering HTTP and
+                // WebSocket requests on a port that still accepts TCP (curl /health hangs; with stdout
+                // drained it answers 200 in milliseconds).
                 for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
-                    if (settled) return
+                    if (sawReady || settled) continue
                     pending += decoder.decode(chunk, { stream: true })
-                    const m = LISTEN_BANNER_RE.exec(pending)
-                    if (m) {
-                        const bannerPort = Number(m[1])
-                        if (bannerPort !== expectedPort) {
+                    if (!READY_LINE_RE.test(pending.replace(ANSI_RE, '')))
+                        continue
+                    sawReady = true
+                    pending = ''
+                    void acceptsConnection(expectedPort).then(listening => {
+                        if (listening) finishOk()
+                        else
                             finishFail(
                                 new Error(
-                                    `openclaw gateway printed its listening banner on port ${bannerPort}, not the requested ${expectedPort} ` +
+                                    `openclaw gateway printed "[gateway] ready" but nothing accepts connections on the requested port ${expectedPort} ` +
                                         `(gateway.port in the config it read) — refusing to report ready against the wrong port.`,
                                 ),
                             )
-                            return
-                        }
-                        finishOk()
-                        return
-                    }
+                    })
                 }
             } catch {
                 /* stdout torn down before the banner appeared — fall through to the exit-driven failure below */
             }
             finishFail(
                 new Error(
-                    `openclaw gateway exited before printing its listening banner. stderr tail:\n${stderrTail}`,
+                    `openclaw gateway exited before printing "[gateway] ready". stderr tail:\n${stderrTail}`,
                 ),
             )
         })()
@@ -259,11 +253,26 @@ export function startOpenclawGateway(
             .then(() =>
                 finishFail(
                     new Error(
-                        `openclaw gateway exited before printing its listening banner. stderr tail:\n${stderrTail}`,
+                        `openclaw gateway exited before printing "[gateway] ready". stderr tail:\n${stderrTail}`,
                     ),
                 ),
             )
             .catch(() => {})
+    })
+}
+
+/** Whether something on 127.0.0.1 accepts a TCP connection on `port` — the port check the banner can
+ *  no longer carry (see READY_LINE_RE). */
+function acceptsConnection(port: number): Promise<boolean> {
+    return new Promise(resolve => {
+        const socket = connect({ host: '127.0.0.1', port })
+        const done = (ok: boolean) => {
+            socket.destroy()
+            resolve(ok)
+        }
+        socket.once('connect', () => done(true))
+        socket.once('error', () => done(false))
+        socket.setTimeout(2_000, () => done(false))
     })
 }
 

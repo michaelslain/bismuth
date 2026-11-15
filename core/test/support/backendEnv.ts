@@ -478,7 +478,11 @@ export function backendMockEnv(
         //     runtime requires a workspace dir at all per `docs/concepts/agent.md`, "OpenClaw uses a
         //     single agent workspace directory... as the agent's ONLY working directory"; skipBootstrap
         //     avoids BOOTSTRAP.md/AGENTS.md template seeding a throwaway test workspace doesn't need);
-        //     `canvasHost.enabled:false` + `browser.enabled:false` (both auto-start their own
+        //     `agents.entries.main` (openclaw 2026.11.3's `gateway status` rejects a config whose
+        //     `agents.entries` holds no agent, and `main` is the agent the driver's
+        //     `agent:main:bismuth-<chatId>` session key names);
+        //     `plugins.entries.canvas.config.host.enabled:false` + `browser.enabled:false` (both
+        //     auto-start their own
         //     HTTP/CDP listeners on gateway boot otherwise — confirmed live via a second/third port
         //     appearing in the startup log with neither set — pure test hygiene, no bearing on model
         //     routing); `update.checkOnStart:false` (a bare config makes gateway startup perform a real
@@ -522,7 +526,13 @@ export function backendMockEnv(
                             bind: 'loopback',
                             auth: { mode: 'none' },
                         },
-                        canvasHost: { enabled: false },
+                        plugins: {
+                            entries: {
+                                canvas: {
+                                    config: { host: { enabled: false } },
+                                },
+                            },
+                        },
                         browser: { enabled: false },
                         update: {
                             checkOnStart: false,
@@ -538,8 +548,8 @@ export function backendMockEnv(
                                 workspace: workspaceDir,
                                 skipBootstrap: true,
                                 model: { primary: 'mock/mock' },
-                                models: { 'mock/mock': { alias: 'Mock' } },
                             },
+                            entries: { main: { name: 'Main' } },
                         },
                         models: {
                             mode: 'merge',
