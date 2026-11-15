@@ -1085,11 +1085,11 @@ export const SETTINGS_SCHEMA: Schema = {
                             fields: {
                                 source: {
                                     type: enumType([...STATUS_QUERY_SOURCES]),
-                                    doc: 'notes, tasks, or base.',
+                                    doc: 'notes, files (every file the sidebar lists: notes, images, PDFs, drawings, sheets, bases), tasks, or base.',
                                 },
                                 ref: {
                                     type: 'string',
-                                    doc: 'A base as "[[Name]]" — the base to count (source: base), or the base whose notes to scope to (notes/tasks).',
+                                    doc: 'A base as "[[Name]]" — the base to count (source: base), or the base whose notes to scope to (notes/files/tasks).',
                                 },
                                 where: {
                                     type: 'string',

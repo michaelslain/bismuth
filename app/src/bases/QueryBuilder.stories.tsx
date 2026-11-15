@@ -366,3 +366,26 @@ export const NotesFiltersAndSort: Story = {
         )
     },
 }
+
+/** Files source: every file the sidebar lists (notes, images, PDFs, drawings, sheets, bases),
+ *  filtered with the same condition rows as notes. Opened on a block that lists the PDFs as
+ *  cards; saving untouched writes the same block back. */
+export const FilesSource: Story = {
+    render: () => {
+        seedPopulated()
+        confirmed = undefined
+        return (
+            <QueryBuilder
+                initial={parseQueryBlockBody('source: files where file.ext == "pdf"\nview: cards')}
+                onConfirm={capture}
+                onClose={noop}
+            />
+        )
+    },
+    play: async () => {
+        const body = within(document.body)
+        await expect(await body.findByDisplayValue('pdf')).toBeInTheDocument()
+        await userEvent.click(body.getByText('save'))
+        await expect(confirmed).toBe('source: files where file.ext == "pdf"\nview: cards')
+    },
+}

@@ -85,10 +85,7 @@ async function queryCount(
         const where = q.where
         return where ? shown.filter(r => passesFilter(where, toContext(r))).length : shown.length
     }
-    const spec: SourceSpec =
-        q.source === 'notes'
-            ? { kind: 'notes', from: q.ref, where: q.where }
-            : { kind: 'tasks', from: q.ref, where: q.where }
+    const spec: SourceSpec = { kind: q.source, from: q.ref, where: q.where }
     return (await resolveSource(spec, ctx)).length
 }
 

@@ -22,9 +22,9 @@ export const STATUS_TONES = [
 ] as const
 export type StatusTone = (typeof STATUS_TONES)[number]
 
-export const STATUS_QUERY_SOURCES = ['notes', 'tasks', 'base'] as const
+export const STATUS_QUERY_SOURCES = ['notes', 'files', 'tasks', 'base'] as const
 export type StatusQuery = {
-    source: 'notes' | 'tasks' | 'base'
+    source: 'notes' | 'files' | 'tasks' | 'base'
     ref?: string
     where?: string
 }

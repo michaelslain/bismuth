@@ -40,7 +40,7 @@ Every key sits at the top level of the frontmatter (markdown) or of the line-1 o
 |---|---|---|
 | `type` | `base` | Makes the note a base. Required. |
 | `view` | a layout | The layout that draws the rows. Defaults to `table`; an unknown value also draws as `table`. |
-| `source` | string or object | Where rows come from: `notes`, `tasks` or `base`. See [sources](./sources.md). |
+| `source` | string or object | Where rows come from: `notes`, `files`, `tasks` or `base`. See [sources](./sources.md). |
 | `from`, `where`, `ref` | string | Modifiers of a string-form `source`. |
 | `filters` | expression or `and`/`or`/`not` tree | Keeps the rows where it is true. See [filters](./filters.md). |
 | `formulas` | map of name to expression | Computed columns, read as `formula.<name>`. See [expression syntax](./query-syntax.md). |

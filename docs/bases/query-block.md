@@ -121,6 +121,7 @@ The builder's source choice decides the form it writes:
 | Source | Form written |
 |---|---|
 | Notes | A full inline config: `source: notes where <expression>` plus `view`, `sort`, `groupBy` and `limit`. |
+| Files | The same config with `source: files where <expression>`: every file the sidebar lists, images and PDFs included, filtered with the same conditions as notes (see [base sources](./sources.md#how-do-i-list-images-pdfs-and-other-attachments)). |
 | Tasks | A flat spec with `tasks:` text, and optional `from`, `view`, `group` and `limit`. |
 | Base | A flat spec with `of:`, and optional `where`, `view`, `group` and `limit`. |
 
@@ -128,7 +129,7 @@ A Base block with no `view:` draws the referenced base's own layout, and the bui
 
 Note filters offer operators that follow the property's type (text, number, date, checkbox, tag, list, link) and compile to ordinary expressions such as `file.hasTag("book")` and `date(due) < today()`. The "match all / any" switch joins conditions with `&&` or `||`. An expression the builder cannot model is kept as written in an advanced field, so reopening a hand-edited query never drops it.
 
-The pencil appears only when the builder can reproduce the block exactly. A flat spec always qualifies. A config block qualifies only if its keys are limited to `source`, `view`, `sort`, `groupBy` and `limit`, its source is `notes` or `notes where <expression>`, and the whole expression maps back to condition rows. A block with `filters:`, `formulas:`, `properties:` or `schema:` has no pencil and is edited as source.
+The pencil appears only when the builder can reproduce the block exactly. A flat spec always qualifies. A config block qualifies only if its keys are limited to `source`, `view`, `sort`, `groupBy` and `limit`, its source is `notes`, `files`, or either followed by `where <expression>`, and the whole expression maps back to condition rows. A block with `filters:`, `formulas:`, `properties:` or `schema:` has no pencil and is edited as source.
 
 ## How do I edit a block's source?
 

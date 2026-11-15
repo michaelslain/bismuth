@@ -63,6 +63,7 @@ import qbStyles from './QueryBuilder.module.css'
 
 const SOURCE_OPTS = [
     { id: 'notes' as BuilderSource, label: 'notes' },
+    { id: 'files' as BuilderSource, label: 'files' },
     { id: 'tasks' as BuilderSource, label: 'tasks' },
     { id: 'base' as BuilderSource, label: 'base' },
 ]
@@ -197,7 +198,7 @@ export function QueryBuilder(props: {
                 />
 
                 {/* 2 — FILTERS, gated on source */}
-                <Show when={state.source === 'notes'}>
+                <Show when={state.source === 'notes' || state.source === 'files'}>
                     <SettingsSection>filters</SettingsSection>
                     <NotesFilterPanel
                         value={state.notes}

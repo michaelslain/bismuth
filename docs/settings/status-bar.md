@@ -72,7 +72,7 @@ The built-ins:
 | `inbox` | Pending daemon pages. |
 | `daemon` | Daemon state. |
 
-`query.source` is `notes`, `tasks` or `base`. `query.ref` is a base written as `"[[Name]]"`. With `source: base` it counts what that base shows, after its filters. With `notes` or `tasks` it scopes to the notes the base draws from, before its filters.
+`query.source` is `notes`, `files`, `tasks` or `base`; `files` counts every file the sidebar lists, so `where: file.ext == "pdf"` counts the PDFs. `query.ref` is a base written as `"[[Name]]"`. With `source: base` it counts what that base shows, after its filters. With `notes`, `files` or `tasks` it scopes to the notes the base draws from, before its filters.
 `query.where` is a [Bases filter expression](../bases/filters.md). A date compares as a date only through `date(...)` or `today()`: a bare `today` is an unknown name and matches everything.
 
 `command` takes any command id, including `daily-note:<id>`; see [toolbar and commands](toolbar-commands.md).

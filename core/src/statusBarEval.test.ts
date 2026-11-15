@@ -87,6 +87,21 @@ describe('evaluateStatusBar', () => {
         const [s] = await ev([{ query: { source: 'notes' }, text: '{count} notes' }], mk())
         expect(s.text).toBe('2 notes')
     })
+    test('a files query counts images and PDFs beside the notes', async () => {
+        const dir = tempDir('sbeval-files-')
+        writeFileSync(join(dir, 'n.md'), '# n\n')
+        writeFileSync(join(dir, 'p.png'), 'x')
+        writeFileSync(join(dir, 'd.pdf'), 'x')
+        const [all, pdfs] = await ev(
+            [
+                { query: { source: 'files' }, text: '{count} files' },
+                { query: { source: 'files', where: 'file.ext == "pdf"' }, text: '{count} pdfs' },
+            ],
+            mk({ root: dir }),
+        )
+        expect(all.text).toBe('3 files')
+        expect(pdfs.text).toBe('1 pdfs')
+    })
     test('untrusted run never executes', async () => {
         const d = mk({ isTrusted: () => false })
         const [s] = await ev([{ run: 'curl x | sh' }], d)

@@ -9,7 +9,8 @@
 // core/src/bases/queryBlock.ts + core/src/bases/sourceSpec.ts +
 // docs/bases/query-block.md):
 //
-//   - Notes  -> a FULL INLINE CONFIG: `source: notes where <Bases-expr>` plus the
+//   - Notes / files -> a FULL INLINE CONFIG: `source: notes where <Bases-expr>` (or
+//               `source: files where …`, every file the sidebar lists) plus the
 //               flat view keys `view`, `sort`, `groupBy`, `limit`. This is
 //               the ONLY inline way to iterate notes-with-filters (a flat block
 //               cannot iterate notes — only `of:`/`tasks:` produce a source).
@@ -39,7 +40,7 @@ import { VALUELESS } from './filterOps'
 // Types
 // ---------------------------------------------------------------------------------------
 
-export type BuilderSource = 'notes' | 'tasks' | 'base'
+export type BuilderSource = 'notes' | 'files' | 'tasks' | 'base'
 
 /** Coarse value-type of a note property, used to pick the operator set + value editor. */
 export type PropType =
@@ -309,10 +310,10 @@ function trimYaml(s: string): string {
 }
 
 export function buildQueryBlockBody(state: BuilderState): string {
-    if (state.source === 'notes') {
+    if (state.source === 'notes' || state.source === 'files') {
         const where = compileNotesWhere(state.notes)
         const config: Record<string, unknown> = {
-            source: where ? `notes where ${where}` : 'notes',
+            source: where ? `${state.source} where ${where}` : state.source,
             view: state.view,
         }
         if (state.sort && state.sort.length) config.sort = state.sort
@@ -696,8 +697,11 @@ export function parseQueryBlockBody(body: string): BuilderState {
         if (config) {
             const src = config.source
             if (typeof src === 'string') {
-                const m = src.trim().match(/^notes(?:\s+where\s+([\s\S]+))?$/i)
-                if (m) state.notes = reverseWhere(m[1] ?? '')
+                const m = src.trim().match(/^(notes|files)(?:\s+where\s+([\s\S]+))?$/i)
+                if (m) {
+                    state.source = m[1].toLowerCase() as 'notes' | 'files'
+                    state.notes = reverseWhere(m[2] ?? '')
+                }
                 else
                     state.notes = {
                         connective: 'and',
@@ -778,7 +782,7 @@ export function isBuilderRepresentable(body: string): boolean {
         if (!['source', 'view', 'sort', 'groupBy', 'limit', 'views'].includes(k))
             return false
     const src = typeof config.source === 'string' ? config.source.trim() : ''
-    const m = src.match(/^notes(?:\s+where\s+([\s\S]+))?$/i)
+    const m = src.match(/^(?:notes|files)(?:\s+where\s+([\s\S]+))?$/i)
     if (!m) return false // tasks/base CONFIG form (builder emits those flat, so it can't round-trip a config one)
     if (m[1] && reverseWhere(m[1]).rawWhere) return false // a where the builder can't reverse into rows
     const views = Array.isArray(config.views)

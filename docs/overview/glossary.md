@@ -121,7 +121,7 @@ The table lists every term in alphabetical order, with a one-line definition and
 | sheet | A `.sheet` file: a spreadsheet of free-form cells, opened in the spreadsheet editor. It is not a base. | [Sheets](../sheets/overview.md) |
 | sidebar | The column holding the sidebar toolbar, the file tree and the mini graph; it sits on the left by default. | [Shell layout](../settings/layout.md) |
 | sidecar | A file stored beside the file it describes, named by appending an extension, such as the ink file `photo.png.draw`. | [Drawing](../drawing/overview.md) |
-| source | Where a view's rows come from: other notes (`notes`), checkbox lines (`tasks`), or another base (`base`). | [Sources](../bases/sources.md) |
+| source | Where a view's rows come from: other notes (`notes`), every file the sidebar lists (`files`), checkbox lines (`tasks`), or another base (`base`). | [Sources](../bases/sources.md) |
 | status bar | The strip along the bottom of the window with readouts such as the inbox count; it can be hidden. | [Shell layout](../settings/layout.md) |
 | switcher | The `Mod+O` search takeover: file names, note contents and an AI fallback in one panel; the app's only search surface. | [Getting started](getting-started.md#step-6-find-anything-with-the-switcher) |
 | tab | One entry in the tab rail; it holds a tree of one or more panes. | [Getting started](getting-started.md#step-7-use-tabs-and-split-panes) |

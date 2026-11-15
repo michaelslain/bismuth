@@ -71,7 +71,7 @@ bun run build:app
 
 - [Make your first base](bases/first-base.md) — step by step: a base note, a source, a filter, a layout
 - [Bases overview](bases/overview.md) — what a base is, its keys, and the list of layouts
-- [Base sources](bases/sources.md) — where rows come from: notes, tasks, or another base
+- [Base sources](bases/sources.md) — where rows come from: notes, files, tasks, or another base
 - [Base filters](bases/filters.md) — `where:` filters, filter trees, and how values count as true
 - [Bases expression syntax](bases/query-syntax.md) — the expression grammar: operators, equality, dates, durations
 - [Bases functions and methods](bases/functions.md) — every built-in function and method, and footer summaries

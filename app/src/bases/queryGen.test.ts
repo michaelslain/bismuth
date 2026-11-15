@@ -681,3 +681,26 @@ describe('QueryBuilder story inputs — generated block text is pinned', () => {
         )
     })
 })
+
+describe('files source — every file the sidebar lists', () => {
+    test('builds `files where …` with the notes filter rows and parses it back', () => {
+        const body = buildQueryBlockBody(
+            notesState([row('file.ext', 'equals', 'pdf')], { source: 'files', view: 'cards' }),
+        )
+        const cfg = yamlParse(body)
+        expect(cfg.source).toBe('files where file.ext == "pdf"')
+        expect(cfg.view).toBe('cards')
+        const back = parseQueryBlockBody(body)
+        expect(back.source).toBe('files')
+        expect(back.notes.rows).toEqual([row('file.ext', 'equals', 'pdf')])
+        expect(isBuilderRepresentable(body)).toBe(true)
+    })
+    test('a bare files source round-trips', () => {
+        const body = buildQueryBlockBody(notesState([], { source: 'files' }))
+        expect(yamlParse(body).source).toBe('files')
+        expect(parseQueryBlockBody(body).source).toBe('files')
+    })
+    test('a notes source still parses as notes', () => {
+        expect(parseQueryBlockBody('source: notes\nview: table').source).toBe('notes')
+    })
+})
